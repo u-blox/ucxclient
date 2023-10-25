@@ -1,0 +1,22 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.h": "c",
+			"ostream": "c"
+		},
+		"ceedlingExplorer.problemMatching": {"mode": "gcc"},
+		"ceedlingExplorer.debugConfiguration": "Ceedling Test Explorer Debug"
+	},
+	"extensions": {
+		"recommendations": [
+			"numaru.vscode-ceedling-test-adapter",
+			"ms-vscode.cpptools",
+			"shardulm94.trailing-spaces"
+		]
+	}
+}
