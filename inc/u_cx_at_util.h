@@ -183,4 +183,16 @@ int32_t uCxAtUtilParseParamsF(char *pParams, const char *pParamFmt, ...);
   */
 int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list args);
 
+/**
+  * @brief  Replace all occurrences of a character in a data buffer
+  *
+  * Can be useful if you want to revert the null termination caused by uCxAtUtilParseParamsF.
+  *
+  * @param[inout]  pData:    the data to modify.
+  * @param         dataLen   the length of the data to modify.
+  * @param         from:     the character to find.
+  * @param         to:       the character to replace to.
+  */
+void uCxAtUtilReplaceChar(char *pData, size_t dataLen, char from, char to);
+
 #endif // U_CX_AT_UTIL_H
