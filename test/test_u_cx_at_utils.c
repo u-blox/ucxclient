@@ -312,3 +312,17 @@ void test_uCxAtUtilParseParamsVaList_withByteArray(void)
     TEST_ASSERT_EQUAL(sizeof(expData), byteArray.length);
     TEST_ASSERT_EQUAL(1, ret);
 }
+
+void test_uCxAtUtilReplaceChar_withTestString_replaceSwithB()
+{
+    char str[] = "MyTeststring";
+    uCxAtUtilReplaceChar(str, strlen(str), 's', 'b');
+    TEST_ASSERT_EQUAL_STRING("MyTebtbtring", str);
+}
+
+void test_uCxAtUtilReplaceChar_withNullTermTestString_replaceNullWithComma()
+{
+    char str[] = "My\0Test\0String";
+    uCxAtUtilReplaceChar(str, sizeof(str) - 1, 0, ',');
+    TEST_ASSERT_EQUAL_STRING("My,Test,String", str);
+}
