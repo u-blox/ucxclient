@@ -1,5 +1,5 @@
 /** @file
- * @brief 2nd gen uConnectXpress API
+ * @brief 2nd gen u-connectXpress API
  */
 
 #include <stddef.h>  // NULL, size_t etc.
@@ -50,7 +50,8 @@ static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine, si
     }
 
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Received URC '%s', params: '%s'", pLine, pParams);
-    extern int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength);
+    extern int32_t uCxUrcParse(uCxHandle_t *puCxHandle, const char *pUrcName, char *pParams,
+                               size_t paramsLength);
     uCxUrcParse(puCxHandle, pLine, pParams, paramLen);
 }
 

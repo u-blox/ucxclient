@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief 2nd gen uConnectXpress AT client
+ * @brief 2nd gen u-connectXpress AT client
  */
 
 #ifndef U_CX_AT_CLIENT_H
@@ -42,7 +42,6 @@ struct uCxAtClient;
 
 typedef void (*uUrcCallback_t)(struct uCxAtClient *pClient, void *pTag, char *pLine,
                                size_t lineLength, uint8_t *pBinaryData, size_t binaryDataLen);
-
 
 typedef enum {
     U_CX_BIN_STATE_BINARY_FLUSH,
@@ -113,7 +112,6 @@ typedef struct uCxAtClientConfig {
     void *pContext;
 } uCxAtClientConfig_t;
 
-
 /* ----------------------------------------------------------------
  * VARIABLES
  * -------------------------------------------------------------- */
@@ -160,7 +158,6 @@ void uCxAtClientSetUrcCallback(uCxAtClient_t *pClient, uUrcCallback_t urcCallbac
   * @retval               0 on status OK, -1 on status ERROR, negative value on error.
   */
 int32_t uCxAtClientExecSimpleCmd(uCxAtClient_t *pClient, const char *pCmd);
-
 
 /**
   * @brief  Execute an AT command with params but without any response

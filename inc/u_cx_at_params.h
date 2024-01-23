@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief uConnectXpress AT param parser
+ * @brief u-connectXpress AT param parser
  */
 
 #ifndef U_CX_AT_PARAMS_H

@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief 2nd gen uConnectXpress AT client
+ * @brief 2nd gen u-connectXpress AT client
  */
 
 #include <limits.h>  // For INT_MAX
@@ -125,7 +125,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 char *pEnd;
                 char *pCodeStr = &pLine[6];
                 int code = strtol(pCodeStr, &pEnd, 10);
-                if (isdigit((int)*pCodeStr) && (*pEnd == 0)) {
+                if (isdigit((int) * pCodeStr) && (*pEnd == 0)) {
                     pClient->status = U_CX_EXTENDED_ERROR_OFFSET - code;
                     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Command failed with error code: %d", code);
                     ret = AT_PARSER_GOT_STATUS;
@@ -202,7 +202,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
     const struct uCxAtClientConfig *pConfig = pClient->pConfig;
 
     U_CX_LOG_LINE(U_CX_LOG_CH_RX, "[%d bytes]", binLength);
-    switch(parserRet) {
+    switch (parserRet) {
         case AT_PARSER_GOT_RSP: {
             // We are receiving an AT response with binary data
             // Setup the binary buffer, but don't return AT_PARSER_GOT_RSP
