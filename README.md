@@ -1,7 +1,9 @@
 # ucxclient
-This repo contains an AT command client for talking to 2nd gen uConnectXpress modules such as NORA-W36. The client is written in C with a small RAM footprint.
+This repo contains an AT command client for talking to 2nd gen u-connectXpress modules such as NORA-W36. The client is written in C with a small RAM footprint.
 
-There are two levels of APIs included in this repo; the lower [uAtClient API](#uatclient-api) and the upper [uConnectXpress API](#uconnectxpress-api)
+There are two levels of APIs included in this repo; the lower [uAtClient API](#uatclient-api) and the upper [u-connectXpress API](#u-connectXpress-api)
+
+**Please note: The code in this repo is in experimental status and changes to the APIs are to be expected.**
 
 ## uAtClient API
 This API contains an AT client implementation that handles transmission of AT commands, reception and parsing of AT responses and URCs. You will find the uAtClient API in the [inc/](inc) directory.
@@ -68,10 +70,10 @@ void main(void)
 }
 ```
 
-## uConnectXpress API
-This API is a higher level API that that simplifies communication with a 2nd gen uConnectXpress u-blox module.
+## u-connectXpress API
+This API is a higher level API that that simplifies communication with a 2nd gen u-connectXpress u-blox module.
 Using this API eliminates the need of manually sending AT commands to the module.
-You will find the uConnectXpress API in the [ucx_api/](ucx_api) directory.
+You will find the u-connectXpress API in the [ucx_api/](ucx_api) directory.
 
 ### Example
 ```c

@@ -1,5 +1,5 @@
 /** @file
- * @brief 2nd gen uConnectXpress API
+ * @brief 2nd gen u-connectXpress API
  */
 
 #ifndef U_CX_H
@@ -33,10 +33,10 @@ typedef struct uCxHandle {
  * -------------------------------------------------------------- */
 
 /**
-  * @brief Initialize the uConnectXpress API
+  * @brief Initialize the u-connectXpress API
   *
   * @param[in]  pAtClient:   AT client
-  * @param[out] puCxHandle:  the output uConnectXpress API handle
+  * @param[out] puCxHandle:  the output u-connectXpress API handle
   */
 void uCxInit(uCxAtClient_t *pAtClient, uCxHandle_t *puCxHandle);
 
