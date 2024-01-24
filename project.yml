@@ -86,6 +86,7 @@
   :gcovr:
     :html_medium_threshold: 75
     :html_high_threshold: 90
+    :config_file: scripts/gcov.cfg
 
 :junit_tests_report:
   :artifact_filename: report_junit.xml
@@ -150,6 +151,10 @@
     - "-MG"
     - -MF "${2}"
     - -c "${1}"
+  :post_test:
+    :executable: "scripts/process_coverage.sh"
+    :arguments:
+      - "${1}"
 
 :plugins:
   :load_paths:
@@ -160,6 +165,7 @@
     - gcov
     - xml_tests_report
     - junit_tests_report
+    - command_hooks
 
 :flags:
   :test:
