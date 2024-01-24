@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief 2nd gen u-connectXpress AT client
+ * @brief u-connectXpress AT client
  */
 
 #ifndef U_CX_AT_CLIENT_H
