@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief 2nd gen u-connectXpress AT client
+ * @brief u-connectXpress AT client
  */
 
 #include <limits.h>  // For INT_MAX

@@ -1,5 +1,6 @@
 # ucxclient
-This repo contains an AT command client for talking to 2nd gen u-connectXpress modules such as NORA-W36. The client is written in C with a small RAM footprint.
+This repo contains a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
+* NORA-W36.
 
 There are two levels of APIs included in this repo; the lower [uAtClient API](#uatclient-api) and the upper [u-connectXpress API](#u-connectXpress-api)
 
@@ -71,7 +72,7 @@ void main(void)
 ```
 
 ## u-connectXpress API
-This API is a higher level API that that simplifies communication with a 2nd gen u-connectXpress u-blox module.
+This API is a higher level API that that simplifies communication with new u-connectXpress u-blox modules (only NORA-W36 at the moment).
 Using this API eliminates the need of manually sending AT commands to the module.
 You will find the u-connectXpress API in the [ucx_api/](ucx_api) directory.
 
@@ -97,11 +98,12 @@ void main(void)
   status = uCxSystemSetUartSettings2(&ucxHandle, 115200, 0);
   printf("uCxSystemSetUartSettings2(): %d\n", status);
 
-  // This will send the "AT+USYUS?" AT command and parse the AT reponse params to &settings
+  // This will send the "AT+USYUS?" AT command and parse the AT response params to &settings
   uCxSystemGetUartSettings_t settings;
   status = uCxSystemGetUartSettings(&ucxHandle, &settings);
   printf("uCxSystemGetUartSettings(): %d, baudrate: %d, flow control: %d\n",
          status, settings.baud_rate, settings.flow_control);
+}
 ```
 
 ## Porting and Configuration
@@ -115,7 +117,7 @@ Some things are not required for successfully running the AT client (such as U_C
 | Function | Description |
 | -------- | ----------- |
 | U_CX_PORT_GET_TIME_MS | Must return a 32 bit timestamp in milliseconds.|
-| read()   | Passed as argument to uCxAtClientInit(). Should read data from UART with a timeout in millisec. Must return the number of bytes received, 0 if there is no data available withing the timeout or negative value on error. |
+| read()   | Passed as argument to uCxAtClientInit(). Should read data from UART with a timeout in millisec. Must return the number of bytes received, 0 if there is no data available within the timeout or negative value on error. |
 | write()  | Passed as argument to uCxAtClientInit(). Should write data to the UART. Must return the number of actual bytes written or negative number on error. |
 
 # Disclaimer

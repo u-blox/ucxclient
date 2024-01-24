@@ -1,5 +1,5 @@
 /** @file
- * @brief 2nd gen u-connectXpress API
+ * @brief u-connectXpress API
  */
 
 #include <stddef.h>  // NULL, size_t etc.
