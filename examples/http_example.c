@@ -14,6 +14,19 @@
  * limitations under the License.
  */
 
+/** @file
+ * @brief Linux example for doing HTTP GET request using NORA-W36
+ *
+ * This example will:
+ * - Setup WiFi
+ * - Create a TCP socket and connect to EXAMPLE_URL
+ * - Send "GET /"
+ * - Print server response output
+ *
+ * Execute with following args:
+ * http_example <uart_device> "<wifi_ssid>" "<wifi_psk>"
+ */
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +48,8 @@
 #include "u_cx_wifi.h"
 #include "u_cx_socket.h"
 #include "u_cx_system.h"
+
+#define EXAMPLE_URL "www.google.com"
 
 #define URC_FLAG_NETWORK_UP         (1 << 0)
 #define URC_FLAG_SOCK_CONNECTED     (1 << 1)
@@ -113,7 +128,6 @@ static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
 
 static void socketData(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes)
 {
-    printf("sockData: %d bytes\n", number_bytes);
     signalEvent(URC_FLAG_SOCK_DATA);
 }
 
@@ -278,18 +292,24 @@ int main(int argc, char **argv)
     int32_t sockHandle;
 
     uCxSocketCreate1(&ucxHandle, U_PROTOCOL_TCP, &sockHandle);
-    uCxSocketConnect(&ucxHandle, sockHandle, "www.google.com", 80);
+    uCxSocketConnect(&ucxHandle, sockHandle, EXAMPLE_URL, 80);
     waitEvent(URC_FLAG_SOCK_CONNECTED, 5);
     ret = uCxSocketWrite(&ucxHandle, sockHandle, (uint8_t *)"GET /\r\n", 7);
     printf("uCxSocketWrite() returned %d\n", ret);
     waitEvent(URC_FLAG_SOCK_DATA, 5);
 
     uint8_t rxData[512];
-    ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData), &rxData[0]);
-    printf("uCxSocketRead() returned %d\n", ret);
-    ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData), &rxData[0]);
-    printf("uCxSocketRead() returned %d\n", ret);
-
+    do {
+        ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData) - 1, &rxData[0]);
+        if (ret == 0) {
+            usleep(10 * 1000);
+            ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData) - 1, &rxData[0]);
+        }
+        if (ret > 0) {
+            rxData[ret] = 0;
+            printf("%s", rxData);
+        }
+    } while (ret > 0);
 
     sem_destroy(&gUrcSem);
 }
