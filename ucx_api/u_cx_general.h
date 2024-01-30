@@ -39,6 +39,7 @@ extern "C" {
  * > AT
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxGeneralAttention(uCxHandle_t * puCxHandle);
 
@@ -50,8 +51,12 @@ int32_t uCxGeneralAttention(uCxHandle_t * puCxHandle);
  *
  * @param[in]  puCxHandle:     uCX API handle
  * @param[out] ppManufacturer: Manufacturer ("u-blox").
+ * @return                     true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-bool uCxBeginGeneralGetManufacturerIdentification(uCxHandle_t * puCxHandle, const char ** ppManufacturer);
+bool uCxGeneralGetManufacturerIdentificationBegin(uCxHandle_t * puCxHandle, const char ** ppManufacturer);
 
 /**
  * Read device model.
@@ -61,8 +66,12 @@ bool uCxBeginGeneralGetManufacturerIdentification(uCxHandle_t * puCxHandle, cons
  *
  * @param[in]  puCxHandle:    uCX API handle
  * @param[out] ppDeviceModel: Device model
+ * @return                    true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-bool uCxBeginGeneralGetDeviceModelIdentification(uCxHandle_t * puCxHandle, const char ** ppDeviceModel);
+bool uCxGeneralGetDeviceModelIdentificationBegin(uCxHandle_t * puCxHandle, const char ** ppDeviceModel);
 
 /**
  * Read software version.
@@ -72,8 +81,12 @@ bool uCxBeginGeneralGetDeviceModelIdentification(uCxHandle_t * puCxHandle, const
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] ppVersion:  Version.
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-bool uCxBeginGeneralGetSoftwareVersion(uCxHandle_t * puCxHandle, const char ** ppVersion);
+bool uCxGeneralGetSoftwareVersionBegin(uCxHandle_t * puCxHandle, const char ** ppVersion);
 
 /**
  * Read serial number.
@@ -83,8 +96,12 @@ bool uCxBeginGeneralGetSoftwareVersion(uCxHandle_t * puCxHandle, const char ** p
  *
  * @param[in]  puCxHandle:     uCX API handle
  * @param[out] ppSerialNumber: Serial number.
+ * @return                     true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-bool uCxBeginGeneralGetSerialNumber(uCxHandle_t * puCxHandle, const char ** ppSerialNumber);
+bool uCxGeneralGetSerialNumberBegin(uCxHandle_t * puCxHandle, const char ** ppSerialNumber);
 
 
 #ifdef __cplusplus

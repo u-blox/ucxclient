@@ -41,6 +41,7 @@ extern "C" {
  * @param[in]  puCxHandle:  uCX API handle
  * @param      destination: Destination host to send a ping call to in the form of an IPv4 address (i.e. 192.168.1.10)
  *                          or hostname (i.e. www.u-blox.com).
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsPing1(uCxHandle_t * puCxHandle, const char * destination);
 
@@ -54,6 +55,7 @@ int32_t uCxDiagnosticsPing1(uCxHandle_t * puCxHandle, const char * destination);
  * @param      destination: Destination host to send a ping call to in the form of an IPv4 address (i.e. 192.168.1.10)
  *                          or hostname (i.e. www.u-blox.com).
  * @param      count:       The number of pings (or packets) that will be transmitted. 0 means ping continuously.
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsPing2(uCxHandle_t * puCxHandle, const char * destination, int32_t count);
 
@@ -67,6 +69,7 @@ int32_t uCxDiagnosticsPing2(uCxHandle_t * puCxHandle, const char * destination, 
  * > AT+UDGSP
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsPingStop(uCxHandle_t * puCxHandle);
 
@@ -79,6 +82,7 @@ int32_t uCxDiagnosticsPingStop(uCxHandle_t * puCxHandle);
  * @param[in]  puCxHandle:    uCX API handle
  * @param      iperf_action:  Action
  * @param      protocol_type: IP protocol
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsIperf2(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type);
 
@@ -94,6 +98,7 @@ int32_t uCxDiagnosticsIperf2(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      role:            Role
  * @param      port:            Port
  * @param      report_interval: Report interval
+ * @return                      0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsIperf5(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval);
 
@@ -111,6 +116,7 @@ int32_t uCxDiagnosticsIperf5(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      report_interval: Report interval
  * @param      time_boundary:   Time boundary. Client only. Ignored if role is server
  * @param      ip_addr:         IP address to connect to. Client only. Ignored if role is server
+ * @return                      0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsIperf7(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr);
 
@@ -129,6 +135,7 @@ int32_t uCxDiagnosticsIperf7(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      time_boundary:   Time boundary. Client only. Ignored if role is server
  * @param      ip_addr:         IP address to connect to. Client only. Ignored if role is server
  * @param      length:          Size of packets.
+ * @return                      0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsIperf8(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length);
 
@@ -148,6 +155,7 @@ int32_t uCxDiagnosticsIperf8(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      ip_addr:         IP address to connect to. Client only. Ignored if role is server
  * @param      length:          Size of packets.
  * @param      bandwidth:       Bandwidth to be used for UDP
+ * @return                      0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsIperf9(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth);
 
@@ -169,8 +177,29 @@ int32_t uCxDiagnosticsIperf9(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      length:          Size of packets.
  * @param      bandwidth:       Bandwidth to be used for UDP
  * @param      bidirectional:   Bidirectional flag. Client only. Ignored if role is server
+ * @return                      0 on success, negative value on error.
  */
 int32_t uCxDiagnosticsIperf10(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth, uBidirectional_t bidirectional);
+
+/**
+ * Register PingComplete event callback
+ * 
+ * Event is sent out with a summary of the ping results after all packets are transmitted.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxDiagnosticsRegisterPingComplete(uCxHandle_t * puCxHandle, uUEDGPC_t callback);
+
+/**
+ * Register PingResponse event callback
+ * 
+ * Event is sent out when a single ping has a result.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxDiagnosticsRegisterPingResponse(uCxHandle_t * puCxHandle, uUEDGP_t callback);
 
 
 #ifdef __cplusplus

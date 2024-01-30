@@ -10,6 +10,7 @@
 * csnake is also available on PyPI, at :
 * https://pypi.org/project/csnake
 */
+#include <string.h>
 #include "u_cx_at_client.h"
 #include "u_cx_diagnostics.h"
 
@@ -65,4 +66,14 @@ int32_t uCxDiagnosticsIperf10(uCxHandle_t * puCxHandle, uIperfAction_t iperf_act
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGI=", "ddddddiddd", iperf_action, protocol_type, role, port, report_interval, time_boundary, ip_addr, length, bandwidth, bidirectional, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+void uCxDiagnosticsRegisterPingComplete(uCxHandle_t * puCxHandle, uUEDGPC_t callback)
+{
+    puCxHandle->callbacks.UEDGPC = callback;
+}
+
+void uCxDiagnosticsRegisterPingResponse(uCxHandle_t * puCxHandle, uUEDGP_t callback)
+{
+    puCxHandle->callbacks.UEDGP = callback;
 }

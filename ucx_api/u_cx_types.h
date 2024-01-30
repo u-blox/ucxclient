@@ -33,6 +33,12 @@ typedef enum
 
 typedef enum
 {
+    U_EXTENDED_ERRORS_OFF,   /**< (Factory default) Extended error codes will not be displayed */
+    U_EXTENDED_ERRORS_ON = 1 /**< Extended error code will be displayed on every error */
+} uExtendedErrors_t;
+
+typedef enum
+{
     U_ECHO_ON_OFF,   /**< Module does not echo the characters */
     U_ECHO_ON_ON = 1 /**< (Factory default) Module echoes the characters */
 } uEchoOn_t;
@@ -264,8 +270,8 @@ typedef enum
 
 typedef enum
 {
-    U_TLS_VERSION_NO_TLS,
-    U_TLS_VERSION_TLS1_2 = 1
+    U_TLS_VERSION_NO_TLS,    /**< Disable TLS */
+    U_TLS_VERSION_TLS1_2 = 1 /**< TLS 1.2 or up */
 } uTlsVersion_t;
 
 typedef enum
@@ -308,9 +314,9 @@ typedef enum
 
 typedef enum
 {
-    U_QOS_AT_MOST_ONCE,
-    U_QOS_AT_LEAST_ONCE = 1,
-    U_QOS_EXACTLY_ONCE = 2
+    U_QOS_AT_MOST_ONCE,      /**< At most once */
+    U_QOS_AT_LEAST_ONCE = 1, /**< At least once */
+    U_QOS_EXACTLY_ONCE = 2   /**< Exactly once */
 } uQos_t;
 
 typedef enum
@@ -331,11 +337,6 @@ typedef enum
     U_CERT_TYPECLIENT = 1, /**< Client certificate */
     U_CERT_TYPEKEY = 2     /**< Client private key */
 } uCertType_t;
-
-typedef enum
-{
-    U_REMOVE_ALL_REMOVE_ALL = -1 /**< Remove all certificates */
-} uRemoveAll_t;
 
 typedef enum
 {

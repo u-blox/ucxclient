@@ -55,6 +55,7 @@ typedef struct
  * @param      uuid:       UUID of service. This can be either 16 bit or 128 bit.
  * @param      uuid_len:   length of uuid
  * @param[out] pSerHandle: Handle of the created service.
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxGattServerServiceDefine(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, int32_t * pSerHandle);
 
@@ -88,6 +89,7 @@ int32_t uCxGattServerServiceDefine(uCxHandle_t * puCxHandle, const uint8_t * uui
  *                                       be 244 bytes long.
  * @param      value_len:                length of value
  * @param[out] pGattServerCharDefineRsp: Please see \ref uCxGattServerCharDefine_t
+ * @return                               0 on success, negative value on error.
  */
 int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, uCxGattServerCharDefine_t * pGattServerCharDefineRsp);
 
@@ -123,6 +125,7 @@ int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid,
  * @param      value_len:                length of value
  * @param      max_length:               Maximum length of the characteristic in bytes. The maximum value is 244 bytes.
  * @param[out] pGattServerCharDefineRsp: Please see \ref uCxGattServerCharDefine_t
+ * @return                               0 on success, negative value on error.
  */
 int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t max_length, uCxGattServerCharDefine_t * pGattServerCharDefineRsp);
 
@@ -152,6 +155,7 @@ int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid,
  * @param      security_read:                
  * @param      security_write:               
  * @param[out] pGattServerHostCharDefineRsp: Please see \ref uCxGattServerHostCharDefine_t
+ * @return                                   0 on success, negative value on error.
  */
 int32_t uCxGattServerHostCharDefine(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, uCxGattServerHostCharDefine_t * pGattServerHostCharDefineRsp);
 
@@ -169,6 +173,7 @@ int32_t uCxGattServerHostCharDefine(uCxHandle_t * puCxHandle, const uint8_t * uu
  * @param      value:          Descriptor value. This can be 23 bytes long.
  * @param      value_len:      length of value
  * @param[out] pDescHandle:    Handle of the created descriptor.
+ * @return                     0 on success, negative value on error.
  */
 int32_t uCxGattServerDescriptorDefine4(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t * pDescHandle);
 
@@ -187,6 +192,7 @@ int32_t uCxGattServerDescriptorDefine4(uCxHandle_t * puCxHandle, const uint8_t *
  * @param      value_len:      length of value
  * @param      max_length:     Maximum length of the descriptor in bytes. The maximum value is 23 bytes.
  * @param[out] pDescHandle:    Handle of the created descriptor.
+ * @return                     0 on success, negative value on error.
  */
 int32_t uCxGattServerDescriptorDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t max_length, int32_t * pDescHandle);
 
@@ -197,6 +203,7 @@ int32_t uCxGattServerDescriptorDefine5(uCxHandle_t * puCxHandle, const uint8_t *
  * > AT+UBTGSA
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxGattServerServiceActivate(uCxHandle_t * puCxHandle);
 
@@ -210,8 +217,9 @@ int32_t uCxGattServerServiceActivate(uCxHandle_t * puCxHandle);
  * @param      conn_handle: GAP handle of the connected device.
  * @param      value:       Characteristic value. This can be 244 bytes long.
  * @param      value_len:   length of value
+ * @return                  0 on success, negative value on error.
  */
-int32_t uCxGattServerReadReqRespond(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * value, int32_t value_len);
+int32_t uCxGattServerReadReqResponse(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * value, int32_t value_len);
 
 /**
  * Send notification
@@ -224,6 +232,7 @@ int32_t uCxGattServerReadReqRespond(uCxHandle_t * puCxHandle, int32_t conn_handl
  * @param      char_handle: Characteristic value handle.
  * @param      value:       Characteristic value. The maximum length is the current MTU size - 3.
  * @param      value_len:   length of value
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxGattServerSendNotification(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t char_handle, const uint8_t * value, int32_t value_len);
 
@@ -238,6 +247,7 @@ int32_t uCxGattServerSendNotification(uCxHandle_t * puCxHandle, int32_t conn_han
  * @param      char_handle: Characteristic value handle.
  * @param      value:       Characteristic value. The maximum length is the current MTU size - 3.
  * @param      value_len:   length of value
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxGattServerSendIndication(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t char_handle, const uint8_t * value, int32_t value_len);
 
@@ -251,6 +261,7 @@ int32_t uCxGattServerSendIndication(uCxHandle_t * puCxHandle, int32_t conn_handl
  * @param      attr_handle: Attribute handle.
  * @param      value:       Characterstic value. This can be 244 bytes long.
  * @param      value_len:   length of value
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxGattServerSetAttrValue(uCxHandle_t * puCxHandle, int32_t attr_handle, const uint8_t * value, int32_t value_len);
 
@@ -264,8 +275,9 @@ int32_t uCxGattServerSetAttrValue(uCxHandle_t * puCxHandle, int32_t attr_handle,
  * @param      conn_handle:    GAP handle of connected device.
  * @param      error_code:     Application error code. Allowed value range: 0x80-0x9F
  * @param      error_code_len: length of error_code
+ * @return                     0 on success, negative value on error.
  */
-int32_t uCxGattServerReadReqRespondWithErr(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * error_code, int32_t error_code_len);
+int32_t uCxGattServerReadReqError(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * error_code, int32_t error_code_len);
 
 /**
  * Respond with error code.
@@ -277,8 +289,9 @@ int32_t uCxGattServerReadReqRespondWithErr(uCxHandle_t * puCxHandle, int32_t con
  * @param      conn_handle:    GAP handle of connected device.
  * @param      error_code:     Application error code. Allowed value range: 0x80-0x9F
  * @param      error_code_len: length of error_code
+ * @return                     0 on success, negative value on error.
  */
-int32_t uCxGattServerWriteRespondWithErr(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * error_code, int32_t error_code_len);
+int32_t uCxGattServerWriteReqError(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * error_code, int32_t error_code_len);
 
 /**
  * Respond to write request.
@@ -288,8 +301,9 @@ int32_t uCxGattServerWriteRespondWithErr(uCxHandle_t * puCxHandle, int32_t conn_
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      conn_handle: GAP handle of connected device.
+ * @return                  0 on success, negative value on error.
  */
-int32_t uCxGattServerWriteRespond(uCxHandle_t * puCxHandle, int32_t conn_handle);
+int32_t uCxGattServerWriteReqResponse(uCxHandle_t * puCxHandle, int32_t conn_handle);
 
 /**
  * Send Service Changed Indication.
@@ -301,8 +315,41 @@ int32_t uCxGattServerWriteRespond(uCxHandle_t * puCxHandle, int32_t conn_handle)
  * @param      conn_handle:  GAP handle of connected device.
  * @param      start_handle: Start of the affected attribute handle range.
  * @param      end_handle:   End of the affected attribute handle range.
+ * @return                   0 on success, negative value on error.
  */
 int32_t uCxGattServerSendServiceChangedInd(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t start_handle, int32_t end_handle);
+
+/**
+ * Register Notification event callback
+ * 
+ * Unsolicited response code for GATT Client. This event occurs when a remote client writes to an attribute.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxGattServerRegisterNotification(uCxHandle_t * puCxHandle, uUEBTGCW_t callback);
+
+/**
+ * Register ReadAttribute event callback
+ * 
+ * Unsolicited response code for GATT Server. This event occurs when a remote client reads an attribute over the air. The
+ * event should be responded with AT+UBTGRR.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxGattServerRegisterReadAttribute(uCxHandle_t * puCxHandle, uUEBTGRR_t callback);
+
+/**
+ * Register IndicationAck event callback
+ * 
+ * Unsolicited response code for GATT Server. This event occurs when a remote GATT client acknowledges the receipt of an
+ * indication message sent using +UBTGSI.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxGattServerRegisterIndicationAck(uCxHandle_t * puCxHandle, uUEBTGIC_t callback);
 
 
 #ifdef __cplusplus

@@ -45,7 +45,7 @@ typedef struct
  * ---------------------------------------------------------- */
 
 /**
- * Remove X.509 certificates and private keys.
+ * Remove a single X.509 certificate or private key.
  * 
  * Output AT command:
  * > AT+USECR=<cert_type>,<name>
@@ -53,19 +53,20 @@ typedef struct
  * @param[in]  puCxHandle: uCX API handle
  * @param      cert_type:  
  * @param      name:       
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSecurityCertificateRemove(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name);
 
 /**
- * Remove X.509 certificates and private keys.
+ * Remove all X.509 certificates and private keys.
  * 
  * Output AT command:
- * > AT+USECR=<remove_all>
+ * > AT+USECR
  *
  * @param[in]  puCxHandle: uCX API handle
- * @param      remove_all: 
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxSecurityCertificateRemoveAll(uCxHandle_t * puCxHandle, uRemoveAll_t remove_all);
+int32_t uCxSecurityCertificateRemoveAll(uCxHandle_t * puCxHandle);
 
 /**
  * Write an X.509 certificate or private key using binary transfer.
@@ -78,8 +79,9 @@ int32_t uCxSecurityCertificateRemoveAll(uCxHandle_t * puCxHandle, uRemoveAll_t r
  * @param      name:       
  * @param[in]  pWData:     binary data to write
  * @param      wDataLen:   number of bytes to write
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxSecurityUploadCertificate2(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, uint8_t * pWData, size_t wDataLen);
+int32_t uCxSecurityCertificateUpload2(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, uint8_t * pWData, size_t wDataLen);
 
 /**
  * Write an X.509 certificate or private key using binary transfer.
@@ -95,8 +97,9 @@ int32_t uCxSecurityUploadCertificate2(uCxHandle_t * puCxHandle, uCertType_t cert
  *                         NOTE: Supported Encryption method for private keys is AES only
  * @param[in]  pWData:     binary data to write
  * @param      wDataLen:   number of bytes to write
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxSecurityUploadCertificate3(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const char * password, uint8_t * pWData, size_t wDataLen);
+int32_t uCxSecurityCertificateUpload3(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const char * password, uint8_t * pWData, size_t wDataLen);
 
 /**
  * Read all uploaded certificate names
@@ -105,16 +108,22 @@ int32_t uCxSecurityUploadCertificate3(uCxHandle_t * puCxHandle, uCertType_t cert
  * > AT+USECL?
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-void uCxBeginSecurityListCertificates(uCxHandle_t * puCxHandle);
+void uCxSecurityListCertificatesBegin(uCxHandle_t * puCxHandle);
 
 /**
  * 
  *
  * @param[in]  puCxHandle:                   uCX API handle
  * @param[out] pSecurityListCertificatesRsp: Please see \ref uCxSecurityListCertificates_t
+ * @return                                   true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                           error code in this case).
  */
-bool uCxSecurityListCertificatesGetResponse(uCxHandle_t * puCxHandle, uCxSecurityListCertificates_t * pSecurityListCertificatesRsp);
+bool uCxSecurityListCertificatesGetNext(uCxHandle_t * puCxHandle, uCxSecurityListCertificates_t * pSecurityListCertificatesRsp);
 
 /**
  * Read all TLS extension settings
@@ -123,16 +132,22 @@ bool uCxSecurityListCertificatesGetResponse(uCxHandle_t * puCxHandle, uCxSecurit
  * > AT+USETE?
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-void uCxBeginSecurityListTlsExtensions(uCxHandle_t * puCxHandle);
+void uCxSecurityListTlsExtensionsBegin(uCxHandle_t * puCxHandle);
 
 /**
  * 
  *
  * @param[in]  puCxHandle:                    uCX API handle
  * @param[out] pSecurityListTlsExtensionsRsp: Please see \ref uCxSecurityListTlsExtensions_t
+ * @return                                    true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                            error code in this case).
  */
-bool uCxSecurityListTlsExtensionsGetResponse(uCxHandle_t * puCxHandle, uCxSecurityListTlsExtensions_t * pSecurityListTlsExtensionsRsp);
+bool uCxSecurityListTlsExtensionsGetNext(uCxHandle_t * puCxHandle, uCxSecurityListTlsExtensions_t * pSecurityListTlsExtensionsRsp);
 
 /**
  * Turn Server Name Indication TLS extension on and off on a system level
@@ -142,6 +157,7 @@ bool uCxSecurityListTlsExtensionsGetResponse(uCxHandle_t * puCxHandle, uCxSecuri
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      enabled:    
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSecuritySetTlsServerNameIndication(uCxHandle_t * puCxHandle, uEnabled_t enabled);
 
@@ -153,6 +169,7 @@ int32_t uCxSecuritySetTlsServerNameIndication(uCxHandle_t * puCxHandle, uEnabled
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] pEnabled:   
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSecurityGetTlsServerNameIndication(uCxHandle_t * puCxHandle, uEnabled_t * pEnabled);
 
@@ -164,6 +181,7 @@ int32_t uCxSecurityGetTlsServerNameIndication(uCxHandle_t * puCxHandle, uEnabled
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      enabled:    
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSecuritySetTlsHandshakeFrag(uCxHandle_t * puCxHandle, uEnabled_t enabled);
 
@@ -175,6 +193,7 @@ int32_t uCxSecuritySetTlsHandshakeFrag(uCxHandle_t * puCxHandle, uEnabled_t enab
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] pEnabled:   
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSecurityGetTlsHandshakeFrag(uCxHandle_t * puCxHandle, uEnabled_t * pEnabled);
 

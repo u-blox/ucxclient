@@ -54,6 +54,7 @@ typedef struct
  * > AT+CPWROFF
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemReboot(uCxHandle_t * puCxHandle);
 
@@ -64,6 +65,7 @@ int32_t uCxSystemReboot(uCxHandle_t * puCxHandle);
  * > AT&W
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemStoreConfiguration(uCxHandle_t * puCxHandle);
 
@@ -78,6 +80,7 @@ int32_t uCxSystemStoreConfiguration(uCxHandle_t * puCxHandle);
  * @param[out] pAddress:     MAC address of the interface id. If the address is set to 000000000000, the local address
  *                           will be restored to factory-programmed value. A reboot is required The least significant
  *                           bit of the first octet of the <address> must be 0.
+ * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * pAddress);
 
@@ -92,6 +95,7 @@ int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interf
  * @param      address:      MAC address of the interface id. If the address is set to 000000000000, the local address
  *                           will be restored to factory-programmed value. A reboot is required The least significant
  *                           bit of the first octet of the <address> must be 0.
+ * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemSetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * address);
 
@@ -104,6 +108,7 @@ int32_t uCxSystemSetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interf
  * > AT+USYFR
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemFactoryReset(uCxHandle_t * puCxHandle);
 
@@ -116,6 +121,7 @@ int32_t uCxSystemFactoryReset(uCxHandle_t * puCxHandle);
  * > AT+USYDS
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemDefaultSettings(uCxHandle_t * puCxHandle);
 
@@ -128,6 +134,7 @@ int32_t uCxSystemDefaultSettings(uCxHandle_t * puCxHandle);
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      baud_rate:  Baudrate
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemSetUartSettings1(uCxHandle_t * puCxHandle, int32_t baud_rate);
 
@@ -141,6 +148,7 @@ int32_t uCxSystemSetUartSettings1(uCxHandle_t * puCxHandle, int32_t baud_rate);
  * @param[in]  puCxHandle:   uCX API handle
  * @param      baud_rate:    Baudrate
  * @param      flow_control: 
+ * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemSetUartSettings2(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control);
 
@@ -155,6 +163,7 @@ int32_t uCxSystemSetUartSettings2(uCxHandle_t * puCxHandle, int32_t baud_rate, i
  * @param      baud_rate:            Baudrate
  * @param      flow_control:         
  * @param      change_after_confirm: 
+ * @return                           0 on success, negative value on error.
  */
 int32_t uCxSystemSetUartSettings3(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control, int32_t change_after_confirm);
 
@@ -166,8 +175,45 @@ int32_t uCxSystemSetUartSettings3(uCxHandle_t * puCxHandle, int32_t baud_rate, i
  *
  * @param[in]  puCxHandle:                uCX API handle
  * @param[out] pSystemGetUartSettingsRsp: Please see \ref uCxSystemGetUartSettings_t
+ * @return                                0 on success, negative value on error.
  */
 int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSystemGetUartSettings_t * pSystemGetUartSettingsRsp);
+
+/**
+ * Read the last error code
+ * 
+ * Output AT command:
+ * > AT+USYEC?
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pErrorCode: Error code
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxSystemGetLastErrorCode(uCxHandle_t * puCxHandle, int32_t * pErrorCode);
+
+/**
+ * Enable or disable extended error codes
+ * 
+ * Output AT command:
+ * > AT+USYEE=<extended_errors>
+ *
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      extended_errors: Extended error codes setting
+ * @return                      0 on success, negative value on error.
+ */
+int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t extended_errors);
+
+/**
+ * Read extended error codes enabled/disabled
+ * 
+ * Output AT command:
+ * > AT+USYEE?
+ *
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param[out] pExtendedErrors: Extended error codes setting
+ * @return                      0 on success, negative value on error.
+ */
+int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t * pExtendedErrors);
 
 /**
  * Set echo off
@@ -176,6 +222,7 @@ int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSystemGetUartSetti
  * > ATE0
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemSetEchoOff(uCxHandle_t * puCxHandle);
 
@@ -186,6 +233,7 @@ int32_t uCxSystemSetEchoOff(uCxHandle_t * puCxHandle);
  * > ATE1
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemSetEchoOn(uCxHandle_t * puCxHandle);
 
@@ -197,6 +245,7 @@ int32_t uCxSystemSetEchoOn(uCxHandle_t * puCxHandle);
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] pEchoOn:    
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uEchoOn_t * pEchoOn);
 
@@ -209,6 +258,7 @@ int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uEchoOn_t * pEchoOn);
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      escape_char: Escape character. Factory default: 43
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxSystemSetEscSequenceChar(uCxHandle_t * puCxHandle, int32_t escape_char);
 
@@ -220,6 +270,7 @@ int32_t uCxSystemSetEscSequenceChar(uCxHandle_t * puCxHandle, int32_t escape_cha
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param[out] pEscapeChar: Escape character. Factory default: 43
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxSystemGetEscSequenceChar(uCxHandle_t * puCxHandle, int32_t * pEscapeChar);
 
@@ -237,6 +288,7 @@ int32_t uCxSystemGetEscSequenceChar(uCxHandle_t * puCxHandle, int32_t * pEscapeC
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      line_term:  Command line termination character. Factory default: 13
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemSetLineTermChar(uCxHandle_t * puCxHandle, int32_t line_term);
 
@@ -248,6 +300,7 @@ int32_t uCxSystemSetLineTermChar(uCxHandle_t * puCxHandle, int32_t line_term);
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] pLineTerm:  Command line termination character. Factory default: 13
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemGetLineTermChar(uCxHandle_t * puCxHandle, int32_t * pLineTerm);
 
@@ -261,6 +314,7 @@ int32_t uCxSystemGetLineTermChar(uCxHandle_t * puCxHandle, int32_t * pLineTerm);
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      resp_format: Response format character. Factory default: 10
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxSystemSetRspFormatChar(uCxHandle_t * puCxHandle, int32_t resp_format);
 
@@ -272,6 +326,7 @@ int32_t uCxSystemSetRspFormatChar(uCxHandle_t * puCxHandle, int32_t resp_format)
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param[out] pRespFormat: Response format character. Factory default: 10
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxSystemGetRspFormatChar(uCxHandle_t * puCxHandle, int32_t * pRespFormat);
 
@@ -284,6 +339,7 @@ int32_t uCxSystemGetRspFormatChar(uCxHandle_t * puCxHandle, int32_t * pRespForma
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      backspace:  Backspace character. Factory default: 8
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemSetBackspaceChar(uCxHandle_t * puCxHandle, int32_t backspace);
 
@@ -295,6 +351,7 @@ int32_t uCxSystemSetBackspaceChar(uCxHandle_t * puCxHandle, int32_t backspace);
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] pBackspace: Backspace character. Factory default: 8
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSystemGetBackspaceChar(uCxHandle_t * puCxHandle, int32_t * pBackspace);
 
@@ -310,6 +367,7 @@ int32_t uCxSystemGetBackspaceChar(uCxHandle_t * puCxHandle, int32_t * pBackspace
  * @param      post_timeout:   Minimum time (ms) of no data activity required after the escape sequence is sent. Factory
  *                             default: 1000
  * @param      escape_timeout: Maximum time interval (ms) between escape characters. Factory default: 200
+ * @return                     0 on success, negative value on error.
  */
 int32_t uCxSystemSetEscSequenceSettings(uCxHandle_t * puCxHandle, int32_t pre_timeout, int32_t post_timeout, int32_t escape_timeout);
 
@@ -321,6 +379,7 @@ int32_t uCxSystemSetEscSequenceSettings(uCxHandle_t * puCxHandle, int32_t pre_ti
  *
  * @param[in]  puCxHandle:                       uCX API handle
  * @param[out] pSystemGetEscSequenceSettingsRsp: Please see \ref uCxSystemGetEscSequenceSettings_t
+ * @return                                       0 on success, negative value on error.
  */
 int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSystemGetEscSequenceSettings_t * pSystemGetEscSequenceSettingsRsp);
 

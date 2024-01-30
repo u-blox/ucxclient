@@ -10,6 +10,7 @@
 * csnake is also available on PyPI, at :
 * https://pypi.org/project/csnake
 */
+#include <string.h>
 #include "u_cx_at_client.h"
 #include "u_cx_security.h"
 
@@ -19,31 +20,31 @@ int32_t uCxSecurityCertificateRemove(uCxHandle_t * puCxHandle, uCertType_t cert_
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECR=", "ds", cert_type, name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSecurityCertificateRemoveAll(uCxHandle_t * puCxHandle, uRemoveAll_t remove_all)
+int32_t uCxSecurityCertificateRemoveAll(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECR=", "d", remove_all, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECR", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSecurityUploadCertificate2(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, uint8_t * pWData, size_t wDataLen)
+int32_t uCxSecurityCertificateUpload2(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, uint8_t * pWData, size_t wDataLen)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECUB=", "dsB", cert_type, name, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSecurityUploadCertificate3(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const char * password, uint8_t * pWData, size_t wDataLen)
+int32_t uCxSecurityCertificateUpload3(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const char * password, uint8_t * pWData, size_t wDataLen)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECUB=", "dssB", cert_type, name, password, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-void uCxBeginSecurityListCertificates(uCxHandle_t * puCxHandle)
+void uCxSecurityListCertificatesBegin(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uCxAtClientCmdBeginF(pAtClient, "AT+USECL?", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxSecurityListCertificatesGetResponse(uCxHandle_t * puCxHandle, uCxSecurityListCertificates_t * pSecurityListCertificatesRsp)
+bool uCxSecurityListCertificatesGetNext(uCxHandle_t * puCxHandle, uCxSecurityListCertificates_t * pSecurityListCertificatesRsp)
 {
     int32_t ret;
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -51,13 +52,13 @@ bool uCxSecurityListCertificatesGetResponse(uCxHandle_t * puCxHandle, uCxSecurit
     return ret >= 0;
 }
 
-void uCxBeginSecurityListTlsExtensions(uCxHandle_t * puCxHandle)
+void uCxSecurityListTlsExtensionsBegin(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uCxAtClientCmdBeginF(pAtClient, "AT+USETE?", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxSecurityListTlsExtensionsGetResponse(uCxHandle_t * puCxHandle, uCxSecurityListTlsExtensions_t * pSecurityListTlsExtensionsRsp)
+bool uCxSecurityListTlsExtensionsGetNext(uCxHandle_t * puCxHandle, uCxSecurityListTlsExtensions_t * pSecurityListTlsExtensionsRsp)
 {
     int32_t ret;
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -78,7 +79,7 @@ int32_t uCxSecurityGetTlsServerNameIndication(uCxHandle_t * puCxHandle, uEnabled
     uCxAtClientCmdBeginF(pAtClient, "AT+USETE0?", "", U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USETE0:", NULL, NULL, "d", pEnabled, U_CX_AT_UTIL_PARAM_LAST);
     {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
@@ -100,7 +101,7 @@ int32_t uCxSecurityGetTlsHandshakeFrag(uCxHandle_t * puCxHandle, uEnabled_t * pE
     uCxAtClientCmdBeginF(pAtClient, "AT+USETE1?", "", U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USETE1:", NULL, NULL, "d", pEnabled, U_CX_AT_UTIL_PARAM_LAST);
     {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
