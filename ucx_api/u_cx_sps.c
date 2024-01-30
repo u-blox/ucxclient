@@ -10,6 +10,7 @@
 * csnake is also available on PyPI, at :
 * https://pypi.org/project/csnake
 */
+#include <string.h>
 #include "u_cx_at_client.h"
 #include "u_cx_sps.h"
 
@@ -38,7 +39,7 @@ int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * p
     uCxAtClientCmdBeginF(pAtClient, "AT+USPS?", "", U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPS:", NULL, NULL, "d", pSpsServiceOption, U_CX_AT_UTIL_PARAM_LAST);
     {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
@@ -47,23 +48,7 @@ int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * p
     return ret;
 }
 
-int32_t uCxSpsWriteString(uCxHandle_t * puCxHandle, int32_t conn_handle, const char * string_data, int32_t * pWrittenLength)
-{
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+USPSWS=", "ds", conn_handle, string_data, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSWS:", NULL, NULL, "-d", pWrittenLength, U_CX_AT_UTIL_PARAM_LAST);
-    {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
-        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
-        if (ret >= 0) {
-            ret = endRet;
-        }
-    }
-    return ret;
-}
-
-int32_t uCxSpsWriteBinary(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t * pWData, size_t wDataLen)
+int32_t uCxSpsWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t * pWData, size_t wDataLen)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t written_length;
@@ -71,7 +56,7 @@ int32_t uCxSpsWriteBinary(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t
     uCxAtClientCmdBeginF(pAtClient, "AT+USPSWB=", "dB", conn_handle, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSWB:", NULL, NULL, "-d", &written_length, U_CX_AT_UTIL_PARAM_LAST);
     {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
@@ -96,7 +81,7 @@ int32_t uCxSpsGetDataMode(uCxHandle_t * puCxHandle, uReadMode_t * pReadMode)
     uCxAtClientCmdBeginF(pAtClient, "AT+USPSRM?", "", U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSRM:", NULL, NULL, "d", pReadMode, U_CX_AT_UTIL_PARAM_LAST);
     {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
@@ -105,25 +90,16 @@ int32_t uCxSpsGetDataMode(uCxHandle_t * puCxHandle, uReadMode_t * pReadMode)
     return ret;
 }
 
-bool uCxBeginSpsReadString(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length, uCxSpsReadString_t * pSpsReadStringRsp)
+int32_t uCxSpsRead(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length, uint8_t * pDataBuf)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+USPSRS=", "dd", conn_handle, length, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSRS:", NULL, NULL, "-ds", &pSpsReadStringRsp->length, &pSpsReadStringRsp->string_data, U_CX_AT_UTIL_PARAM_LAST);
-    return ret > 0;
-}
-
-int32_t uCxSpsReadBinary(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length, uint8_t * pRData)
-{
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    uint8_t *pBinBuffer = pRData;
+    uint8_t *pBinBuffer = pDataBuf;
     size_t binBufferLen = length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USPSRB=", "dd", conn_handle, length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSRB:", pBinBuffer, &binBufferLen, "-", U_CX_AT_UTIL_PARAM_LAST);
     {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
@@ -133,4 +109,19 @@ int32_t uCxSpsReadBinary(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t 
         ret = binBufferLen;
     }
     return ret;
+}
+
+void uCxSpsRegisterConnect(uCxHandle_t * puCxHandle, uUESPSC_t callback)
+{
+    puCxHandle->callbacks.UESPSC = callback;
+}
+
+void uCxSpsRegisterDisconnect(uCxHandle_t * puCxHandle, uUESPSDC_t callback)
+{
+    puCxHandle->callbacks.UESPSDC = callback;
+}
+
+void uCxSpsRegisterDataAvailable(uCxHandle_t * puCxHandle, uUESPSDA_t callback)
+{
+    puCxHandle->callbacks.UESPSDA = callback;
 }

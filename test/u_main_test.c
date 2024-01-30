@@ -261,9 +261,9 @@ int main(int argc, char **argv)
     uCxAtClientInit(&config, &client);
 
     uCxInit(&client, &ucxHandle);
-    uCxUrcRegisterWifiStationNetworkUp(&ucxHandle, networkUpUrc);
-    uCxUrcRegisterSocketConnect(&ucxHandle, sockConnected);
-    uCxUrcRegisterSocketDataAvailable(&ucxHandle, socketData);
+    uCxWifiRegisterStationNetworkUp(&ucxHandle, networkUpUrc);
+    uCxSocketRegisterConnect(&ucxHandle, sockConnected);
+    uCxSocketRegisterDataAvailable(&ucxHandle, socketData);
 
     uCxSystemReboot(&ucxHandle);
     sleep(4);
@@ -280,15 +280,15 @@ int main(int argc, char **argv)
     uCxSocketCreate1(&ucxHandle, U_PROTOCOL_TCP, &sockHandle);
     uCxSocketConnect(&ucxHandle, sockHandle, "www.google.com", 80);
     waitEvent(URC_FLAG_SOCK_CONNECTED, 5);
-    ret = uCxSocketWriteBinary(&ucxHandle, sockHandle, (uint8_t *)"GET /\r\n", 7);
-    printf("uCxSocketWriteBinary() returned %d\n", ret);
+    ret = uCxSocketWrite(&ucxHandle, sockHandle, (uint8_t *)"GET /\r\n", 7);
+    printf("uCxSocketWrite() returned %d\n", ret);
     waitEvent(URC_FLAG_SOCK_DATA, 5);
 
     uint8_t rxData[512];
-    ret = uCxSocketReadBinary(&ucxHandle, sockHandle, sizeof(rxData), &rxData[0]);
-    printf("uCxSocketReadBinary() returned %d\n", ret);
-    ret = uCxSocketReadBinary(&ucxHandle, sockHandle, sizeof(rxData), &rxData[0]);
-    printf("uCxSocketReadBinary() returned %d\n", ret);
+    ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData), &rxData[0]);
+    printf("uCxSocketRead() returned %d\n", ret);
+    ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData), &rxData[0]);
+    printf("uCxSocketRead() returned %d\n", ret);
 
 
     sem_destroy(&gUrcSem);

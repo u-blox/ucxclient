@@ -29,12 +29,6 @@ extern "C" {
 
 typedef struct
 {
-    int32_t length;           /**< Number of bytes to read. */
-    const char * string_data; /**< Data encoded as ascii chars. */
-} uCxSocketReadString_t;
-
-typedef struct
-{
     uSockIpAddress_t remote_ip; /**< The ip address of the remote peer. */
     int32_t remote_port;        /**< The port of the remote peer. */
     int32_t length;             /**< Number of bytes to read. */
@@ -68,6 +62,7 @@ typedef struct
  * @param[in]  puCxHandle:    uCX API handle
  * @param      protocol:      IP protocol.
  * @param[out] pSocketHandle: Socket identifier be used for any operation on that socket.
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uProtocol_t protocol, int32_t * pSocketHandle);
 
@@ -81,6 +76,7 @@ int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uProtocol_t protocol, int32_t
  * @param      protocol:                IP protocol.
  * @param      preferred_protocol_type: Selects the IP address type to use.
  * @param[out] pSocketHandle:           Socket identifier be used for any operation on that socket.
+ * @return                              0 on success, negative value on error.
  */
 int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uProtocol_t protocol, uPreferredProtocolType_t preferred_protocol_type, int32_t * pSocketHandle);
 
@@ -93,6 +89,7 @@ int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uProtocol_t protocol, uPrefer
  * @param[in]  puCxHandle:    uCX API handle
  * @param      socket_handle: Socket identifier be used for any operation on that socket.
  * @param      tls_version:   Minimum TLS version to use
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketSetTLS2(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version);
 
@@ -106,6 +103,7 @@ int32_t uCxSocketSetTLS2(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVe
  * @param      socket_handle: Socket identifier be used for any operation on that socket.
  * @param      tls_version:   Minimum TLS version to use
  * @param      ca_name:       Name of the certificate authority (CA) certificate to use
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version, const char * ca_name);
 
@@ -121,6 +119,7 @@ int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVe
  * @param      ca_name:          Name of the certificate authority (CA) certificate to use
  * @param      client_cert_name: Name of the client certificate to use
  * @param      client_key_name:  Name of the private key for client certificate
+ * @return                       0 on success, negative value on error.
  */
 int32_t uCxSocketSetTLS5(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
@@ -134,6 +133,7 @@ int32_t uCxSocketSetTLS5(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVe
  * @param      socket_handle: Socket identifier be used for any operation on that socket.
  * @param      host_address:  Remote host IP address or domain name of the remote host.
  * @param      remote_port:   The port of the remote peer.
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketConnect(uCxHandle_t * puCxHandle, int32_t socket_handle, const char * host_address, int32_t remote_port);
 
@@ -147,6 +147,7 @@ int32_t uCxSocketConnect(uCxHandle_t * puCxHandle, int32_t socket_handle, const 
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      read_mode:  Modes to read data in AT
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSocketSetReadMode(uCxHandle_t * puCxHandle, uReadMode_t read_mode);
 
@@ -158,24 +159,9 @@ int32_t uCxSocketSetReadMode(uCxHandle_t * puCxHandle, uReadMode_t read_mode);
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] pReadMode:  Modes to read data in AT
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSocketGetReadMode(uCxHandle_t * puCxHandle, uReadMode_t * pReadMode);
-
-/**
- * Writes string data to the specified socket.
- * The command can be used for both TCP and UDP sockets after calling ${ref:AT+USOC}. 
- * If socket is not ready to be written, generic negative error will be returned. 
- * Check BSD errno (see BSD standard) by calling ${ref:AT+USOE}.
- * 
- * Output AT command:
- * > AT+USOWS=<socket_handle>,<string_data>
- *
- * @param[in]  puCxHandle:     uCX API handle
- * @param      socket_handle:  Socket identifier be used for any operation on that socket.
- * @param      string_data:    Data encoded as ascii chars.
- * @param[out] pWrittenLength: Data length that was written.
- */
-int32_t uCxSocketWriteString(uCxHandle_t * puCxHandle, int32_t socket_handle, const char * string_data, int32_t * pWrittenLength);
 
 /**
  * Writes binary data to the specified socket in binary mode.
@@ -190,7 +176,7 @@ int32_t uCxSocketWriteString(uCxHandle_t * puCxHandle, int32_t socket_handle, co
  * @return                    Negative value on error. On success:
  *                            Data length that was actually written to socket.
  */
-int32_t uCxSocketWriteBinary(uCxHandle_t * puCxHandle, int32_t socket_handle, uint8_t * pWData, size_t wDataLen);
+int32_t uCxSocketWrite(uCxHandle_t * puCxHandle, int32_t socket_handle, uint8_t * pWData, size_t wDataLen);
 
 /**
  * Closes the specified socket.
@@ -203,22 +189,9 @@ int32_t uCxSocketWriteBinary(uCxHandle_t * puCxHandle, int32_t socket_handle, ui
  *
  * @param[in]  puCxHandle:    uCX API handle
  * @param      socket_handle: Socket identifier to be used for any future operation on that socket.
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketClose(uCxHandle_t * puCxHandle, int32_t socket_handle);
-
-/**
- * Reads the specified amount of data from the specified socket.
- * Note that the data should include no null terminator characters.
- * 
- * Output AT command:
- * > AT+USORS=<socket_handle>,<length>
- *
- * @param[in]  puCxHandle:           uCX API handle
- * @param      socket_handle:        Socket identifier be used for any operation on that socket.
- * @param      length:               Number of bytes to read.
- * @param[out] pSocketReadStringRsp: Please see \ref uCxSocketReadString_t
- */
-bool uCxBeginSocketReadString(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uCxSocketReadString_t * pSocketReadStringRsp);
 
 /**
  * Reads the specified amount of data from the specified socket in binary mode.
@@ -229,9 +202,10 @@ bool uCxBeginSocketReadString(uCxHandle_t * puCxHandle, int32_t socket_handle, i
  * @param[in]  puCxHandle:    uCX API handle
  * @param      socket_handle: Socket identifier be used for any operation on that socket.
  * @param      length:        Number of bytes to read.
- * @param[out] pRData:        Output data buffer
+ * @param[out] pDataBuf:      Output data buffer
+ * @return                    Number of bytes read or negative value on error.
  */
-int32_t uCxSocketReadBinary(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uint8_t * pRData);
+int32_t uCxSocketRead(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uint8_t * pDataBuf);
 
 /**
  * Sets the specified socket in listening mode on the specified port of service, waiting for incoming connections (TCP) or
@@ -244,6 +218,7 @@ int32_t uCxSocketReadBinary(uCxHandle_t * puCxHandle, int32_t socket_handle, int
  * @param      socket_handle: Socket identifier be used for any operation on that socket.
  * @param      port:          Port of service, range 1-65535. Port numbers below 1024 are not recommended since they are
  *                            usually reserved
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketListen(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t port);
 
@@ -257,8 +232,12 @@ int32_t uCxSocketListen(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t
  * @param      socket_handle:         Socket identifier be used for any operation on that socket.
  * @param      length:                Number of bytes to read.
  * @param[out] pSocketReceiveFromRsp: Please see \ref uCxSocketReceiveFrom_t
+ * @return                            true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-bool uCxBeginSocketReceiveFrom(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uCxSocketReceiveFrom_t * pSocketReceiveFromRsp);
+bool uCxSocketReceiveFromBegin(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uCxSocketReceiveFrom_t * pSocketReceiveFromRsp);
 
 /**
  * List status for all created sockets.
@@ -267,16 +246,22 @@ bool uCxBeginSocketReceiveFrom(uCxHandle_t * puCxHandle, int32_t socket_handle, 
  * > AT+USOST?
  *
  * @param[in]  puCxHandle: uCX API handle
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-void uCxBeginSocketListStatus(uCxHandle_t * puCxHandle);
+void uCxSocketListStatusBegin(uCxHandle_t * puCxHandle);
 
 /**
  * 
  *
  * @param[in]  puCxHandle:           uCX API handle
  * @param[out] pSocketListStatusRsp: Please see \ref uCxSocketListStatus_t
+ * @return                           true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                   error code in this case).
  */
-bool uCxSocketListStatusGetResponse(uCxHandle_t * puCxHandle, uCxSocketListStatus_t * pSocketListStatusRsp);
+bool uCxSocketListStatusGetNext(uCxHandle_t * puCxHandle, uCxSocketListStatus_t * pSocketListStatusRsp);
 
 /**
  * Get the status of a specific socket.
@@ -287,6 +272,7 @@ bool uCxSocketListStatusGetResponse(uCxHandle_t * puCxHandle, uCxSocketListStatu
  * @param[in]  puCxHandle:          uCX API handle
  * @param      socket_handle:       Socket identifier be used for any operation on that socket.
  * @param[out] pSocketGetStatusRsp: Please see \ref uCxSocketGetStatus_t
+ * @return                          0 on success, negative value on error.
  */
 int32_t uCxSocketGetStatus(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxSocketGetStatus_t * pSocketGetStatusRsp);
 
@@ -300,6 +286,7 @@ int32_t uCxSocketGetStatus(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxS
  * @param      socket_handle: Socket identifier be used for any operation on that socket.
  * @param      option:        Available options to set
  * @param      value:         See option parameter
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketSetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOption_t option, int32_t value);
 
@@ -313,6 +300,7 @@ int32_t uCxSocketSetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOpt
  * @param      socket_handle: Socket identifier be used for any operation on that socket.
  * @param      option:        Available options to set
  * @param[out] pValue:        See option parameter
+ * @return                    0 on success, negative value on error.
  */
 int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOption_t option, int32_t * pValue);
 
@@ -325,8 +313,51 @@ int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOpt
  * @param[in]  puCxHandle: uCX API handle
  * @param      host_name:  Name to lookup.
  * @param[out] pHostIp:    The ip address of the host.
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSocketGetHostByName(uCxHandle_t * puCxHandle, const char * host_name, uSockIpAddress_t * pHostIp);
+
+/**
+ * Register Connect event callback
+ * 
+ * Event is sent out after a successful connection to a remote peer.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterConnect(uCxHandle_t * puCxHandle, uUESOC_t callback);
+
+/**
+ * Register DataAvailable event callback
+ * 
+ * Data is available to be read. This will be sent ou when using the buffered data mode.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterDataAvailable(uCxHandle_t * puCxHandle, uUESODA_t callback);
+
+/**
+ * Register Closed event callback
+ * 
+ * Event is sent out either when a socket was closed (by the remote or timed out) or when a connection to a remote peer has
+ * failed.
+ * When this event is sent out the socket has been fully closed and the handle can be re-used.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterClosed(uCxHandle_t * puCxHandle, uUESOCL_t callback);
+
+/**
+ * Register IncomingConnection event callback
+ * 
+ * This event is sent when there is an incoming connection for a server socket.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSocketRegisterIncomingConnection(uCxHandle_t * puCxHandle, uUESOIC_t callback);
 
 
 #ifdef __cplusplus

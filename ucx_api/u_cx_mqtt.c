@@ -10,6 +10,7 @@
 * csnake is also available on PyPI, at :
 * https://pypi.org/project/csnake
 */
+#include <string.h>
 #include "u_cx_at_client.h"
 #include "u_cx_mqtt.h"
 
@@ -37,13 +38,13 @@ int32_t uCxMqttSetConnectionParams6(uCxHandle_t * puCxHandle, int32_t mqtt_id, c
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQCP=", "dsdsss", mqtt_id, hostname, port, client_id, username, password, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxBeginMqttGetConnectionParams(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetConnectionParams_t * pMqttGetConnectionParamsRsp)
+bool uCxMqttGetConnectionParamsBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetConnectionParams_t * pMqttGetConnectionParamsRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UMQCP=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQCP:", NULL, NULL, "dsdss", &pMqttGetConnectionParamsRsp->mqtt_id, &pMqttGetConnectionParamsRsp->hostname, &pMqttGetConnectionParamsRsp->port, &pMqttGetConnectionParamsRsp->client_id, &pMqttGetConnectionParamsRsp->username, U_CX_AT_UTIL_PARAM_LAST);
-    return ret > 0;
+    return ret >= 0;
 }
 
 int32_t uCxMqttConnect(uCxHandle_t * puCxHandle, int32_t mqtt_id)
@@ -65,7 +66,7 @@ int32_t uCxMqttGetKeepAlive(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGe
     uCxAtClientCmdBeginF(pAtClient, "AT+UMQKA=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQKA:", NULL, NULL, "dd", &pMqttGetKeepAliveRsp->mqtt_id, &pMqttGetKeepAliveRsp->keep_alive, U_CX_AT_UTIL_PARAM_LAST);
     {
-        // Always call uCxAtClientCmdEnd() even any previous function failed
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
@@ -92,13 +93,13 @@ int32_t uCxMqttSetLastWillAndTestament5(uCxHandle_t * puCxHandle, int32_t mqtt_i
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQLWT=", "dssdd", mqtt_id, topic, will_msg, qos, retain, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxBeginMqttGetLastWillAndTestament(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetLastWillAndTestament_t * pMqttGetLastWillAndTestamentRsp)
+bool uCxMqttGetLastWillAndTestamentBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetLastWillAndTestament_t * pMqttGetLastWillAndTestamentRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UMQLWT=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQLWT", NULL, NULL, "dssdd", &pMqttGetLastWillAndTestamentRsp->mqtt_id, &pMqttGetLastWillAndTestamentRsp->topic, &pMqttGetLastWillAndTestamentRsp->will_msg, &pMqttGetLastWillAndTestamentRsp->qos, &pMqttGetLastWillAndTestamentRsp->retain, U_CX_AT_UTIL_PARAM_LAST);
-    return ret > 0;
+    return ret >= 0;
 }
 
 int32_t uCxMqttSetTlsConfig3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name)
@@ -113,13 +114,13 @@ int32_t uCxMqttSetTlsConfig5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQTLS=", "ddsss", mqtt_id, tls_version, ca_name, client_cert_name, client_key_name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxBeginMqttGetTlsConfig(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTlsConfig_t * pMqttGetTlsConfigRsp)
+bool uCxMqttGetTlsConfigBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTlsConfig_t * pMqttGetTlsConfigRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UMQTLS=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQTLS:", NULL, NULL, "ddsss", &pMqttGetTlsConfigRsp->mqtt_id, &pMqttGetTlsConfigRsp->tls_version, &pMqttGetTlsConfigRsp->ca_name, &pMqttGetTlsConfigRsp->client_cert_name, &pMqttGetTlsConfigRsp->client_key_name, U_CX_AT_UTIL_PARAM_LAST);
-    return ret > 0;
+    return ret >= 0;
 }
 
 int32_t uCxMqttDisconnect(uCxHandle_t * puCxHandle, int32_t mqtt_id)
@@ -128,10 +129,10 @@ int32_t uCxMqttDisconnect(uCxHandle_t * puCxHandle, int32_t mqtt_id)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQDC=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uRetain_t retain, const char * topic, const char * message)
+int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uRetain_t retain, const char * topic, uint8_t * pWData, size_t wDataLen)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQP=", "dddss", mqtt_id, qos, retain, topic, message, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQPB=", "dddsB", mqtt_id, qos, retain, topic, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
 }
 
 int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action, const char * topic)
@@ -146,11 +147,28 @@ int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeA
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQS=", "ddsd", mqtt_id, subscribe_action, topic, qos, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxBeginMqttReadMessage(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttReadMessage_t * pMqttReadMessageRsp)
+int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, size_t dataBufLength, uCxMqttRead_t * pMqttReadRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    uint8_t *pBinBuffer = pDataBuf;
+    size_t binBufferLen = dataBufLength;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UMQR=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQR:", NULL, NULL, "ddsds", &pMqttReadMessageRsp->mqtt_id, &pMqttReadMessageRsp->num_unread, &pMqttReadMessageRsp->topic, &pMqttReadMessageRsp->message_len, &pMqttReadMessageRsp->message, U_CX_AT_UTIL_PARAM_LAST);
-    return ret > 0;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMQRB=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQRB:", pBinBuffer, &binBufferLen, "dsd", &pMqttReadRsp->mqtt_id, &pMqttReadRsp->topic, &pMqttReadRsp->message_len, U_CX_AT_UTIL_PARAM_LAST);
+    return (ret < 0) ? ret : binBufferLen;
+}
+
+void uCxMqttRegisterConnect(uCxHandle_t * puCxHandle, uUEMQC_t callback)
+{
+    puCxHandle->callbacks.UEMQC = callback;
+}
+
+void uCxMqttRegisterDisconnect(uCxHandle_t * puCxHandle, uUEMQDC_t callback)
+{
+    puCxHandle->callbacks.UEMQDC = callback;
+}
+
+void uCxMqttRegisterDataAvailable(uCxHandle_t * puCxHandle, uUEMQDA_t callback)
+{
+    puCxHandle->callbacks.UEMQDA = callback;
 }

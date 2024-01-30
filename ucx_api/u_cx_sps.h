@@ -27,12 +27,6 @@ extern "C" {
  * RESPONSES
  * ---------------------------------------------------------- */
 
-typedef struct
-{
-    int32_t length;           /**< Data bytes to read. */
-    const char * string_data; /**< SPS data in string format */
-} uCxSpsReadString_t;
-
 
 /* ------------------------------------------------------------
  * PUBLIC FUNCTIONS
@@ -46,6 +40,7 @@ typedef struct
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      conn_handle: Connection handle of remote peer
+ * @return                  0 on success, negative value on error.
  */
 int32_t uCxSpsConnect1(uCxHandle_t * puCxHandle, int32_t conn_handle);
 
@@ -58,6 +53,7 @@ int32_t uCxSpsConnect1(uCxHandle_t * puCxHandle, int32_t conn_handle);
  * @param[in]  puCxHandle:   uCX API handle
  * @param      conn_handle:  Connection handle of remote peer
  * @param      flow_control: Flow control: 0 - no flow control, 1 - flow control
+ * @return                   0 on success, negative value on error.
  */
 int32_t uCxSpsConnect2(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t flow_control);
 
@@ -69,6 +65,7 @@ int32_t uCxSpsConnect2(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t fl
  *
  * @param[in]  puCxHandle:         uCX API handle
  * @param      sps_service_option: 
+ * @return                         0 on success, negative value on error.
  */
 int32_t uCxSpsSetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t sps_service_option);
 
@@ -80,21 +77,9 @@ int32_t uCxSpsSetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t sps
  *
  * @param[in]  puCxHandle:        uCX API handle
  * @param[out] pSpsServiceOption: 
+ * @return                        0 on success, negative value on error.
  */
 int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * pSpsServiceOption);
-
-/**
- * Write SPS data
- * 
- * Output AT command:
- * > AT+USPSWS=<conn_handle>,<string_data>
- *
- * @param[in]  puCxHandle:     uCX API handle
- * @param      conn_handle:    Connection handle of remote peer which has SPS enabled
- * @param      string_data:    Data encoded as ascii chars.
- * @param[out] pWrittenLength: Data length that was written.
- */
-int32_t uCxSpsWriteString(uCxHandle_t * puCxHandle, int32_t conn_handle, const char * string_data, int32_t * pWrittenLength);
 
 /**
  * Writes the specified amount of data to the specified SPS connection in binary mode. Max 1000 bytes.
@@ -109,7 +94,7 @@ int32_t uCxSpsWriteString(uCxHandle_t * puCxHandle, int32_t conn_handle, const c
  * @return                  Negative value on error. On success:
  *                          Data length that was written.
  */
-int32_t uCxSpsWriteBinary(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t * pWData, size_t wDataLen);
+int32_t uCxSpsWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t * pWData, size_t wDataLen);
 
 /**
  * Set the mode in which to receive SPS data in AT mode.
@@ -119,6 +104,7 @@ int32_t uCxSpsWriteBinary(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      read_mode:  Modes to read data in AT
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSpsSetDataMode(uCxHandle_t * puCxHandle, uReadMode_t read_mode);
 
@@ -130,22 +116,9 @@ int32_t uCxSpsSetDataMode(uCxHandle_t * puCxHandle, uReadMode_t read_mode);
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param[out] pReadMode:  Modes to read data in AT
+ * @return                 0 on success, negative value on error.
  */
 int32_t uCxSpsGetDataMode(uCxHandle_t * puCxHandle, uReadMode_t * pReadMode);
-
-/**
- * Reads the specified amount of data from given connection handle.
- * Note that the data should include no null terminator characters.
- * 
- * Output AT command:
- * > AT+USPSRS=<conn_handle>,<length>
- *
- * @param[in]  puCxHandle:        uCX API handle
- * @param      conn_handle:       Connection handle of remote peer
- * @param      length:            Data bytes to read.
- * @param[out] pSpsReadStringRsp: Please see \ref uCxSpsReadString_t
- */
-bool uCxBeginSpsReadString(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length, uCxSpsReadString_t * pSpsReadStringRsp);
 
 /**
  * Reads the specified amount of data from the specified connection handle in binary mode.
@@ -156,9 +129,42 @@ bool uCxBeginSpsReadString(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_
  * @param[in]  puCxHandle:  uCX API handle
  * @param      conn_handle: Connection handle of remote peer
  * @param      length:      Data bytes to read.
- * @param[out] pRData:      Output data buffer
+ * @param[out] pDataBuf:    Output data buffer
+ * @return                  Number of bytes read or negative value on error.
  */
-int32_t uCxSpsReadBinary(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length, uint8_t * pRData);
+int32_t uCxSpsRead(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length, uint8_t * pDataBuf);
+
+/**
+ * Register Connect event callback
+ * 
+ * Event response for SPS Connect. Upon a successful SPS connection, conn_handle will contain the connection handle of the
+ * remote peer.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSpsRegisterConnect(uCxHandle_t * puCxHandle, uUESPSC_t callback);
+
+/**
+ * Register Disconnect event callback
+ * 
+ * Event response for SPS Connect. Upon a SPS disconnection, conn_handle will contain the connection handle of the remote
+ * peer.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSpsRegisterDisconnect(uCxHandle_t * puCxHandle, uUESPSDC_t callback);
+
+/**
+ * Register DataAvailable event callback
+ * 
+ * Unsolicited event containing the number of received bytes to read.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxSpsRegisterDataAvailable(uCxHandle_t * puCxHandle, uUESPSDA_t callback);
 
 
 #ifdef __cplusplus
