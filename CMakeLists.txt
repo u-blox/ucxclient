@@ -15,5 +15,5 @@ add_executable(http_example
   ${AT_API_SRC}
 )
 target_link_libraries(http_example PRIVATE Threads::Threads)
-target_compile_options(http_example PRIVATE -Wall -Werror)
+target_compile_options(http_example PRIVATE -Wall -Werror -DU_CX_LOG_DEBUG=1)
 target_include_directories(http_example PUBLIC inc ucx_api examples/port)

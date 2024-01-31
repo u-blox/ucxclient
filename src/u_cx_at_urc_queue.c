@@ -136,7 +136,7 @@ uUrcEntry_t *uCxAtUrcQueueDequeueBegin(uCxAtUrcQueue_t *pUrcQueue)
 {
     uUrcEntry_t *pEntry = NULL;
 
-    if (U_CX_MUTEX_TRY_LOCK(pUrcQueue->dequeueMutex) == 0) {
+    if (U_CX_MUTEX_TRY_LOCK(pUrcQueue->dequeueMutex, 0) == 0) {
         U_CX_AT_PORT_ASSERT(pUrcQueue->pDequeueEntry == NULL);
 
         U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);

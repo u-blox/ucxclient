@@ -171,6 +171,22 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
     return (int32_t)read(uartFd, pData, length);
 }
 
+// Create a time structure by adding the specified number of
+// milliseconds to the current clock time.
+static void msToTimeSpec(int32_t ms, struct timespec *pTime, bool fromNow)
+{
+    struct timespec now = {0};
+    if (fromNow) {
+        timespec_get(&now, TIME_UTC);
+    }
+    pTime->tv_sec = now.tv_sec + ms / 1000;
+    pTime->tv_nsec = now.tv_nsec + (ms % 1000) * 1000000;
+    if (pTime->tv_nsec >= 1000000000) {
+        pTime->tv_nsec -= 1000000000;
+        pTime->tv_sec++;
+    }
+}
+
 /* ----------------------------------------------------------------
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
@@ -250,4 +266,18 @@ void uPortAtClose(uCxAtClient_t *pClient)
 
     close(pCtx->uartFd);
     pCtx->uartFd = -1;
+}
+
+int32_t uPortMutexTryLock(pthread_mutex_t *pMutex, uint32_t timeoutMs)
+{
+    int32_t ret;
+    if (timeoutMs == 0) {
+        ret = pthread_mutex_trylock(pMutex);
+    } else {
+        struct timespec time;
+        msToTimeSpec(timeoutMs, &time, true);
+        ret = pthread_mutex_timedlock(pMutex, &time);
+    }
+
+    return ret;
 }

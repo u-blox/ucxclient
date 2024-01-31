@@ -30,20 +30,11 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-#include <fcntl.h>
-#include <termios.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <semaphore.h>
-#include <sys/poll.h>
-#include <sys/ioctl.h>
-#include <sys/param.h>
-#include <errno.h>
 
 #include "u_port.h"
 #include "u_cx_at_client.h"
 #include "u_cx_at_util.h"
+#include "u_cx_log.h"
 #include "u_cx.h"
 #include "u_cx_urc.h"
 #include "u_cx_wifi.h"
@@ -72,52 +63,65 @@
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
 
-static sem_t gUrcSem;
+static U_CX_MUTEX_HANDLE gUrcSem;
 static volatile uint32_t gUrcEventFlags = 0;
-uCxHandle_t ucxHandle;
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-static bool waitEvent(uint32_t evtFlag, uint32_t timeout_s)
+static bool waitEvent(uint32_t evtFlag, uint32_t timeoutS)
 {
-    int ret;
-    struct timespec ts;
-    struct timespec start_ts;
-    clock_gettime(CLOCK_REALTIME, &start_ts);
+    int32_t timeoutMs = timeoutS * 1000;
+    int32_t startTime = U_CX_PORT_GET_TIME_MS();
+
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%d, %d)", evtFlag, timeoutS);
     do {
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 1;
-        ret = sem_timedwait(&gUrcSem, &ts);
-        if ((ret == 0) && (gUrcEventFlags & evtFlag)) {
+        U_CX_MUTEX_TRY_LOCK(gUrcSem, 100);
+        if (gUrcEventFlags & evtFlag) {
             return true;
         }
-    } while ((ret = -1) && (errno == ETIMEDOUT));
+    } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
+
+    U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
     return false;
 }
 
 static void signalEvent(uint32_t evtFlag)
 {
     gUrcEventFlags |= evtFlag;
-    sem_post(&gUrcSem);
+    U_CX_MUTEX_UNLOCK(gUrcSem);
 }
 
 static void networkUpUrc(struct uCxHandle *puCxHandle)
 {
-    printf("networkUpUrc\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "networkUpUrc");
     signalEvent(URC_FLAG_NETWORK_UP);
 }
 
 static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
 {
-    printf("sockConnected\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "sockConnected");
     signalEvent(URC_FLAG_SOCK_CONNECTED);
 }
 
 static void socketData(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes)
 {
     signalEvent(URC_FLAG_SOCK_DATA);
+}
+
+static void sleepMs(int32_t timeMs)
+{
+    // Hack to implement sleep using a mutex
+    static bool sleepMutexInit = false;
+    static U_CX_MUTEX_HANDLE sleepMutex;
+    if (!sleepMutexInit) {
+        U_CX_MUTEX_CREATE(sleepMutex);
+        U_CX_MUTEX_LOCK(sleepMutex);
+        sleepMutexInit = true;
+    }
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "sleepMs(%d)", timeMs);
+    U_CX_MUTEX_TRY_LOCK(sleepMutex, timeMs);
 }
 
 /* ----------------------------------------------------------------
@@ -127,6 +131,7 @@ static void socketData(struct uCxHandle *puCxHandle, int32_t socket_handle, int3
 int main(int argc, char **argv)
 {
     uCxAtClient_t client;
+    uCxHandle_t ucxHandle;
 
     if (argc != 4) {
         fprintf(stderr, "Invalid arguments\n");
@@ -137,7 +142,7 @@ int main(int argc, char **argv)
     const char *pSsid = argv[2];
     const char *pWpaPsk = argv[3];
 
-    sem_init(&gUrcSem, 0, 0);
+    U_CX_MUTEX_CREATE(gUrcSem);
 
     uPortAtInit(&client);
     if (!uPortAtOpen(&client, pDevice, 115200, true)) {
@@ -150,7 +155,7 @@ int main(int argc, char **argv)
     uCxSocketRegisterDataAvailable(&ucxHandle, socketData);
 
     uCxSystemReboot(&ucxHandle);
-    sleep(4);
+    sleepMs(4000);
     uCxSystemSetEchoOff(&ucxHandle);
 
     uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WPA_THRESHOLD_WPA2);
@@ -165,14 +170,14 @@ int main(int argc, char **argv)
     uCxSocketConnect(&ucxHandle, sockHandle, EXAMPLE_URL, 80);
     waitEvent(URC_FLAG_SOCK_CONNECTED, 5);
     ret = uCxSocketWrite(&ucxHandle, sockHandle, (uint8_t *)"GET /\r\n", 7);
-    printf("uCxSocketWrite() returned %d\n", ret);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "uCxSocketWrite() returned %d", ret);
     waitEvent(URC_FLAG_SOCK_DATA, 5);
 
     uint8_t rxData[512];
     do {
         ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData) - 1, &rxData[0]);
         if (ret == 0) {
-            usleep(10 * 1000);
+            sleepMs(10);
             ret = uCxSocketRead(&ucxHandle, sockHandle, sizeof(rxData) - 1, &rxData[0]);
         }
         if (ret > 0) {
@@ -183,5 +188,5 @@ int main(int argc, char **argv)
 
     uPortAtClose(&client);
 
-    sem_destroy(&gUrcSem);
+    U_CX_MUTEX_DELETE(gUrcSem);
 }
