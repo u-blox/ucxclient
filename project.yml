@@ -33,23 +33,28 @@
 :paths:
   :test:
     - +:test/**
+    - -:test/support
   :source:
     - src/**
     - inc/**
+    - examples/port/**
+  :support:
+    - test/support
   :libraries: []
 
 :defines:
   # in order to add common defines:
   #  1) remove the trailing [] from the :common: section
   #  2) add entries to the :common: section (e.g. :test: has TEST defined)
-  :common: &common_defines []
+  :common: &common_defines
+    - TEST
+    - U_CX_AT_CONFIG_FILE=\"u_cx_at_test_config.h\"
   :test:
     - *common_defines
-    - TEST
   :test_preprocess:
     - *common_defines
-    - TEST
   :test_u_cx_at_client_no_urc_queue:
+    - *common_defines
     - U_CX_USE_URC_QUEUE=0
 
 :cmock:

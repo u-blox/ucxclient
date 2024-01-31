@@ -36,6 +36,7 @@
 #define U_CX_LOG_CH_RX     U_CX_LOG_AT,        ANSI_MAG "[AT RX]"
 #define U_CX_LOG_CH_DBG    U_CX_LOG_DEBUG,     ANSI_RST "[DBG  ]"
 #define U_CX_LOG_CH_WARN   U_CX_LOG_WARNING,   ANSI_YEL "[WARN ]"
+#define U_CX_LOG_CH_ERROR  U_CX_LOG_ERROR,     ANSI_RED "[ERROR]"
 
 /* Simple line logging printf style (\n will be added automatically) */
 #define U_CX_LOG_LINE(logCh, format, ...)  _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__)
@@ -45,21 +46,22 @@
 #define U_CX_LOG(logCh, format, ...)       _U_CX_LOG(logCh, format, ##__VA_ARGS__)
 #define U_CX_LOG_END(logCh)                _U_CX_LOG(logCh, ANSI_RST "\n")
 
-
-
+/* ANSI color escape codes */
 #if U_CX_LOG_USE_ANSI_COLOR
-# define ANSI_BLU "\e[0;34m"
-# define ANSI_CYN "\e[0;36m"
+# define ANSI_RED "\e[0;31m"
 # define ANSI_GRN "\e[0;32m"
-# define ANSI_MAG "\e[0;35m"
 # define ANSI_YEL "\e[0;33m"
+# define ANSI_BLU "\e[0;34m"
+# define ANSI_MAG "\e[0;35m"
+# define ANSI_CYN "\e[0;36m"
 # define ANSI_RST "\e[0m"
 #else
-# define ANSI_BLU
-# define ANSI_CYN
+# define ANSI_RED
 # define ANSI_GRN
-# define ANSI_MAG
 # define ANSI_YEL
+# define ANSI_BLU
+# define ANSI_MAG
+# define ANSI_CYN
 # define ANSI_RST
 #endif
 

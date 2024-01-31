@@ -16,6 +16,7 @@
 
 #include <string.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include "unity.h"
 #include "mock_u_cx_log.h"
