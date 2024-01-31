@@ -80,6 +80,11 @@ extern int32_t uPortGetTickTimeMs(void);
 # define U_CX_LOG_AT 1
 #endif
 
+/* Configuration for enabling logging of error messages.*/
+#ifndef U_CX_LOG_ERROR
+# define U_CX_LOG_ERROR 1
+#endif
+
 /* Configuration for enabling logging of warning messages.*/
 #ifndef U_CX_LOG_WARNING
 # define U_CX_LOG_WARNING 1
