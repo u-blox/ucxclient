@@ -58,10 +58,16 @@
  */
 #endif
 
-/* Porting layer for getting time in ms.*/
+/* Porting layer for getting time in millisec.*/
 #ifndef U_CX_PORT_GET_TIME_MS
 extern int32_t uPortGetTickTimeMs(void);
 # define U_CX_PORT_GET_TIME_MS()   uPortGetTickTimeMs()
+#endif
+
+
+/* Default AT command timeout in millisec.*/
+#ifndef U_CX_DEFAULT_CMD_TIMEOUT_MS
+# define U_CX_DEFAULT_CMD_TIMEOUT_MS    10000
 #endif
 
 /* Configuration for enabling URC queue

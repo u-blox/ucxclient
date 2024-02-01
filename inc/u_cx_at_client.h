@@ -71,6 +71,7 @@ typedef struct uCxAtClient {
     volatile bool executingCmd;
     int32_t cmdStartTime;
     int32_t cmdTimeout;
+    int32_t cmdTimeoutLastPerm;
     const char *pExpectedRsp;
     size_t pExpectedRspLen;
     char *pRspParams;
@@ -310,5 +311,21 @@ void uCxAtClientHandleRx(uCxAtClient_t *pClient);
   * @retval                IO error code.
   */
 int32_t uCxAtGetLastIoError(uCxAtClient_t *pClient);
+
+/**
+  * @brief  Set command timeout
+  *
+  *
+  * @param[in]  pClient:   the AT client from uCxAtClientInit().
+  * @param      timeoutMs: timeout in millisec.
+  * @param      permanent: when set to true the timeout will be applied
+  *                        permanently for all succeeding AT commands.
+  *                        When set to false it will be used only for next
+  *                        AT command. After that the timeout will be restored
+  *                        to last permanent timeout (or default timeout).
+  * @retval                the command timeout before call.
+  */
+int32_t uCxAtClientSetCommandTimeout(uCxAtClient_t *pClient, int32_t timeoutMs,
+                                     bool permanent);
 
 #endif // U_CX_AT_CLIENT_H
