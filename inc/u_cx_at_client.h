@@ -165,10 +165,21 @@ int32_t uCxAtClientExecSimpleCmd(uCxAtClient_t *pClient, const char *pCmd);
   * This function uses a param format string (somewhat similar to printf).
   * Defined format characters are:
   *
-  * Char   Type          Desc
+  * Char   Type                 Desc
   * ---------------------------------------------
-  * 'd'    int32_t       Integer
-  * 's'    const char *  Null terminated string
+  * 'd'    int32_t              Integer
+  * 's'    const char *         Null terminated string
+  * 'i'    uSockIpAddress_t *   IP address
+  * 'm'    uMacAddress_t *      MAC address
+  * 'b'    uBtLeAddress_t *     Bluetooth address
+  * 'h'    uint8_t *, int32_t   Binary data serialized as a hex string.
+  *                             Note: Takes two args:
+  *                             - uint8_t *pData
+  *                             - int32_t dataLength
+  * 'B'    uint8_t *, int32_t   Binary data using binary transfer.
+  *                             Note: Takes two args:
+  *                             - uint8_t *pData
+  *                             - int32_t dataLength
   *
   * Each AT parameter is then added as an variadic argument to this function.
   * NOTE: The variadic parameters must always be terminated with U_CX_AT_UTIL_PARAM_LAST
@@ -290,7 +301,7 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient);
 void uCxAtClientHandleRx(uCxAtClient_t *pClient);
 
 /**
-  * @brief  Handle AT RX data
+  * @brief  Get last I/O error code
   *
   * If the AT client returns U_CX_ERROR_IO you can call this
   * function to get the underlying IO error code.
