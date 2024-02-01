@@ -310,7 +310,7 @@ void uCxAtClientHandleRx(uCxAtClient_t *pClient);
   * @param[in]  pClient:   the AT client from uCxAtClientInit().
   * @retval                IO error code.
   */
-int32_t uCxAtGetLastIoError(uCxAtClient_t *pClient);
+int32_t uCxAtClientGetLastIoError(uCxAtClient_t *pClient);
 
 /**
   * @brief  Set command timeout

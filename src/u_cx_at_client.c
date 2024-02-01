@@ -683,7 +683,7 @@ void uCxAtClientHandleRx(uCxAtClient_t *pClient)
 #endif
 }
 
-int32_t uCxAtGetLastIoError(uCxAtClient_t *pClient)
+int32_t uCxAtClientGetLastIoError(uCxAtClient_t *pClient)
 {
     return pClient->lastIoError;
 }

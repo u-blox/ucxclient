@@ -262,7 +262,7 @@ void test_uCxAtClientExecSimpleCmdF_withReadError_expectIoError(void)
 {
     gRxIoErrorCode = -1234;
     TEST_ASSERT_EQUAL(U_CX_ERROR_IO, uCxAtClientExecSimpleCmdF(&gClient, "DUMMY", ""));
-    TEST_ASSERT_EQUAL(-1234, uCxAtGetLastIoError(&gClient));
+    TEST_ASSERT_EQUAL(-1234, uCxAtClientGetLastIoError(&gClient));
 }
 
 void test_uCxAtClientCmdGetRspParamLine_withTimeout_expectNull(void)
