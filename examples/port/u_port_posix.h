@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief Example port layer header
+ * @brief Posix port example
  */
 
 #ifndef U_PORT_POSIX_H

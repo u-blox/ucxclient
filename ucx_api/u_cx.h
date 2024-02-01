@@ -41,9 +41,9 @@ typedef struct uCxHandle {
 void uCxInit(uCxAtClient_t *pAtClient, uCxHandle_t *puCxHandle);
 
 /**
-  * @brief  End AT command started with any of the uCxBeginXXX() functions
+  * @brief  End AT command started with any of the uCxXXXBegin() functions
   *
-  * All functions named uCxBeginXXX() must be terminated by calling this function.
+  * All functions named uCxXXXBegin() must be terminated by calling this function.
   * The function will wait for the AT status ("OK" or "ERROR").
   *
   * @param[in]  pClient:   the handle from uCxInit().

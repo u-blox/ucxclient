@@ -111,7 +111,7 @@ bool uCxAtUtilBinaryToHex(const uint8_t *pData, size_t dataLen, char *pBuf, size
 
 /**
  * Same as uStringBinaryToHex() but outputs the hexdata in reverse byte order
- * i.e. [0x01,0x02,0x03] will be outputed as "030201"
+ * i.e. [0x01,0x02,0x03] will be output as "030201"
  *
  * @param[in]  pData binary data to convert
  * @param      dataLen the number of bytes in pData to convert
@@ -148,10 +148,14 @@ char *uCxAtUtilFindParamEnd(char *pStr);
   * This function uses a param format string (somewhat similar to scanf).
   * Defined format characters are:
   *
-  * Char   Type           Desc
+  * Char   Type                 Desc
   * ---------------------------------------------
-  * 'd'    int32_t *      Integer
-  * 's'    const char **  Null terminated string
+  * 'd'    int32_t *            Integer
+  * 's'    const char **        Null terminated string
+  * 'i'    uSockIpAddress_t *   IP address
+  * 'm'    uMacAddress_t *      MAC address
+  * 'b'    uBtLeAddress_t *     Bluetooth address
+  * 'h'    uByteArray_t *       Deserialize hex string to binary.
   *
   * Each AT parameter pointer is then added as an variadic argument to this function.
   * NOTE: The variadic parameters must always be terminated with U_CX_AT_UTIL_PARAM_LAST
