@@ -75,10 +75,26 @@ static uCxAtClientConfig_t gClientConfig = {
 };
 
 static uCxAtClient_t gClient;
+static int32_t *gPTickSequence;
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
+
+int32_t uPortGetTickTimeMs_CALLBACK(int cmock_num_calls)
+{
+    // Helper function for returning a sequence of ticks
+    // uPortGetTickTimeMs_ExpectAndReturn() cannot be used in some cases as
+    // CMock will only check the number of calls after the complete test is
+    // completed.
+    int32_t ret;
+    (void)cmock_num_calls;
+    TEST_ASSERT_NOT_NULL(gPTickSequence);
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(-1, *gPTickSequence, "Timeout not triggered");
+    ret = *gPTickSequence;
+    gPTickSequence++;
+    return ret;
+}
 
 static int32_t write(uCxAtClient_t *pClient, void *pStreamHandle,
                      const void *pData, size_t length)
@@ -145,6 +161,7 @@ void setUp(void)
     gPRxDataPtr = NULL;
     gRxDataLen = -1;
     gRxIoErrorCode = 0;
+    gPTickSequence = NULL;
 
     uPortGetTickTimeMs_IgnoreAndReturn(0);
 }
@@ -361,4 +378,57 @@ void test_uCxAtClientHandleRx_withBinUrc_expectUrcCallback(void)
 
     uCxAtClientSetUrcCallback(&gClient, urcCallback, NULL);
     uCxAtClientHandleRx(&gClient);
+}
+
+void test_uCxAtClientSetCommandTimeout_withNonPermanentTimeout(void)
+{
+    gRxDataLen = 0;
+    int32_t newTimeout = U_CX_DEFAULT_CMD_TIMEOUT_MS + 5000;
+
+    uPortGetTickTimeMs_StopIgnore();
+    uPortGetTickTimeMs_StubWithCallback(uPortGetTickTimeMs_CALLBACK);
+
+    // Set a new timeout B that is longer than default timeout A
+    // Make sure it doesn't timeout between A and B, only after B
+    int32_t ret = uCxAtClientSetCommandTimeout(&gClient, newTimeout, false);
+    TEST_ASSERT_EQUAL(U_CX_DEFAULT_CMD_TIMEOUT_MS, ret);
+    gPTickSequence = (int32_t []) {
+        0, U_CX_DEFAULT_CMD_TIMEOUT_MS + 10, newTimeout + 10, -1
+    };
+    TEST_ASSERT_EQUAL(U_CX_ERROR_CMD_TIMEOUT, uCxAtClientExecSimpleCmdF(&gClient, "DUMMY", ""));
+    TEST_ASSERT_EQUAL_MESSAGE(-1, *gPTickSequence, "Timed out too early");
+
+    // Now the timeout should be back at default timeout again, so make sure it is
+    gPTickSequence = (int32_t []) {
+        0, U_CX_DEFAULT_CMD_TIMEOUT_MS + 10, -1
+    };
+    TEST_ASSERT_EQUAL(U_CX_ERROR_CMD_TIMEOUT, uCxAtClientExecSimpleCmdF(&gClient, "DUMMY", ""));
+    TEST_ASSERT_EQUAL_MESSAGE(-1, *gPTickSequence, "Timed out too early");
+}
+
+void test_uCxAtClientSetCommandTimeout_withPermanentTimeout(void)
+{
+    gRxDataLen = 0;
+    int32_t newTimeout = U_CX_DEFAULT_CMD_TIMEOUT_MS + 5000;
+
+    uPortGetTickTimeMs_StopIgnore();
+    uPortGetTickTimeMs_StubWithCallback(uPortGetTickTimeMs_CALLBACK);
+
+    // Set a new timeout B that is longer than default timeout A
+    // Make sure it doesn't timeout between A and B, only after B
+    int32_t ret = uCxAtClientSetCommandTimeout(&gClient, newTimeout, true);
+    TEST_ASSERT_EQUAL(U_CX_DEFAULT_CMD_TIMEOUT_MS, ret);
+    gPTickSequence = (int32_t []) {
+        0, U_CX_DEFAULT_CMD_TIMEOUT_MS + 10, newTimeout + 10, -1
+    };
+    TEST_ASSERT_EQUAL(U_CX_ERROR_CMD_TIMEOUT, uCxAtClientExecSimpleCmdF(&gClient, "DUMMY", ""));
+    TEST_ASSERT_EQUAL_MESSAGE(-1, *gPTickSequence, "Timed out too early");
+
+    // Since we did set the timeout with permanent=true the new timeout
+    // should still be set.
+    gPTickSequence = (int32_t []) {
+        0, U_CX_DEFAULT_CMD_TIMEOUT_MS + 10, newTimeout + 10, -1
+    };
+    TEST_ASSERT_EQUAL(U_CX_ERROR_CMD_TIMEOUT, uCxAtClientExecSimpleCmdF(&gClient, "DUMMY", ""));
+    TEST_ASSERT_EQUAL_MESSAGE(-1, *gPTickSequence, "Timed out too early");
 }

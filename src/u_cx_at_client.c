@@ -416,7 +416,6 @@ static void cmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *pPar
     pClient->executingCmd = true;
     pClient->status = NO_STATUS;
     pClient->cmdStartTime = U_CX_PORT_GET_TIME_MS();
-    pClient->cmdTimeout = 10000; // Hard coded for now. TODO: Should be function argument
     uCxAtClientSendCmdVaList(pClient, pCmd, pParamFmt, args);
 }
 
@@ -435,6 +434,9 @@ static int32_t cmdEnd(uCxAtClient_t *pClient)
 
     // cmdEnd() must be preceeded by a cmdBeginF()
     U_CX_AT_PORT_ASSERT(pClient->executingCmd);
+
+    // Restore command timeout to last permanent timeout
+    pClient->cmdTimeout = pClient->cmdTimeoutLastPerm;
 
     pClient->executingCmd = false;
 
@@ -469,6 +471,9 @@ void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
 {
     memset(pClient, 0, sizeof(uCxAtClient_t));
     pClient->pConfig = pConfig;
+    pClient->cmdTimeoutLastPerm = U_CX_DEFAULT_CMD_TIMEOUT_MS;
+    pClient->cmdTimeout = pClient->cmdTimeoutLastPerm;
+
 #if U_CX_USE_URC_QUEUE == 1
     uCxAtUrcQueueInit(&pClient->urcQueue, pConfig->pUrcBuffer, pConfig->urcBufferLen);
 #endif
@@ -681,4 +686,15 @@ void uCxAtClientHandleRx(uCxAtClient_t *pClient)
 int32_t uCxAtGetLastIoError(uCxAtClient_t *pClient)
 {
     return pClient->lastIoError;
+}
+
+int32_t uCxAtClientSetCommandTimeout(uCxAtClient_t *pClient, int32_t timeoutMs,
+                                  bool permanent)
+{
+    int32_t ret = pClient->cmdTimeout;
+    pClient->cmdTimeout = timeoutMs;
+    if (permanent) {
+        pClient->cmdTimeoutLastPerm = timeoutMs;
+    }
+    return ret;
 }
