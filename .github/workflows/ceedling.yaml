@@ -1,4 +1,4 @@
-name: Ceedling Unit Test
+name: Ceedling Unit Tests
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ master ]
 
 jobs:
-  test:
+  run_tests:
 
     runs-on: ubuntu-latest
 
@@ -22,3 +22,10 @@ jobs:
     - name: Run Unit Tests
       run: |
         ceedling test:all
+    - name: Process Test results
+      uses: dorny/test-reporter@v1
+      if: always() # always run even if the previous step fails
+      with:
+        name: Unit Test Results
+        path: 'build/artifacts/test/report_junit.xml'
+        reporter: jest-junit
