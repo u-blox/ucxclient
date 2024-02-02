@@ -2,7 +2,7 @@ name: Ceedling Unit Tests
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, anan_test ]
   pull_request:
     branches: [ master ]
 
@@ -10,7 +10,9 @@ jobs:
   run_tests:
 
     runs-on: ubuntu-latest
-
+    container:
+      image: ghcr.io/zephyrproject-rtos/ci:v0.26.6
+      options: '--entrypoint /bin/bash'
     steps:
     - uses: actions/checkout@v2
     - name: Set up Ruby
