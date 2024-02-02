@@ -1,0 +1,5 @@
+common:
+  harness: ztest
+tests:
+  ucxclient.port:
+    platform_allow: qemu_x86
