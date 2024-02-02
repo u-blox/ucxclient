@@ -48,13 +48,13 @@
 
 /* ANSI color escape codes */
 #if U_CX_LOG_USE_ANSI_COLOR
-# define ANSI_RED "\e[0;31m"
-# define ANSI_GRN "\e[0;32m"
-# define ANSI_YEL "\e[0;33m"
-# define ANSI_BLU "\e[0;34m"
-# define ANSI_MAG "\e[0;35m"
-# define ANSI_CYN "\e[0;36m"
-# define ANSI_RST "\e[0m"
+# define ANSI_RED "\33[0;31m"
+# define ANSI_GRN "\33[0;32m"
+# define ANSI_YEL "\33[0;33m"
+# define ANSI_BLU "\33[0;34m"
+# define ANSI_MAG "\33[0;35m"
+# define ANSI_CYN "\33[0;36m"
+# define ANSI_RST "\33[0m"
 #else
 # define ANSI_RED
 # define ANSI_GRN
