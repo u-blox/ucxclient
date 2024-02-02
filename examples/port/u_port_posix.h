@@ -29,6 +29,8 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
+#define U_PORT_POSIX
+
 #define U_CX_MUTEX_HANDLE                     pthread_mutex_t
 #define U_CX_MUTEX_CREATE(mutex)              pthread_mutex_init(&mutex, NULL)
 #define U_CX_MUTEX_DELETE(mutex)              pthread_mutex_destroy(&mutex)
