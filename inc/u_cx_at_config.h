@@ -20,6 +20,25 @@
 #ifndef U_CX_AT_CONFIG_H
 #define U_CX_AT_CONFIG_H
 
+#ifdef __ZEPHYR__
+# include "u_port_zephyr.h"
+#endif
+
+/* Porting layer for mutexes.*/
+#ifndef U_CX_MUTEX_HANDLE
+// Default to Posix port
+# include "u_port_posix.h"
+
+/* The following is needed for implementing mutexes (Posix example):
+ * #define U_CX_MUTEX_HANDLE                     pthread_mutex_t
+ * #define U_CX_MUTEX_CREATE(mutex)              pthread_mutex_init(&mutex, NULL)
+ * #define U_CX_MUTEX_DELETE(mutex)              pthread_mutex_destroy(&mutex)
+ * #define U_CX_MUTEX_LOCK(mutex)                pthread_mutex_lock(&mutex)
+ * #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(&mutex, timeoutMs) // Return 0 on success, negative value on timeout
+ * #define U_CX_MUTEX_UNLOCK(mutex)              pthread_mutex_unlock(&mutex)
+ */
+#endif
+
 /* To override the default settings you can define U_CX_AT_CONFIG_FILE
  * to include a custom configuration header file
  */
@@ -43,20 +62,6 @@
 # define U_CX_PORT_PRINTF   printf
 #endif
 
-/* Porting layer for mutexes.*/
-#ifndef U_CX_MUTEX_HANDLE
-// Default to Posix port
-# include "u_port_posix.h"
-
-/* The following is needed for implementing mutexes (Posix example):
- * #define U_CX_MUTEX_HANDLE                     pthread_mutex_t
- * #define U_CX_MUTEX_CREATE(mutex)              pthread_mutex_init(&mutex, NULL)
- * #define U_CX_MUTEX_DELETE(mutex)              pthread_mutex_destroy(&mutex)
- * #define U_CX_MUTEX_LOCK(mutex)                pthread_mutex_lock(&mutex)
- * #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(&mutex, timeoutMs) // Return 0 on success, negative value on timeout
- * #define U_CX_MUTEX_UNLOCK(mutex)              pthread_mutex_unlock(&mutex)
- */
-#endif
 
 /* Porting layer for getting time in millisec.*/
 #ifndef U_CX_PORT_GET_TIME_MS

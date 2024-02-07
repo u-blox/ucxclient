@@ -1,0 +1,29 @@
+config UCXCLIENT
+        bool "u-blox u-connectXpress AT Client"
+        default n
+        help
+          Enable u-connectXpress AT client for new u-connectXpress modules.
+
+if UCXCLIENT
+
+config UCXCLIENT_RX_BUFFER_SIZE
+    int "RX buffer size"
+    default 1024
+    help
+      The size of the AT RX buffer
+
+config UCXCLIENT_URC_QUEUE
+    bool "Use URC queue"
+    default y
+    help
+      With this enabled you may execute AT command directly from an URC callback.
+
+if UCXCLIENT_URC_QUEUE
+config UCXCLIENT_URC_QUEUE_SIZE
+    int "URC queue buffer size"
+    default 1024
+    help
+      The queue size in bytes
+endif # UCXCLIENT_URC_QUEUE
+
+endif # UCXCLIENT

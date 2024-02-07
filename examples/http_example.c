@@ -133,6 +133,7 @@ int main(int argc, char **argv)
     uCxAtClient_t client;
     uCxHandle_t ucxHandle;
 
+#ifdef U_PORT_POSIX
     if (argc != 4) {
         fprintf(stderr, "Invalid arguments\n");
         fprintf(stderr, "Syntax: %s <device> <SSID> <WPA_PSK>\n", argv[0]);
@@ -141,6 +142,11 @@ int main(int argc, char **argv)
     const char *pDevice = argv[1];
     const char *pSsid = argv[2];
     const char *pWpaPsk = argv[3];
+#else
+    const char *pDevice = U_EXAMPLE_UART;
+    const char *pSsid = U_EXAMPLE_SSID;
+    const char *pWpaPsk = U_EXAMPLE_WPA_PSK;
+#endif
 
     U_CX_MUTEX_CREATE(gUrcSem);
 

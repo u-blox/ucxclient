@@ -27,6 +27,14 @@
 
 #define U_CX_PORT_PRINTF(...)
 
+// Redefine mutexes so that we can check for deadlocks etc
+#undef U_CX_MUTEX_HANDLE
+#undef U_CX_MUTEX_CREATE
+#undef U_CX_MUTEX_DELETE
+#undef U_CX_MUTEX_UNLOCK
+#undef U_CX_MUTEX_LOCK
+#undef U_CX_MUTEX_TRY_LOCK
+
 #define U_CX_MUTEX_HANDLE                       bool
 #define U_CX_MUTEX_CREATE(mutex)                mutex = false
 #define U_CX_MUTEX_DELETE(mutex)                ((void)mutex)
