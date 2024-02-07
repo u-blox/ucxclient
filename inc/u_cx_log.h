@@ -66,15 +66,19 @@
 #endif
 
 /* Internal defines - do not use! */
-#define _U_CX_LOG_BEGIN_FMT(enabled, chText, format, ...)   \
+#define __U_CX_LOG_BEGIN_FMT(enabled, chText, format, ...)  \
     if (enabled && uCxLogIsEnabled()) {                     \
         uCxLogPrintTime();                                  \
         U_CX_PORT_PRINTF(chText " " format, ##__VA_ARGS__); \
     }
-#define _U_CX_LOG(enabled, chText, format, ...)  \
+#define __U_CX_LOG(enabled, chText, format, ...) \
     if (enabled && uCxLogIsEnabled()) {          \
         U_CX_PORT_PRINTF(format, ##__VA_ARGS__); \
     }
+/* MSVC workaround */
+#define EXPAND(x) x
+#define _U_CX_LOG_BEGIN_FMT(...) EXPAND(__U_CX_LOG_BEGIN_FMT(__VA_ARGS__))
+#define _U_CX_LOG(...) EXPAND(__U_CX_LOG(__VA_ARGS__))
 
 /* ----------------------------------------------------------------
  * TYPES
