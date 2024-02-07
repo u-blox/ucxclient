@@ -1,0 +1,21 @@
+manifest:
+  self:
+    west-commands: scripts/west-commands.yml
+
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+    - name: u-blox
+      url-base: https://github.com/u-blox
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: main
+      import:
+        name-allowlist:
+        - cmsis      # dummy import to get 'west build' working
+    - name: ucxclient
+      remote: u-blox
+      repo-path: ucxclient.git
+      revision: master
