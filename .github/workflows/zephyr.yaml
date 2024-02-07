@@ -1,0 +1,49 @@
+name: Zephyr Twister Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  run_tests:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+      with:
+        path: ucxclient
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.11
+
+    - name: Copy west.yml
+      shell: bash
+      run: |
+        cp ucxclient/zephyr/ci-dummy-west.yml ucxclient/west.yml
+
+    - name: Setup Zephyr project
+      uses: zephyrproject-rtos/action-zephyr-setup@v1
+      with:
+        app-path: ucxclient
+        toolchains: x86_64-zephyr-elf
+
+    - name: Run Twister
+      working-directory: ucxclient/
+      shell: bash
+      run: |
+        west twister -T zephyr/ --integration
+
+    - name: Process Test results
+      uses: dorny/test-reporter@v1
+      if: always() # always run even if the previous step fails
+      with:
+        name: Zephyr Unit Test Results
+        working-directory: ucxclient/
+        path: 'twister-out/twister_suite_report.xml'
+        reporter: java-junit
