@@ -22,13 +22,22 @@
 
 #ifdef __ZEPHYR__
 # include "u_port_zephyr.h"
+#elif defined(U_PORT_NO_OS)
+# include "u_port_no_os.h"
+#elif defined(U_PORT_POSIX)
+# include "u_port_posix.h"
+#endif
+
+/* To override the default settings you can define U_CX_AT_CONFIG_FILE
+ * to include a custom configuration header file
+ */
+#ifdef U_CX_AT_CONFIG_FILE
+# include U_CX_AT_CONFIG_FILE
 #endif
 
 /* Porting layer for mutexes.*/
 #ifndef U_CX_MUTEX_HANDLE
-// Default to Posix port
-# include "u_port_posix.h"
-
+# error "U_CX_MUTEX_XXX defines must be defined or you must use any of the example ports using U_PORT_XXX"
 /* The following is needed for implementing mutexes (Posix example):
  * #define U_CX_MUTEX_HANDLE                     pthread_mutex_t
  * #define U_CX_MUTEX_CREATE(mutex)              pthread_mutex_init(&mutex, NULL)
@@ -37,13 +46,6 @@
  * #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(&mutex, timeoutMs) // Return 0 on success, negative value on timeout
  * #define U_CX_MUTEX_UNLOCK(mutex)              pthread_mutex_unlock(&mutex)
  */
-#endif
-
-/* To override the default settings you can define U_CX_AT_CONFIG_FILE
- * to include a custom configuration header file
- */
-#ifdef U_CX_AT_CONFIG_FILE
-# include U_CX_AT_CONFIG_FILE
 #endif
 
 
