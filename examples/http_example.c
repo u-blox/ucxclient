@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief Linux example for doing HTTP GET request using NORA-W36
+ * @brief Example of how to do a HTTP GET request using the uCx API
  *
  * This example will:
  * - Setup WiFi
