@@ -146,6 +146,12 @@ int main(int argc, char **argv)
     const char *pDevice = U_EXAMPLE_UART;
     const char *pSsid = U_EXAMPLE_SSID;
     const char *pWpaPsk = U_EXAMPLE_WPA_PSK;
+
+    if (*pWpaPsk == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Wi-Fi not configured - connection will not work")
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN,
+            "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.")
+    }
 #endif
 
     U_CX_MUTEX_CREATE(gUrcSem);
