@@ -62,7 +62,7 @@
 #endif
 
 #ifndef U_EXAMPLE_WPA_PSK
-# define U_EXAMPLE_WPA_PSK "fooooooo"
+# define U_EXAMPLE_WPA_PSK ""
 #endif
 
 /* ----------------------------------------------------------------
