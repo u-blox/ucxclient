@@ -29,11 +29,26 @@ extern "C" {
 
 typedef struct
 {
+    int32_t socket_handle;         /**< Socket identifier be used for any operation on that socket. */
+    int32_t tls_version;           /**< Minimum TLS version to use */
+    const char * ca_name;          /**< Name of the certificate authority (CA) certificate to use */
+    const char * client_cert_name; /**< Name of the client certificate to use */
+    const char * client_key_name;  /**< Name of the private key for client certificate */
+} uCxSocketGetTLS_t;
+
+typedef struct
+{
     uSockIpAddress_t remote_ip; /**< The ip address of the remote peer. */
     int32_t remote_port;        /**< The port of the remote peer. */
     int32_t length;             /**< Number of bytes to read. */
     const char * string_data;   /**< Data encoded as ascii chars. */
 } uCxSocketReceiveFrom_t;
+
+typedef struct
+{
+    uSockIpAddress_t remote_ip; /**< The ip address of the remote peer. */
+    int32_t remote_port;        /**< The port of the remote peer. */
+} uCxSocketGetPeerAddress_t;
 
 typedef struct
 {
@@ -124,6 +139,22 @@ int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVe
 int32_t uCxSocketSetTLS5(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
 /**
+ * Get the TLS context information for a socket.
+ * 
+ * Output AT command:
+ * > AT+USOTLS=<socket_handle>
+ *
+ * @param[in]  puCxHandle:       uCX API handle
+ * @param      socket_handle:    Socket identifier be used for any operation on that socket.
+ * @param[out] pSocketGetTLSRsp: Please see \ref uCxSocketGetTLS_t
+ * @return                       true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxSocketGetTLSBegin(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxSocketGetTLS_t * pSocketGetTLSRsp);
+
+/**
  * Establish a peer-to-peer connection to the specified remote host on the given remote port.
  * 
  * Output AT command:
@@ -208,6 +239,18 @@ int32_t uCxSocketClose(uCxHandle_t * puCxHandle, int32_t socket_handle);
 int32_t uCxSocketRead(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uint8_t * pDataBuf);
 
 /**
+ * Retrieves the last error that occurred in any socket operation, stored in the socket errno.
+ * 
+ * Output AT command:
+ * > AT+USOE
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pErrorCode: BSD error code. See BSD standard for error code definitions.
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxSocketGetLastError(uCxHandle_t * puCxHandle, int32_t * pErrorCode);
+
+/**
  * Sets the specified socket in listening mode on the specified port of service, waiting for incoming connections (TCP) or
  * data (UDP).
  * 
@@ -238,6 +281,19 @@ int32_t uCxSocketListen(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t
  * Must be terminated by calling uCxEnd()
  */
 bool uCxSocketReceiveFromBegin(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uCxSocketReceiveFrom_t * pSocketReceiveFromRsp);
+
+/**
+ * Get the address of remote peer.
+ * 
+ * Output AT command:
+ * > AT+USOPA=<socket_handle>
+ *
+ * @param[in]  puCxHandle:               uCX API handle
+ * @param      socket_handle:            Socket identifier be used for any operation on that socket.
+ * @param[out] pSocketGetPeerAddressRsp: Please see \ref uCxSocketGetPeerAddress_t
+ * @return                               0 on success, negative value on error.
+ */
+int32_t uCxSocketGetPeerAddress(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxSocketGetPeerAddress_t * pSocketGetPeerAddressRsp);
 
 /**
  * List status for all created sockets.

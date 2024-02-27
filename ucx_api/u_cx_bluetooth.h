@@ -59,37 +59,24 @@ typedef struct
 
 typedef struct
 {
-    int32_t property_id;
-    int32_t status_val;  /**< Value of the preceding property. */
-} uCxBluetoothGetConnectionStatus_t;
-
-typedef struct
-{
     int32_t characteristic_id;
-    const char * characteristic_value; /**< Value of Device Information Service characterstic. */
-} uCxBluetoothSetDeviceInfoServiceChar_t;
-
-typedef struct
-{
-    int32_t characteristic_id;
-    const char * characteristic_value; /**< Value of Device Information Service characterstic. */
+    const char * characteristic_value; /**< Value of Device Information Service characteristic. */
 } uCxBluetoothListDeviceInfoServiceChars_t;
 
 typedef struct
 {
-    int32_t conn_handle; /**< Connection handle of the Bluetooth low energy connection. */
-    int32_t tx_phy;      /**< Requested PHY for Transmitter:
-                              0: Let other side decide
-                              OR a bit field with three bits:
-                              Bit 0: 1 Mbps preferred
-                              Bit 1: 2 Mbps preferred
-                              Bit 2: Coded PHY (S=8). Not supported by NORA-W36 */
-    int32_t rx_phy;      /**< Requested PHY for Receiver
-                              0: Let other side decide
-                              OR a bit field with three bits:
-                              Bit 0: 1 Mbps preferred
-                              Bit 1: 2 Mbps preferred
-                              Bit 2: Coded PHY (S=8). Not supported by NORA-W36 */
+    int32_t tx_phy; /**< Requested PHY for Transmitter:
+                         0: Let other side decide
+                         OR a bit field with three bits:
+                         Bit 0: 1 Mbps preferred
+                         Bit 1: 2 Mbps preferred
+                         Bit 2: Coded PHY (S=8). Not supported by NORA-W36 */
+    int32_t rx_phy; /**< Requested PHY for Receiver
+                         0: Let other side decide
+                         OR a bit field with three bits:
+                         Bit 0: 1 Mbps preferred
+                         Bit 1: 2 Mbps preferred
+                         Bit 2: Coded PHY (S=8). Not supported by NORA-W36 */
 } uCxBluetoothGetPhy_t;
 
 
@@ -366,13 +353,13 @@ bool uCxBluetoothListConnectionStatusGetNext(uCxHandle_t * puCxHandle, uCxBlueto
  * Output AT command:
  * > AT+UBTCST=<conn_handle>,<property_id>
  *
- * @param[in]  puCxHandle:                       uCX API handle
- * @param      conn_handle:                      Connection handle of the Bluetooth low energy connection.
- * @param      property_id:                      
- * @param[out] pBluetoothGetConnectionStatusRsp: Please see \ref uCxBluetoothGetConnectionStatus_t
- * @return                                       0 on success, negative value on error.
+ * @param[in]  puCxHandle:  uCX API handle
+ * @param      conn_handle: Connection handle of the Bluetooth low energy connection.
+ * @param      property_id: 
+ * @param[out] pStatusVal:  Value of the preceding property.
+ * @return                  0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetConnectionStatus(uCxHandle_t * puCxHandle, int32_t conn_handle, uPropertyId_t property_id, uCxBluetoothGetConnectionStatus_t * pBluetoothGetConnectionStatusRsp);
+int32_t uCxBluetoothGetConnectionStatus(uCxHandle_t * puCxHandle, int32_t conn_handle, uPropertyId_t property_id, int32_t * pStatusVal);
 
 /**
  * Write custom advertising data.
@@ -900,40 +887,36 @@ void uCxBluetoothListBondedDevicesBegin(uCxHandle_t * puCxHandle);
 bool uCxBluetoothListBondedDevicesGetNext(uCxHandle_t * puCxHandle, uBtLeAddress_t * pBdAddr);
 
 /**
- * Set a characterstic value.
- * 
- * Output AT command:
- * > AT+UBTDIS=<characteristic_id>
- *
- * @param[in]  puCxHandle:                            uCX API handle
- * @param      characteristic_id:                     
- * @param[out] pBluetoothSetDeviceInfoServiceCharRsp: Please see \ref uCxBluetoothSetDeviceInfoServiceChar_t
- * @return                                            true on success, false on error (error code will be returned by uCxEnd()).
- *
- * NOTES:
- * Must be terminated by calling uCxEnd()
- */
-bool uCxBluetoothSetDeviceInfoServiceChar1Begin(uCxHandle_t * puCxHandle, uCharacteristicId_t characteristic_id, uCxBluetoothSetDeviceInfoServiceChar_t * pBluetoothSetDeviceInfoServiceCharRsp);
-
-/**
- * Set a characterstic value.
+ * Set a characteristic value.
  * 
  * Output AT command:
  * > AT+UBTDIS=<characteristic_id>,<characteristic_value>
  *
- * @param[in]  puCxHandle:                            uCX API handle
- * @param      characteristic_id:                     
- * @param      characteristic_value:                  Value of Device Information Service characterstic.
- * @param[out] pBluetoothSetDeviceInfoServiceCharRsp: Please see \ref uCxBluetoothSetDeviceInfoServiceChar_t
- * @return                                            true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:           uCX API handle
+ * @param      characteristic_id:    
+ * @param      characteristic_value: Value of Device Information Service characteristic.
+ * @return                           0 on success, negative value on error.
+ */
+int32_t uCxBluetoothSetDeviceInfoServiceChar(uCxHandle_t * puCxHandle, uCharacteristicId_t characteristic_id, const char * characteristic_value);
+
+/**
+ * Read a characteristic value.
+ * 
+ * Output AT command:
+ * > AT+UBTDIS=<characteristic_id>
+ *
+ * @param[in]  puCxHandle:            uCX API handle
+ * @param      characteristic_id:     
+ * @param[out] ppCharacteristicValue: Value of Device Information Service characteristic.
+ * @return                            true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxBluetoothSetDeviceInfoServiceChar2Begin(uCxHandle_t * puCxHandle, uCharacteristicId_t characteristic_id, const char * characteristic_value, uCxBluetoothSetDeviceInfoServiceChar_t * pBluetoothSetDeviceInfoServiceCharRsp);
+bool uCxBluetoothGetDeviceInfoServiceCharBegin(uCxHandle_t * puCxHandle, uCharacteristicId_t characteristic_id, const char ** ppCharacteristicValue);
 
 /**
- * Read all individual characterstic of the Device Information Service characteristics.
+ * Read all individual characteristic of the Device Information Service characteristics.
  * 
  * Output AT command:
  * > AT+UBTDIS?
@@ -981,7 +964,7 @@ bool uCxBluetoothListDeviceInfoServiceCharsGetNext(uCxHandle_t * puCxHandle, uCx
 int32_t uCxBluetoothRequestPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t tx_phy, int32_t rx_phy);
 
 /**
- * Reads currect PHYs for a connection.
+ * Reads current PHYs for a connection.
  * 
  * Output AT command:
  * > AT+UBTPHYR=<conn_handle>
@@ -1033,6 +1016,17 @@ void uCxBluetoothRegisterBondStatus(uCxHandle_t * puCxHandle, uUEBTB_t callback)
  * @param      callback:   callback to register. Set to NULL to unregister.
  */
 void uCxBluetoothRegisterUserConfirmation(uCxHandle_t * puCxHandle, uUEBTUC_t callback);
+
+/**
+ * Register PasskeyEntry event callback
+ * 
+ * This event is used to indicate to the user that a passkey has to be entered on the remote device during a bonding
+ * procedure with the IO capability DisplayOnly.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxBluetoothRegisterPasskeyEntry(uCxHandle_t * puCxHandle, uUEBTUPD_t callback);
 
 /**
  * Register PasskeyRequest event callback

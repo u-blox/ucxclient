@@ -35,6 +35,47 @@ int32_t uCxWifiStationSetSecurityEnterprise(uCxHandle_t * puCxHandle, int32_t wl
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSE=", "dsss", wlan_handle, ca_name, client_cert_name, client_key_name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
+bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetSecurity_t * pWifiStationGetSecurityRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    char *pParamsLine;
+    int32_t rspSyntaxVal;
+    size_t  paramsLen;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSS=", "d", wlan_handle, U_CX_AT_UTIL_PARAM_LAST);
+    pParamsLine = uCxAtClientCmdGetRspParamLine(pAtClient, "+UWSS:", NULL, NULL);
+    if (pParamsLine == NULL) {
+        return false;
+    }
+    paramsLen = strlen(pParamsLine);
+    if (uCxAtUtilParseParamsF(pParamsLine, "-d", &rspSyntaxVal) != 1) {
+        return false;
+    }
+    uCxAtUtilReplaceChar(pParamsLine, paramsLen, 0, ',');
+    switch (rspSyntaxVal)
+    {
+        case 1:
+            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_WPA_THRESHOLD;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-dd", &pWifiStationGetSecurityRsp->rspSecurityModeWpaThreshold.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeWpaThreshold.wpa_threshold, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 0:
+            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-d", &pWifiStationGetSecurityRsp->rspSecurityMode.security_mode, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 2:
+            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_STR_STR_STR;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-dsss", &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.ca_name, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.client_cert_name, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.client_key_name, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 3:
+            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_STR_STR;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-dss", &pWifiStationGetSecurityRsp->rspSecurityModeStrStr.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeStrStr.username, &pWifiStationGetSecurityRsp->rspSecurityModeStrStr.ca_name, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        default:
+            return false;
+    } /* ~switch (rspSyntaxVal) */
+    return ret >= 0;
+}
+
 int32_t uCxWifiStationSetSecurityPeap3(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * peap_user, const char * peap_password)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -65,12 +106,12 @@ int32_t uCxWifiStationSetConnectionParams(uCxHandle_t * puCxHandle, int32_t wlan
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSCP=", "ds", wlan_handle, ssid, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxWifiStationGetConnectionParamsBegin(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetConnectionParams_t * pWifiStationGetConnectionParamsRsp)
+bool uCxWifiStationGetConnectionParamsBegin(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char ** ppSsid)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UWSCP=", "d", wlan_handle, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSCP=", NULL, NULL, "ds", &pWifiStationGetConnectionParamsRsp->wlan_handle, &pWifiStationGetConnectionParamsRsp->ssid, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSCP:", NULL, NULL, "-s", ppSsid, U_CX_AT_UTIL_PARAM_LAST);
     return ret >= 0;
 }
 
@@ -98,6 +139,46 @@ int32_t uCxWifiStationSetIpConfigDhcp(uCxHandle_t * puCxHandle, int32_t wlan_han
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSIPD=", "d", wlan_handle, U_CX_AT_UTIL_PARAM_LAST);
 }
 
+int32_t uCxWifiStationGetIpConfig(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetIpConfig_t * pWifiStationGetIpConfigRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    char *pParamsLine;
+    int32_t rspSyntaxVal;
+    size_t  paramsLen;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSIP=", "d", wlan_handle, U_CX_AT_UTIL_PARAM_LAST);
+    pParamsLine = uCxAtClientCmdGetRspParamLine(pAtClient, "+UWSIP:", NULL, NULL);
+    if (pParamsLine == NULL) {
+        return false;
+    }
+    paramsLen = strlen(pParamsLine);
+    if (uCxAtUtilParseParamsF(pParamsLine, "-d", &rspSyntaxVal) != 1) {
+        return false;
+    }
+    uCxAtUtilReplaceChar(pParamsLine, paramsLen, 0, ',');
+    switch (rspSyntaxVal)
+    {
+        case 0:
+            pWifiStationGetIpConfigRsp->type = U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-d", &pWifiStationGetIpConfigRsp->rspIpMode.ip_mode, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 1:
+            pWifiStationGetIpConfigRsp->type = U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE_IP_IP_IP_IP_IP;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-diiiii", &pWifiStationGetIpConfigRsp->rspIpModeIpIpIpIpIp.ip_mode, &pWifiStationGetIpConfigRsp->rspIpModeIpIpIpIpIp.ip_addr, &pWifiStationGetIpConfigRsp->rspIpModeIpIpIpIpIp.subnet_mask, &pWifiStationGetIpConfigRsp->rspIpModeIpIpIpIpIp.gateway, &pWifiStationGetIpConfigRsp->rspIpModeIpIpIpIpIp.prim_dns, &pWifiStationGetIpConfigRsp->rspIpModeIpIpIpIpIp.sec_dns, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        default:
+            return false;
+    } /* ~switch (rspSyntaxVal) */
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
 int32_t uCxWifiStationConnect(uCxHandle_t * puCxHandle, int32_t wlan_handle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -110,12 +191,12 @@ int32_t uCxWifiStationDisconnect(uCxHandle_t * puCxHandle)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSDC", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxWifiStationGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uCxWifiStationGetNetworkStatus_t * pWifiStationGetNetworkStatusRsp)
+int32_t uCxWifiStationGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uSockIpAddress_t * pStatusVal)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UWSNST=", "d", status_id, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSNST:", NULL, NULL, "di", &pWifiStationGetNetworkStatusRsp->status_id, &pWifiStationGetNetworkStatusRsp->status_val, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSNST:", NULL, NULL, "-i", pStatusVal, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
@@ -140,13 +221,27 @@ bool uCxWifiStationListNetworkStatusGetNext(uCxHandle_t * puCxHandle, uCxWifiSta
     return ret >= 0;
 }
 
-void uCxWifiStationScanBegin(uCxHandle_t * puCxHandle)
+void uCxWifiStationScanDefaultBegin(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uCxAtClientCmdBeginF(pAtClient, "AT+UWSSC", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxWifiStationScanGetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * pWifiStationScanRsp)
+bool uCxWifiStationScanDefaultGetNext(uCxHandle_t * puCxHandle, uCxWifiStationScanDefault_t * pWifiStationScanDefaultRsp)
+{
+    int32_t ret;
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSSC:", NULL, NULL, "msddddd", &pWifiStationScanDefaultRsp->bssid, &pWifiStationScanDefaultRsp->ssid, &pWifiStationScanDefaultRsp->channel, &pWifiStationScanDefaultRsp->rssi, &pWifiStationScanDefaultRsp->authentication_suites, &pWifiStationScanDefaultRsp->unicast_ciphers, &pWifiStationScanDefaultRsp->group_ciphers, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
+}
+
+void uCxWifiStationScan1Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSSC=", "d", scan_mode, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+bool uCxWifiStationScan1GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * pWifiStationScanRsp)
 {
     int32_t ret;
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -154,31 +249,17 @@ bool uCxWifiStationScanGetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * 
     return ret >= 0;
 }
 
-void uCxWifiStationScanEx1Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode)
-{
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UWSSC=", "d", scan_mode, U_CX_AT_UTIL_PARAM_LAST);
-}
-
-bool uCxWifiStationScanEx1GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScanEx_t * pWifiStationScanExRsp)
-{
-    int32_t ret;
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSSC:", NULL, NULL, "msddddd", &pWifiStationScanExRsp->bssid, &pWifiStationScanExRsp->ssid, &pWifiStationScanExRsp->channel, &pWifiStationScanExRsp->rssi, &pWifiStationScanExRsp->authentication_suites, &pWifiStationScanExRsp->unicast_ciphers, &pWifiStationScanExRsp->group_ciphers, U_CX_AT_UTIL_PARAM_LAST);
-    return ret >= 0;
-}
-
-void uCxWifiStationScanEx2Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode, const char * ssid)
+void uCxWifiStationScan2Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode, const char * ssid)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uCxAtClientCmdBeginF(pAtClient, "AT+UWSSC=", "ds", scan_mode, ssid, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxWifiStationScanEx2GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScanEx_t * pWifiStationScanExRsp)
+bool uCxWifiStationScan2GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * pWifiStationScanRsp)
 {
     int32_t ret;
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSSC:", NULL, NULL, "msddddd", &pWifiStationScanExRsp->bssid, &pWifiStationScanExRsp->ssid, &pWifiStationScanExRsp->channel, &pWifiStationScanExRsp->rssi, &pWifiStationScanExRsp->authentication_suites, &pWifiStationScanExRsp->unicast_ciphers, &pWifiStationScanExRsp->group_ciphers, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSSC:", NULL, NULL, "msddddd", &pWifiStationScanRsp->bssid, &pWifiStationScanRsp->ssid, &pWifiStationScanRsp->channel, &pWifiStationScanRsp->rssi, &pWifiStationScanRsp->authentication_suites, &pWifiStationScanRsp->unicast_ciphers, &pWifiStationScanRsp->group_ciphers, U_CX_AT_UTIL_PARAM_LAST);
     return ret >= 0;
 }
 
@@ -272,6 +353,46 @@ int32_t uCxWifiApSetSecurityOpen(uCxHandle_t * puCxHandle)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWAPSO", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
+int32_t uCxWifiApGetSecurity(uCxHandle_t * puCxHandle, uCxWifiApGetSecurity_t * pWifiApGetSecurityRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    char *pParamsLine;
+    int32_t rspSyntaxVal;
+    size_t  paramsLen;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWAPS?", "", U_CX_AT_UTIL_PARAM_LAST);
+    pParamsLine = uCxAtClientCmdGetRspParamLine(pAtClient, "+UWAPS:", NULL, NULL);
+    if (pParamsLine == NULL) {
+        return false;
+    }
+    paramsLen = strlen(pParamsLine);
+    if (uCxAtUtilParseParamsF(pParamsLine, "d", &rspSyntaxVal) != 1) {
+        return false;
+    }
+    uCxAtUtilReplaceChar(pParamsLine, paramsLen, 0, ',');
+    switch (rspSyntaxVal)
+    {
+        case 1:
+            pWifiApGetSecurityRsp->type = U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE_WPA_VERSION;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dd", &pWifiApGetSecurityRsp->rspSecurityModeWpaVersion.security_mode, &pWifiApGetSecurityRsp->rspSecurityModeWpaVersion.wpa_version, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 0:
+            pWifiApGetSecurityRsp->type = U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "d", &pWifiApGetSecurityRsp->rspSecurityMode.security_mode, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        default:
+            return false;
+    } /* ~switch (rspSyntaxVal) */
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
 void uCxWifiApListStationsBegin(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -286,12 +407,12 @@ bool uCxWifiApListStationsGetNext(uCxHandle_t * puCxHandle, uMacAddress_t * pMac
     return ret >= 0;
 }
 
-int32_t uCxWifiApGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uCxWifiApGetNetworkStatus_t * pWifiApGetNetworkStatusRsp)
+int32_t uCxWifiApGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uSockIpAddress_t * pStatusVal)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UWAPNST=", "d", status_id, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWAPNST:", NULL, NULL, "di", &pWifiApGetNetworkStatusRsp->status_id, &pWifiApGetNetworkStatusRsp->status_val, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWAPNST:", NULL, NULL, "-i", pStatusVal, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);

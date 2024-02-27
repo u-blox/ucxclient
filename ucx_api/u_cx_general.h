@@ -27,6 +27,19 @@ extern "C" {
  * RESPONSES
  * ---------------------------------------------------------- */
 
+typedef struct
+{
+    const char * application_version; /**< Application version. */
+    const char * unique_identifier;   /**< Unique identifier. */
+} uCxGeneralGetIdentInfo_t;
+
+typedef struct
+{
+    int32_t greeting_mode;
+    const char * text;     /**< The greeting text.
+                                Note: Can not be an empty string. */
+} uCxGeneralGetGreetingText_t;
+
 
 /* ------------------------------------------------------------
  * PUBLIC FUNCTIONS
@@ -102,6 +115,92 @@ bool uCxGeneralGetSoftwareVersionBegin(uCxHandle_t * puCxHandle, const char ** p
  * Must be terminated by calling uCxEnd()
  */
 bool uCxGeneralGetSerialNumberBegin(uCxHandle_t * puCxHandle, const char ** ppSerialNumber);
+
+/**
+ * Read identification information.
+ * 
+ * Output AT command:
+ * > ATI9
+ *
+ * @param[in]  puCxHandle:              uCX API handle
+ * @param[out] pGeneralGetIdentInfoRsp: Please see \ref uCxGeneralGetIdentInfo_t
+ * @return                              true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxGeneralGetIdentInfoBegin(uCxHandle_t * puCxHandle, uCxGeneralGetIdentInfo_t * pGeneralGetIdentInfoRsp);
+
+/**
+ * Read MCU ID.
+ * 
+ * Output AT command:
+ * > ATI10
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] ppMcuId:    Two byte hex string representing the MCU ID.
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxGeneralGetMcuIdBegin(uCxHandle_t * puCxHandle, const char ** ppMcuId);
+
+/**
+ * Read type code.
+ * 
+ * Output AT command:
+ * > ATI0
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] ppTypeCode: Type code for the module.
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxGeneralGetTypeCodeBegin(uCxHandle_t * puCxHandle, const char ** ppTypeCode);
+
+/**
+ * Set the greeting text and mode.
+ * 
+ * Output AT command:
+ * > AT+CSGT=<greeting_mode>
+ *
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      greeting_mode: 
+ * @return                    0 on success, negative value on error.
+ */
+int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode);
+
+/**
+ * Set the greeting text and mode.
+ * 
+ * Output AT command:
+ * > AT+CSGT=<greeting_mode>,<text>
+ *
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      greeting_mode: 
+ * @param      text:          The greeting text.
+ *                            Note: Can not be an empty string.
+ * @return                    0 on success, negative value on error.
+ */
+int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode, const char * text);
+
+/**
+ * Read the greeting text.
+ * 
+ * Output AT command:
+ * > AT+CSGT?
+ *
+ * @param[in]  puCxHandle:                 uCX API handle
+ * @param[out] pGeneralGetGreetingTextRsp: Please see \ref uCxGeneralGetGreetingText_t
+ * @return                                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxGeneralGetGreetingTextBegin(uCxHandle_t * puCxHandle, uCxGeneralGetGreetingText_t * pGeneralGetGreetingTextRsp);
 
 
 #ifdef __cplusplus
