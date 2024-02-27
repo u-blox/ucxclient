@@ -201,6 +201,16 @@ void uCxDiagnosticsRegisterPingComplete(uCxHandle_t * puCxHandle, uUEDGPC_t call
  */
 void uCxDiagnosticsRegisterPingResponse(uCxHandle_t * puCxHandle, uUEDGP_t callback);
 
+/**
+ * Register IperfOutput event callback
+ * 
+ * Event is sent out for all output string send by iperf tool
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxDiagnosticsRegisterIperfOutput(uCxHandle_t * puCxHandle, uUEDGI_t callback);
+
 
 #ifdef __cplusplus
 }

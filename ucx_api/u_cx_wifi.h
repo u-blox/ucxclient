@@ -28,6 +28,67 @@ extern "C" {
  * ---------------------------------------------------------- */
 typedef enum
 {
+    U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_WPA_THRESHOLD,
+    U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE,
+    U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_STR_STR_STR,
+    U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_STR_STR
+} uCxWifiStationGetSecurityRspType_t;
+
+typedef struct {
+    uCxWifiStationGetSecurityRspType_t type;
+    union {
+        struct
+        {
+            int32_t security_mode; /**< The current security mode. */
+            int32_t wpa_threshold; /**< Lowest WPA version to connect to */
+        } rspSecurityModeWpaThreshold;
+        struct
+        {
+            int32_t security_mode; /**< The current security mode. */
+        } rspSecurityMode;
+        struct
+        {
+            int32_t security_mode;         /**< The current security mode. */
+            const char * ca_name;          /**< Name of the certificate authority (CA) certificate to use */
+            const char * client_cert_name; /**< Name of the client certificate to use */
+            const char * client_key_name;  /**< Name of the private key for client certificate */
+        } rspSecurityModeStrStrStr;
+        struct
+        {
+            int32_t security_mode; /**< The current security mode. */
+            const char * username; /**< User name for PEAP authentication. */
+            const char * ca_name;  /**< Name of the certificate authority (CA) certificate to use */
+        } rspSecurityModeStrStr;
+    };
+} uCxWifiStationGetSecurity_t;
+
+typedef enum
+{
+    U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE,
+    U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE_IP_IP_IP_IP_IP
+} uCxWifiStationGetIpConfigRspType_t;
+
+typedef struct {
+    uCxWifiStationGetIpConfigRspType_t type;
+    union {
+        struct
+        {
+            int32_t ip_mode; /**< IP assignment */
+        } rspIpMode;
+        struct
+        {
+            int32_t ip_mode;              /**< IP assignment */
+            uSockIpAddress_t ip_addr;     /**< Static IPv4 address */
+            uSockIpAddress_t subnet_mask; /**< Subnet mask */
+            uSockIpAddress_t gateway;     /**< IPv4 gateway address */
+            uSockIpAddress_t prim_dns;    /**< IPv4 primary dns address */
+            uSockIpAddress_t sec_dns;     /**< IPv4 secondary dns address */
+        } rspIpModeIpIpIpIpIp;
+    };
+} uCxWifiStationGetIpConfig_t;
+
+typedef enum
+{
     U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_STR,
     U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_MAC,
     U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT
@@ -54,18 +115,27 @@ typedef struct {
     };
 } uCxWifiStationStatus_t;
 
-
-typedef struct
+typedef enum
 {
-    int32_t wlan_handle; /**< Handle to use for Wi-Fi config and connection */
-    const char * ssid;   /**< SSID */
-} uCxWifiStationGetConnectionParams_t;
+    U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE_WPA_VERSION,
+    U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE
+} uCxWifiApGetSecurityRspType_t;
 
-typedef struct
-{
-    int32_t status_id;
-    uSockIpAddress_t status_val; /**< IP address */
-} uCxWifiStationGetNetworkStatus_t;
+typedef struct {
+    uCxWifiApGetSecurityRspType_t type;
+    union {
+        struct
+        {
+            int32_t security_mode; /**< The current security mode. */
+            int32_t wpa_version;
+        } rspSecurityModeWpaVersion;
+        struct
+        {
+            int32_t security_mode; /**< The current security mode. */
+        } rspSecurityMode;
+    };
+} uCxWifiApGetSecurity_t;
+
 
 typedef struct
 {
@@ -83,7 +153,7 @@ typedef struct
                                         WPA3 */
     int32_t unicast_ciphers;       /**< unicast ciphers. Bit 0 = WEP64, 1 = WEP128, 2 = TKIP, 3 = AES/CCMP */
     int32_t group_ciphers;         /**< group ciphers. Bit 0 = WEP64, 1 = WEP128, 2 = TKIP, 3 = AES/CCMP */
-} uCxWifiStationScan_t;
+} uCxWifiStationScanDefault_t;
 
 typedef struct
 {
@@ -95,19 +165,13 @@ typedef struct
                                         WPA3 */
     int32_t unicast_ciphers;       /**< unicast ciphers. Bit 0 = WEP64, 1 = WEP128, 2 = TKIP, 3 = AES/CCMP */
     int32_t group_ciphers;         /**< group ciphers. Bit 0 = WEP64, 1 = WEP128, 2 = TKIP, 3 = AES/CCMP */
-} uCxWifiStationScanEx_t;
+} uCxWifiStationScan_t;
 
 typedef struct
 {
     const char * ssid; /**< SSID */
     int32_t channel;   /**< channel */
 } uCxWifiApGetConnectionParams_t;
-
-typedef struct
-{
-    int32_t status_id;
-    uSockIpAddress_t status_val; /**< IP address */
-} uCxWifiApGetNetworkStatus_t;
 
 typedef struct
 {
@@ -161,6 +225,22 @@ bool uCxWifiGetHostnameBegin(uCxHandle_t * puCxHandle, const char ** ppHostName)
  * @return                       0 on success, negative value on error.
  */
 int32_t uCxWifiStationSetSecurityEnterprise(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+
+/**
+ * Get the current Wi-Fi station security config
+ * 
+ * Output AT command:
+ * > AT+UWSS=<wlan_handle>
+ *
+ * @param[in]  puCxHandle:                 uCX API handle
+ * @param      wlan_handle:                Handle to use for Wi-Fi config and connection
+ * @param[out] pWifiStationGetSecurityRsp: Please see \ref uCxWifiStationGetSecurity_t
+ * @return                                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetSecurity_t * pWifiStationGetSecurityRsp);
 
 /**
  * Set the PEAP connection parameters to use.
@@ -238,15 +318,15 @@ int32_t uCxWifiStationSetConnectionParams(uCxHandle_t * puCxHandle, int32_t wlan
  * Output AT command:
  * > AT+UWSCP=<wlan_handle>
  *
- * @param[in]  puCxHandle:                         uCX API handle
- * @param      wlan_handle:                        Handle to use for Wi-Fi config and connection
- * @param[out] pWifiStationGetConnectionParamsRsp: Please see \ref uCxWifiStationGetConnectionParams_t
- * @return                                         true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:  uCX API handle
+ * @param      wlan_handle: Handle to use for Wi-Fi config and connection
+ * @param[out] ppSsid:      SSID
+ * @return                  true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxWifiStationGetConnectionParamsBegin(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetConnectionParams_t * pWifiStationGetConnectionParamsRsp);
+bool uCxWifiStationGetConnectionParamsBegin(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char ** ppSsid);
 
 /**
  * Sets ip configuration to use static ip
@@ -309,6 +389,19 @@ int32_t uCxWifiStationSetIpConfigStatic6(uCxHandle_t * puCxHandle, int32_t wlan_
 int32_t uCxWifiStationSetIpConfigDhcp(uCxHandle_t * puCxHandle, int32_t wlan_handle);
 
 /**
+ * Read the current configuration for IP address assignment
+ * 
+ * Output AT command:
+ * > AT+UWSIP=<wlan_handle>
+ *
+ * @param[in]  puCxHandle:                 uCX API handle
+ * @param      wlan_handle:                Handle to use for Wi-Fi config and connection
+ * @param[out] pWifiStationGetIpConfigRsp: Please see \ref uCxWifiStationGetIpConfig_t
+ * @return                                 0 on success, negative value on error.
+ */
+int32_t uCxWifiStationGetIpConfig(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetIpConfig_t * pWifiStationGetIpConfigRsp);
+
+/**
  * Initiate connection to Wi-Fi network
  * 
  * Output AT command:
@@ -337,12 +430,12 @@ int32_t uCxWifiStationDisconnect(uCxHandle_t * puCxHandle);
  * Output AT command:
  * > AT+UWSNST=<status_id>
  *
- * @param[in]  puCxHandle:                      uCX API handle
- * @param      status_id:                       
- * @param[out] pWifiStationGetNetworkStatusRsp: Please see \ref uCxWifiStationGetNetworkStatus_t
- * @return                                      0 on success, negative value on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      status_id:  
+ * @param[out] pStatusVal: IP address
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxWifiStationGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uCxWifiStationGetNetworkStatus_t * pWifiStationGetNetworkStatusRsp);
+int32_t uCxWifiStationGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uSockIpAddress_t * pStatusVal);
 
 /**
  * Show current status of Wi-Fi station network interface
@@ -380,17 +473,17 @@ bool uCxWifiStationListNetworkStatusGetNext(uCxHandle_t * puCxHandle, uCxWifiSta
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxWifiStationScanBegin(uCxHandle_t * puCxHandle);
+void uCxWifiStationScanDefaultBegin(uCxHandle_t * puCxHandle);
 
 /**
  * 
  *
- * @param[in]  puCxHandle:          uCX API handle
- * @param[out] pWifiStationScanRsp: Please see \ref uCxWifiStationScan_t
- * @return                          true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                  error code in this case).
+ * @param[in]  puCxHandle:                 uCX API handle
+ * @param[out] pWifiStationScanDefaultRsp: Please see \ref uCxWifiStationScanDefault_t
+ * @return                                 true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                         error code in this case).
  */
-bool uCxWifiStationScanGetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * pWifiStationScanRsp);
+bool uCxWifiStationScanDefaultGetNext(uCxHandle_t * puCxHandle, uCxWifiStationScanDefault_t * pWifiStationScanDefaultRsp);
 
 /**
  * Initiate synchronous Wi-Fi scan (will lock AT interface until scan has finished)
@@ -405,17 +498,17 @@ bool uCxWifiStationScanGetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * 
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxWifiStationScanEx1Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode);
+void uCxWifiStationScan1Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode);
 
 /**
  * 
  *
- * @param[in]  puCxHandle:            uCX API handle
- * @param[out] pWifiStationScanExRsp: Please see \ref uCxWifiStationScanEx_t
- * @return                            true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                    error code in this case).
+ * @param[in]  puCxHandle:          uCX API handle
+ * @param[out] pWifiStationScanRsp: Please see \ref uCxWifiStationScan_t
+ * @return                          true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                  error code in this case).
  */
-bool uCxWifiStationScanEx1GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScanEx_t * pWifiStationScanExRsp);
+bool uCxWifiStationScan1GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * pWifiStationScanRsp);
 
 /**
  * Initiate synchronous Wi-Fi scan (will lock AT interface until scan has finished)
@@ -431,17 +524,17 @@ bool uCxWifiStationScanEx1GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScanEx
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxWifiStationScanEx2Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode, const char * ssid);
+void uCxWifiStationScan2Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode, const char * ssid);
 
 /**
  * 
  *
- * @param[in]  puCxHandle:            uCX API handle
- * @param[out] pWifiStationScanExRsp: Please see \ref uCxWifiStationScanEx_t
- * @return                            true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                    error code in this case).
+ * @param[in]  puCxHandle:          uCX API handle
+ * @param[out] pWifiStationScanRsp: Please see \ref uCxWifiStationScan_t
+ * @return                          true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                  error code in this case).
  */
-bool uCxWifiStationScanEx2GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScanEx_t * pWifiStationScanExRsp);
+bool uCxWifiStationScan2GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t * pWifiStationScanRsp);
 
 /**
  * Read status
@@ -558,6 +651,18 @@ int32_t uCxWifiApSetSecurityWpa2(uCxHandle_t * puCxHandle, const char * passphra
 int32_t uCxWifiApSetSecurityOpen(uCxHandle_t * puCxHandle);
 
 /**
+ * Get the current security configuration for Wi-Fi AP
+ * 
+ * Output AT command:
+ * > AT+UWAPS?
+ *
+ * @param[in]  puCxHandle:            uCX API handle
+ * @param[out] pWifiApGetSecurityRsp: Please see \ref uCxWifiApGetSecurity_t
+ * @return                            0 on success, negative value on error.
+ */
+int32_t uCxWifiApGetSecurity(uCxHandle_t * puCxHandle, uCxWifiApGetSecurity_t * pWifiApGetSecurityRsp);
+
+/**
  * Get a list of connected stations. One response will be sent for each connected station
  * 
  * Output AT command:
@@ -587,12 +692,12 @@ bool uCxWifiApListStationsGetNext(uCxHandle_t * puCxHandle, uMacAddress_t * pMac
  * Output AT command:
  * > AT+UWAPNST=<status_id>
  *
- * @param[in]  puCxHandle:                 uCX API handle
- * @param      status_id:                  
- * @param[out] pWifiApGetNetworkStatusRsp: Please see \ref uCxWifiApGetNetworkStatus_t
- * @return                                 0 on success, negative value on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      status_id:  
+ * @param[out] pStatusVal: IP address
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxWifiApGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uCxWifiApGetNetworkStatus_t * pWifiApGetNetworkStatusRsp);
+int32_t uCxWifiApGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uSockIpAddress_t * pStatusVal);
 
 /**
  * Show current status of Wi-Fi station network interface

@@ -26,10 +26,32 @@ extern "C" {
 /* ------------------------------------------------------------
  * RESPONSES
  * ---------------------------------------------------------- */
+typedef enum
+{
+    U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION_STR_STR_STR,
+    U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION
+} uCxMqttGetTlsConfigRspType_t;
+
+typedef struct {
+    uCxMqttGetTlsConfigRspType_t type;
+    union {
+        struct
+        {
+            int32_t tls_version;           /**< Minimum TLS version to use */
+            const char * ca_name;          /**< Name of the certificate authority (CA) certificate to use */
+            const char * client_cert_name; /**< Name of the client certificate to use */
+            const char * client_key_name;  /**< Name of the private key for client certificate */
+        } rspTlsVersionStrStrStr;
+        struct
+        {
+            int32_t tls_version; /**< Minimum TLS version to use */
+        } rspTlsVersion;
+    };
+} uCxMqttGetTlsConfig_t;
+
 
 typedef struct
 {
-    int32_t mqtt_id;        /**< MQTT Config ID */
     const char * hostname;  /**< Hostname or IP address of the broker */
     int32_t port;           /**< The port of the broker */
     const char * client_id; /**< Client ID. Can be left empty to let the broker decide */
@@ -38,34 +60,11 @@ typedef struct
 
 typedef struct
 {
-    int32_t mqtt_id;    /**< MQTT Config ID */
-    int32_t keep_alive; /**< MQTT keepalive in seconds. If set to 0, no keepalive is used */
-} uCxMqttGetKeepAlive_t;
-
-typedef struct
-{
-    int32_t mqtt_id;       /**< MQTT Config ID */
     const char * topic;    /**< Topic name or filter (wildcard allowed) */
     const char * will_msg;
     int32_t qos;           /**< Quality of Service (QoS) for the message or topic */
     int32_t retain;        /**< Retain flag for message */
 } uCxMqttGetLastWillAndTestament_t;
-
-typedef struct
-{
-    int32_t mqtt_id;               /**< MQTT Config ID */
-    int32_t tls_version;           /**< Minimum TLS version to use */
-    const char * ca_name;          /**< Name of the certificate authority (CA) certificate to use */
-    const char * client_cert_name; /**< Name of the client certificate to use */
-    const char * client_key_name;  /**< Name of the private key for client certificate */
-} uCxMqttGetTlsConfig_t;
-
-typedef struct
-{
-    int32_t mqtt_id;     /**< MQTT Config ID */
-    const char * topic;  /**< Topic name or filter (wildcard allowed) */
-    int32_t message_len; /**< Length of the MQTT message */
-} uCxMqttRead_t;
 
 
 /* ------------------------------------------------------------
@@ -186,12 +185,12 @@ int32_t uCxMqttSetKeepAlive(uCxHandle_t * puCxHandle, int32_t mqtt_id, int32_t k
  * Output AT command:
  * > AT+UMQKA=<mqtt_id>
  *
- * @param[in]  puCxHandle:           uCX API handle
- * @param      mqtt_id:              MQTT Config ID
- * @param[out] pMqttGetKeepAliveRsp: Please see \ref uCxMqttGetKeepAlive_t
- * @return                           0 on success, negative value on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      mqtt_id:    MQTT Config ID
+ * @param[out] pKeepAlive: MQTT keepalive in seconds. If set to 0, no keepalive is used
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxMqttGetKeepAlive(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetKeepAlive_t * pMqttGetKeepAliveRsp);
+int32_t uCxMqttGetKeepAlive(uCxHandle_t * puCxHandle, int32_t mqtt_id, int32_t * pKeepAlive);
 
 /**
  * Add last will and testament configuration for the client
@@ -253,6 +252,19 @@ int32_t uCxMqttSetLastWillAndTestament5(uCxHandle_t * puCxHandle, int32_t mqtt_i
  * Must be terminated by calling uCxEnd()
  */
 bool uCxMqttGetLastWillAndTestamentBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetLastWillAndTestament_t * pMqttGetLastWillAndTestamentRsp);
+
+/**
+ * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
+ * 
+ * Output AT command:
+ * > AT+UMQTLS=<mqtt_id>,<tls_version>
+ *
+ * @param[in]  puCxHandle:  uCX API handle
+ * @param      mqtt_id:     MQTT Config ID
+ * @param      tls_version: Minimum TLS version to use
+ * @return                  0 on success, negative value on error.
+ */
+int32_t uCxMqttSetTlsConfig2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version);
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
@@ -369,13 +381,13 @@ int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeA
  * @param      mqtt_id:       MQTT Config ID
  * @param[out] pDataBuf:      Output data buffer
  * @param      dataBufLength: Length of pDataBuf
- * @param[out] pMqttReadRsp:  Please see \ref uCxMqttRead_t
+ * @param[out] ppTopic:       Topic name or filter (wildcard allowed)
  * @return                    Number of bytes read or negative value on error.
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, size_t dataBufLength, uCxMqttRead_t * pMqttReadRsp);
+int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, size_t dataBufLength, const char ** ppTopic);
 
 /**
  * Register Connect event callback
