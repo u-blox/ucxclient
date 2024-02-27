@@ -139,6 +139,22 @@ int32_t uCxSocketRead(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t l
     return ret;
 }
 
+int32_t uCxSocketGetLastError(uCxHandle_t * puCxHandle, int32_t * pErrorCode)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+USOE", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOE:", NULL, NULL, "d", pErrorCode, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
 int32_t uCxSocketListen(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t port)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -152,6 +168,22 @@ bool uCxSocketReceiveFromBegin(uCxHandle_t * puCxHandle, int32_t socket_handle, 
     uCxAtClientCmdBeginF(pAtClient, "AT+USORF=", "dd", socket_handle, length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USORF:", NULL, NULL, "-idds", &pSocketReceiveFromRsp->remote_ip, &pSocketReceiveFromRsp->remote_port, &pSocketReceiveFromRsp->length, &pSocketReceiveFromRsp->string_data, U_CX_AT_UTIL_PARAM_LAST);
     return ret >= 0;
+}
+
+int32_t uCxSocketGetPeerAddress(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxSocketGetPeerAddress_t * pSocketGetPeerAddressRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+USOPA=", "d", socket_handle, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOPA:", NULL, NULL, "-id", &pSocketGetPeerAddressRsp->remote_ip, &pSocketGetPeerAddressRsp->remote_port, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
 }
 
 void uCxSocketListStatusBegin(uCxHandle_t * puCxHandle)

@@ -37,6 +37,12 @@ typedef struct
 
 typedef struct
 {
+    uSockIpAddress_t remote_ip; /**< The ip address of the remote peer. */
+    int32_t remote_port;        /**< The port of the remote peer. */
+} uCxSocketGetPeerAddress_t;
+
+typedef struct
+{
     int32_t socket_handle; /**< Socket identifier be used for any operation on that socket. */
     int32_t protocol;      /**< IP protocol. */
     int32_t socket_status;
@@ -208,6 +214,18 @@ int32_t uCxSocketClose(uCxHandle_t * puCxHandle, int32_t socket_handle);
 int32_t uCxSocketRead(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uint8_t * pDataBuf);
 
 /**
+ * Retrieves the last error that occurred in any socket operation, stored in the socket errno.
+ * 
+ * Output AT command:
+ * > AT+USOE
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pErrorCode: BSD error code. See BSD standard for error code definitions.
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxSocketGetLastError(uCxHandle_t * puCxHandle, int32_t * pErrorCode);
+
+/**
  * Sets the specified socket in listening mode on the specified port of service, waiting for incoming connections (TCP) or
  * data (UDP).
  * 
@@ -238,6 +256,19 @@ int32_t uCxSocketListen(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t
  * Must be terminated by calling uCxEnd()
  */
 bool uCxSocketReceiveFromBegin(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uCxSocketReceiveFrom_t * pSocketReceiveFromRsp);
+
+/**
+ * Get the address of remote peer.
+ * 
+ * Output AT command:
+ * > AT+USOPA=<socket_handle>
+ *
+ * @param[in]  puCxHandle:               uCX API handle
+ * @param      socket_handle:            Socket identifier be used for any operation on that socket.
+ * @param[out] pSocketGetPeerAddressRsp: Please see \ref uCxSocketGetPeerAddress_t
+ * @return                               0 on success, negative value on error.
+ */
+int32_t uCxSocketGetPeerAddress(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxSocketGetPeerAddress_t * pSocketGetPeerAddressRsp);
 
 /**
  * List status for all created sockets.

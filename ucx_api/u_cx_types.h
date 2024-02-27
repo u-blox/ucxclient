@@ -26,6 +26,12 @@ extern "C" {
 
 typedef enum
 {
+    U_GREETING_MODEOFF,   /**< Turn off the greeting text. */
+    U_GREETING_MODEON = 1 /**< Turn on the greeting text. */
+} uGreetingMode_t;
+
+typedef enum
+{
     U_INTERFACE_ID_BLUETOOTH,         /**< Bluetooth */
     U_INTERFACE_ID_WI_FI_STATION = 1, /**< Wi-Fi station */
     U_INTERFACE_ID_WI_FI_AP = 2       /**< Wi-Fi Access point */
@@ -45,7 +51,7 @@ typedef enum
 
 typedef enum
 {
-    U_BT_MODE_DISABLED,              /**< Disabled. This is the factory default for NORA-W36. */
+    U_BT_MODE_DISABLED,              /**< Disabled. */
     U_BT_MODE_CENTRAL = 1,           /**< Bluetooth Low Energy Central.
                                           In this mode, starting advertisements, direct advertisements and other functions
                                           associated
@@ -53,7 +59,8 @@ typedef enum
     U_BT_MODE_PERIPHERAL = 2,        /**< Bluetooth Low Energy Peripheral.
                                           In this mode, initiating connections, discovery and other functions associated with
                                           the Central role is not possible. */
-    U_BT_MODE_CENTRAL_PERIPHERAL = 3 /**< Bluetooth Low Energy Simultaneous Central and Peripheral. */
+    U_BT_MODE_CENTRAL_PERIPHERAL = 3 /**< Bluetooth Low Energy Simultaneous Central and Peripheral. This is the factory default for
+                                          NORA-W36. */
 } uBtMode_t;
 
 typedef enum
@@ -203,9 +210,23 @@ typedef enum
 
 typedef enum
 {
+    U_SECURITY_MODE_OPEN,    /**< Open security */
+    U_SECURITY_MODE_WPA = 1, /**< WPA security */
+    U_SECURITY_MODE_EAP = 2, /**< EAP-TLS security */
+    U_SECURITY_MODE_PEAP = 3 /**< PEAP security */
+} uSecurityMode_t;
+
+typedef enum
+{
     U_WPA_THRESHOLD_WPA2,    /**< Only connect to access points that support WPA2 or up */
     U_WPA_THRESHOLD_WPA3 = 1 /**< Only connect to access points that support WPA3 */
 } uWpaThreshold_t;
+
+typedef enum
+{
+    U_IP_MODE_DHCP,      /**< DHCP */
+    U_IP_MODE_STATIC = 1 /**< Static IP */
+} uIpMode_t;
 
 typedef enum
 {

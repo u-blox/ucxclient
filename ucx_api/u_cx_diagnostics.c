@@ -77,3 +77,8 @@ void uCxDiagnosticsRegisterPingResponse(uCxHandle_t * puCxHandle, uUEDGP_t callb
 {
     puCxHandle->callbacks.UEDGP = callback;
 }
+
+void uCxDiagnosticsRegisterIperfOutput(uCxHandle_t * puCxHandle, uUEDGI_t callback)
+{
+    puCxHandle->callbacks.UEDGI = callback;
+}

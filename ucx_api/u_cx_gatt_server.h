@@ -322,7 +322,7 @@ int32_t uCxGattServerSendServiceChangedInd(uCxHandle_t * puCxHandle, int32_t con
 /**
  * Register Notification event callback
  * 
- * Unsolicited response code for GATT Client. This event occurs when a remote client writes to an attribute.
+ * Unsolicited response code for GATT Server. This event occurs when a remote client writes to an attribute.
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      callback:   callback to register. Set to NULL to unregister.
