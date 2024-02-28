@@ -20,7 +20,7 @@
 #ifndef U_CX_AT_CONFIG_H
 #define U_CX_AT_CONFIG_H
 
-#ifdef __ZEPHYR__
+#if defined(__ZEPHYR__) && defined(CONFIG_UCXCLIENT)
 # include "u_port_zephyr.h"
 #elif defined(U_PORT_NO_OS)
 # include "u_port_no_os.h"
