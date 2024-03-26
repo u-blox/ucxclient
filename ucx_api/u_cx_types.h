@@ -230,12 +230,19 @@ typedef enum
 
 typedef enum
 {
-    U_STATUS_ID_IPV4,         /**< The current IPv4 address. */
-    U_STATUS_ID_SUBNET = 1,   /**< The current subnet mask */
-    U_STATUS_ID_GATE_WAY = 2, /**< The current gateway */
-    U_STATUS_ID_PRIM_DNS = 3, /**< The current primary DNS server */
-    U_STATUS_ID_SEC_DNS = 4,  /**< The current secondary DNS server */
-    U_STATUS_ID_IPV6 = 5      /**< The current IPv6 link local address */
+    U_STATUS_ID_IPV4,         /**< The current IPv4 address.
+                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_STATUS_ID_SUBNET = 1,   /**< The current subnet mask
+                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_STATUS_ID_GATE_WAY = 2, /**< The current gateway
+                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_STATUS_ID_PRIM_DNS = 3, /**< The current primary DNS server
+                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_STATUS_ID_SEC_DNS = 4,  /**< The current secondary DNS server
+                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_STATUS_ID_IPV6 = 5      /**< The current IPv6 link local address
+                                   Note: If network is down this will be [0000:0000:0000:0000:0000:0000:0000:0000] regardless
+                                   of IP setting */
 } uStatusId_t;
 
 typedef enum

@@ -20,6 +20,7 @@
 
 static int32_t parseUEBTC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     uBtLeAddress_t bd_addr;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "db", &conn_handle, &bd_addr, U_CX_AT_UTIL_PARAM_LAST);
@@ -31,6 +32,7 @@ static int32_t parseUEBTC(uCxHandle_t * puCxHandle, char * pParams, size_t param
 
 static int32_t parseUEBTDC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &conn_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEBTDC) {
@@ -41,6 +43,7 @@ static int32_t parseUEBTDC(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEBTB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     uBtLeAddress_t bd_addr;
     int32_t bond_status;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "bd", &bd_addr, &bond_status, U_CX_AT_UTIL_PARAM_LAST);
@@ -52,6 +55,7 @@ static int32_t parseUEBTB(uCxHandle_t * puCxHandle, char * pParams, size_t param
 
 static int32_t parseUEBTUC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     uBtLeAddress_t bd_addr;
     int32_t numeric_value;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "bd", &bd_addr, &numeric_value, U_CX_AT_UTIL_PARAM_LAST);
@@ -63,6 +67,7 @@ static int32_t parseUEBTUC(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEBTUPD(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     uBtLeAddress_t bd_addr;
     int32_t numeric_value;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "bd", &bd_addr, &numeric_value, U_CX_AT_UTIL_PARAM_LAST);
@@ -74,6 +79,7 @@ static int32_t parseUEBTUPD(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEBTUPE(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     uBtLeAddress_t bd_addr;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "b", &bd_addr, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEBTUPE) {
@@ -84,6 +90,7 @@ static int32_t parseUEBTUPE(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEBTPHYU(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t phy_status;
     int32_t tx_phy;
@@ -97,6 +104,7 @@ static int32_t parseUEBTPHYU(uCxHandle_t * puCxHandle, char * pParams, size_t pa
 
 static int32_t parseUEBTGCN(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t value_handle;
     uByteArray_t hex_data;
@@ -109,6 +117,7 @@ static int32_t parseUEBTGCN(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEBTGCI(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t value_handle;
     uByteArray_t hex_data;
@@ -121,6 +130,7 @@ static int32_t parseUEBTGCI(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEBTGCW(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t value_handle;
     uByteArray_t value;
@@ -134,6 +144,7 @@ static int32_t parseUEBTGCW(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEBTGRR(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t value_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &conn_handle, &value_handle, U_CX_AT_UTIL_PARAM_LAST);
@@ -145,6 +156,7 @@ static int32_t parseUEBTGRR(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEBTGIC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t char_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &conn_handle, &char_handle, U_CX_AT_UTIL_PARAM_LAST);
@@ -156,6 +168,7 @@ static int32_t parseUEBTGIC(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUESPSC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &conn_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESPSC) {
@@ -166,6 +179,7 @@ static int32_t parseUESPSC(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUESPSDC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &conn_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESPSDC) {
@@ -176,6 +190,7 @@ static int32_t parseUESPSDC(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUESPSDS(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     const char * string_data;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "ds", &conn_handle, &string_data, U_CX_AT_UTIL_PARAM_LAST);
@@ -187,6 +202,7 @@ static int32_t parseUESPSDS(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUESPSDB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &conn_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESPSDB) {
@@ -197,6 +213,7 @@ static int32_t parseUESPSDB(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUESPSDA(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t conn_handle;
     int32_t number_bytes;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &conn_handle, &number_bytes, U_CX_AT_UTIL_PARAM_LAST);
@@ -208,6 +225,7 @@ static int32_t parseUESPSDA(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEWLU(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t wlan_handle;
     uMacAddress_t bssid;
     int32_t channel;
@@ -220,6 +238,7 @@ static int32_t parseUEWLU(uCxHandle_t * puCxHandle, char * pParams, size_t param
 
 static int32_t parseUEWLD(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t wlan_handle;
     int32_t reason;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &wlan_handle, &reason, U_CX_AT_UTIL_PARAM_LAST);
@@ -231,6 +250,7 @@ static int32_t parseUEWLD(uCxHandle_t * puCxHandle, char * pParams, size_t param
 
 static int32_t parseUEWSNU(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWSNU) {
         puCxHandle->callbacks.UEWSNU(puCxHandle);
@@ -240,6 +260,7 @@ static int32_t parseUEWSNU(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEWSND(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWSND) {
         puCxHandle->callbacks.UEWSND(puCxHandle);
@@ -249,6 +270,7 @@ static int32_t parseUEWSND(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEWAPNU(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWAPNU) {
         puCxHandle->callbacks.UEWAPNU(puCxHandle);
@@ -258,6 +280,7 @@ static int32_t parseUEWAPNU(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEWAPND(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWAPND) {
         puCxHandle->callbacks.UEWAPND(puCxHandle);
@@ -267,6 +290,7 @@ static int32_t parseUEWAPND(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEWAPU(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWAPU) {
         puCxHandle->callbacks.UEWAPU(puCxHandle);
@@ -276,6 +300,7 @@ static int32_t parseUEWAPU(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEWAPD(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWAPD) {
         puCxHandle->callbacks.UEWAPD(puCxHandle);
@@ -285,6 +310,7 @@ static int32_t parseUEWAPD(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEWAPSA(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     uMacAddress_t mac;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "m", &mac, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWAPSA) {
@@ -295,6 +321,7 @@ static int32_t parseUEWAPSA(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUEWAPSDA(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     uMacAddress_t mac;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "m", &mac, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWAPSDA) {
@@ -305,6 +332,7 @@ static int32_t parseUEWAPSDA(uCxHandle_t * puCxHandle, char * pParams, size_t pa
 
 static int32_t parseUESOC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &socket_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESOC) {
@@ -315,6 +343,7 @@ static int32_t parseUESOC(uCxHandle_t * puCxHandle, char * pParams, size_t param
 
 static int32_t parseUESODA(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     int32_t number_bytes;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &socket_handle, &number_bytes, U_CX_AT_UTIL_PARAM_LAST);
@@ -326,6 +355,7 @@ static int32_t parseUESODA(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUESODS(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     const char * string_data;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "ds", &socket_handle, &string_data, U_CX_AT_UTIL_PARAM_LAST);
@@ -337,6 +367,7 @@ static int32_t parseUESODS(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUESODSF(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     uSockIpAddress_t remote_ip;
     int32_t remote_port;
@@ -350,6 +381,7 @@ static int32_t parseUESODSF(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUESODB(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &socket_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESODB) {
@@ -360,6 +392,7 @@ static int32_t parseUESODB(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUESODBF(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     uSockIpAddress_t remote_ip;
     int32_t remote_port;
@@ -372,6 +405,7 @@ static int32_t parseUESODBF(uCxHandle_t * puCxHandle, char * pParams, size_t par
 
 static int32_t parseUESOCL(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &socket_handle, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESOCL) {
@@ -382,6 +416,7 @@ static int32_t parseUESOCL(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUESOIC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t socket_handle;
     uSockIpAddress_t remote_ip;
     int32_t listening_socket_handle;
@@ -394,6 +429,7 @@ static int32_t parseUESOIC(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEMQC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t mqtt_id;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEMQC) {
@@ -404,6 +440,7 @@ static int32_t parseUEMQC(uCxHandle_t * puCxHandle, char * pParams, size_t param
 
 static int32_t parseUEMQDC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t mqtt_id;
     int32_t disconnect_reason;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &mqtt_id, &disconnect_reason, U_CX_AT_UTIL_PARAM_LAST);
@@ -415,6 +452,7 @@ static int32_t parseUEMQDC(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEMQDA(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t mqtt_id;
     int32_t message_len;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &mqtt_id, &message_len, U_CX_AT_UTIL_PARAM_LAST);
@@ -426,6 +464,7 @@ static int32_t parseUEMQDA(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEDGPC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t transmitted_packets;
     int32_t received_packets;
     int32_t packet_loss_rate;
@@ -439,6 +478,7 @@ static int32_t parseUEDGPC(uCxHandle_t * puCxHandle, char * pParams, size_t para
 
 static int32_t parseUEDGP(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     int32_t ping_response;
     int32_t response_time;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &ping_response, &response_time, U_CX_AT_UTIL_PARAM_LAST);
@@ -450,6 +490,7 @@ static int32_t parseUEDGP(uCxHandle_t * puCxHandle, char * pParams, size_t param
 
 static int32_t parseUEDGI(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
+    (void)paramsLength;
     const char * iperf_output;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "s", &iperf_output, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEDGI) {

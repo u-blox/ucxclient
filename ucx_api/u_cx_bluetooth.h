@@ -87,6 +87,9 @@ typedef struct
 /**
  * Set Bluetooth Mode.
  * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
+ * 
  * Output AT command:
  * > AT+UBTM=<bt_mode>
  *
@@ -149,6 +152,9 @@ bool uCxBluetoothGetLocalNameBegin(uCxHandle_t * puCxHandle, const char ** ppDev
 
 /**
  * Writes the local Bluetooth device name.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UBTLN=<device_name>
@@ -364,6 +370,9 @@ int32_t uCxBluetoothGetConnectionStatus(uCxHandle_t * puCxHandle, int32_t conn_h
 /**
  * Write custom advertising data.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UBTAD=<adv_data>,<adv_data_len>
  *
@@ -392,6 +401,9 @@ bool uCxBluetoothGetAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * 
 /**
  * Write scan response data.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UBTSD=<scan_rsp_data>,<scan_rsp_data_len>
  *
@@ -419,6 +431,9 @@ bool uCxBluetoothGetScanResponseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t
 
 /**
  * Set advertisements on or off.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UBTA=<adv_mode>
@@ -477,6 +492,9 @@ int32_t uCxBluetoothDirectedAdvertisement2(uCxHandle_t * puCxHandle, uBtLeAddres
 /**
  * Write connection interval minimum.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UBTCS0=<connection_interval_minimum>
  *
@@ -506,6 +524,9 @@ int32_t uCxBluetoothGetConnectionIntervalMin(uCxHandle_t * puCxHandle, int32_t *
 
 /**
  * Write connection interval maximum.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UBTCS1=<connection_interval_maximum>
@@ -537,6 +558,9 @@ int32_t uCxBluetoothGetConnectionIntervalMax(uCxHandle_t * puCxHandle, int32_t *
 /**
  * Write connection peripheral latency.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UBTCS2=<connection_peripheral_latency>
  *
@@ -565,6 +589,9 @@ int32_t uCxBluetoothGetConnectionPeripheralLatency(uCxHandle_t * puCxHandle, int
 /**
  * Write connection linkloss timeout.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UBTCS3=<connection_linkloss_timeout>
  *
@@ -592,6 +619,9 @@ int32_t uCxBluetoothGetConnectionLinklossTimeout(uCxHandle_t * puCxHandle, int32
 
 /**
  * Write Preferred TX PHY.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UBTCS4=<preferred_tx_phy>
@@ -626,6 +656,9 @@ int32_t uCxBluetoothGetPreferredTxPhy(uCxHandle_t * puCxHandle, int32_t * pPrefe
 
 /**
  * Write Preferred RX PHY.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UBTCS5=<preferred_rx_phy>
@@ -717,6 +750,9 @@ int32_t uCxBluetoothGetAdvIntervalMax(uCxHandle_t * puCxHandle, int32_t * pAdver
 /**
  * Set I/O Capabilities
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UBTIOC=<io_capabilities>
  *
@@ -741,6 +777,9 @@ int32_t uCxBluetoothGetIoCapabilities(uCxHandle_t * puCxHandle, uIoCapabilities_
 /**
  * Writes the security mode
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UBTBSM=<bt_security_mode>
  *
@@ -764,6 +803,9 @@ int32_t uCxBluetoothGetSecurityMode(uCxHandle_t * puCxHandle, uBtSecurityMode_t 
 
 /**
  * Writes the pairing mode.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UBTPM=<pairing_mode>
@@ -888,6 +930,9 @@ bool uCxBluetoothListBondedDevicesGetNext(uCxHandle_t * puCxHandle, uBtLeAddress
 
 /**
  * Set a characteristic value.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UBTDIS=<characteristic_id>,<characteristic_value>

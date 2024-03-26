@@ -188,7 +188,7 @@ int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pD
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UMQRB=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQRB:", pBinBuffer, &binBufferLen, "-s", ppTopic, U_CX_AT_UTIL_PARAM_LAST);
-    return (ret < 0) ? ret : binBufferLen;
+    return (ret < 0) ? ret : (int32_t)binBufferLen;
 }
 
 void uCxMqttRegisterConnect(uCxHandle_t * puCxHandle, uUEMQC_t callback)

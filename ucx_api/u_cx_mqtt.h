@@ -72,8 +72,11 @@ typedef struct
  * ---------------------------------------------------------- */
 
 /**
- * Set the MQTT login parameters.
- * Note that empty strings for username and password mean they will not be used during the connection.
+ * Set the MQTT connection parameters.
+ * 
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQCP=<mqtt_id>,<hostname>,<port>
@@ -87,8 +90,11 @@ typedef struct
 int32_t uCxMqttSetConnectionParams3(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * hostname, int32_t port);
 
 /**
- * Set the MQTT login parameters.
- * Note that empty strings for username and password mean they will not be used during the connection.
+ * Set the MQTT connection parameters.
+ * 
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQCP=<mqtt_id>,<hostname>,<port>,<client_id>
@@ -103,8 +109,11 @@ int32_t uCxMqttSetConnectionParams3(uCxHandle_t * puCxHandle, int32_t mqtt_id, c
 int32_t uCxMqttSetConnectionParams4(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * hostname, int32_t port, const char * client_id);
 
 /**
- * Set the MQTT login parameters.
- * Note that empty strings for username and password mean they will not be used during the connection.
+ * Set the MQTT connection parameters.
+ * 
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQCP=<mqtt_id>,<hostname>,<port>,<client_id>,<username>
@@ -120,8 +129,11 @@ int32_t uCxMqttSetConnectionParams4(uCxHandle_t * puCxHandle, int32_t mqtt_id, c
 int32_t uCxMqttSetConnectionParams5(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * hostname, int32_t port, const char * client_id, const char * username);
 
 /**
- * Set the MQTT login parameters.
- * Note that empty strings for username and password mean they will not be used during the connection.
+ * Set the MQTT connection parameters.
+ * 
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQCP=<mqtt_id>,<hostname>,<port>,<client_id>,<username>,<password>
@@ -138,8 +150,7 @@ int32_t uCxMqttSetConnectionParams5(uCxHandle_t * puCxHandle, int32_t mqtt_id, c
 int32_t uCxMqttSetConnectionParams6(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * hostname, int32_t port, const char * client_id, const char * username, const char * password);
 
 /**
- * Get the MQTT login parameters.
- * Note that empty strings for username and password mean they will not be used during the connection.
+ * Get the MQTT connection parameters.
  * 
  * Output AT command:
  * > AT+UMQCP=<mqtt_id>
@@ -169,6 +180,9 @@ int32_t uCxMqttConnect(uCxHandle_t * puCxHandle, int32_t mqtt_id);
 /**
  * Set keepalive timeout for MQTT the MQTT config
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UMQKA=<mqtt_id>,<keep_alive>
  *
@@ -195,6 +209,9 @@ int32_t uCxMqttGetKeepAlive(uCxHandle_t * puCxHandle, int32_t mqtt_id, int32_t *
 /**
  * Add last will and testament configuration for the client
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UMQLWT=<mqtt_id>,<topic>,<will_msg>
  *
@@ -208,6 +225,9 @@ int32_t uCxMqttSetLastWillAndTestament3(uCxHandle_t * puCxHandle, int32_t mqtt_i
 
 /**
  * Add last will and testament configuration for the client
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQLWT=<mqtt_id>,<topic>,<will_msg>,<qos>
@@ -223,6 +243,9 @@ int32_t uCxMqttSetLastWillAndTestament4(uCxHandle_t * puCxHandle, int32_t mqtt_i
 
 /**
  * Add last will and testament configuration for the client
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQLWT=<mqtt_id>,<topic>,<will_msg>,<qos>,<retain>
@@ -256,6 +279,9 @@ bool uCxMqttGetLastWillAndTestamentBegin(uCxHandle_t * puCxHandle, int32_t mqtt_
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UMQTLS=<mqtt_id>,<tls_version>
  *
@@ -268,6 +294,9 @@ int32_t uCxMqttSetTlsConfig2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQTLS=<mqtt_id>,<tls_version>,<ca_name>
@@ -282,6 +311,9 @@ int32_t uCxMqttSetTlsConfig3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UMQTLS=<mqtt_id>,<tls_version>,<ca_name>,<client_cert_name>,<client_key_name>

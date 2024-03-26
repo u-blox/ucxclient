@@ -259,7 +259,7 @@ int32_t uCxGattServerSendIndication(uCxHandle_t * puCxHandle, int32_t conn_handl
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      attr_handle: Attribute handle.
- * @param      value:       Characterstic value. This can be 244 bytes long.
+ * @param      value:       Characteristic value. This can be 244 bytes long.
  * @param      value_len:   length of value
  * @return                  0 on success, negative value on error.
  */
@@ -333,7 +333,7 @@ void uCxGattServerRegisterNotification(uCxHandle_t * puCxHandle, uUEBTGCW_t call
  * Register ReadAttribute event callback
  * 
  * Unsolicited response code for GATT Server. This event occurs when a remote client reads an attribute over the air. The
- * event should be responded with AT+UBTGRR.
+ * event should be responded with AT+UBTGRRR.
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      callback:   callback to register. Set to NULL to unregister.
@@ -344,7 +344,7 @@ void uCxGattServerRegisterReadAttribute(uCxHandle_t * puCxHandle, uUEBTGRR_t cal
  * Register IndicationAck event callback
  * 
  * Unsolicited response code for GATT Server. This event occurs when a remote GATT client acknowledges the receipt of an
- * indication message sent using +UBTGSI.
+ * indication message sent using AT+UBTGIS.
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      callback:   callback to register. Set to NULL to unregister.
