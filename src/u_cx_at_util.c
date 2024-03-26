@@ -112,7 +112,7 @@ int32_t uCxAtUtilHexToByte(const char *pHex, uint8_t *pOutByte)
     if ((highNibble < 0) || (lowNibble < 0)) {
         return -1;
     }
-    *pOutByte = (highNibble << 4) | lowNibble;
+    *pOutByte = (uint8_t)((highNibble << 4) | lowNibble);
     return 0;
 }
 

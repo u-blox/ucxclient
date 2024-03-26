@@ -250,6 +250,7 @@ int32_t uCxIpAddressToString(const uSockIpAddress_t *pIpAddress,
             pWritePtr[0] = ']';
             pWritePtr[1] = 0;
             pWritePtr += 2;
+            (void)pWritePtr; // Keep clang-analyzer happy
             break;
         default:
             // Invalid address type

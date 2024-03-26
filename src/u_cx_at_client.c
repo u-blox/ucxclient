@@ -276,7 +276,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
         } else {
             // The two length bytes have now been received
             int32_t parse_code;
-            uint16_t length = (lengthBuf[0] << 8) | lengthBuf[1];
+            uint16_t length = (uint16_t)(lengthBuf[0] << 8) | lengthBuf[1];
             char *pRxBuffer = (char *)pClient->pConfig->pRxBuffer;
             parse_code = parseLine(pClient, pRxBuffer, pClient->rxBufferPos);
             setupBinaryTransfer(pClient, parse_code, length);
