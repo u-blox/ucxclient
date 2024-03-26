@@ -35,6 +35,10 @@
 static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine, size_t lineLength,
                         uint8_t *pBinaryData, size_t binaryDataLen)
 {
+    (void)pClient;
+    (void)pTag;
+    (void)pBinaryData;
+    (void)binaryDataLen;
     uCxHandle_t *puCxHandle = (uCxHandle_t *)pTag;
     char *pParams = pLine;
     size_t paramLen = lineLength;

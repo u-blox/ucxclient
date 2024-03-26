@@ -95,18 +95,24 @@ static void signalEvent(uint32_t evtFlag)
 
 static void networkUpUrc(struct uCxHandle *puCxHandle)
 {
+    (void)puCxHandle;
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "networkUpUrc");
     signalEvent(URC_FLAG_NETWORK_UP);
 }
 
 static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
 {
+    (void)puCxHandle;
+    (void)socket_handle;
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "sockConnected");
     signalEvent(URC_FLAG_SOCK_CONNECTED);
 }
 
 static void socketData(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes)
 {
+    (void)puCxHandle;
+    (void)socket_handle;
+    (void)number_bytes;
     signalEvent(URC_FLAG_SOCK_DATA);
 }
 

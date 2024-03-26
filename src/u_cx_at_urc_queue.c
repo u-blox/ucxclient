@@ -87,7 +87,7 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
         uUrcEntry_t *pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[pUrcQueue->bufferPos];
         memcpy(&pEntry->data[0], pUrcLine, urcLineLen);
         pEntry->data[urcLineLen] = 0; // Add null term
-        pEntry->strLineLen = urcLineLen;
+        pEntry->strLineLen = (uint16_t)urcLineLen;
         pEntry->payloadSize = 0;
         pUrcQueue->bufferPos += sizeof(uUrcEntry_t) + urcLineLen + 1;
         pUrcQueue->pEnqueueEntry = pEntry;
