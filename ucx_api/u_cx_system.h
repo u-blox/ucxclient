@@ -30,7 +30,8 @@ extern "C" {
 typedef struct
 {
     int32_t baud_rate;    /**< Baudrate */
-    int32_t flow_control;
+    int32_t flow_control; /**< 0: No flow control
+                               1: Use CTS/RTS flow control */
 } uCxSystemGetUartSettings_t;
 
 typedef struct
@@ -78,8 +79,8 @@ int32_t uCxSystemStoreConfiguration(uCxHandle_t * puCxHandle);
  * @param[in]  puCxHandle:   uCX API handle
  * @param      interface_id: 
  * @param[out] pAddress:     MAC address of the interface id. If the address is set to 000000000000, the local address
- *                           will be restored to factory-programmed value. A reboot is required The least significant
- *                           bit of the first octet of the <address> must be 0.
+ *                           will be restored to factory-programmed value. The least significant bit of the first octet
+ *                           of the <address> must be 0.
  * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * pAddress);
@@ -87,14 +88,17 @@ int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interf
 /**
  * Set interface address
  * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
+ * 
  * Output AT command:
  * > AT+USYLA=<interface_id>,<address>
  *
  * @param[in]  puCxHandle:   uCX API handle
  * @param      interface_id: 
  * @param      address:      MAC address of the interface id. If the address is set to 000000000000, the local address
- *                           will be restored to factory-programmed value. A reboot is required The least significant
- *                           bit of the first octet of the <address> must be 0.
+ *                           will be restored to factory-programmed value. The least significant bit of the first octet
+ *                           of the <address> must be 0.
  * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemSetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * address);
@@ -102,7 +106,10 @@ int32_t uCxSystemSetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interf
 /**
  * The module is completely restored to factory defaults. All settings are reset to default values.
  * All certificates and Bluetooth bonding information will be removed.
- * A reboot is required before using the new settings.
+ * 
+ * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
  * 
  * Output AT command:
  * > AT+USYFR
@@ -115,7 +122,10 @@ int32_t uCxSystemFactoryReset(uCxHandle_t * puCxHandle);
 /**
  * Reset all settings to default values.
  * Certificates and Bluetooth bonding information will be left untouched.
- * A reboot is required before using the new settings.
+ * 
+ * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
  * 
  * Output AT command:
  * > AT+USYDS
@@ -128,6 +138,9 @@ int32_t uCxSystemDefaultSettings(uCxHandle_t * puCxHandle);
 /**
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
  * unsupported.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+USYUS=<baud_rate>
@@ -142,12 +155,16 @@ int32_t uCxSystemSetUartSettings1(uCxHandle_t * puCxHandle, int32_t baud_rate);
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
  * unsupported.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+USYUS=<baud_rate>,<flow_control>
  *
  * @param[in]  puCxHandle:   uCX API handle
  * @param      baud_rate:    Baudrate
- * @param      flow_control: 
+ * @param      flow_control: 0: No flow control
+ *                           1: Use CTS/RTS flow control
  * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemSetUartSettings2(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control);
@@ -156,13 +173,18 @@ int32_t uCxSystemSetUartSettings2(uCxHandle_t * puCxHandle, int32_t baud_rate, i
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
  * unsupported.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+USYUS=<baud_rate>,<flow_control>,<change_after_confirm>
  *
  * @param[in]  puCxHandle:           uCX API handle
  * @param      baud_rate:            Baudrate
- * @param      flow_control:         
- * @param      change_after_confirm: 
+ * @param      flow_control:         0: No flow control
+ *                                   1: Use CTS/RTS flow control
+ * @param      change_after_confirm: 0: Switch baudrate after reboot. When set AT&W must be called.
+ *                                   1: Switch baudrate directly after status OK have been sent.
  * @return                           0 on success, negative value on error.
  */
 int32_t uCxSystemSetUartSettings3(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control, int32_t change_after_confirm);
@@ -194,6 +216,9 @@ int32_t uCxSystemGetLastErrorCode(uCxHandle_t * puCxHandle, int32_t * pErrorCode
 /**
  * Enable or disable extended error codes
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+USYEE=<extended_errors>
  *
@@ -218,6 +243,9 @@ int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t * 
 /**
  * Set echo off
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > ATE0
  *
@@ -228,6 +256,9 @@ int32_t uCxSystemSetEchoOff(uCxHandle_t * puCxHandle);
 
 /**
  * Set echo on
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > ATE1
@@ -252,6 +283,9 @@ int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uEchoOn_t * pEchoOn);
 /**
  * Write escape character. This settings change the decimal value of the escape character used by some modes, such as
  * transparent mode for example, to detect an escape sequence and exit.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > ATS2=<escape_char>
@@ -283,6 +317,9 @@ int32_t uCxSystemGetEscSequenceChar(uCxHandle_t * puCxHandle, int32_t * pEscapeC
  * if S3 was previously set to 13 and the command line "ATS3=30" is issued, the command line shall be terminated with a CR,
  * character (13), but the result code issued will use the character with the ordinal value 30 instead of the CR.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > ATS3=<line_term>
  *
@@ -309,6 +346,9 @@ int32_t uCxSystemGetLineTermChar(uCxHandle_t * puCxHandle, int32_t * pLineTerm);
  * the header, trailer, and terminator for result codes and information text, along with the S3 parameter. If the value of
  * S4 is changed in a command line, the result code issued in response to that command line will use the new value of S4.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > ATS4=<resp_format>
  *
@@ -333,6 +373,9 @@ int32_t uCxSystemGetRspFormatChar(uCxHandle_t * puCxHandle, int32_t * pRespForma
 /**
  * Writes backspace character. This setting changes the decimal value of the character recognized by the DCE as a request
  * to delete from the command line, the immediately preceding character.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > ATS5=<backspace>

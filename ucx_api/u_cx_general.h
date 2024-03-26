@@ -164,6 +164,9 @@ bool uCxGeneralGetTypeCodeBegin(uCxHandle_t * puCxHandle, const char ** ppTypeCo
 /**
  * Set the greeting text and mode.
  * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
+ * 
  * Output AT command:
  * > AT+CSGT=<greeting_mode>
  *
@@ -175,6 +178,9 @@ int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGreetingMode_t gre
 
 /**
  * Set the greeting text and mode.
+ * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
  * 
  * Output AT command:
  * > AT+CSGT=<greeting_mode>,<text>

@@ -60,6 +60,9 @@ int32_t uCxSpsConnect2(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t fl
 /**
  * Enables or disable the SPS Service.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+USPS=<sps_service_option>
  *
@@ -98,6 +101,9 @@ int32_t uCxSpsWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t * pWD
 
 /**
  * Set the mode in which to receive SPS data in AT mode.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+USPSRM=<read_mode>

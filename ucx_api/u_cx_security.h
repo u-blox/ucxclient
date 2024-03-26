@@ -152,6 +152,9 @@ bool uCxSecurityListTlsExtensionsGetNext(uCxHandle_t * puCxHandle, uCxSecurityLi
 /**
  * Turn Server Name Indication TLS extension on and off on a system level
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+USETE0=<enabled>
  *
@@ -175,6 +178,9 @@ int32_t uCxSecurityGetTlsServerNameIndication(uCxHandle_t * puCxHandle, uEnabled
 
 /**
  * Turn Handshake Fragmentation TLS extension on and off on a system level
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+USETE1=<enabled>

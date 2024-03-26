@@ -187,6 +187,9 @@ typedef struct
 /**
  * Set the Host Name
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWHN=<host_name>
  *
@@ -213,6 +216,9 @@ bool uCxWifiGetHostnameBegin(uCxHandle_t * puCxHandle, const char ** ppHostName)
 
 /**
  * Set the EAP-TLS connection parameters to use.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWSSE=<wlan_handle>,<ca_name>,<client_cert_name>,<client_key_name>
@@ -245,6 +251,9 @@ bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handl
 /**
  * Set the PEAP connection parameters to use.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWSSP=<wlan_handle>,<peap_user>,<peap_password>
  *
@@ -259,6 +268,9 @@ int32_t uCxWifiStationSetSecurityPeap3(uCxHandle_t * puCxHandle, int32_t wlan_ha
 
 /**
  * Set the PEAP connection parameters to use.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWSSP=<wlan_handle>,<peap_user>,<peap_password>,<ca_name>
@@ -276,6 +288,9 @@ int32_t uCxWifiStationSetSecurityPeap4(uCxHandle_t * puCxHandle, int32_t wlan_ha
 /**
  * Set WPA connection parameters to use
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWSSW=<wlan_handle>,<passphrase>,<wpa_threshold>
  *
@@ -290,6 +305,9 @@ int32_t uCxWifiStationSetSecurityWpa(uCxHandle_t * puCxHandle, int32_t wlan_hand
 /**
  * Sets security to open security
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWSSO=<wlan_handle>
  *
@@ -301,6 +319,9 @@ int32_t uCxWifiStationSetSecurityOpen(uCxHandle_t * puCxHandle, int32_t wlan_han
 
 /**
  * Sets the connection parameters for the connection.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWSCP=<wlan_handle>,<ssid>
@@ -331,6 +352,9 @@ bool uCxWifiStationGetConnectionParamsBegin(uCxHandle_t * puCxHandle, int32_t wl
 /**
  * Sets ip configuration to use static ip
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWSIPS=<wlan_handle>,<ip_addr>,<subnet_mask>,<gateway>
  *
@@ -345,6 +369,9 @@ int32_t uCxWifiStationSetIpConfigStatic4(uCxHandle_t * puCxHandle, int32_t wlan_
 
 /**
  * Sets ip configuration to use static ip
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWSIPS=<wlan_handle>,<ip_addr>,<subnet_mask>,<gateway>,<prim_dns>
@@ -362,6 +389,9 @@ int32_t uCxWifiStationSetIpConfigStatic5(uCxHandle_t * puCxHandle, int32_t wlan_
 /**
  * Sets ip configuration to use static ip
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWSIPS=<wlan_handle>,<ip_addr>,<subnet_mask>,<gateway>,<prim_dns>,<sec_dns>
  *
@@ -378,6 +408,9 @@ int32_t uCxWifiStationSetIpConfigStatic6(uCxHandle_t * puCxHandle, int32_t wlan_
 
 /**
  * Sets ip configuration to receive ip address via dhcp
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWSIPD=<wlan_handle>
@@ -404,6 +437,9 @@ int32_t uCxWifiStationGetIpConfig(uCxHandle_t * puCxHandle, int32_t wlan_handle,
 /**
  * Initiate connection to Wi-Fi network
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWSC=<wlan_handle>
  *
@@ -415,6 +451,9 @@ int32_t uCxWifiStationConnect(uCxHandle_t * puCxHandle, int32_t wlan_handle);
 
 /**
  * Disconnect from Wi-Fi network
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWSDC
@@ -555,6 +594,9 @@ bool uCxWifiStationStatusBegin(uCxHandle_t * puCxHandle, uWifiStatusId_t wifi_st
 /**
  * Start an access point with the current access point configuration.
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWAPA
  *
@@ -565,6 +607,9 @@ int32_t uCxWifiApActivate(uCxHandle_t * puCxHandle);
 
 /**
  * Brings down Wi-Fi access point and disconnect all connected stations
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWAPD
@@ -577,6 +622,9 @@ int32_t uCxWifiApDeactivate(uCxHandle_t * puCxHandle);
 /**
  * Sets connection parameters for the AP configuration
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWAPCP=<ssid>
  *
@@ -588,6 +636,9 @@ int32_t uCxWifiApSetConnectionParams1(uCxHandle_t * puCxHandle, const char * ssi
 
 /**
  * Sets connection parameters for the AP configuration
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWAPCP=<ssid>,<channel>
@@ -617,6 +668,9 @@ bool uCxWifiApGetConnectionParamsBegin(uCxHandle_t * puCxHandle, uCxWifiApGetCon
 /**
  * Sets WPA parameters for the AP config
  * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
  * Output AT command:
  * > AT+UWAPSW=<passphrase>
  *
@@ -628,6 +682,9 @@ int32_t uCxWifiApSetSecurityWpa1(uCxHandle_t * puCxHandle, const char * passphra
 
 /**
  * Sets WPA parameters for the AP config
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWAPSW=<passphrase>,<wpa_version>
@@ -641,6 +698,9 @@ int32_t uCxWifiApSetSecurityWpa2(uCxHandle_t * puCxHandle, const char * passphra
 
 /**
  * Sets security level to open for the AP config
+ * 
+ * Notes:
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWAPSO

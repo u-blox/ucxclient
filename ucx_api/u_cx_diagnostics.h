@@ -61,9 +61,12 @@ int32_t uCxDiagnosticsPing2(uCxHandle_t * puCxHandle, const char * destination, 
 
 /**
  * This command will stop any ping in progress.
- * Please note the command is asynchronous, and the ping will not be interrupted immediately,
- * but right after the next ping packet has a response, which might take a few seconds if the packet response times out.
- * This command always returns OK and does nothing if there is no ping in progress.
+ * 
+ * 
+ * Notes:
+ * The command is asynchronous, and the ping will not be interrupted immediately, but right after the next ping packet has
+ * a response, which might take a few seconds if the packet response times out. This command always returns OK and does
+ * nothing if there is no ping in progress.
  * 
  * Output AT command:
  * > AT+UDGSP

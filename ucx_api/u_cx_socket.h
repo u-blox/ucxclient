@@ -170,8 +170,12 @@ int32_t uCxSocketConnect(uCxHandle_t * puCxHandle, int32_t socket_handle, const 
 
 /**
  * Set the mode in which you would like to receive data in AT mode.
- * NOTE: Any created sockets or created persistent sockets will use the same receive mode as was configured when they were
+ * 
+ * 
+ * Notes:
+ * Any created sockets or created persistent sockets will use the same receive mode as was configured when they were
  * created
+ * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+USORM=<read_mode>
