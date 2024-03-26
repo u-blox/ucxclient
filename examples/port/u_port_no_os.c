@@ -198,12 +198,12 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     assert(pCtx != NULL);
     assert(pCtx->uartFd == -1);
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Opening %s at %d with %s flow control",
-                  pDevName, baudRate, useFlowControl ? "CTS/RTS" : "no");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Opening %s at %d with %s flow control",
+                    pDevName, baudRate, useFlowControl ? "CTS/RTS" : "no");
 
     gUartFd = openUart(pDevName, baudRate, useFlowControl);
     if (gUartFd < 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to open UART");
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to open UART");
         return false;
     }
     pCtx->uartFd = gUartFd;
@@ -216,7 +216,7 @@ void uPortAtClose(uCxAtClient_t *pClient)
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     assert(pCtx->uartFd != -1);
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Closing UART");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Closing UART");
 
     close(pCtx->uartFd);
     pCtx->uartFd = -1;

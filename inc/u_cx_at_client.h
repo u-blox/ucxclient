@@ -86,6 +86,7 @@ typedef struct uCxAtClient {
     uCxAtBinaryRx_t binaryRx;
     uCxAtBinaryResponseBuf_t rspBinaryBuf;
     U_CX_MUTEX_HANDLE cmdMutex;
+    int32_t instance;
 } uCxAtClient_t;
 
 typedef struct uCxAtClientConfig {

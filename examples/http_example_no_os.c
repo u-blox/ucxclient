@@ -73,7 +73,7 @@ static bool waitEvent(uCxAtClient_t *pClient, uint32_t evtFlag, uint32_t timeout
     int32_t timeoutMs = timeoutS * 1000;
     int32_t startTime = U_CX_PORT_GET_TIME_MS();
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%d, %d)", evtFlag, timeoutS);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "waitEvent(%d, %d)", evtFlag, timeoutS);
     do {
         uCxAtClientHandleRx(pClient);
         if (gUrcEventFlags & evtFlag) {
@@ -81,7 +81,7 @@ static bool waitEvent(uCxAtClient_t *pClient, uint32_t evtFlag, uint32_t timeout
         }
     } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Timeout waiting for: %d", evtFlag);
     return false;
 }
 
@@ -93,7 +93,7 @@ static void signalEvent(uint32_t evtFlag)
 static void networkUpUrc(struct uCxHandle *puCxHandle)
 {
     (void)puCxHandle;
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "networkUpUrc");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "networkUpUrc");
     signalEvent(URC_FLAG_NETWORK_UP);
 }
 
@@ -101,7 +101,7 @@ static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
 {
     (void)puCxHandle;
     (void)socket_handle;
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "sockConnected");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "sockConnected");
     signalEvent(URC_FLAG_SOCK_CONNECTED);
 }
 
@@ -165,7 +165,7 @@ int main(void)
     uCxSocketConnect(&ucxHandle, sockHandle, EXAMPLE_URL, 80);
     waitEvent(&client, URC_FLAG_SOCK_CONNECTED, 5);
     ret = uCxSocketWrite(&ucxHandle, sockHandle, (uint8_t *)"GET /\r\n", 7);
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "uCxSocketWrite() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, client.instance, "uCxSocketWrite() returned %d", ret);
     waitEvent(&client, URC_FLAG_SOCK_DATA, 5);
 
     uint8_t rxData[512];
