@@ -39,10 +39,14 @@
 #define U_CX_LOG_CH_ERROR  U_CX_LOG_ERROR,     ANSI_RED "[ERROR]"
 
 /* Simple line logging printf style (\n will be added automatically) */
-#define U_CX_LOG_LINE(logCh, format, ...)  _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__)
+#define U_CX_LOG_LINE(logCh, format, ...) \
+    _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__)
+#define U_CX_LOG_LINE_I(logCh, instance, format, ...) \
+    __U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__)
 
 /* Log API for splitting up line in several U_CX_LOG() calls */
 #define U_CX_LOG_BEGIN(logCh)              _U_CX_LOG_BEGIN_FMT(logCh, "")
+#define U_CX_LOG_BEGIN_I(logCh, instance)  _U_CX_LOG_BEGIN_I_FMT(logCh, instance, "")
 #define U_CX_LOG(logCh, format, ...)       _U_CX_LOG(logCh, format, ##__VA_ARGS__)
 #define U_CX_LOG_END(logCh)                _U_CX_LOG(logCh, ANSI_RST "\n")
 
@@ -71,6 +75,11 @@
         uCxLogPrintTime();                                  \
         U_CX_PORT_PRINTF(chText " " format, ##__VA_ARGS__); \
     }
+#define __U_CX_LOG_BEGIN_I_FMT(enabled, chText, instance, format, ...)  \
+    if (enabled && uCxLogIsEnabled()) {                     \
+        uCxLogPrintTime();                                  \
+        U_CX_PORT_PRINTF(chText "[%d] " format, instance, ##__VA_ARGS__); \
+    }
 #define __U_CX_LOG(enabled, chText, format, ...) \
     if (enabled && uCxLogIsEnabled()) {          \
         U_CX_PORT_PRINTF(format, ##__VA_ARGS__); \
@@ -78,6 +87,7 @@
 /* MSVC workaround */
 #define EXPAND(x) x
 #define _U_CX_LOG_BEGIN_FMT(...) EXPAND(__U_CX_LOG_BEGIN_FMT(__VA_ARGS__))
+#define _U_CX_LOG_BEGIN_I_FMT(...) EXPAND(__U_CX_LOG_BEGIN_I_FMT(__VA_ARGS__))
 #define _U_CX_LOG(...) EXPAND(__U_CX_LOG(__VA_ARGS__))
 
 /* ----------------------------------------------------------------

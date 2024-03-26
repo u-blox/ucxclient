@@ -96,7 +96,7 @@ static void signalEvent(uint32_t evtFlag)
 static void networkUpUrc(struct uCxHandle *puCxHandle)
 {
     (void)puCxHandle;
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "networkUpUrc");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "networkUpUrc");
     signalEvent(URC_FLAG_NETWORK_UP);
 }
 
@@ -104,7 +104,7 @@ static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
 {
     (void)puCxHandle;
     (void)socket_handle;
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "sockConnected");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "sockConnected");
     signalEvent(URC_FLAG_SOCK_CONNECTED);
 }
 
@@ -188,7 +188,7 @@ int main(int argc, char **argv)
     uCxSocketConnect(&ucxHandle, sockHandle, EXAMPLE_URL, 80);
     waitEvent(URC_FLAG_SOCK_CONNECTED, 5);
     ret = uCxSocketWrite(&ucxHandle, sockHandle, (uint8_t *)"GET /\r\n", 7);
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "uCxSocketWrite() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, client.instance, "uCxSocketWrite() returned %d", ret);
     waitEvent(URC_FLAG_SOCK_DATA, 5);
 
     uint8_t rxData[512];

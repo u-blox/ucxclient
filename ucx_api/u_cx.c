@@ -54,7 +54,8 @@ static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine, si
         paramLen--;
     }
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Received URC '%s', params: '%s'", pLine, pParams);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
+                    "Received URC '%s', params: '%s'", pLine, pParams);
     uCxUrcParse(puCxHandle, pLine, pParams, paramLen);
 }
 

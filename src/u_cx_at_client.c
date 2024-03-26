@@ -46,7 +46,8 @@
     if (READ_RET < 0) {                     \
         CLIENT->lastIoError = READ_RET;     \
         CLIENT->status = U_CX_ERROR_IO;     \
-        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "read() failed with return value: %d", READ_RET); \
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, CLIENT->instance, \
+                        "read() failed with return value: %d", READ_RET); \
         return AT_PARSER_ERROR;             \
     }
 
@@ -70,6 +71,8 @@ enum uCxAtParserCode {
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
+
+static int32_t gNextInstance = 0;
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -104,7 +107,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
         return AT_PARSER_NOP;
     }
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_RX, "%s", pLine);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_RX, pClient->instance, "%s", pLine);
 
     if (pClient->executingCmd) {
         if ((pClient->pExpectedRsp != NULL) &&
@@ -118,7 +121,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
         } else if (strncmp(pLine, "ERROR", 5) == 0) {
             if (pLine[5] == 0) {
                 pClient->status = U_CX_ERROR_STATUS_ERROR;
-                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Command failed");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Command failed");
                 ret = AT_PARSER_GOT_STATUS;
             } else if (pLine[5] == ':') {
                 // Extended error code
@@ -127,7 +130,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 int code = strtol(pCodeStr, &pEnd, 10);
                 if (isdigit((int) * pCodeStr) && (*pEnd == 0)) {
                     pClient->status = U_CX_EXTENDED_ERROR_OFFSET - code;
-                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Command failed with error code: %d", code);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Command failed with error code: %d", code);
                     ret = AT_PARSER_GOT_STATUS;
                 }
             }
@@ -145,7 +148,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 ret = AT_PARSER_GOT_URC;
             } else {
                 // Urc queue full
-                U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "URC queue full - dropping URC");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "URC queue full - dropping URC");
             }
 #else
             const struct uCxAtClientConfig *pConfig = pClient->pConfig;
@@ -157,7 +160,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
         } else {
             // Received unexpected data
             // TODO: Handle
-            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Unexpected data");
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Unexpected data");
         }
     }
 
@@ -201,7 +204,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
 {
     const struct uCxAtClientConfig *pConfig = pClient->pConfig;
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_RX, "[%d bytes]", binLength);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_RX, pClient->instance, "[%d bytes]", binLength);
     switch (parserRet) {
         case AT_PARSER_GOT_RSP: {
             // We are receiving an AT response with binary data
@@ -226,7 +229,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_URC, pPtr, len, binLength);
             } else {
                 // The binary data can't be fitted into the queue so we need to drop it
-                U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Not enough space for URC binary data");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Not enough space for URC binary data");
                 uCxAtUrcQueueEnqueueAbort(&pClient->urcQueue);
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_FLUSH, NULL, 0, binLength);
             }
@@ -239,7 +242,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
                                     &pPtr[bufPos], len, binLength);
             } else {
                 // The binary data can't be fitted into the queue so we need to drop it
-                U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Not enough space for URC binary data");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,  "Not enough space for URC binary data");
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_FLUSH, NULL, 0, binLength);
             }
 #endif
@@ -247,7 +250,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
         }
         default:
             // Unexpected data - just flush it
-            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Unexpected binary data");
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Unexpected binary data");
             setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_FLUSH, NULL, 0, binLength);
             break;
     }
@@ -427,7 +430,7 @@ static int32_t cmdEnd(uCxAtClient_t *pClient)
         int32_t now = U_CX_PORT_GET_TIME_MS();
         if ((now - pClient->cmdStartTime) > pClient->cmdTimeout) {
             pClient->status = U_CX_ERROR_CMD_TIMEOUT;
-            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Command timeout");
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Command timeout");
             break;
         }
     }
@@ -473,6 +476,7 @@ void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
     pClient->pConfig = pConfig;
     pClient->cmdTimeoutLastPerm = U_CX_DEFAULT_CMD_TIMEOUT_MS;
     pClient->cmdTimeout = pClient->cmdTimeoutLastPerm;
+    pClient->instance = gNextInstance++;
 
 #if U_CX_USE_URC_QUEUE == 1
     uCxAtUrcQueueInit(&pClient->urcQueue, pConfig->pUrcBuffer, pConfig->urcBufferLen);
@@ -501,7 +505,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
     char buf[U_IP_STRING_MAX_LENGTH_BYTES];
     const struct uCxAtClientConfig *pConfig = pClient->pConfig;
 
-    U_CX_LOG_BEGIN(U_CX_LOG_CH_TX);
+    U_CX_LOG_BEGIN_I(U_CX_LOG_CH_TX, pClient->instance);
 
     writeAndLog(pClient, pCmd, strlen(pCmd));
     const char *pCh = pParamFmt;
@@ -638,7 +642,7 @@ char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpecte
         // Check for timeout
         int32_t now = U_CX_PORT_GET_TIME_MS();
         if ((now - pClient->cmdStartTime) > pClient->cmdTimeout) {
-            U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Command timeout");
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Command timeout");
             return NULL;
         }
     }

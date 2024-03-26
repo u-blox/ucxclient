@@ -191,24 +191,24 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     U_CX_AT_PORT_ASSERT(pCtx != NULL);
     U_CX_AT_PORT_ASSERT(pCtx->pUartDev == NULL);
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Opening %s at %d with %s flow control",
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Opening %s at %d with %s flow control",
                   pDevName, baudRate, useFlowControl ? "CTS/RTS" : "no");
 
     pCtx->pUartDev = device_get_binding(pDevName);
     if (pCtx->pUartDev == NULL) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to open UART %s", pDevName);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to open UART %s", pDevName);
         return false;
     }
     if (!device_is_ready(pCtx->pUartDev)) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "UART %s is not ready", pDevName);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "UART %s is not ready", pDevName);
         return false;
     }
     if (uart_irq_callback_user_data_set(pCtx->pUartDev, uartIsr, pCtx) < 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to set UART callback");
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to set UART callback");
         return false;
     }
     if (uart_configure(pCtx->pUartDev, &config) < 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to configure UART");
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to configure UART");
         return false;
     }
 
@@ -223,7 +223,7 @@ void uPortAtClose(uCxAtClient_t *pClient)
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     U_CX_AT_PORT_ASSERT(pCtx->pUartDev != NULL);
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Closing UART");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Closing UART");
 
     uart_irq_rx_disable(pCtx->pUartDev);
     k_work_cancel(&pCtx->rxWork);
