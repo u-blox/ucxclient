@@ -20,13 +20,30 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "u_cx_at_xmodem.h"
 #include "u_cx_log.h"
+#include "u_port.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
+
+// TODO: Remove this define once proper logging is integrated
+// For now, disable printf logging to avoid console output issues
+#ifndef U_CX_LOG_LINE_I
+#define U_CX_LOG_LINE_I(...)  do { } while(0)
+#endif
+#ifndef U_CX_LOG_LINE_W
+#define U_CX_LOG_LINE_W(...)  do { } while(0)
+#endif
+#ifndef U_CX_LOG_LINE_E
+#define U_CX_LOG_LINE_E(...)  do { } while(0)
+#endif
+#ifndef U_CX_LOG_LINE_D
+#define U_CX_LOG_LINE_D(...)  do { } while(0)
+#endif
 
 #define U_CX_XMODEM_SOH             0x01    /**< Start of 128-byte block */
 #define U_CX_XMODEM_STX             0x02    /**< Start of 1K block */
@@ -96,12 +113,12 @@ static int32_t xmodemWaitForStart(uCxAtClient_t *pClient, int32_t timeoutMs)
 {
     uint8_t startChar;
     int32_t bytesRead;
-    int32_t startTime = pClient->pConfig->getTick();
+    int32_t startTime = uPortGetTickTimeMs();
     
     U_CX_LOG_LINE_I("XMODEM: Waiting for start signal...");
     
-    while ((pClient->pConfig->getTick() - startTime) < timeoutMs) {
-        bytesRead = pClient->pConfig->read(&startChar, 1, 100);
+    while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
+        bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &startChar, 1, 100);
         
         if (bytesRead == 1) {
             if (startChar == U_CX_XMODEM_CCHR) {
@@ -152,15 +169,16 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
         U_CX_LOG_LINE_D("XMODEM: Sending block %u (try %d/%d)", blockNum, retry + 1, maxRetries);
         
         // Send packet
-        if (pClient->pConfig->write(packet, packetSize) != (int32_t)packetSize) {
+        if (pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, packet, packetSize) != (int32_t)packetSize) {
             U_CX_LOG_LINE_E("XMODEM: Write error on block %u", blockNum);
             continue;
         }
         
         // Wait for response
-        int32_t startTime = pClient->pConfig->getTick();
-        while ((pClient->pConfig->getTick() - startTime) < timeoutMs) {
-            bytesRead = pClient->pConfig->read(&response, 1, 100);
+        bytesRead = 0;
+        int32_t startTime = uPortGetTickTimeMs();
+        while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
+            bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &response, 1, 100);
             
             if (bytesRead == 1) {
                 if (response == U_CX_XMODEM_ACK) {
@@ -198,15 +216,15 @@ static int32_t xmodemSendEot(uCxAtClient_t *pClient, int32_t timeoutMs)
     
     U_CX_LOG_LINE_I("XMODEM: Sending EOT...");
     
-    if (pClient->pConfig->write(&eot, 1) != 1) {
+    if (pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, &eot, 1) != 1) {
         U_CX_LOG_LINE_E("XMODEM: Failed to write EOT");
         return -1;
     }
     
     // Wait for final ACK
-    int32_t startTime = pClient->pConfig->getTick();
-    while ((pClient->pConfig->getTick() - startTime) < timeoutMs) {
-        bytesRead = pClient->pConfig->read(&response, 1, 100);
+    int32_t startTime = uPortGetTickTimeMs();
+    while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
+        bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &response, 1, 100);
         
         if (bytesRead == 1) {
             if (response == U_CX_XMODEM_ACK) {

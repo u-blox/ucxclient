@@ -24,9 +24,33 @@
 #include "u_cx_at_xmodem.h"
 #include "u_cx_log.h"
 
+// Platform-specific sleep
+#ifdef _WIN32
+#include <windows.h>
+#define SLEEP_MS(x) Sleep(x)
+#else
+#include <unistd.h>
+#define SLEEP_MS(x) usleep((x) * 1000)
+#endif
+
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
+
+// TODO: Remove this define once proper logging is integrated
+// For now, disable printf logging to avoid console output issues
+#ifndef U_CX_LOG_LINE_I
+#define U_CX_LOG_LINE_I(...)  do { } while(0)
+#endif
+#ifndef U_CX_LOG_LINE_W
+#define U_CX_LOG_LINE_W(...)  do { } while(0)
+#endif
+#ifndef U_CX_LOG_LINE_E
+#define U_CX_LOG_LINE_E(...)  do { } while(0)
+#endif
+#ifndef U_CX_LOG_LINE_D
+#define U_CX_LOG_LINE_D(...)  do { } while(0)
+#endif
 
 #define FIRMWARE_UPDATE_TIMEOUT_MS  60000  /**< Timeout for entering update mode */
 
@@ -44,7 +68,7 @@ typedef struct {
  * -------------------------------------------------------------- */
 
 static void xmodemProgressWrapper(size_t totalBytes, size_t bytesTransferred, void *pUserData);
-static int32_t changeBaudRate(uCxHandle_t *puCxHandle, int32_t newBaudRate);
+static int32_t enterFirmwareUpdateMode(uCxHandle_t *puCxHandle, int32_t baudRate);
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -69,25 +93,26 @@ static void xmodemProgressWrapper(size_t totalBytes, size_t bytesTransferred, vo
  * Note: This requires platform-specific implementation to actually change
  * the host's UART baudrate. This function only sends the AT command.
  */
-static int32_t changeBaudRate(uCxHandle_t *puCxHandle, int32_t newBaudRate)
+static int32_t enterFirmwareUpdateMode(uCxHandle_t *puCxHandle, int32_t baudRate)
 {
     char cmd[64];
     int32_t result;
     
-    U_CX_LOG_LINE_I("Changing baudrate to %d...", newBaudRate);
+    U_CX_LOG_LINE_I("Entering firmware update mode at %d baud...", baudRate);
     
-    // Build AT+USYST=<baudrate>,<flowctrl> command
-    snprintf(cmd, sizeof(cmd), "AT+USYST=%d,1", newBaudRate);
+    // Build AT+USYFWUS=<baudrate>,<flowctrl> command
+    // Parameter 1: baudrate (default 115200)
+    // Parameter 2: flow control (1 = enabled)
+    snprintf(cmd, sizeof(cmd), "AT+USYFWUS=%d,1", baudRate);
     
     // Send command
-    result = uCxAtClientExecSimpleCmd(puCxHandle->pAtClient, cmd, NULL);
+    result = uCxAtClientExecSimpleCmd(puCxHandle->pAtClient, cmd);
     if (result != 0) {
-        U_CX_LOG_LINE_E("Failed to change baudrate: %d", result);
+        U_CX_LOG_LINE_E("Failed to enter firmware update mode: %d", result);
         return result;
     }
     
-    U_CX_LOG_LINE_I("Baudrate command sent successfully");
-    U_CX_LOG_LINE_W("NOTE: You must manually reconfigure your host UART to %d baud", newBaudRate);
+    U_CX_LOG_LINE_I("Firmware update mode command sent successfully");
     
     return 0;
 }
@@ -110,16 +135,19 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
     U_CX_LOG_LINE_I("=== Firmware Update Started ===");
     U_CX_LOG_LINE_I("Firmware file: %s", pFirmwareFile);
     
-    // Change baudrate if requested
-    if (baudRate > 0) {
-        int32_t result = changeBaudRate(puCxHandle, baudRate);
-        if (result != 0) {
-            return result;
-        }
-        
-        // Give time for baudrate change
-        uCxAtClientDelayMs(puCxHandle->pAtClient, 500);
+    // Use default baudrate if not specified
+    if (baudRate <= 0) {
+        baudRate = 115200;  // Default baudrate
     }
+    
+    // Enter firmware update mode
+    int32_t result = enterFirmwareUpdateMode(puCxHandle, baudRate);
+    if (result != 0) {
+        return result;
+    }
+    
+    // Give module time to enter firmware mode (important!)
+    SLEEP_MS(1000);
     
     // Prepare progress callback context
     progressCallbackContext_t callbackContext = {
@@ -129,11 +157,11 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
     
     // Transfer firmware via XMODEM
     U_CX_LOG_LINE_I("Starting XMODEM transfer...");
-    int32_t result = uCxXmodemSendFile(puCxHandle->pAtClient,
-                                       pFirmwareFile,
-                                       true,  // Use 1K blocks for faster transfer
-                                       xmodemProgressWrapper,
-                                       &callbackContext);
+    result = uCxXmodemSendFile(puCxHandle->pAtClient,
+                               pFirmwareFile,
+                               true,  // Use 1K blocks for faster transfer
+                               xmodemProgressWrapper,
+                               &callbackContext);
     
     if (result != 0) {
         U_CX_LOG_LINE_E("XMODEM transfer failed: %d", result);
@@ -161,16 +189,19 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
     U_CX_LOG_LINE_I("=== Firmware Update Started ===");
     U_CX_LOG_LINE_I("Firmware size: %zu bytes", dataLen);
     
-    // Change baudrate if requested
-    if (baudRate > 0) {
-        int32_t result = changeBaudRate(puCxHandle, baudRate);
-        if (result != 0) {
-            return result;
-        }
-        
-        // Give time for baudrate change
-        uCxAtClientDelayMs(puCxHandle->pAtClient, 500);
+    // Use default baudrate if not specified
+    if (baudRate <= 0) {
+        baudRate = 115200;
     }
+    
+    // Enter firmware update mode
+    int32_t result = enterFirmwareUpdateMode(puCxHandle, baudRate);
+    if (result != 0) {
+        return result;
+    }
+    
+    // Give module time to enter firmware mode
+    SLEEP_MS(1000);
     
     // Prepare progress callback context
     progressCallbackContext_t callbackContext = {
@@ -185,12 +216,12 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
     
     // Transfer firmware via XMODEM
     U_CX_LOG_LINE_I("Starting XMODEM transfer...");
-    int32_t result = uCxXmodemSend(puCxHandle->pAtClient,
-                                   pFirmwareData,
-                                   dataLen,
-                                   &config,
-                                   xmodemProgressWrapper,
-                                   &callbackContext);
+    result = uCxXmodemSend(puCxHandle->pAtClient,
+                           pFirmwareData,
+                           dataLen,
+                           &config,
+                           xmodemProgressWrapper,
+                           &callbackContext);
     
     if (result != 0) {
         U_CX_LOG_LINE_E("XMODEM transfer failed: %d", result);
