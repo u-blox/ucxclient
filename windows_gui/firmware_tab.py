@@ -291,10 +291,11 @@ class FirmwareUpdateTab:
                 ))
         
         except Exception as e:
-            self._log(f"✗ Exception during update: {e}", 'error')
-            self.parent.after(0, lambda: messagebox.showerror(
+            error_msg = str(e)
+            self._log(f"✗ Exception during update: {error_msg}", 'error')
+            self.parent.after(0, lambda msg=error_msg: messagebox.showerror(
                 "Update Error",
-                f"An error occurred during firmware update:\n\n{e}"
+                f"An error occurred during firmware update:\n\n{msg}"
             ))
         
         finally:
