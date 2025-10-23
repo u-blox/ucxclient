@@ -146,6 +146,40 @@ class UcxClientWrapper:
         
         self._dll.uPortAtClose.restype = None
         self._dll.uPortAtClose.argtypes = [c_void_p]
+        
+        # Expose lib for direct access to firmware update functions
+        self.lib = self._dll
+        
+        # Firmware update functions (if available)
+        if hasattr(self._dll, 'uCxFirmwareUpdate'):
+            # Progress callback type: void (*callback)(size_t total, size_t transferred, int32_t percent, void* userdata)
+            self._dll.uCxFirmwareUpdateProgress_t = ctypes.CFUNCTYPE(
+                None,  # return type
+                ctypes.c_size_t,  # total bytes
+                ctypes.c_size_t,  # transferred bytes
+                c_int32,  # percent
+                c_void_p  # userdata
+            )
+            
+            self._dll.uCxFirmwareUpdate.restype = c_int32
+            self._dll.uCxFirmwareUpdate.argtypes = [
+                c_void_p,  # uCxHandle
+                c_char_p,  # firmware file path
+                c_int32,   # baudrate
+                self._dll.uCxFirmwareUpdateProgress_t,  # progress callback
+                c_void_p   # userdata
+            ]
+        
+        if hasattr(self._dll, 'uCxFirmwareUpdateFromData'):
+            self._dll.uCxFirmwareUpdateFromData.restype = c_int32
+            self._dll.uCxFirmwareUpdateFromData.argtypes = [
+                c_void_p,  # uCxHandle
+                POINTER(ctypes.c_uint8),  # firmware data
+                ctypes.c_size_t,  # data length
+                c_int32,   # baudrate
+                self._dll.uCxFirmwareUpdateProgress_t,  # progress callback
+                c_void_p   # userdata
+            ]
     
     def get_tick_time_ms(self) -> int:
         """Get current tick time in milliseconds"""
@@ -422,6 +456,9 @@ class UcxClientWrapper:
         
         # Allocate UCX handle (will be initialized after connection)
         self.ucx_handle = ctypes.c_void_p()
+        
+        # Expose handle for firmware update
+        self.handle = ctypes.byref(self.ucx_handle)
     
     def connect(self, port_name: str, baud_rate: int = 115200, flow_control: bool = False) -> bool:
         """Connect to a COM port

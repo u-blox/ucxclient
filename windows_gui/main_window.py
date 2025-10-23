@@ -42,6 +42,7 @@ from dynamic_product_gui import DynamicProductGUI
 from settings_manager import get_settings_manager
 from test_tab import SimpleTestTab
 from mapper_tab import MapperTab
+from firmware_tab import FirmwareUpdateTab
 
 
 class MainWindow:
@@ -301,6 +302,7 @@ class MainWindow:
         # Test and Mapper tabs (will be created after product is loaded)
         self.test_tab = None
         self.mapper_tab = None
+        self.firmware_tab = None
     
     def _create_menu(self):
         """Create menu bar"""
@@ -431,6 +433,24 @@ class MainWindow:
                 self._log("⚠ Cannot create mapper tab: YAML parser not available")
         except Exception as e:
             self._log(f"✗ Error creating mapper tab: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _create_firmware_tab(self):
+        """Create the firmware update tab"""
+        try:
+            if hasattr(self, 'ucx_client') and self.ucx_client:
+                self.firmware_tab = FirmwareUpdateTab(
+                    parent=self.notebook,
+                    ucx_wrapper=self.ucx_client,
+                    settings_manager=self.settings
+                )
+                self.notebook.add(self.firmware_tab.get_frame(), text="Firmware")
+                self._log("✓ Firmware tab created successfully")
+            else:
+                self._log("⚠ Cannot create firmware tab: Not connected")
+        except Exception as e:
+            self._log(f"✗ Error creating firmware tab: {e}")
             import traceback
             traceback.print_exc()
     
@@ -677,6 +697,11 @@ class MainWindow:
             if not self.mapper_tab:
                 self.root.after(200, self._create_mapper_tab)
                 self._log("Mapper tab will be created...")
+            
+            # Create firmware tab
+            if not self.firmware_tab:
+                self.root.after(300, self._create_firmware_tab)
+                self._log("Firmware tab will be created...")
         else:
             self.status_var.set("Connection failed")
             self.status_label.config(foreground="red")
@@ -1072,6 +1097,7 @@ class MainWindow:
         # Note: Tab clearing is handled by _change_product() before calling this
         self.test_tab = None
         self.mapper_tab = None
+        self.firmware_tab = None
         
         self.dynamic_gui = DynamicProductGUI(
             parent_notebook=self.notebook,
@@ -1087,11 +1113,12 @@ class MainWindow:
         
         # Recreate Test and Mapper tabs with new YAML
         if self.api_executor and self.connected:
-            self._log("Recreating Test and Mapper tabs for new product...")
+            self._log("Recreating Test, Mapper and Firmware tabs for new product...")
             self._create_test_tab()
             self._create_mapper_tab()
+            self._create_firmware_tab()
         else:
-            self._log("Test and Mapper tabs will be created after device connection")
+            self._log("Test, Mapper and Firmware tabs will be created after device connection")
     
     def _change_product(self):
         """Allow user to change product/version"""
