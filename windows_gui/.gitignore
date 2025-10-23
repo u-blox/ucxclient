@@ -1,0 +1,23 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary test files (but not test_tab.py which is the main test tab)
+test_*.py
+!test_tab.py
+debug_*.py
+verify_*.py
+trace_*.py
+analyze_*.py
+compare_*.py
+temp_*.py
+deep_*.py
+
+# Debug output
+debug_output.txt
+*.log
+
+# IDE
+.vscode/
+.idea/

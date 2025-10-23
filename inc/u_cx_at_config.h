@@ -26,6 +26,8 @@
 # include "u_port_no_os.h"
 #elif defined(U_PORT_POSIX)
 # include "u_port_posix.h"
+#elif defined(U_PORT_WINDOWS)
+# include "u_port_windows.h"
 #endif
 
 /* To override the default settings you can define U_CX_AT_CONFIG_FILE

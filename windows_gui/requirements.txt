@@ -1,0 +1,15 @@
+# Python requirements for ucxclient Windows GUI
+# Core GUI framework (built-in with Python)
+# tkinter - included with Python standard library
+
+# YAML parser for AT command configuration
+pyyaml>=6.0
+
+# Optional enhanced GUI components
+# Uncomment if you want to use alternative GUI frameworks:
+# PyQt6>=6.0.0
+# PySide6>=6.0.0
+
+# Development and testing
+# pytest>=6.0.0
+# pytest-qt>=4.0.0

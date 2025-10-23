@@ -1,1 +1,44 @@
 build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.vscode/
+
+# Windows GUI test and debug files
+windows_gui/test_*.py
+windows_gui/debug_*.py
+windows_gui/temp_*.py
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary and debug files
+*.tmp
+*.temp
+debug_output.txt
+test_*.py
+debug_*.py
+temp_*.py
+verify_*.py
+trace_*.py
+analyze_*.py
+compare_*.py
+deep_*.py
+
+# Visual Studio / CMake
+.vs/
+CMakeCache.txt
+CMakeFiles/
+*.vcxproj.user
+x64/
+Debug/
+Release/
