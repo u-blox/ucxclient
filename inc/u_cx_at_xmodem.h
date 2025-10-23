@@ -62,7 +62,7 @@ typedef void (*uCxXmodemProgressCallback_t)(size_t totalBytes, size_t bytesTrans
  * 
  * @param[out] pConfig  Pointer to configuration structure to initialize
  */
-void uCxXmodemConfigInit(uCxXmodemConfig_t *pConfig);
+void uCxAtClientXmodemConfigInit(uCxXmodemConfig_t *pConfig);
 
 /**
  * @brief Send file data using XMODEM protocol
@@ -79,12 +79,12 @@ void uCxXmodemConfigInit(uCxXmodemConfig_t *pConfig);
  * @param     pUserData       User data pointer passed to callback
  * @return                    0 on success, negative error code on failure
  */
-int32_t uCxXmodemSend(uCxAtClient_t *pClient, 
-                      const uint8_t *pData, 
-                      size_t dataLen,
-                      const uCxXmodemConfig_t *pConfig,
-                      uCxXmodemProgressCallback_t progressCallback,
-                      void *pUserData);
+int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient, 
+                              const uint8_t *pData, 
+                              size_t dataLen,
+                              const uCxXmodemConfig_t *pConfig,
+                              uCxXmodemProgressCallback_t progressCallback,
+                              void *pUserData);
 
 /**
  * @brief Send file using XMODEM protocol (convenience function)
@@ -98,10 +98,10 @@ int32_t uCxXmodemSend(uCxAtClient_t *pClient,
  * @param     pUserData  User data pointer passed to callback
  * @return               0 on success, negative error code on failure
  */
-int32_t uCxXmodemSendFile(uCxAtClient_t *pClient,
-                          const char *pFilePath,
-                          bool use1K,
-                          uCxXmodemProgressCallback_t progressCallback,
-                          void *pUserData);
+int32_t uCxAtClientXmodemSendFile(uCxAtClient_t *pClient,
+                                  const char *pFilePath,
+                                  bool use1K,
+                                  uCxXmodemProgressCallback_t progressCallback,
+                                  void *pUserData);
 
 #endif // U_CX_AT_XMODEM_H

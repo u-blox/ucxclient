@@ -11,6 +11,9 @@ uCxAtClientInit
 uCxAtClientSendCmdVaList
 uCxAtClientSetCommandTimeout
 uCxAtClientSetUrcCallback
+uCxAtClientXmodemConfigInit
+uCxAtClientXmodemSend
+uCxAtClientXmodemSendFile
 uCxAtUrcQueueDeInit
 uCxAtUrcQueueDequeueBegin
 uCxAtUrcQueueDequeueEnd
@@ -115,6 +118,8 @@ uCxDiagnosticsRegisterIperfOutput
 uCxDiagnosticsRegisterPingComplete
 uCxDiagnosticsRegisterPingResponse
 uCxEnd
+uCxFirmwareUpdate
+uCxFirmwareUpdateFromData
 uCxGattClientConfigWrite
 uCxGattClientDiscoverCharDescriptorsBegin
 uCxGattClientDiscoverCharDescriptorsGetNext

@@ -244,7 +244,7 @@ static int32_t xmodemSendEot(uCxAtClient_t *pClient, int32_t timeoutMs)
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-void uCxXmodemConfigInit(uCxXmodemConfig_t *pConfig)
+void uCxAtClientXmodemConfigInit(uCxXmodemConfig_t *pConfig)
 {
     if (pConfig != NULL) {
         pConfig->use1K = true;  // Use 1K blocks by default for better performance
@@ -253,12 +253,12 @@ void uCxXmodemConfigInit(uCxXmodemConfig_t *pConfig)
     }
 }
 
-int32_t uCxXmodemSend(uCxAtClient_t *pClient, 
-                      const uint8_t *pData, 
-                      size_t dataLen,
-                      const uCxXmodemConfig_t *pConfig,
-                      uCxXmodemProgressCallback_t progressCallback,
-                      void *pUserData)
+int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient, 
+                              const uint8_t *pData, 
+                              size_t dataLen,
+                              const uCxXmodemConfig_t *pConfig,
+                              uCxXmodemProgressCallback_t progressCallback,
+                              void *pUserData)
 {
     if (pClient == NULL || pData == NULL || dataLen == 0) {
         U_CX_LOG_LINE_E("XMODEM: Invalid parameters");
@@ -268,7 +268,7 @@ int32_t uCxXmodemSend(uCxAtClient_t *pClient,
     // Use default config if not provided
     uCxXmodemConfig_t defaultConfig;
     if (pConfig == NULL) {
-        uCxXmodemConfigInit(&defaultConfig);
+        uCxAtClientXmodemConfigInit(&defaultConfig);
         pConfig = &defaultConfig;
     }
     
@@ -318,11 +318,11 @@ int32_t uCxXmodemSend(uCxAtClient_t *pClient,
     return 0;
 }
 
-int32_t uCxXmodemSendFile(uCxAtClient_t *pClient,
-                          const char *pFilePath,
-                          bool use1K,
-                          uCxXmodemProgressCallback_t progressCallback,
-                          void *pUserData)
+int32_t uCxAtClientXmodemSendFile(uCxAtClient_t *pClient,
+                                  const char *pFilePath,
+                                  bool use1K,
+                                  uCxXmodemProgressCallback_t progressCallback,
+                                  void *pUserData)
 {
     if (pClient == NULL || pFilePath == NULL) {
         U_CX_LOG_LINE_E("XMODEM: Invalid parameters");
@@ -370,12 +370,12 @@ int32_t uCxXmodemSendFile(uCxAtClient_t *pClient,
     
     // Configure XMODEM
     uCxXmodemConfig_t config;
-    uCxXmodemConfigInit(&config);
+    uCxAtClientXmodemConfigInit(&config);
     config.use1K = use1K;
     
     // Send file data
-    int32_t result = uCxXmodemSend(pClient, pBuffer, fileSize, &config, 
-                                   progressCallback, pUserData);
+    int32_t result = uCxAtClientXmodemSend(pClient, pBuffer, fileSize, &config, 
+                                           progressCallback, pUserData);
     
     // Cleanup
     free(pBuffer);

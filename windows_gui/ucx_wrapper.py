@@ -85,10 +85,10 @@ class UcxClientWrapper:
         # Load the library
         if dll_path is None:
             lib_name = get_library_name()
-            # Search in common build directories
+            # Search in common build directories (prefer Release over Debug)
             possible_paths = [
-                os.path.join(os.path.dirname(__file__), "..", "build", "Debug", lib_name),
                 os.path.join(os.path.dirname(__file__), "..", "build", "Release", lib_name),
+                os.path.join(os.path.dirname(__file__), "..", "build", "Debug", lib_name),
                 os.path.join(os.path.dirname(__file__), "..", "build", lib_name),
                 lib_name  # Current directory or PATH
             ]

@@ -157,11 +157,11 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
     
     // Transfer firmware via XMODEM
     U_CX_LOG_LINE_I("Starting XMODEM transfer...");
-    result = uCxXmodemSendFile(puCxHandle->pAtClient,
-                               pFirmwareFile,
-                               true,  // Use 1K blocks for faster transfer
-                               xmodemProgressWrapper,
-                               &callbackContext);
+    result = uCxAtClientXmodemSendFile(puCxHandle->pAtClient,
+                                       pFirmwareFile,
+                                       true,  // Use 1K blocks for faster transfer
+                                       xmodemProgressWrapper,
+                                       &callbackContext);
     
     if (result != 0) {
         U_CX_LOG_LINE_E("XMODEM transfer failed: %d", result);
@@ -211,17 +211,17 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
     
     // Configure XMODEM
     uCxXmodemConfig_t config;
-    uCxXmodemConfigInit(&config);
+    uCxAtClientXmodemConfigInit(&config);
     config.use1K = true;  // Use 1K blocks for faster transfer
     
     // Transfer firmware via XMODEM
     U_CX_LOG_LINE_I("Starting XMODEM transfer...");
-    result = uCxXmodemSend(puCxHandle->pAtClient,
-                           pFirmwareData,
-                           dataLen,
-                           &config,
-                           xmodemProgressWrapper,
-                           &callbackContext);
+    result = uCxAtClientXmodemSend(puCxHandle->pAtClient,
+                                   pFirmwareData,
+                                   dataLen,
+                                   &config,
+                                   xmodemProgressWrapper,
+                                   &callbackContext);
     
     if (result != 0) {
         U_CX_LOG_LINE_E("XMODEM transfer failed: %d", result);
