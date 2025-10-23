@@ -79,22 +79,18 @@ class MainWindow:
         self.yaml_parser: Optional[YAMLCommandParser] = None
         self.product_loaded = False
         self.dynamic_gui: Optional[DynamicProductGUI] = None
+        self.initialization_complete = False
         
         # Settings manager
         self.settings = get_settings_manager()
         
-        # Initialize basic UCX wrapper
-        try:
-            self.ucx_client = UcxClientWrapper()
-        except Exception as e:
-            print(f"Warning: Could not initialize basic UCX wrapper: {e}")
-            self.ucx_client = None
+        # UCX wrapper will be initialized in background
         
         # Load saved settings
         serial_config = self.settings.get_serial_config()
         
         # GUI components
-        self.status_var = tk.StringVar(value="Disconnected")
+        self.status_var = tk.StringVar(value="Initializing...")
         self.port_var = tk.StringVar(value=serial_config.get('port', ''))
         self.baud_var = tk.StringVar(value=str(serial_config.get('baudrate', 115200)))
         self.flow_control_var = tk.BooleanVar(value=serial_config.get('flow_control', False))
@@ -104,7 +100,7 @@ class MainWindow:
         self._load_window_position()
         self._refresh_ports()
         
-        # Auto-detect EVK and show product selector on startup
+        # Start background initialization
         self.root.after(100, self._startup_sequence)
     
     def _apply_dark_theme(self):
@@ -941,19 +937,85 @@ class MainWindow:
                 messagebox.showerror("Error", f"Failed to save log:\n{e}")
     
     def _startup_sequence(self):
-        """Startup sequence"""
+        """Startup sequence - runs initialization in background"""
         self._log(f"ucxclient GUI v{UCXCLIENT_GUI_VERSION} - Dynamic GUI for u-connectXpress modules")
         self._log("")
-        self._log("🔍 Auto-detecting u-blox EVK...")
+        self._log("⏳ Initializing...")
         
-        detected = self._auto_detect_evk_silent()
+        # Start background initialization thread
+        init_thread = threading.Thread(target=self._background_initialization, daemon=True)
+        init_thread.start()
+    
+    def _background_initialization(self):
+        """Run heavy initialization tasks in background thread"""
+        try:
+            # Step 1: Initialize UCX wrapper
+            self._update_init_status("⏳ Initializing UCX handle...")
+            try:
+                self.ucx_client = UcxClientWrapper()
+                self._update_init_status("✓ UCX handle initialized")
+            except Exception as e:
+                self._update_init_status(f"⚠ UCX initialization warning: {e}")
+                self.ucx_client = None
+            
+            # Step 2: Auto-detect EVK
+            self._update_init_status("🔍 Auto-detecting u-blox EVK...")
+            detected = self._auto_detect_evk_silent()
+            
+            if detected:
+                self._update_init_status(f"✓ EVK detected: {detected['desc']}")
+                self._update_init_status(f"✓ AT Port: {detected['port']}")
+            else:
+                self._update_init_status("ℹ No EVK auto-detected - please select COM port manually")
+            
+            # Step 3: Load product configuration (this does GitHub fetch)
+            self._update_init_status("⏳ Loading product configuration...")
+            product_config = self.settings.get_product_config()
+            
+            # Check if we should auto-load saved configuration
+            if product_config.get('name') or product_config.get('local_path'):
+                source = product_config.get('source', 'github')
+                if source == 'github':
+                    product = product_config.get('name', '')
+                    version = product_config.get('version', '')
+                    if product and version:
+                        self._update_init_status(f"⏳ Fetching {product} v{version} from GitHub...")
+                        # Do the actual GitHub fetch HERE in background thread
+                        self._load_product_configuration_background(source, product, version)
+                else:
+                    local_path = product_config.get('local_path', '')
+                    if local_path and os.path.exists(local_path):
+                        self._update_init_status(f"⏳ Loading from: {local_path}")
+                        self._load_product_configuration_background(source, '', local_path)
+            else:
+                # No saved config, show selector
+                self.root.after(0, self._show_product_selector_after_init)
+            
+        except Exception as e:
+            self._update_init_status(f"✗ Initialization error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.initialization_complete = True
+    
+    def _update_init_status(self, message: str):
+        """Update initialization status (thread-safe)"""
+        self.root.after(0, lambda: self._log(message))
+        self.root.after(0, lambda: self.status_var.set(message))
+    
+    def _finalize_initialization(self):
+        """Finalize initialization and enable auto-connect"""
+        self.initialization_complete = True
+        self.status_var.set("Ready")
+        self._log("✓ Initialization complete")
         
-        if detected:
-            self._log(f"✓ EVK detected: {detected['desc']}")
-            self._log(f"✓ AT Port: {detected['port']}")
-        else:
-            self._log("ℹ No EVK auto-detected - please select COM port manually")
-        
+        if not self.connected and self.port_var.get() and self.product_loaded:
+            self._log("🔗 Auto-connecting to EVK...")
+            self._connect()
+    
+    def _show_product_selector_after_init(self):
+        """Show product selector after initialization"""
+        self.initialization_complete = True
+        self.status_var.set("Ready")
         self._show_product_selector()
     
     def _auto_detect_evk_silent(self):
@@ -985,31 +1047,9 @@ class MainWindow:
             self._connect()
     
     def _show_product_selector(self):
-        """Show product selector"""
-        # Get saved product configuration
+        """Show product selector dialog (no auto-load)"""
+        # Get saved product configuration for defaults
         product_config = self.settings.get_product_config()
-        
-        # Check if we should auto-load saved configuration
-        if product_config.get('name') or product_config.get('local_path'):
-            # Auto-load saved configuration
-            source = product_config.get('source', 'github')
-            if source == 'github':
-                product = product_config.get('name', '')
-                version = product_config.get('version', '')
-                if product and version:
-                    self._log(f"Auto-loading saved configuration: {product} v{version}")
-                    self._load_product_configuration(source, product, version)
-                    if not self.connected and self.port_var.get():
-                        self.root.after(100, self._auto_connect_if_ready)
-                    return
-            else:
-                local_path = product_config.get('local_path', '')
-                if local_path and os.path.exists(local_path):
-                    self._log(f"Auto-loading saved configuration from: {local_path}")
-                    self._load_product_configuration(source, '', local_path)
-                    if not self.connected and self.port_var.get():
-                        self.root.after(100, self._auto_connect_if_ready)
-                    return
         
         # Show dialog with saved defaults
         dialog = ProductSelectorDialog(
@@ -1030,8 +1070,65 @@ class MainWindow:
         else:
             messagebox.showinfo("No Configuration Loaded", "No product configuration was loaded. You can load one later from File > Load Product Configuration.")
     
+    def _load_product_configuration_background(self, source: str, product: str, path: str):
+        """Load product configuration in background thread (safe for slow network operations)"""
+        try:
+            self.yaml_parser = get_yaml_parser()
+            
+            success = False
+            if source == "github":
+                # This is the slow network operation - now in background thread
+                success = self.yaml_parser.load_from_github(product, path)
+                if success:
+                    self.device_name = product
+                    # Save to settings
+                    self.settings.set_product_config(source='github', name=product, version=path)
+                    self.settings.save()
+                    self._update_init_status(f"✓ Successfully loaded {product} v{path}")
+                else:
+                    self._update_init_status(f"⚠ Product configuration not available for {product} v{path}")
+            else:
+                success = self.yaml_parser.load_from_file(path)
+                if success:
+                    self.device_name = self.yaml_parser.product or "U-ConnectXpress Device"
+                    self.settings.set_product_config(source='local', local_path=path)
+                    self.settings.save()
+                    self._update_init_status(f"✓ Successfully loaded from {path}")
+                else:
+                    self._update_init_status(f"✗ Failed to load from {path}")
+            
+            if success:
+                self.product_loaded = True
+                num_cmds = len(self.yaml_parser.commands)
+                num_groups = len(self.yaml_parser.command_groups)
+                self._update_init_status(f"  Found {num_cmds} AT commands in {num_groups} groups")
+                
+                # Update title on main thread
+                product_ver = f"{self.yaml_parser.product} v{self.yaml_parser.version}"
+                self.root.after(0, lambda: self.root.title(f"ucxclient - {product_ver}"))
+                
+                # Build API mappings
+                at_to_api_mapper.set_yaml_parser(self.yaml_parser)
+                api_mapping_count = len(at_to_api_mapper.get_all_mappings())
+                self._update_init_status(f"  Built {api_mapping_count} AT-to-API mappings dynamically from YAML")
+                
+                # Build dynamic GUI on main thread
+                self.root.after(0, self._build_dynamic_product_gui)
+                
+                # Finalize initialization
+                self.root.after(0, self._finalize_initialization)
+            else:
+                # Mark complete even on failure
+                self.root.after(0, self._finalize_initialization)
+                
+        except Exception as e:
+            self._update_init_status(f"✗ Error loading configuration: {e}")
+            import traceback
+            traceback.print_exc()
+            self.root.after(0, self._finalize_initialization)
+    
     def _load_product_configuration(self, source: str, product: str, path: str):
-        """Load product configuration"""
+        """Load product configuration (for interactive use, not during startup)"""
         self.yaml_parser = get_yaml_parser()
         self._log(f"Loading product configuration...")
         # Use update_idletasks instead of update to avoid event processing issues
