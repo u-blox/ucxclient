@@ -17,6 +17,10 @@ windows_gui/temp_*.py
 *.swp
 *.swo
 
+# User settings (contains credentials)
+settings.json
+.ucxclient/
+
 # OS
 .DS_Store
 Thumbs.db
