@@ -295,6 +295,9 @@ class MainWindow:
         # Log tab (main output)
         self._create_log_tab()
         
+        # Terminal tab (always present)
+        self._create_terminal_tab()
+        
         # Test and Mapper tabs (will be created after product is loaded)
         self.test_tab = None
         self.mapper_tab = None
@@ -384,6 +387,53 @@ class MainWindow:
         ttk.Button(controls_frame, text="Store (AT&W)", command=self._quick_store_config, width=13).pack(side=tk.LEFT, padx=2)
         ttk.Button(controls_frame, text="Reboot", command=self._quick_reboot, width=12).pack(side=tk.LEFT, padx=2)
         ttk.Button(controls_frame, text="Factory Reset", command=self._quick_factory_reset, width=13).pack(side=tk.LEFT, padx=2)
+    
+    def _create_terminal_tab(self):
+        """Create AT Terminal tab"""
+        terminal_frame = ttk.Frame(self.notebook)
+        self.notebook.add(terminal_frame, text="Terminal")
+        
+        # Terminal output area
+        self.terminal_text = scrolledtext.ScrolledText(terminal_frame, height=20, state=tk.DISABLED,
+                                                        bg='#000000',  # Black background like real terminal
+                                                        fg='#00FF00',  # Green text like classic terminal
+                                                        insertbackground='#00FF00',
+                                                        selectbackground='#004400',
+                                                        selectforeground='#00FF00',
+                                                        borderwidth=0, highlightthickness=1,
+                                                        highlightbackground=self.theme_colors['border'],
+                                                        font=('Courier New', 10))
+        self.terminal_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Configure color tags for terminal
+        self.terminal_text.tag_config('tx', foreground='#00FFFF')  # Cyan for transmitted
+        self.terminal_text.tag_config('rx', foreground='#00FF00')  # Green for received
+        self.terminal_text.tag_config('error', foreground='#FF0000')  # Red for errors
+        
+        # Quick command buttons frame
+        quick_buttons_frame = ttk.Frame(terminal_frame)
+        quick_buttons_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+        
+        ttk.Label(quick_buttons_frame, text="Quick Commands:").pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(quick_buttons_frame, text="AT", command=lambda: self._send_terminal_command("AT"), width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(quick_buttons_frame, text="ATI", command=lambda: self._send_terminal_command("ATI"), width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(quick_buttons_frame, text="ATI9", command=lambda: self._send_terminal_command("ATI9"), width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(quick_buttons_frame, text="AT+GMR", command=lambda: self._send_terminal_command("AT+GMR"), width=10).pack(side=tk.LEFT, padx=2)
+        ttk.Button(quick_buttons_frame, text="AT&F", command=lambda: self._send_terminal_command("AT&F"), width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(quick_buttons_frame, text="ATZ", command=lambda: self._send_terminal_command("ATZ"), width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Button(quick_buttons_frame, text="Clear", command=self._clear_terminal, width=8).pack(side=tk.RIGHT, padx=2)
+        
+        # Input frame
+        input_frame = ttk.Frame(terminal_frame)
+        input_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+        
+        ttk.Label(input_frame, text="Command:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.terminal_input = ttk.Entry(input_frame)
+        self.terminal_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.terminal_input.bind('<Return>', lambda e: self._send_terminal_command())
+        
+        ttk.Button(input_frame, text="Send", command=self._send_terminal_command, width=10).pack(side=tk.LEFT)
     
     def _create_test_tab(self):
         """Create the automated test tab"""
@@ -935,6 +985,58 @@ class MainWindow:
                 self._log(f"Log saved to {filename}")
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save log:\n{e}")
+    
+    def _clear_terminal(self):
+        """Clear terminal output"""
+        self.terminal_text.config(state=tk.NORMAL)
+        self.terminal_text.delete(1.0, tk.END)
+        self.terminal_text.config(state=tk.DISABLED)
+    
+    def _send_terminal_command(self, command=None):
+        """Send AT command from terminal"""
+        if not self.connected or not self.ucx_client:
+            self._terminal_log("ERROR: Not connected!\n", 'error')
+            return
+        
+        # Get command from input field if not provided
+        if command is None:
+            command = self.terminal_input.get().strip()
+            if not command:
+                return
+            # Clear input field
+            self.terminal_input.delete(0, tk.END)
+        
+        # Log transmitted command
+        self._terminal_log(f"TX: {command}\n", 'tx')
+        
+        try:
+            # Send AT command using the wrapper (returns tuple: success, response)
+            success, response = self.ucx_client.send_at_command(command)
+            
+            # Log received response
+            if success and response:
+                self._terminal_log(f"RX: {response}\n", 'rx')
+            elif success:
+                self._terminal_log("RX: (no response)\n", 'rx')
+            else:
+                # Show the actual error response
+                if response:
+                    self._terminal_log(f"ERROR: {response}\n", 'error')
+                else:
+                    self._terminal_log("ERROR: Command failed\n", 'error')
+                
+        except Exception as e:
+            self._terminal_log(f"ERROR: {str(e)}\n", 'error')
+    
+    def _terminal_log(self, message, tag=None):
+        """Add message to terminal output"""
+        self.terminal_text.config(state=tk.NORMAL)
+        if tag:
+            self.terminal_text.insert(tk.END, message, tag)
+        else:
+            self.terminal_text.insert(tk.END, message)
+        self.terminal_text.config(state=tk.DISABLED)
+        self.terminal_text.see(tk.END)
     
     def _startup_sequence(self):
         """Startup sequence - runs initialization in background"""

@@ -81,6 +81,12 @@ class UcxClientWrapper:
         self._callbacks = {}
         self._callback_thread = None
         self._stop_callbacks = False
+        self._port_name = None
+        self._baud_rate = 115200
+        self._flow_control = False
+        self._serial = None  # Serial port object (pyserial)
+        self.ucx_handle = None  # UCX handle (not used in simple serial mode)
+        self.handle = None  # Handle for firmware update compatibility
         
         # Load the library
         if dll_path is None:
@@ -165,7 +171,9 @@ class UcxClientWrapper:
             self._dll.uCxFirmwareUpdate.argtypes = [
                 c_void_p,  # uCxHandle
                 c_char_p,  # firmware file path
+                c_char_p,  # device/COM port name
                 c_int32,   # baudrate
+                c_bool,    # use flow control
                 self._dll.uCxFirmwareUpdateProgress_t,  # progress callback
                 c_void_p   # userdata
             ]
@@ -428,30 +436,94 @@ class UcxClientWrapper:
         return "Unknown"
     
     def initialize_client(self):
-        """Initialize the AT client"""
+        """Initialize the AT client following README.md example pattern"""
         if self._client_initialized:
             return
         
-        # Allocate the uCxAtClient_t structure
-        # The actual structure is complex, but uPortAtInit() initializes it for us
-        # We just need to allocate enough space for the structure
-        
-        # Size estimate for uCxAtClient_t (with URC queue):
-        # - Multiple pointers (8 bytes each on x64): ~10 pointers = 80 bytes
-        # - size_t fields: ~5 fields = 40 bytes
-        # - int32_t fields: ~5 fields = 20 bytes
-        # - bool fields: ~2 fields = 2 bytes
-        # - uCxAtBinaryRx_t: ~32 bytes
-        # - uCxAtBinaryResponseBuf_t: ~16 bytes
-        # - uCxAtUrcQueue_t: ~variable size
-        # Total: roughly 256 bytes should be safe
-        
-        client_size = 512  # Allocate extra space to be safe
+        # Allocate the uCxAtClient_t structure (stack-allocated in C example)
+        # Size estimate for uCxAtClient_t (with URC queue) - see u_cx_at_client.h
+        client_size = 512
         self._client_buffer = (ctypes.c_uint8 * client_size)()
         self._client_handle = ctypes.cast(self._client_buffer, ctypes.c_void_p)
         
-        # Initialize the AT client structure
-        self._dll.uPortAtInit(self._client_handle)
+        # Allocate RX and URC buffers (static in C example)
+        rx_buffer_size = 2048
+        urc_buffer_size = 1024
+        self._rx_buffer = (ctypes.c_char * rx_buffer_size)()
+        self._urc_buffer = (ctypes.c_char * urc_buffer_size)()
+        
+        # Define callback function types matching u_cx_at_client.h
+        # int32_t (*write)(uCxAtClient_t *pClient, void *pStreamHandle, const void *pData, size_t length)
+        WRITE_CALLBACK_TYPE = ctypes.CFUNCTYPE(
+            ctypes.c_int32,  # return type
+            ctypes.c_void_p,  # pClient
+            ctypes.c_void_p,  # pStreamHandle
+            ctypes.c_void_p,  # pData
+            ctypes.c_size_t   # length
+        )
+        
+        # int32_t (*read)(uCxAtClient_t *pClient, void *pStreamHandle, void *pData, size_t length, int32_t timeoutMs)
+        READ_CALLBACK_TYPE = ctypes.CFUNCTYPE(
+            ctypes.c_int32,   # return type
+            ctypes.c_void_p,  # pClient
+            ctypes.c_void_p,  # pStreamHandle
+            ctypes.c_void_p,  # pData
+            ctypes.c_size_t,  # length
+            ctypes.c_int32    # timeoutMs
+        )
+        
+        # Create callback instances that will persist
+        self._write_callback = WRITE_CALLBACK_TYPE(self._uart_write)
+        self._read_callback = READ_CALLBACK_TYPE(self._uart_read)
+        
+        # Create uCxAtClientConfig_t structure
+        # typedef struct uCxAtClientConfig {
+        #     void *pRxBuffer;
+        #     size_t rxBufferLen;
+        #     void *pUrcBuffer;       (if U_CX_USE_URC_QUEUE == 1)
+        #     size_t urcBufferLen;    (if U_CX_USE_URC_QUEUE == 1)
+        #     void *pStreamHandle;
+        #     int32_t (*write)(...);
+        #     int32_t (*read)(...);
+        #     int32_t timeoutMs;
+        #     void *pContext;
+        # } uCxAtClientConfig_t;
+        
+        class UcxAtClientConfig(ctypes.Structure):
+            _fields_ = [
+                ("pRxBuffer", ctypes.c_void_p),
+                ("rxBufferLen", ctypes.c_size_t),
+                ("pUrcBuffer", ctypes.c_void_p),
+                ("urcBufferLen", ctypes.c_size_t),
+                ("pStreamHandle", ctypes.c_void_p),
+                ("write", WRITE_CALLBACK_TYPE),
+                ("read", READ_CALLBACK_TYPE),
+                ("timeoutMs", ctypes.c_int32),
+                ("pContext", ctypes.c_void_p)
+            ]
+        
+        # Initialize config structure
+        self._at_config = UcxAtClientConfig(
+            pRxBuffer=ctypes.cast(self._rx_buffer, ctypes.c_void_p),
+            rxBufferLen=rx_buffer_size,
+            pUrcBuffer=ctypes.cast(self._urc_buffer, ctypes.c_void_p),
+            urcBufferLen=urc_buffer_size,
+            pStreamHandle=None,  # Will be set to serial port handle
+            write=self._write_callback,
+            read=self._read_callback,
+            timeoutMs=10000,
+            pContext=None
+        )
+        
+        # Call uCxAtClientInit directly (like README example)
+        # void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
+        self._dll.uCxAtClientInit.argtypes = [ctypes.POINTER(UcxAtClientConfig), ctypes.c_void_p]
+        self._dll.uCxAtClientInit.restype = None
+        
+        print(f"[DEBUG] Calling uCxAtClientInit with client at: 0x{self._client_handle.value:x}")
+        self._dll.uCxAtClientInit(ctypes.byref(self._at_config), self._client_handle)
+        print(f"[DEBUG] uCxAtClientInit completed")
+        
         self._client_initialized = True
         
         # Allocate UCX handle (will be initialized after connection)
@@ -459,6 +531,40 @@ class UcxClientWrapper:
         
         # Expose handle for firmware update
         self.handle = ctypes.byref(self.ucx_handle)
+    
+    def _uart_write(self, pClient, pStreamHandle, pData, length):
+        """Write callback for AT client (called from C DLL)"""
+        try:
+            if self._serial and self._serial.is_open:
+                data = ctypes.string_at(pData, length)
+                written = self._serial.write(data)
+                return written
+            return -1
+        except Exception as e:
+            print(f"[ERROR] UART write failed: {e}")
+            return -1
+    
+    def _uart_read(self, pClient, pStreamHandle, pData, length, timeoutMs):
+        """Read callback for AT client (called from C DLL)"""
+        try:
+            if self._serial and self._serial.is_open:
+                # Set timeout in seconds
+                old_timeout = self._serial.timeout
+                self._serial.timeout = timeoutMs / 1000.0 if timeoutMs > 0 else None
+                
+                data = self._serial.read(length)
+                bytes_read = len(data)
+                
+                # Copy data to output buffer
+                if bytes_read > 0:
+                    ctypes.memmove(pData, data, bytes_read)
+                
+                self._serial.timeout = old_timeout
+                return bytes_read
+            return -1
+        except Exception as e:
+            print(f"[ERROR] UART read failed: {e}")
+            return -1
     
     def connect(self, port_name: str, baud_rate: int = 115200, flow_control: bool = False) -> bool:
         """Connect to a COM port
@@ -471,41 +577,83 @@ class UcxClientWrapper:
         Returns:
             True if connected successfully, False otherwise
         """
+        # Initialize UCX AT client for API functions (Wi-Fi scan, etc.)
+        # The terminal tab uses direct serial and doesn't need this
         if not self._client_initialized:
             self.initialize_client()
         
         if self._connected:
             self.disconnect()
         
-        # Open the AT client connection
-        success = self._dll.uPortAtOpen(
-            self._client_handle,  # Pass the structure directly, not byref
-            port_name.encode('ascii'),
-            baud_rate,
-            flow_control
-        )
-        
-        if success:
-            self._connected = True
+        try:
+            # Open serial port first (this is our pStreamHandle)
+            import serial
             
-            # Initialize UCX handle now that AT client is connected
+            print(f"[DEBUG] Attempting to open {port_name} at {baud_rate} baud...")
+            
+            self._serial = serial.Serial(
+                port=port_name,
+                baudrate=baud_rate,
+                timeout=1.0,
+                write_timeout=1.0,
+                rtscts=flow_control
+            )
+            
+            print(f"[DEBUG] Serial port {port_name} opened at {baud_rate} baud")
+            
+            # Update pStreamHandle in config to point to serial port
+            self._at_config.pStreamHandle = None
+            
+            self._connected = True
+            self._port_name = port_name
+            self._baud_rate = baud_rate
+            self._flow_control = flow_control
+            
+            # Initialize UCX handle now that serial port is open (needed for API functions)
+            # void uCxInit(uCxAtClient_t *pAtClient, uCxHandle_t *puCxHandle)
             if hasattr(self._dll, 'uCxInit'):
                 self._dll.uCxInit.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
                 self._dll.uCxInit.restype = None
+                
+                print(f"[DEBUG] Initializing UCX handle for API functions...")
+                
+                # Pass the AT client pointer to uCxInit
                 self._dll.uCxInit(self._client_handle, ctypes.byref(self.ucx_handle))
-                print(f"UCX handle initialized: {self.ucx_handle.value}")
+                
+                print(f"[DEBUG] UCX handle initialized at 0x{self.ucx_handle.value:x}")
             
+            # Start callback thread for UCX API
             self._start_callback_thread()
-        
-        return success
+            return True
+            
+        except Exception as e:
+            error_msg = str(e)
+            if "PermissionError" in str(type(e)) or "Access is denied" in error_msg:
+                error_msg = f"Port {port_name} is already in use by another program. Please close it first."
+            print(f"[ERROR] Failed to connect: {e}")
+            if self._serial and self._serial.is_open:
+                self._serial.close()
+            self._serial = None
+            self._connected = False
+            return False
     
     def disconnect(self):
         """Disconnect from COM port"""
         if not self._connected:
             return
         
+        # Stop callback thread for UCX API
         self._stop_callback_thread()
-        self._dll.uPortAtClose(self._client_handle)  # Pass structure directly, not byref
+        
+        # Close serial port
+        if self._serial and self._serial.is_open:
+            try:
+                self._serial.close()
+                print("[DEBUG] Serial port closed")
+            except Exception as e:
+                print(f"[ERROR] Failed to close serial port: {e}")
+        
+        self._serial = None
         self._connected = False
         
         # Reset UCX handle
@@ -543,21 +691,123 @@ class UcxClientWrapper:
         """
         self._callbacks[event_type] = callback
     
+    def _get_at_client_from_handle(self):
+        """Get AT client pointer from UCX handle
+        
+        Returns:
+            AT client pointer (c_void_p)
+        """
+        if not self._connected or not self.ucx_handle:
+            raise UcxClientError("Not connected")
+        
+        # Debug: Print handle value
+        print(f"[DEBUG] ucx_handle type: {type(self.ucx_handle)}")
+        print(f"[DEBUG] ucx_handle value: {self.ucx_handle}")
+        
+        # The ucx_handle is already a pointer to the uCxHandle_t structure
+        # We need to dereference it to get the pAtClient member
+        
+        # The uCxHandle_t structure is:
+        # typedef struct uCxHandle {
+        #     uCxAtClient_t *pAtClient;  // First member (pointer) - offset 0
+        #     uUrcCallbacks callbacks;    // Second member
+        # } uCxHandle_t;
+        
+        # Read the first pointer from the handle structure
+        # Cast the handle to POINTER(c_void_p) to read pointer values
+        if isinstance(self.ucx_handle, ctypes.c_void_p):
+            # ucx_handle is a c_void_p, get its value
+            handle_addr = self.ucx_handle.value
+            if not handle_addr:
+                raise UcxClientError("UCX handle is NULL")
+            
+            # Read the first member (pAtClient pointer) from the structure
+            handle_ptr = ctypes.cast(handle_addr, ctypes.POINTER(ctypes.c_void_p))
+            at_client_ptr = handle_ptr[0]
+            
+            print(f"[DEBUG] handle_addr: 0x{handle_addr:x}")
+            print(f"[DEBUG] at_client_ptr: {at_client_ptr}")
+            
+            if not at_client_ptr:
+                raise UcxClientError("AT client pointer is NULL")
+            
+            return ctypes.c_void_p(at_client_ptr)
+        else:
+            # ucx_handle is already an integer address
+            handle_addr = int(self.ucx_handle)
+            handle_ptr = ctypes.cast(handle_addr, ctypes.POINTER(ctypes.c_void_p))
+            at_client_ptr = handle_ptr[0]
+            
+            print(f"[DEBUG] handle_addr: 0x{handle_addr:x}")
+            print(f"[DEBUG] at_client_ptr: {at_client_ptr}")
+            
+            if not at_client_ptr:
+                raise UcxClientError("AT client pointer is NULL")
+            
+            return ctypes.c_void_p(at_client_ptr)
+    
     def send_at_command(self, command: str) -> Tuple[bool, str]:
-        """Send raw AT command
+        """Send AT command directly over serial port (bypasses UCX API)
         
         Args:
-            command: AT command string
+            command: AT command string (e.g. "AT", "ATI", "ATI9", "AT+GMR")
             
         Returns:
             Tuple of (success, response)
         """
-        if not self._connected:
-            raise UcxClientError("Not connected to COM port")
+        if not self._serial or not self._serial.is_open:
+            return (False, "Serial port not open")
         
-        # This would require more complex integration with the AT client
-        # For now, return a placeholder
-        return (True, "OK")
+        if not command:
+            return (False, "Empty command")
+        
+        cmd = command.strip()
+        
+        try:
+            # Clear any pending input
+            self._serial.reset_input_buffer()
+            
+            # Send command with CR+LF
+            cmd_bytes = (cmd + "\r\n").encode('ascii')
+            self._serial.write(cmd_bytes)
+            self._serial.flush()
+            
+            # Read response with timeout
+            response_lines = []
+            timeout_time = time.time() + 2.0  # 2 second timeout
+            
+            while time.time() < timeout_time:
+                if self._serial.in_waiting > 0:
+                    try:
+                        line = self._serial.readline().decode('ascii', errors='ignore').strip()
+                        if line:
+                            response_lines.append(line)
+                            # Check for final response
+                            if line in ['OK', 'ERROR'] or line.startswith('ERROR') or line.startswith('+CME ERROR'):
+                                break
+                    except Exception as e:
+                        print(f"[DEBUG] Error reading line: {e}")
+                        break
+                else:
+                    time.sleep(0.01)  # Small delay to avoid busy waiting
+            
+            # Join all response lines
+            response = "\n".join(response_lines)
+            
+            # Check if successful
+            if 'OK' in response_lines:
+                return (True, response)
+            elif 'ERROR' in response or any('ERROR' in line for line in response_lines):
+                return (False, response if response else "ERROR")
+            elif response:
+                # Got response but no OK/ERROR - still consider it success
+                return (True, response)
+            else:
+                return (False, "No response")
+                
+        except Exception as e:
+            import traceback
+            return (False, f"Exception: {str(e)}\n{traceback.format_exc()}")
     
     def __del__(self):
         """Cleanup when object is destroyed"""
