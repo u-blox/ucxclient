@@ -101,6 +101,24 @@ if(WIN32)
   target_include_directories(windows_test PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
   target_link_libraries(windows_test PRIVATE setupapi)
 
+  # Firmware Update Test Application
+  add_executable(firmware_update_test
+    examples/firmware_update_test.c
+    examples/port/u_port_windows.c
+    ${UCXCLIENT_UCX_API_SRC}
+    ${UCXCLIENT_AT_API_SRC}
+  )
+  target_compile_options(firmware_update_test PRIVATE /W4)
+  target_compile_definitions(firmware_update_test PRIVATE
+    U_PORT_WINDOWS
+    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    _CRT_SECURE_NO_WARNINGS
+    U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+    U_CX_LOG_DEBUG=1
+  )
+  target_include_directories(firmware_update_test PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+  target_link_libraries(firmware_update_test PRIVATE setupapi)
+
   # Windows shared library for Python integration
   add_library(ucxclient_windows SHARED
     examples/port/u_port_windows.c

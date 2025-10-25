@@ -31,6 +31,7 @@
 #include <devguid.h>
 #include <regstr.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <assert.h>
 
@@ -72,6 +73,8 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
 static uint64_t gBootTime = 0;
 static HANDLE gHComPort = INVALID_HANDLE_VALUE;
 static uCxAtClientConfig_t *gPConfig = NULL;
+static uPortLogCallback_t gLogCallback = NULL;
+static void *gLogUserData = NULL;
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -115,6 +118,11 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
         (void)dwError;  // Mark as intentionally unused when logging is disabled
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to open %s, error: %lu", fullPortName, dwError);
         return INVALID_HANDLE_VALUE;
+    }
+
+    // Set larger COM port buffers for XMODEM transfers (16KB each)
+    if (!SetupComm(hComPort, 16384, 16384)) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "SetupComm failed, using default buffer sizes");
     }
 
     // Configure COM port
@@ -341,7 +349,7 @@ bool uPortIsComPortAvailable(const char *pPortName)
 void uPortAtInit(uCxAtClient_t *pClient)
 {
     static uPortContext_t context;
-    static char rxBuf[1024];
+    static char rxBuf[8192];  // Increased from 1024 to 8192 for XMODEM transfers
 #if U_CX_USE_URC_QUEUE == 1
     static char urcBuf[1024];
 #endif
@@ -432,6 +440,47 @@ void uPortAtClose(uCxAtClient_t *pClient)
     }
 
     gPConfig = NULL;
+}
+
+void uPortAtFlush(uCxAtClient_t *pClient)
+{
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx->hComPort != INVALID_HANDLE_VALUE) {
+        // Flush both input and output buffers
+        PurgeComm(pCtx->hComPort, PURGE_RXCLEAR | PURGE_TXCLEAR);
+        
+        // Also clear the AT client's internal RX buffer
+        if (pClient->pConfig->pRxBuffer != NULL) {
+            memset(pClient->pConfig->pRxBuffer, 0, pClient->pConfig->rxBufferLen);
+        }
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Serial buffers flushed");
+    }
+}
+
+void uPortRegisterLogCallback(uPortLogCallback_t callback, void *pUserData)
+{
+    gLogCallback = callback;
+    gLogUserData = pUserData;
+}
+
+void uPortLogPrintf(const char *format, ...)
+{
+    char buffer[512];
+    va_list args;
+    
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    
+    // Send to callback if registered
+    if (gLogCallback != NULL) {
+        gLogCallback(buffer, gLogUserData);
+    }
+    
+    // Also print to stdout for console visibility
+    printf("%s", buffer);
 }
 
 #endif /* _WIN32 */

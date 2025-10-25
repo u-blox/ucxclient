@@ -274,6 +274,23 @@ void uPortAtClose(uCxAtClient_t *pClient)
     pCtx->uartFd = -1;
 }
 
+void uPortAtFlush(uCxAtClient_t *pClient)
+{
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx->uartFd != -1) {
+        // Flush both input and output buffers
+        tcflush(pCtx->uartFd, TCIOFLUSH);
+        
+        // Also clear the AT client's internal RX buffer
+        if (pClient->pConfig->pRxBuffer != NULL) {
+            memset(pClient->pConfig->pRxBuffer, 0, pClient->pConfig->rxBufferLen);
+        }
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Serial buffers flushed");
+    }
+}
+
 int32_t uPortMutexTryLock(pthread_mutex_t *pMutex, uint32_t timeoutMs)
 {
     int32_t ret;

@@ -69,4 +69,14 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
   */
 void uPortAtClose(uCxAtClient_t *pClient);
 
+/**
+  * @brief Flush AT UART buffers
+  *
+  * Clears all data from both the input and output buffers.
+  * Useful after reopening the port or before starting a new protocol like XMODEM.
+  *
+  * @param[in] pClient:  pointer to the uCxAtClient_t struct initialized with uPortAtInit().
+  */
+void uPortAtFlush(uCxAtClient_t *pClient);
+
 #endif

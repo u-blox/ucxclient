@@ -51,6 +51,9 @@ class DynamicProductGUI:
         self.group_frames: Dict[str, ttk.Frame] = {}
         self.command_widgets: Dict[str, Dict] = {}
         
+        # Track insertion index for tabs (start after Log and Terminal tabs)
+        self.tab_insert_index = 2
+        
         # Special feature panels
         self.wifi_scan_panel: Optional[ttk.Frame] = None
         self.bluetooth_scan_panel: Optional[ttk.Frame] = None
@@ -133,13 +136,16 @@ class DynamicProductGUI:
     
     def _clear_dynamic_tabs(self):
         """Clear all dynamically created tabs"""
-        # Remove all tabs except the first static one (Log tab)
+        # Remove all tabs except the first two static ones (Log at 0, Terminal at 1)
         num_tabs = self.parent_notebook.index("end")
-        for i in range(num_tabs - 1, 0, -1):  # Keep only first tab (Log at index 0)
+        for i in range(num_tabs - 1, 1, -1):  # Keep Log (0) and Terminal (1)
             self.parent_notebook.forget(i)
         
         self.group_frames.clear()
         self.command_widgets.clear()
+        
+        # Reset tab insertion index to start after Terminal tab
+        self.tab_insert_index = 2
     
     def _create_category_tab(self, category_name: str, group_names: List[str], has_special_scan: bool = False):
         """Create a category tab with sub-tabs for each group
@@ -164,6 +170,7 @@ class DynamicProductGUI:
         
         # Create main category frame
         category_frame = ttk.Frame(self.parent_notebook)
+        # Add at end for now (will be reordered later to keep Terminal at position 1)
         self.parent_notebook.add(category_frame, text=f"{icon} {category_name}")
         
         # Create sub-notebook for groups within this category
@@ -190,6 +197,7 @@ class DynamicProductGUI:
         """
         # Create main WiFi frame
         wifi_frame = ttk.Frame(self.parent_notebook)
+        # Add at end for now (will be reordered later to keep Terminal at position 1)
         self.parent_notebook.add(wifi_frame, text="📶 Wi-Fi")
         
         # Create sub-notebook for WiFi organization

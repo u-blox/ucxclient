@@ -364,9 +364,12 @@ class MainWindow:
         self.log_text.tag_config('info', foreground='#00BFFF')     # Deep Sky Blue
         self.log_text.tag_config('list', foreground='#00FFFF')     # Cyan
         self.log_text.tag_config('search', foreground='#FF00FF')   # Magenta
+        self.log_text.tag_config('at_tx', foreground='#00FFFF')    # Cyan (AT TX)
+        self.log_text.tag_config('at_rx', foreground='#FF00FF')    # Magenta (AT RX)
+        self.log_text.tag_config('debug', foreground='#808080')    # Gray (Debug)
         
         # Set tag priorities
-        for tag in ['success', 'error', 'warning', 'info', 'list', 'search']:
+        for tag in ['success', 'error', 'warning', 'info', 'list', 'search', 'at_tx', 'at_rx', 'debug']:
             self.log_text.tag_raise(tag)
         
         # Controls frame
@@ -935,14 +938,21 @@ class MainWindow:
         color_tag = None
         msg_upper = message.upper()
         
+        # Check for AT protocol messages first (from UCX logging)
+        if '[AT TX]' in message:
+            color_tag = 'at_tx'
+        elif '[AT RX]' in message:
+            color_tag = 'at_rx'
+        elif '[DBG' in message or '[DEBUG]' in message:
+            color_tag = 'debug'
         # Check for success indicators
-        if '✓' in message or '✅' in message or 'SUCCESS' in msg_upper or message.startswith('Successfully'):
+        elif '✓' in message or '✅' in message or 'SUCCESS' in msg_upper or message.startswith('Successfully'):
             color_tag = 'success'
         # Check for error indicators  
-        elif '✗' in message or '❌' in message or message.startswith('ERROR') or 'ERROR:' in message or 'FAIL' in msg_upper:
+        elif '✗' in message or '❌' in message or message.startswith('ERROR') or 'ERROR:' in message or 'FAIL' in msg_upper or '[ERROR]' in message:
             color_tag = 'error'
         # Check for warning indicators
-        elif '⚠' in message or message.startswith('WARNING') or message.startswith('WARN') or 'warning' in message.lower():
+        elif '⚠' in message or message.startswith('WARNING') or message.startswith('WARN') or 'warning' in message.lower() or '[WARN' in message:
             color_tag = 'warning'
         # Check for info indicators
         elif 'ℹ' in message or '📘' in message or message.startswith('INFO') or message.startswith('ℹ️'):
@@ -964,6 +974,19 @@ class MainWindow:
         
         self.log_text.config(state=tk.DISABLED)
         self.log_text.see(tk.END)
+    
+    def _handle_ucx_log(self, message: str):
+        """Handle UCX logging callback - redirect to Log Window
+        
+        This callback is invoked from C code and may be called from any thread.
+        We need to use root.after() to ensure thread-safe GUI updates.
+        """
+        # Strip trailing newline if present (we add it in _log)
+        message = message.rstrip('\n')
+        
+        # Schedule log update in main GUI thread
+        if hasattr(self, 'root'):
+            self.root.after(0, lambda: self._log(message))
     
     def _clear_log(self):
         """Clear log"""
@@ -1055,6 +1078,10 @@ class MainWindow:
             self._update_init_status("⏳ Initializing UCX handle...")
             try:
                 self.ucx_client = UcxClientWrapper()
+                
+                # Register log callback to redirect UCX logging to Log Window
+                self.ucx_client.register_log_callback(self._handle_ucx_log)
+                
                 self._update_init_status("✓ UCX handle initialized")
             except Exception as e:
                 self._update_init_status(f"⚠ UCX initialization warning: {e}")

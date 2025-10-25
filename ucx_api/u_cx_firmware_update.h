@@ -62,8 +62,10 @@ typedef void (*uCxFirmwareUpdateProgress_t)(size_t totalBytes,
  * 
  * @param[in] puCxHandle      uCX API handle
  * @param[in] pFirmwareFile   Path to firmware file (.bin)
+ * @param[in] pDeviceName     Device/COM port name (e.g., "COM3" or "/dev/ttyUSB0")
  * @param     baudRate        Baudrate to use for transfer (0 = keep current)
  *                            Common values: 115200, 230400, 460800, 921600
+ * @param     useFlowControl  Use hardware flow control (CTS/RTS)
  * @param     progressCallback  Optional progress callback (NULL to disable)
  * @param     pUserData       User data pointer passed to callback
  * @return                    0 on success, negative value on error
@@ -83,7 +85,9 @@ typedef void (*uCxFirmwareUpdateProgress_t)(size_t totalBytes,
  */
 int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
                           const char *pFirmwareFile,
+                          const char *pDeviceName,
                           int32_t baudRate,
+                          bool useFlowControl,
                           uCxFirmwareUpdateProgress_t progressCallback,
                           void *pUserData);
 

@@ -45,6 +45,9 @@
 #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(mutex, timeoutMs)
 #define U_CX_MUTEX_UNLOCK(mutex)              ReleaseMutex(mutex)
 
+/* Redirect printf to our log callback system */
+#define U_CX_PORT_PRINTF   uPortLogPrintf
+
 /* Default COM port settings */
 #ifndef U_EXAMPLE_UART
 # define U_EXAMPLE_UART "COM3"
@@ -98,6 +101,30 @@ int32_t uPortGetTickTimeMs(void);
   * @return             Number of ports found, or negative on error
   */
 int32_t uPortEnumerateComPorts(char pPortList[][16], int32_t maxPorts);
+
+/**
+  * @brief Logging callback function type
+  *
+  * @param pMessage    The log message string
+  * @param pUserData   User data pointer passed during registration
+  */
+typedef void (*uPortLogCallback_t)(const char *pMessage, void *pUserData);
+
+/**
+  * @brief Register a callback for logging output
+  *
+  * @param callback    Callback function to receive log messages
+  * @param pUserData   User data pointer to pass to callback
+  */
+void uPortRegisterLogCallback(uPortLogCallback_t callback, void *pUserData);
+
+/**
+  * @brief Log printf function (redirects to callback if registered)
+  *
+  * @param format    Printf-style format string
+  * @param ...       Variable arguments
+  */
+void uPortLogPrintf(const char *format, ...);
 
 /**
   * @brief Check if a COM port is available

@@ -30,21 +30,6 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
-// TODO: Remove this define once proper logging is integrated
-// For now, disable printf logging to avoid console output issues
-#ifndef U_CX_LOG_LINE_I
-#define U_CX_LOG_LINE_I(...)  do { } while(0)
-#endif
-#ifndef U_CX_LOG_LINE_W
-#define U_CX_LOG_LINE_W(...)  do { } while(0)
-#endif
-#ifndef U_CX_LOG_LINE_E
-#define U_CX_LOG_LINE_E(...)  do { } while(0)
-#endif
-#ifndef U_CX_LOG_LINE_D
-#define U_CX_LOG_LINE_D(...)  do { } while(0)
-#endif
-
 #define U_CX_XMODEM_SOH             0x01    /**< Start of 128-byte block */
 #define U_CX_XMODEM_STX             0x02    /**< Start of 1K block */
 #define U_CX_XMODEM_EOT             0x04    /**< End of transmission */
@@ -58,9 +43,9 @@
 #define U_CX_XMODEM_HEADER_SIZE     3       /**< SOH/STX + block_num + block_num_complement */
 #define U_CX_XMODEM_CRC_SIZE        2
 
-#define U_CX_XMODEM_DEFAULT_TIMEOUT_MS  3000
+#define U_CX_XMODEM_DEFAULT_TIMEOUT_MS  15000  /**< 15 second timeout matches working Python implementation */
 #define U_CX_XMODEM_DEFAULT_MAX_RETRIES 10
-#define U_CX_XMODEM_START_TIMEOUT_MS    10000  /**< Longer timeout for initial handshake */
+#define U_CX_XMODEM_START_TIMEOUT_MS    60000  /**< 60 seconds for initial handshake (Python uses 60s) */
 
 /* ----------------------------------------------------------------
  * TYPES
@@ -73,7 +58,7 @@
 static uint16_t xmodemCrc16(const uint8_t *pBuf, size_t len);
 static int32_t xmodemWaitForStart(uCxAtClient_t *pClient, int32_t timeoutMs);
 static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum, 
-                               const uint8_t *pData, size_t blockSize,
+                               const uint8_t *pData, size_t dataLen, size_t blockSize,
                                int32_t timeoutMs, int32_t maxRetries);
 static int32_t xmodemSendEot(uCxAtClient_t *pClient, int32_t timeoutMs);
 
@@ -115,26 +100,26 @@ static int32_t xmodemWaitForStart(uCxAtClient_t *pClient, int32_t timeoutMs)
     int32_t bytesRead;
     int32_t startTime = uPortGetTickTimeMs();
     
-    U_CX_LOG_LINE_I("XMODEM: Waiting for start signal...");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Waiting for start signal...");
     
     while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
         bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &startChar, 1, 100);
         
         if (bytesRead == 1) {
             if (startChar == U_CX_XMODEM_CCHR) {
-                U_CX_LOG_LINE_I("XMODEM: Receiver ready (CRC mode)");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Receiver ready (CRC mode)");
                 return 0;
             } else if (startChar == U_CX_XMODEM_NAK) {
-                U_CX_LOG_LINE_I("XMODEM: Receiver ready (checksum mode - not supported)");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Receiver ready (checksum mode - not supported)");
                 return -2;  // Checksum mode not supported, only CRC
             } else if (startChar == U_CX_XMODEM_CAN) {
-                U_CX_LOG_LINE_E("XMODEM: Transfer cancelled by receiver");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Transfer cancelled by receiver");
                 return -3;
             }
         }
     }
     
-    U_CX_LOG_LINE_E("XMODEM: Timeout waiting for start signal");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Timeout waiting for start signal");
     return -1;
 }
 
@@ -142,7 +127,7 @@ static int32_t xmodemWaitForStart(uCxAtClient_t *pClient, int32_t timeoutMs)
  * Send a single XMODEM block with retries
  */
 static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum, 
-                               const uint8_t *pData, size_t blockSize,
+                               const uint8_t *pData, size_t dataLen, size_t blockSize,
                                int32_t timeoutMs, int32_t maxRetries)
 {
     uint8_t packet[U_CX_XMODEM_HEADER_SIZE + U_CX_XMODEM_BLOCK_SIZE_1K + U_CX_XMODEM_CRC_SIZE];
@@ -153,11 +138,11 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
     // Build packet
     packet[0] = (blockSize == U_CX_XMODEM_BLOCK_SIZE_1K) ? U_CX_XMODEM_STX : U_CX_XMODEM_SOH;
     packet[1] = blockNum;
-    packet[2] = 0xFF - blockNum;  // Block number complement
+    packet[2] = ~blockNum;  // Block number complement (bitwise NOT)
     
     // Copy data and pad with 0x1A (EOF) if needed
     memset(&packet[3], 0x1A, blockSize);
-    memcpy(&packet[3], pData, blockSize);
+    memcpy(&packet[3], pData, dataLen);  // Only copy actual data length
     
     // Calculate and append CRC
     uint16_t crc = xmodemCrc16(&packet[3], blockSize);
@@ -166,11 +151,11 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
     
     // Try sending the block with retries
     for (int32_t retry = 0; retry < maxRetries; retry++) {
-        U_CX_LOG_LINE_D("XMODEM: Sending block %u (try %d/%d)", blockNum, retry + 1, maxRetries);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Sending block %u (try %d/%d)", blockNum, retry + 1, maxRetries);
         
         // Send packet
         if (pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, packet, packetSize) != (int32_t)packetSize) {
-            U_CX_LOG_LINE_E("XMODEM: Write error on block %u", blockNum);
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Write error on block %u", blockNum);
             continue;
         }
         
@@ -182,26 +167,26 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
             
             if (bytesRead == 1) {
                 if (response == U_CX_XMODEM_ACK) {
-                    U_CX_LOG_LINE_D("XMODEM: Block %u ACKed", blockNum);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Block %u ACKed", blockNum);
                     return 0;  // Success
                 } else if (response == U_CX_XMODEM_NAK) {
-                    U_CX_LOG_LINE_W("XMODEM: Block %u NAKed, retrying...", blockNum);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Block %u NAKed, retrying...", blockNum);
                     break;  // Retry
                 } else if (response == U_CX_XMODEM_CAN) {
-                    U_CX_LOG_LINE_E("XMODEM: Transfer cancelled by receiver");
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Transfer cancelled by receiver");
                     return -3;
                 } else {
-                    U_CX_LOG_LINE_W("XMODEM: Unexpected response: 0x%02X", response);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Unexpected response: 0x%02X", response);
                 }
             }
         }
         
         if (bytesRead != 1) {
-            U_CX_LOG_LINE_W("XMODEM: Timeout waiting for ACK on block %u", blockNum);
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Timeout waiting for ACK on block %u", blockNum);
         }
     }
     
-    U_CX_LOG_LINE_E("XMODEM: Failed to send block %u after %d retries", blockNum, maxRetries);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Failed to send block %u after %d retries", blockNum, maxRetries);
     return -1;
 }
 
@@ -214,10 +199,10 @@ static int32_t xmodemSendEot(uCxAtClient_t *pClient, int32_t timeoutMs)
     uint8_t response;
     int32_t bytesRead;
     
-    U_CX_LOG_LINE_I("XMODEM: Sending EOT...");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Sending EOT...");
     
     if (pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, &eot, 1) != 1) {
-        U_CX_LOG_LINE_E("XMODEM: Failed to write EOT");
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Failed to write EOT");
         return -1;
     }
     
@@ -228,15 +213,15 @@ static int32_t xmodemSendEot(uCxAtClient_t *pClient, int32_t timeoutMs)
         
         if (bytesRead == 1) {
             if (response == U_CX_XMODEM_ACK) {
-                U_CX_LOG_LINE_I("XMODEM: EOT ACKed - transfer complete");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: EOT ACKed - transfer complete");
                 return 0;
             } else {
-                U_CX_LOG_LINE_W("XMODEM: Unexpected response to EOT: 0x%02X", response);
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Unexpected response to EOT: 0x%02X", response);
             }
         }
     }
     
-    U_CX_LOG_LINE_E("XMODEM: Timeout waiting for ACK after EOT");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Timeout waiting for ACK after EOT");
     return -1;
 }
 
@@ -261,7 +246,7 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
                               void *pUserData)
 {
     if (pClient == NULL || pData == NULL || dataLen == 0) {
-        U_CX_LOG_LINE_E("XMODEM: Invalid parameters");
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Invalid parameters");
         return -1;
     }
     
@@ -274,7 +259,7 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
     
     size_t blockSize = pConfig->use1K ? U_CX_XMODEM_BLOCK_SIZE_1K : U_CX_XMODEM_BLOCK_SIZE_128;
     
-    U_CX_LOG_LINE_I("XMODEM: Starting transfer (%zu bytes, %zu-byte blocks)", 
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Starting transfer (%zu bytes, %zu-byte blocks)", 
                     dataLen, blockSize);
     
     // Wait for receiver to initiate transfer
@@ -291,16 +276,19 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
         size_t remainingBytes = dataLen - offset;
         size_t currentBlockSize = (remainingBytes < blockSize) ? remainingBytes : blockSize;
         
-        // Send block
-        result = xmodemSendBlock(pClient, blockNum, &pData[offset], blockSize,
+        // Send block - pass actual data size and block size separately
+        result = xmodemSendBlock(pClient, blockNum, &pData[offset], currentBlockSize, blockSize,
                                 pConfig->timeoutMs, pConfig->maxRetries);
         if (result != 0) {
-            U_CX_LOG_LINE_E("XMODEM: Transfer failed at block %u", blockNum);
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Transfer failed at block %u", blockNum);
             return result;
         }
         
         offset += currentBlockSize;
-        blockNum++;
+        
+        // Increment block number with natural 8-bit wraparound (same as working code)
+        // This gives sequence: 1, 2, 3, ..., 255, 0, 1, 2, 3, ...
+        blockNum = (blockNum + 1) % 256;
         
         // Call progress callback
         if (progressCallback != NULL) {
@@ -314,7 +302,7 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
         return result;
     }
     
-    U_CX_LOG_LINE_I("XMODEM: Transfer completed successfully");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Transfer completed successfully");
     return 0;
 }
 
@@ -325,14 +313,14 @@ int32_t uCxAtClientXmodemSendFile(uCxAtClient_t *pClient,
                                   void *pUserData)
 {
     if (pClient == NULL || pFilePath == NULL) {
-        U_CX_LOG_LINE_E("XMODEM: Invalid parameters");
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Invalid parameters");
         return -1;
     }
     
     // Open file
     FILE *pFile = fopen(pFilePath, "rb");
     if (pFile == NULL) {
-        U_CX_LOG_LINE_E("XMODEM: Failed to open file: %s", pFilePath);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Failed to open file: %s", pFilePath);
         return -1;
     }
     
@@ -342,17 +330,17 @@ int32_t uCxAtClientXmodemSendFile(uCxAtClient_t *pClient,
     fseek(pFile, 0, SEEK_SET);
     
     if (fileSize <= 0) {
-        U_CX_LOG_LINE_E("XMODEM: Invalid file size: %ld", fileSize);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Invalid file size: %ld", fileSize);
         fclose(pFile);
         return -1;
     }
     
-    U_CX_LOG_LINE_I("XMODEM: File size: %ld bytes", fileSize);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: File size: %ld bytes", fileSize);
     
     // Allocate buffer
     uint8_t *pBuffer = (uint8_t *)malloc(fileSize);
     if (pBuffer == NULL) {
-        U_CX_LOG_LINE_E("XMODEM: Failed to allocate %ld bytes", fileSize);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Failed to allocate %ld bytes", fileSize);
         fclose(pFile);
         return -1;
     }
@@ -362,7 +350,7 @@ int32_t uCxAtClientXmodemSendFile(uCxAtClient_t *pClient,
     fclose(pFile);
     
     if (bytesRead != (size_t)fileSize) {
-        U_CX_LOG_LINE_E("XMODEM: Failed to read file (read %zu of %ld bytes)", 
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Failed to read file (read %zu of %ld bytes)", 
                         bytesRead, fileSize);
         free(pBuffer);
         return -1;

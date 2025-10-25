@@ -260,11 +260,17 @@ class FirmwareUpdateTab:
             self._log(f"Block size: {'1K' if use_1k else '128'} bytes", 'info')
             self._log("")
             
+            # Get current connection parameters
+            port_name = self.ucx_wrapper._port_name if self.ucx_wrapper._port_name else "COM3"
+            use_flow_control = self.ucx_wrapper._flow_control
+            
             # Call the firmware update function
             result = self.ucx_wrapper.lib.uCxFirmwareUpdate(
                 self.ucx_wrapper.handle,
                 filepath.encode('utf-8'),
+                port_name.encode('utf-8'),
                 baudrate,
+                use_flow_control,
                 self.ucx_wrapper.lib.uCxFirmwareUpdateProgress_t(self._progress_callback),
                 None
             )

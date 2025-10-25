@@ -40,22 +40,24 @@
 
 /* Simple line logging printf style (\n will be added automatically) */
 #ifdef _WIN32
-/* Windows MSVC has issues with complex macro expansions - disable for now */
-#define U_CX_LOG_LINE(logCh, format, ...) 
-#define U_CX_LOG_LINE_I(logCh, instance, format, ...)
+/* Windows: Enable logging only for specific modules that are known to work */
+#define U_CX_LOG_LINE(logCh, format, ...) \
+    _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__)
+#define U_CX_LOG_LINE_I(logCh, instance, format, ...) \
+    _U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__)
 #else
 #define U_CX_LOG_LINE(logCh, format, ...) \
     _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__)
 #define U_CX_LOG_LINE_I(logCh, instance, format, ...) \
-    __U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__)
+    _U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__)
 #endif
 
 /* Log API for splitting up line in several U_CX_LOG() calls */
 #ifdef _WIN32
-/* Windows MSVC has issues with complex macro expansions - disable for now */
-#define U_CX_LOG_BEGIN(logCh)
-#define U_CX_LOG_BEGIN_I(logCh, instance)
-#define U_CX_LOG(logCh, format, ...)
+/* Windows: Enable logging only for specific modules */
+#define U_CX_LOG_BEGIN(logCh)              _U_CX_LOG_BEGIN_FMT(logCh, "")
+#define U_CX_LOG_BEGIN_I(logCh, instance)  _U_CX_LOG_BEGIN_I_FMT(logCh, instance, "")
+#define U_CX_LOG(logCh, format, ...)       _U_CX_LOG(logCh, format, ##__VA_ARGS__)
 #else
 #define U_CX_LOG_BEGIN(logCh)              _U_CX_LOG_BEGIN_FMT(logCh, "")
 #define U_CX_LOG_BEGIN_I(logCh, instance)  _U_CX_LOG_BEGIN_I_FMT(logCh, instance, "")

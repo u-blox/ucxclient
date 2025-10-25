@@ -153,6 +153,15 @@ class UcxClientWrapper:
         self._dll.uPortAtClose.restype = None
         self._dll.uPortAtClose.argtypes = [c_void_p]
         
+        # Log callback functions
+        self._log_callback_func = None  # Keep reference to prevent garbage collection
+        if hasattr(self._dll, 'uPortRegisterLogCallback'):
+            # Define callback type: void (*callback)(const char *pMessage, void *pUserData)
+            self.LOG_CALLBACK_TYPE = ctypes.CFUNCTYPE(None, c_char_p, c_void_p)
+            
+            self._dll.uPortRegisterLogCallback.restype = None
+            self._dll.uPortRegisterLogCallback.argtypes = [self.LOG_CALLBACK_TYPE, c_void_p]
+        
         # Expose lib for direct access to firmware update functions
         self.lib = self._dll
         
@@ -192,6 +201,41 @@ class UcxClientWrapper:
     def get_tick_time_ms(self) -> int:
         """Get current tick time in milliseconds"""
         return self._dll.uPortGetTickTimeMs()
+    
+    def register_log_callback(self, callback: Optional[Callable[[str], None]]):
+        """Register a callback for UCX logging
+        
+        Args:
+            callback: Function that takes a string parameter (log message).
+                     Pass None to unregister.
+        
+        Example:
+            def my_log_handler(message):
+                print(f"LOG: {message}")
+            
+            wrapper.register_log_callback(my_log_handler)
+        """
+        if not hasattr(self._dll, 'uPortRegisterLogCallback'):
+            print("Warning: uPortRegisterLogCallback not available in DLL")
+            return
+        
+        if callback is None:
+            # Unregister callback
+            self._dll.uPortRegisterLogCallback(None, None)
+            self._log_callback_func = None
+        else:
+            # Wrap the Python callback to handle the C interface
+            def c_callback_wrapper(message_ptr, userdata):
+                if message_ptr:
+                    try:
+                        message = message_ptr.decode('utf-8', errors='replace')
+                        callback(message)
+                    except Exception as e:
+                        print(f"Error in log callback: {e}")
+            
+            # Create C callback and keep reference
+            self._log_callback_func = self.LOG_CALLBACK_TYPE(c_callback_wrapper)
+            self._dll.uPortRegisterLogCallback(self._log_callback_func, None)
     
     def enumerate_com_ports(self) -> List[str]:
         """Enumerate available COM ports

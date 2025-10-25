@@ -229,3 +229,20 @@ void uPortAtClose(uCxAtClient_t *pClient)
     k_work_cancel(&pCtx->rxWork);
     pCtx->pUartDev = NULL;
 }
+
+void uPortAtFlush(uCxAtClient_t *pClient)
+{
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx->pUartDev != NULL) {
+        // Reset the ring buffer
+        ring_buf_reset(&pCtx->rxRingBuf);
+        
+        // Clear the AT client's internal RX buffer
+        if (pClient->pConfig->pRxBuffer != NULL) {
+            memset(pClient->pConfig->pRxBuffer, 0, pClient->pConfig->rxBufferLen);
+        }
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Serial buffers flushed");
+    }
+}
