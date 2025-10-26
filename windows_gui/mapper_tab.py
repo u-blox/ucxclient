@@ -180,111 +180,127 @@ class MapperTab:
         
         print(f"[MAPPER] Loading {len(self.yaml_parser.commands)} commands...")
         
+        cmd_count = 0
         for cmd_name, cmd_info in self.yaml_parser.commands.items():
-            at_cmd = cmd_name  # The key is the AT command (e.g., "AT+UWSC")
-            api_name = cmd_info.get('api_name', '')  # AT API name from YAML (e.g., "StationConnect")
-            group = cmd_info.get('group', '')
-            
-            # Get the full API function name using the mapper
             try:
-                # Check if api_name is empty or None - these are not implemented
-                if not api_name or api_name.lower() in ['none', '']:
-                    at_api_name = "(none)"
-                    ucx_api_function = "(not implemented)"
-                    status = "Not Found"
-                    type_str = "-"
-                    tag = 'pending'
-                    pending_count += 1
-                else:
-                    at_api_name = api_name
-                    
-                    # Use the mapper's internal method to convert API name to function
-                    ucx_api_function = self.mapper._convert_api_name_to_function(cmd_name, api_name, cmd_info)
-                    
-                    # Check if this function actually exists in the DLL
-                    # The DLL may have numbered variants (e.g., uCxFoo1, uCxFoo2)
-                    # or Begin suffix (e.g., uCxFooBegin)
-                    function_exists = False
-                    found_variants = []
-                    
-                    # Check exact match first
-                    if ucx_api_function in self.dll_exports:
-                        function_exists = True
-                        found_variants.append(ucx_api_function)
-                    
-                    # Check with "Begin" suffix for BEGIN_END pattern
-                    if f"{ucx_api_function}Begin" in self.dll_exports:
-                        function_exists = True
-                        if f"{ucx_api_function}Begin" not in found_variants:
-                            found_variants.append(f"{ucx_api_function}Begin")
-                    
-                    # Check for numbered variants (uCxFoo1, uCxFoo2, etc.)
-                    for export in self.dll_exports:
-                        # If export starts with our function name and ends with a digit
-                        if export.startswith(ucx_api_function) and len(export) > len(ucx_api_function):
-                            remainder = export[len(ucx_api_function):]
-                            # Check for patterns: Foo1, Foo2 or FooBegin1, FooBegin2
-                            if remainder.isdigit():
-                                function_exists = True
-                                found_variants.append(export)
-                            elif remainder.startswith('Begin'):
-                                after_begin = remainder[5:]
-                                if not after_begin or after_begin.isdigit():
-                                    function_exists = True
-                                    found_variants.append(export)
-                    
-                    if not function_exists:
-                        # Function has api_name in YAML but doesn't exist in DLL
+                cmd_count += 1
+                if cmd_count % 5 == 0 or cmd_count > 180:  # More frequent reporting near the end
+                    print(f"[MAPPER] Processing command {cmd_count}/{len(self.yaml_parser.commands)}: {cmd_name}")
+                
+                at_cmd = cmd_name  # The key is the AT command (e.g., "AT+UWSC")
+                api_name = cmd_info.get('api_name', '')  # AT API name from YAML (e.g., "StationConnect")
+                group = cmd_info.get('group', '')
+                
+                # Get the full API function name using the mapper
+                try:
+                    # Check if api_name is empty or None - these are not implemented
+                    if not api_name or api_name.lower() in ['none', '']:
+                        at_api_name = "(none)"
+                        ucx_api_function = "(not implemented)"
                         status = "Not Found"
                         type_str = "-"
                         tag = 'pending'
                         pending_count += 1
                     else:
-                        # Function exists in DLL - it's implemented!
-                        status = "Found"
-                        tag = 'ok'
+                        at_api_name = api_name
                         
-                        # Show variants if multiple exist
-                        if len(found_variants) > 1:
-                            ucx_api_function = f"{ucx_api_function} ({', '.join([v.replace(ucx_api_function, '') for v in found_variants])})"
-                        elif len(found_variants) == 1 and found_variants[0] != ucx_api_function:
-                            ucx_api_function = found_variants[0]
+                        # Use the mapper's internal method to convert API name to function
+                        ucx_api_function = self.mapper._convert_api_name_to_function(cmd_name, api_name, cmd_info)
                         
-                        # Determine type (SIMPLE or BEGIN_END)
-                        from at_to_api_mapper import APICallType
-                        call_type = self.mapper._determine_api_call_type(cmd_info)
-                        type_str = "SIMPLE" if call_type == APICallType.SIMPLE else "BEGIN_END"
-                        implemented_count += 1
+                        # Check if this function actually exists in the DLL
+                        # The DLL may have numbered variants (e.g., uCxFoo1, uCxFoo2)
+                        # or Begin suffix (e.g., uCxFooBegin)
+                        function_exists = False
+                        found_variants = []
+                        
+                        # Check exact match first
+                        if ucx_api_function in self.dll_exports:
+                            function_exists = True
+                            found_variants.append(ucx_api_function)
+                        
+                        # Check with "Begin" suffix for BEGIN_END pattern
+                        if f"{ucx_api_function}Begin" in self.dll_exports:
+                            function_exists = True
+                            if f"{ucx_api_function}Begin" not in found_variants:
+                                found_variants.append(f"{ucx_api_function}Begin")
+                        
+                        # Check for numbered variants (uCxFoo1, uCxFoo2, etc.)
+                        for export in self.dll_exports:
+                            # If export starts with our function name and ends with a digit
+                            if export.startswith(ucx_api_function) and len(export) > len(ucx_api_function):
+                                remainder = export[len(ucx_api_function):]
+                                # Check for patterns: Foo1, Foo2 or FooBegin1, FooBegin2
+                                if remainder.isdigit():
+                                    function_exists = True
+                                    found_variants.append(export)
+                                elif remainder.startswith('Begin'):
+                                    after_begin = remainder[5:]
+                                    if not after_begin or after_begin.isdigit():
+                                        function_exists = True
+                                        found_variants.append(export)
+                        
+                        if not function_exists:
+                            # Function has api_name in YAML but doesn't exist in DLL
+                            status = "Not Found"
+                            type_str = "-"
+                            tag = 'pending'
+                            pending_count += 1
+                        else:
+                            # Function exists in DLL - it's implemented!
+                            status = "Found"
+                            tag = 'ok'
+                            
+                            # Show variants if multiple exist
+                            if len(found_variants) > 1:
+                                ucx_api_function = f"{ucx_api_function} ({', '.join([v.replace(ucx_api_function, '') for v in found_variants])})"
+                            elif len(found_variants) == 1 and found_variants[0] != ucx_api_function:
+                                ucx_api_function = found_variants[0]
+                            
+                            # Determine type (SIMPLE or BEGIN_END)
+                            from at_to_api_mapper import APICallType
+                            call_type = self.mapper._determine_api_call_type(cmd_info)
+                            type_str = "SIMPLE" if call_type == APICallType.SIMPLE else "BEGIN_END"
+                            implemented_count += 1
+                    
+                except Exception as e:
+                    print(f"[MAPPER ERROR] Processing {cmd_name}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    at_api_name = api_name if api_name else "(error)"
+                    ucx_api_function = f"Error: {str(e)[:50]}"
+                    status = "Error"
+                    type_str = "ERROR"
+                    tag = 'error'
                 
-            except Exception as e:
-                print(f"[MAPPER ERROR] Processing {cmd_name}: {e}")
-                import traceback
-                traceback.print_exc()
-                at_api_name = api_name if api_name else "(error)"
-                ucx_api_function = f"Error: {str(e)[:50]}"
-                status = "Error"
-                type_str = "ERROR"
-                tag = 'error'
-            
-            mapping = {
+                mapping = {
                 'at_cmd': at_cmd,
                 'at_api_name': at_api_name,
                 'ucx_api_function': ucx_api_function,
                 'status': status,
-                'type': type_str,
-                'tag': tag
-            }
-            
-            self.all_mappings.append(mapping)
-            
-            # Add to tree with color tag
-            self.tree.insert('', 'end', values=(
-                at_cmd,
-                at_api_name,
-                ucx_api_function,
-                status,
-                type_str
-            ), tags=(tag,))
+                    'type': type_str,
+                    'tag': tag
+                }
+                
+                self.all_mappings.append(mapping)
+                
+                # Add to tree with color tag
+                try:
+                    self.tree.insert('', 'end', values=(
+                        at_cmd,
+                        at_api_name,
+                        ucx_api_function,
+                        status,
+                        type_str
+                    ), tags=(tag,))
+                except Exception as tree_error:
+                    print(f"[MAPPER ERROR] Failed to insert command {at_cmd} into tree: {tree_error}")
+                    import traceback
+                    traceback.print_exc()
+                
+            except Exception as outer_error:
+                print(f"[MAPPER FATAL] Error processing command {cmd_name}: {outer_error}")
+                import traceback
+                traceback.print_exc()
         
         # Print summary
         total = len(self.all_mappings)

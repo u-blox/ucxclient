@@ -440,8 +440,10 @@ class MainWindow:
     
     def _create_test_tab(self):
         """Create the automated test tab"""
+        print("[APP_LIFECYCLE] _create_test_tab() called")
         try:
             if self.yaml_parser and self.api_executor:
+                print("[APP_LIFECYCLE] Creating SimpleTestTab instance...")
                 self.test_tab = SimpleTestTab(
                     parent_notebook=self.notebook,
                     yaml_parser=self.yaml_parser,
@@ -449,26 +451,33 @@ class MainWindow:
                     main_window=self,
                     theme_colors=self.theme_colors
                 )
+                print("[APP_LIFECYCLE] Test tab created successfully")
                 self._log("✓ Test tab created successfully")
             else:
+                print("[APP_LIFECYCLE] Cannot create test tab - missing yaml_parser or api_executor")
                 self._log("⚠ Cannot create test tab: YAML parser or API executor not available")
         except Exception as e:
+            print(f"[APP_LIFECYCLE] ERROR in _create_test_tab(): {e}")
             self._log(f"✗ Error creating test tab: {e}")
             import traceback
             traceback.print_exc()
     
     def _create_mapper_tab(self):
         """Create the AT-to-API mapper tab"""
+        print("[APP_LIFECYCLE] _create_mapper_tab() called")
         try:
             if self.yaml_parser:
                 # Import the mapper function
+                print("[APP_LIFECYCLE] Importing at_to_api_mapper...")
                 from at_to_api_mapper import at_to_api_mapper
                 
                 # Get DLL reference for function availability checking
                 ucx_dll = None
                 if hasattr(self, 'ucx_client') and self.ucx_client and hasattr(self.ucx_client, '_dll'):
                     ucx_dll = self.ucx_client._dll
+                    print(f"[APP_LIFECYCLE] Using UCX DLL: {ucx_dll}")
                 
+                print("[APP_LIFECYCLE] Creating MapperTab instance...")
                 self.mapper_tab = MapperTab(
                     parent_notebook=self.notebook,
                     yaml_parser=self.yaml_parser,
@@ -477,28 +486,35 @@ class MainWindow:
                     ucx_dll=ucx_dll,
                     main_window=self
                 )
+                print("[APP_LIFECYCLE] MapperTab created successfully")
                 self._log("✓ Mapper tab created successfully")
             else:
                 self._log("⚠ Cannot create mapper tab: YAML parser not available")
         except Exception as e:
+            print(f"[APP_LIFECYCLE] ERROR in _create_mapper_tab(): {e}")
             self._log(f"✗ Error creating mapper tab: {e}")
             import traceback
             traceback.print_exc()
     
     def _create_firmware_tab(self):
         """Create the firmware update tab"""
+        print("[APP_LIFECYCLE] _create_firmware_tab() called")
         try:
             if hasattr(self, 'ucx_client') and self.ucx_client:
+                print("[APP_LIFECYCLE] Creating FirmwareUpdateTab instance...")
                 self.firmware_tab = FirmwareUpdateTab(
                     parent=self.notebook,
                     ucx_wrapper=self.ucx_client,
                     settings_manager=self.settings
                 )
                 self.notebook.add(self.firmware_tab.get_frame(), text="Firmware")
+                print("[APP_LIFECYCLE] Firmware tab created successfully")
                 self._log("✓ Firmware tab created successfully")
             else:
+                print("[APP_LIFECYCLE] Cannot create firmware tab - ucx_client not available")
                 self._log("⚠ Cannot create firmware tab: Not connected")
         except Exception as e:
+            print(f"[APP_LIFECYCLE] ERROR in _create_firmware_tab(): {e}")
             self._log(f"✗ Error creating firmware tab: {e}")
             import traceback
             traceback.print_exc()
@@ -1371,37 +1387,63 @@ class MainWindow:
     
     def _build_dynamic_product_gui(self):
         """Build dynamic GUI"""
+        print("[APP_LIFECYCLE] _build_dynamic_product_gui() called")
         if not self.yaml_parser or not self.product_loaded:
+            print("[APP_LIFECYCLE] Cannot build GUI - product not loaded")
             return
         
-        self._log("Building dynamic product GUI...")
-        
-        # Reset tab references so they will be recreated
-        # Note: Tab clearing is handled by _change_product() before calling this
-        self.test_tab = None
-        self.mapper_tab = None
-        self.firmware_tab = None
-        
-        self.dynamic_gui = DynamicProductGUI(
-            parent_notebook=self.notebook,
-            yaml_parser=self.yaml_parser,
-            api_executor=self.api_executor,
-            log_callback=self._log,
-            main_window=self,
-            theme_colors=self.theme_colors
-        )
-        
-        self.dynamic_gui.build_gui()
-        self._log("✓ Dynamic product GUI ready")
-        
-        # Recreate Test and Mapper tabs with new YAML
-        if self.api_executor and self.connected:
-            self._log("Recreating Test, Mapper and Firmware tabs for new product...")
-            self._create_test_tab()
-            self._create_mapper_tab()
-            self._create_firmware_tab()
-        else:
-            self._log("Test, Mapper and Firmware tabs will be created after device connection")
+        try:
+            self._log("Building dynamic product GUI...")
+            
+            # Reset tab references so they will be recreated
+            # Note: Tab clearing is handled by _change_product() before calling this
+            self.test_tab = None
+            self.mapper_tab = None
+            self.firmware_tab = None
+            
+            print("[APP_LIFECYCLE] Creating DynamicProductGUI instance...")
+            self.dynamic_gui = DynamicProductGUI(
+                parent_notebook=self.notebook,
+                yaml_parser=self.yaml_parser,
+                api_executor=self.api_executor,
+                log_callback=self._log,
+                main_window=self,
+                theme_colors=self.theme_colors
+            )
+            
+            print("[APP_LIFECYCLE] Calling dynamic_gui.build_gui()...")
+            self.dynamic_gui.build_gui()
+            print("[APP_LIFECYCLE] dynamic_gui.build_gui() completed")
+            self._log("✓ Dynamic product GUI ready")
+            
+            # Recreate Test and Mapper tabs with new YAML
+            if self.api_executor and self.connected:
+                print("[APP_LIFECYCLE] Creating Test, Mapper and Firmware tabs...")
+                self._log("Recreating Test, Mapper and Firmware tabs for new product...")
+                
+                print("[APP_LIFECYCLE] Creating test tab...")
+                self._create_test_tab()
+                print("[APP_LIFECYCLE] Test tab created")
+                
+                print("[APP_LIFECYCLE] Creating mapper tab...")
+                self._create_mapper_tab()
+                print("[APP_LIFECYCLE] Mapper tab created")
+                
+                print("[APP_LIFECYCLE] Creating firmware tab...")
+                self._create_firmware_tab()
+                print("[APP_LIFECYCLE] Firmware tab created")
+                
+                print("[APP_LIFECYCLE] All tabs created successfully")
+            else:
+                self._log("Test, Mapper and Firmware tabs will be created after device connection")
+            
+            print("[APP_LIFECYCLE] _build_dynamic_product_gui() completed successfully")
+        except Exception as e:
+            print(f"[APP_LIFECYCLE] ERROR in _build_dynamic_product_gui(): {e}")
+            import traceback
+            traceback.print_exc()
+            self._log(f"✗ Error building GUI: {e}")
+            raise
     
     def _change_product(self):
         """Allow user to change product/version"""
@@ -1783,7 +1825,9 @@ class MainWindow:
     
     def run(self):
         """Run application"""
+        print("[APP_LIFECYCLE] run() called - setting up event handlers")
         def on_closing():
+            print("[APP_LIFECYCLE] on_closing() called - user closing window")
             # Save window position
             self._save_window_position()
             
@@ -1797,7 +1841,9 @@ class MainWindow:
             self.root.destroy()
         
         self.root.protocol("WM_DELETE_WINDOW", on_closing)
+        print("[APP_LIFECYCLE] Starting mainloop()...")
         self.root.mainloop()
+        print("[APP_LIFECYCLE] mainloop() exited")
 
 
 if __name__ == "__main__":

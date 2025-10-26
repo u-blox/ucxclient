@@ -20,6 +20,7 @@ from enum import IntEnum
 import threading
 import time
 import platform
+import atexit
 from typing import Callable, Optional, List, Tuple, Dict
 
 # Windows-specific imports
@@ -87,6 +88,9 @@ class UcxClientWrapper:
         self._serial = None  # Serial port object (pyserial)
         self.ucx_handle = None  # UCX handle (not used in simple serial mode)
         self.handle = None  # Handle for firmware update compatibility
+        
+        # Register cleanup handler to ensure clean disconnect before Python exits
+        atexit.register(self._cleanup_on_exit)
         
         # Load the library
         if dll_path is None:
@@ -585,8 +589,8 @@ class UcxClientWrapper:
                 written = self._serial.write(data)
                 return written
             return -1
-        except Exception as e:
-            print(f"[ERROR] UART write failed: {e}")
+        except:
+            # Silent failure - C thread calling Python code
             return -1
     
     def _uart_read(self, pClient, pStreamHandle, pData, length, timeoutMs):
@@ -607,7 +611,9 @@ class UcxClientWrapper:
                 self._serial.timeout = old_timeout
                 return bytes_read
             return -1
-        except Exception as e:
+        except:
+            # Silent failure - C thread calling Python code
+            return -1
             print(f"[ERROR] UART read failed: {e}")
             return -1
     
@@ -654,18 +660,9 @@ class UcxClientWrapper:
             self._baud_rate = baud_rate
             self._flow_control = flow_control
             
-            # Initialize UCX handle now that serial port is open (needed for API functions)
-            # void uCxInit(uCxAtClient_t *pAtClient, uCxHandle_t *puCxHandle)
-            if hasattr(self._dll, 'uCxInit'):
-                self._dll.uCxInit.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
-                self._dll.uCxInit.restype = None
-                
-                print(f"[DEBUG] Initializing UCX handle for API functions...")
-                
-                # Pass the AT client pointer to uCxInit
-                self._dll.uCxInit(self._client_handle, ctypes.byref(self.ucx_handle))
-                
-                print(f"[DEBUG] UCX handle initialized at 0x{self.ucx_handle.value:x}")
+            # DON'T initialize UCX handle here - it will be lazy-initialized when first needed
+            # Calling uCxInit immediately causes crashes due to internal threading issues
+            print(f"[DEBUG] UCX handle will be lazy-initialized when first API call is made")
             
             # Start callback thread for UCX API
             self._start_callback_thread()
@@ -704,6 +701,17 @@ class UcxClientWrapper:
         # Reset UCX handle
         self.ucx_handle = ctypes.c_void_p()
     
+    def _cleanup_on_exit(self):
+        """Cleanup handler called by atexit - ensures clean disconnect before Python exits"""
+        try:
+            print("[CLEANUP] atexit handler called - cleaning up UCX connection")
+            if self._connected:
+                self.disconnect()
+            print("[CLEANUP] UCX cleanup completed")
+        except:
+            # Silent failure during exit - don't raise exceptions in atexit handlers
+            pass
+    
     def is_connected(self) -> bool:
         """Check if connected to a COM port"""
         return self._connected
@@ -726,6 +734,33 @@ class UcxClientWrapper:
         while not self._stop_callbacks:
             # Process any pending callbacks/URCs
             time.sleep(0.1)
+    
+    def _ensure_ucx_handle_initialized(self):
+        """Lazy initialization of UCX handle - only call when needed for API functions
+        
+        Note: We delay uCxInit until first use because calling it immediately after
+        connection causes crashes due to internal threading/callback issues in the DLL.
+        """
+        if self.ucx_handle and self.ucx_handle.value:
+            return  # Already initialized
+        
+        if not self._connected:
+            raise UcxClientError("Cannot initialize UCX handle - not connected")
+        
+        # Initialize UCX handle now
+        # void uCxInit(uCxAtClient_t *pAtClient, uCxHandle_t *puCxHandle)
+        if hasattr(self._dll, 'uCxInit'):
+            self._dll.uCxInit.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+            self._dll.uCxInit.restype = None
+            
+            print(f"[DEBUG] Lazy-initializing UCX handle for API functions...")
+            
+            # Pass the AT client pointer to uCxInit
+            self._dll.uCxInit(self._client_handle, ctypes.byref(self.ucx_handle))
+            
+            print(f"[DEBUG] UCX handle initialized at 0x{self.ucx_handle.value:x}")
+        else:
+            raise UcxClientError("uCxInit not available in DLL")
     
     def register_callback(self, event_type: str, callback: Callable):
         """Register a callback for specific events
