@@ -122,6 +122,14 @@ class UCXAPIExecutor:
     def _initialize_ucx_handle(self):
         """Initialize the UCX handle using uCxInit"""
         try:
+            # Trigger lazy initialization of UCX handle if not already done
+            if hasattr(self.ucx_wrapper, '_ensure_ucx_handle_initialized'):
+                try:
+                    self.ucx_wrapper._ensure_ucx_handle_initialized()
+                except Exception as e:
+                    # Handle will be initialized later when first API call is made
+                    print(f"Note: UCX handle will be initialized on first API call: {e}")
+            
             # Get the UCX handle from the wrapper
             # The wrapper initializes the AT client and UCX handle when connecting
             if hasattr(self.ucx_wrapper, 'ucx_handle'):
@@ -129,7 +137,7 @@ class UCXAPIExecutor:
                 if self.ucx_handle and self.ucx_handle.value:
                     print(f"Using UCX handle from wrapper: {self.ucx_handle.value:#x}")
                 else:
-                    print("Warning: UCX handle not yet initialized (will be initialized on connect)")
+                    print("Note: UCX handle will be initialized on first API call")
             else:
                 print("Warning: UCX wrapper does not expose ucx_handle")
                 self.ucx_handle = None
@@ -165,6 +173,16 @@ class UCXAPIExecutor:
             
         except Exception as e:
             print(f"Warning: Could not register URC callbacks: {e}")
+    
+    def _ensure_ucx_handle_ready(self):
+        """Ensure UCX handle is initialized before making API calls"""
+        # Trigger lazy initialization if not already done
+        if hasattr(self.ucx_wrapper, '_ensure_ucx_handle_initialized'):
+            self.ucx_wrapper._ensure_ucx_handle_initialized()
+        
+        # Update our handle reference
+        if hasattr(self.ucx_wrapper, 'ucx_handle'):
+            self.ucx_handle = self.ucx_wrapper.ucx_handle
     
     def _signal_event(self, event_flag):
         """Signal an event (like C example)"""
@@ -204,6 +222,15 @@ class UCXAPIExecutor:
     
     def execute_at_command(self, at_command: str, parameters: List[str] = None) -> APICallResult:
         """Execute an AT command using the corresponding UCX API function"""
+        # Ensure UCX handle is initialized before executing any API call
+        try:
+            self._ensure_ucx_handle_ready()
+        except Exception as e:
+            return APICallResult(
+                success=False,
+                error_message=f"Failed to initialize UCX handle: {e}"
+            )
+        
         # Extract parameters from AT command if not provided
         if parameters is None:
             parameters = self._extract_parameters_from_at_command(at_command)
@@ -360,6 +387,9 @@ class UCXAPIExecutor:
     
     def _wifi_scan_begin_end(self, parameters: List[str]) -> APICallResult:
         """Execute WiFi scan with Begin/GetNext/End pattern"""
+        # Ensure UCX handle is initialized
+        self._ensure_ucx_handle_ready()
+        
         # Get latest handle from wrapper
         if hasattr(self.ucx_wrapper, 'ucx_handle'):
             self.ucx_handle = self.ucx_wrapper.ucx_handle
