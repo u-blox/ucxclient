@@ -122,13 +122,8 @@ class UCXAPIExecutor:
     def _initialize_ucx_handle(self):
         """Initialize the UCX handle using uCxInit"""
         try:
-            # Trigger lazy initialization of UCX handle if not already done
-            if hasattr(self.ucx_wrapper, '_ensure_ucx_handle_initialized'):
-                try:
-                    self.ucx_wrapper._ensure_ucx_handle_initialized()
-                except Exception as e:
-                    # Handle will be initialized later when first API call is made
-                    print(f"Note: UCX handle will be initialized on first API call: {e}")
+            # DON'T trigger lazy initialization here - it will be done on first API call
+            # Calling it during init can cause crashes
             
             # Get the UCX handle from the wrapper
             # The wrapper initializes the AT client and UCX handle when connecting
