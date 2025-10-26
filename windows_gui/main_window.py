@@ -687,6 +687,7 @@ class MainWindow:
     
     def _connect(self):
         """Connect to COM port"""
+        print("[APP_LIFECYCLE] _connect() called")
         if not self.ucx_client:
             messagebox.showerror("Error", "ucxclient not initialized")
             return
@@ -703,6 +704,7 @@ class MainWindow:
         self.settings.set_serial_config(port=port, baudrate=baud_rate, flow_control=flow_control)
         self.settings.save()
         
+        print(f"[APP_LIFECYCLE] Connecting to {port} at {baud_rate} baud...")
         self._log(f"Connecting to {port} at {baud_rate} baud (flow control: {flow_control})...")
         self.connect_btn.config(state=tk.DISABLED)
         self.status_var.set("Connecting...")
@@ -710,23 +712,32 @@ class MainWindow:
         
         def connect_worker():
             try:
+                print("[APP_LIFECYCLE] Initializing UCX client...")
                 self.ucx_client.initialize_client()
+                print("[APP_LIFECYCLE] Calling ucx_client.connect()...")
                 success = self.ucx_client.connect(port, baud_rate, flow_control)
+                print(f"[APP_LIFECYCLE] Connection result: {success}")
                 self.root.after(0, self._connection_result, success, port)
             except Exception as e:
+                print(f"[APP_LIFECYCLE] Connection failed with error: {e}")
+                import traceback
+                traceback.print_exc()
                 self.root.after(0, self._connection_error, str(e))
         
         self.connection_thread = threading.Thread(target=connect_worker, daemon=True)
         self.connection_thread.start()
+        print("[APP_LIFECYCLE] Connection thread started")
     
     def _connection_result(self, success: bool, port: str):
         """Handle connection result"""
+        print(f"[APP_LIFECYCLE] _connection_result() called with success={success}, port={port}")
         if success:
             self.connected = True
             self.status_var.set(f"Connected to {port}")
             self.status_label.config(foreground="green")
             self.connect_btn.config(text="Disconnect", state=tk.NORMAL)
             self._log(f"Successfully connected to {port}")
+            print(f"[APP_LIFECYCLE] Successfully connected to {port}")
             
             if not self.api_executor:
                 self.api_executor = UCXAPIExecutor(self.ucx_client)
@@ -981,12 +992,28 @@ class MainWindow:
         This callback is invoked from C code and may be called from any thread.
         We need to use root.after() to ensure thread-safe GUI updates.
         """
-        # Strip trailing newline if present (we add it in _log)
-        message = message.rstrip('\n')
-        
-        # Schedule log update in main GUI thread
-        if hasattr(self, 'root'):
+        print(f"[CALLBACK_DEBUG] _handle_ucx_log called with message: '{message[:80] if len(message) > 80 else message}'")
+        try:
+            # Silently drop logs if GUI is not ready yet
+            if not hasattr(self, 'root') or not self.root or not hasattr(self, 'log_text'):
+                print(f"[CALLBACK_DEBUG] GUI not ready - root={hasattr(self, 'root')}, log_text={hasattr(self, 'log_text')}")
+                return
+            
+            # Strip trailing newline if present (we add it in _log)
+            message = message.rstrip('\n')
+            
+            # Schedule log update in main GUI thread
+            print(f"[CALLBACK_DEBUG] Scheduling log via root.after()")
             self.root.after(0, lambda: self._log(message))
+            print(f"[CALLBACK_DEBUG] Log scheduled successfully")
+        except Exception as e:
+            # Silently catch any errors to prevent C callback from crashing
+            try:
+                print(f"[CALLBACK_DEBUG] Error in log callback: {e}")
+                import traceback
+                traceback.print_exc()
+            except:
+                pass  # Even print might fail in some edge cases
     
     def _clear_log(self):
         """Clear log"""
@@ -1063,41 +1090,66 @@ class MainWindow:
     
     def _startup_sequence(self):
         """Startup sequence - runs initialization in background"""
+        print("[APP_LIFECYCLE] _startup_sequence() called")
         self._log(f"ucxclient GUI v{UCXCLIENT_GUI_VERSION} - Dynamic GUI for u-connectXpress modules")
         self._log("")
         self._log("⏳ Initializing...")
         
         # Start background initialization thread
+        print("[APP_LIFECYCLE] Starting background initialization thread")
         init_thread = threading.Thread(target=self._background_initialization, daemon=True)
         init_thread.start()
+        print("[APP_LIFECYCLE] Background thread started")
     
     def _background_initialization(self):
         """Run heavy initialization tasks in background thread"""
+        print("[APP_LIFECYCLE] _background_initialization() started")
         try:
             # Step 1: Initialize UCX wrapper
+            print("[APP_LIFECYCLE] Step 1: Initializing UCX wrapper")
             self._update_init_status("⏳ Initializing UCX handle...")
             try:
                 self.ucx_client = UcxClientWrapper()
-                
-                # Register log callback to redirect UCX logging to Log Window
-                self.ucx_client.register_log_callback(self._handle_ucx_log)
-                
                 self._update_init_status("✓ UCX handle initialized")
+                print("[APP_LIFECYCLE] UCX wrapper initialized successfully")
+                
+                # Register log callback after UCX wrapper is created
+                if self.ucx_client and hasattr(self, 'root') and self.root:
+                    try:
+                        print("[CALLBACK_DEBUG] About to register log callback...")
+                        self.ucx_client.register_log_callback(self._handle_ucx_log)
+                        print("[CALLBACK_DEBUG] Log callback registration completed")
+                        self._update_init_status("✓ Log callback registered")
+                    except Exception as e:
+                        print(f"[CALLBACK_DEBUG] Log callback registration failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        self._update_init_status(f"⚠ Log callback warning: {e}")
+                else:
+                    print(f"[CALLBACK_DEBUG] Cannot register callback - ucx_client={self.ucx_client}, root={hasattr(self, 'root')}")
+                
             except Exception as e:
+                print(f"[APP_LIFECYCLE] UCX initialization failed: {e}")
+                import traceback
+                traceback.print_exc()
                 self._update_init_status(f"⚠ UCX initialization warning: {e}")
                 self.ucx_client = None
             
             # Step 2: Auto-detect EVK
+            print("[APP_LIFECYCLE] Step 2: Auto-detecting EVK")
             self._update_init_status("🔍 Auto-detecting u-blox EVK...")
             detected = self._auto_detect_evk_silent()
             
             if detected:
+                print(f"[APP_LIFECYCLE] EVK detected: {detected['desc']} on {detected['port']}")
                 self._update_init_status(f"✓ EVK detected: {detected['desc']}")
                 self._update_init_status(f"✓ AT Port: {detected['port']}")
             else:
+                print("[APP_LIFECYCLE] No EVK auto-detected")
                 self._update_init_status("ℹ No EVK auto-detected - please select COM port manually")
             
             # Step 3: Load product configuration (this does GitHub fetch)
+            print("[APP_LIFECYCLE] Step 3: Loading product configuration")
             self._update_init_status("⏳ Loading product configuration...")
             product_config = self.settings.get_product_config()
             
@@ -1120,10 +1172,12 @@ class MainWindow:
                 # No saved config, show selector
                 self.root.after(0, self._show_product_selector_after_init)
             
+            print("[APP_LIFECYCLE] _background_initialization() completed successfully")
         except Exception as e:
-            self._update_init_status(f"✗ Initialization error: {e}")
+            print(f"[APP_LIFECYCLE] _background_initialization() failed with error: {e}")
             import traceback
             traceback.print_exc()
+            self._update_init_status(f"✗ Initialization error: {e}")
             self.initialization_complete = True
     
     def _update_init_status(self, message: str):
@@ -1133,11 +1187,14 @@ class MainWindow:
     
     def _finalize_initialization(self):
         """Finalize initialization and enable auto-connect"""
+        print("[APP_LIFECYCLE] _finalize_initialization() called")
         self.initialization_complete = True
         self.status_var.set("Ready")
         self._log("✓ Initialization complete")
+        print("[APP_LIFECYCLE] Application fully initialized and ready")
         
         if not self.connected and self.port_var.get() and self.product_loaded:
+            print("[APP_LIFECYCLE] Auto-connecting to EVK...")
             self._log("🔗 Auto-connecting to EVK...")
             self._connect()
     

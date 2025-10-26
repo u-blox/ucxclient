@@ -157,6 +157,7 @@ class UcxClientWrapper:
         self._log_callback_func = None  # Keep reference to prevent garbage collection
         if hasattr(self._dll, 'uPortRegisterLogCallback'):
             # Define callback type: void (*callback)(const char *pMessage, void *pUserData)
+            # Use CFUNCTYPE for cdecl calling convention (default for C functions)
             self.LOG_CALLBACK_TYPE = ctypes.CFUNCTYPE(None, c_char_p, c_void_p)
             
             self._dll.uPortRegisterLogCallback.restype = None
@@ -226,12 +227,12 @@ class UcxClientWrapper:
         else:
             # Wrap the Python callback to handle the C interface
             def c_callback_wrapper(message_ptr, userdata):
-                if message_ptr:
-                    try:
+                try:
+                    if message_ptr:
                         message = message_ptr.decode('utf-8', errors='replace')
                         callback(message)
-                    except Exception as e:
-                        print(f"Error in log callback: {e}")
+                except:
+                    pass  # Silently ignore errors to prevent C callback crashes
             
             # Create C callback and keep reference
             self._log_callback_func = self.LOG_CALLBACK_TYPE(c_callback_wrapper)

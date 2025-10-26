@@ -110,7 +110,7 @@ extern int32_t uPortGetTickTimeMs(void);
 
 /* Configuration for enabling logging of debug messages.*/
 #ifndef U_CX_LOG_DEBUG
-# define U_CX_LOG_DEBUG 0
+# define U_CX_LOG_DEBUG 1
 #endif
 
 /* Configuration for enabling ANSI color for logs.*/
