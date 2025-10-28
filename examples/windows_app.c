@@ -66,7 +66,12 @@
 static uCxAtClient_t gAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gConnected = false;
-static char gComPort[16] = "COM31";  // Default COM port
+
+// Settings (saved to file)
+static char gComPort[16] = "COM31";           // Default COM port
+static char gWifiSsid[64] = "";               // Last WiFi SSID
+static char gWifiPassword[64] = "";           // Last WiFi password
+static char gRemoteAddress[128] = "";         // Last remote address/hostname
 
 // URC event handling
 static U_CX_MUTEX_HANDLE gUrcMutex;
@@ -417,11 +422,11 @@ static bool connectDevice(const char *comPort)
     printf("COM port opened successfully\n");
     
     // Turn off echo to avoid "Unexpected data" warnings
-    //printf("Disabling AT echo...\n");
-    ////int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
-    //if (result != 0) {
-    //    printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
-    //}
+    printf("Disabling AT echo...\n");
+    int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
+    if (result != 0) {
+        printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
+    }
     
     // Initialize UCX handle
     uCxInit(&gAtClient, &gUcxHandle);
@@ -465,18 +470,28 @@ static void loadSettings(void)
     if (f) {
         char line[256];
         while (fgets(line, sizeof(line), f)) {
+            // Remove trailing newline/whitespace
+            char *end = strchr(line, '\n');
+            if (end) *end = '\0';
+            end = strchr(line, '\r');
+            if (end) *end = '\0';
+            
             if (strncmp(line, "last_port=", 10) == 0) {
-                // Extract port name (skip "last_port=")
-                char *port = line + 10;
-                // Remove trailing newline/whitespace
-                char *end = strchr(port, '\n');
-                if (end) *end = '\0';
-                end = strchr(port, '\r');
-                if (end) *end = '\0';
-                
-                strncpy(gComPort, port, sizeof(gComPort) - 1);
+                strncpy(gComPort, line + 10, sizeof(gComPort) - 1);
                 gComPort[sizeof(gComPort) - 1] = '\0';
                 printf("Loaded last port from settings: %s\n", gComPort);
+            }
+            else if (strncmp(line, "wifi_ssid=", 10) == 0) {
+                strncpy(gWifiSsid, line + 10, sizeof(gWifiSsid) - 1);
+                gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
+            }
+            else if (strncmp(line, "wifi_password=", 14) == 0) {
+                strncpy(gWifiPassword, line + 14, sizeof(gWifiPassword) - 1);
+                gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
+            }
+            else if (strncmp(line, "remote_address=", 15) == 0) {
+                strncpy(gRemoteAddress, line + 15, sizeof(gRemoteAddress) - 1);
+                gRemoteAddress[sizeof(gRemoteAddress) - 1] = '\0';
             }
         }
         fclose(f);
@@ -489,6 +504,9 @@ static void saveSettings(void)
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (f) {
         fprintf(f, "last_port=%s\n", gComPort);
+        fprintf(f, "wifi_ssid=%s\n", gWifiSsid);
+        fprintf(f, "wifi_password=%s\n", gWifiPassword);
+        fprintf(f, "remote_address=%s\n", gRemoteAddress);
         fclose(f);
     }
 }
@@ -955,89 +973,110 @@ static void wifiConnect(void)
     char ssid[64];
     char password[64];
     
-    printf("Enter SSID: ");
+    // Show saved SSID if available
+    if (strlen(gWifiSsid) > 0) {
+        printf("Last SSID: %s\n", gWifiSsid);
+    }
+    
+    printf("Enter SSID (or press Enter to use saved): ");
     if (fgets(ssid, sizeof(ssid), stdin)) {
         // Remove trailing newline
         char *end = strchr(ssid, '\n');
         if (end) *end = '\0';
         
-        printf("Enter password (or press Enter for open network): ");
-        if (fgets(password, sizeof(password), stdin)) {
-            // Remove trailing newline
-            end = strchr(password, '\n');
-            if (end) *end = '\0';
-            
-            printf("Connecting to '%s'...\n", ssid);
-            
-            // Set connection parameters (wlan_handle = 0, default)
-            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
-                printf("ERROR: Failed to set connection parameters\n");
+        // If empty and we have saved SSID, use it
+        if (strlen(ssid) == 0 && strlen(gWifiSsid) > 0) {
+            strncpy(ssid, gWifiSsid, sizeof(ssid) - 1);
+            ssid[sizeof(ssid) - 1] = '\0';
+            strncpy(password, gWifiPassword, sizeof(password) - 1);
+            password[sizeof(password) - 1] = '\0';
+            printf("Using saved credentials for '%s'\n", ssid);
+        } else {
+            printf("Enter password (or press Enter for open network): ");
+            if (fgets(password, sizeof(password), stdin)) {
+                // Remove trailing newline
+                end = strchr(password, '\n');
+                if (end) *end = '\0';
+            }
+        }
+        
+        printf("Connecting to '%s'...\n", ssid);
+        
+        // Set connection parameters (wlan_handle = 0, default)
+        if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
+            printf("ERROR: Failed to set connection parameters\n");
+            return;
+        }
+        
+        // Set security based on password
+        if (strlen(password) > 0) {
+            // WPA2/WPA3 with password (threshold = WPA2 or higher)
+            printf("Setting WPA2/WPA3 security...\n");
+            if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
+                printf("ERROR: Failed to set WPA security\n");
                 return;
             }
-            
-            // Set security based on password
-            if (strlen(password) > 0) {
-                // WPA2/WPA3 with password (threshold = WPA2 or higher)
-                printf("Setting WPA2/WPA3 security...\n");
-                if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
-                    printf("ERROR: Failed to set WPA security\n");
-                    return;
-                }
-            } else {
-                // Open network (no password)
-                printf("Setting open security (no password)...\n");
-                if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
-                    printf("ERROR: Failed to set open security\n");
-                    return;
-                }
-            }
-            
-            // Try to connect
-            printf("Initiating connection...\n");
-            if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
-                printf("ERROR: Failed to initiate connection\n");
+        } else {
+            // Open network (no password)
+            printf("Setting open security (no password)...\n");
+            if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+                printf("ERROR: Failed to set open security\n");
                 return;
             }
+        }
+        
+        // Try to connect
+        printf("Initiating connection...\n");
+        if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
+            printf("ERROR: Failed to initiate connection\n");
+            return;
+        }
+        
+        // Wait for network up event (using URC handler)
+        printf("Waiting for network up event...\n");
+        if (waitEvent(URC_FLAG_NETWORK_UP, 20)) {
+            printf("Successfully connected to '%s'\n", ssid);
             
-            // Wait for network up event (using URC handler)
-            printf("Waiting for network up event...\n");
-            if (waitEvent(URC_FLAG_NETWORK_UP, 20)) {
-                printf("Successfully connected to '%s'\n", ssid);
-                
-                // Get RSSI
-                uCxWifiStationStatus_t status;
-                if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
-                    int32_t rssi = status.rspWifiStatusIdInt.int_val;
-                    if (rssi != -32768) {
-                        printf("Signal strength: %d dBm\n", rssi);
-                    }
-                    uCxEnd(&gUcxHandle);
+            // Get RSSI
+            uCxWifiStationStatus_t status;
+            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
+                int32_t rssi = status.rspWifiStatusIdInt.int_val;
+                if (rssi != -32768) {
+                    printf("Signal strength: %d dBm\n", rssi);
                 }
-                
-                // Get IP address using WiFi Station Network Status (AT+UWSNST)
-                uSockIpAddress_t ipAddr;
-                char ipStr[40];  // Allow for IPv6
-                
-                if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
-                    if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
-                        printf("IP address: %s\n", ipStr);
-                    }
-                }
-                
-                if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_SUBNET, &ipAddr) == 0) {
-                    if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
-                        printf("Subnet mask: %s\n", ipStr);
-                    }
-                }
-                
-                if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
-                    if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
-                        printf("Gateway: %s\n", ipStr);
-                    }
-                }
-            } else {
-                printf("Connection failed - timeout waiting for network up event\n");
+                uCxEnd(&gUcxHandle);
             }
+            
+            // Get IP address using WiFi Station Network Status (AT+UWSNST)
+            uSockIpAddress_t ipAddr;
+            char ipStr[40];  // Allow for IPv6
+            
+            if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
+                if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                    printf("IP address: %s\n", ipStr);
+                }
+            }
+            
+            if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_SUBNET, &ipAddr) == 0) {
+                if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                    printf("Subnet mask: %s\n", ipStr);
+                }
+            }
+            
+            if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
+                if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                    printf("Gateway: %s\n", ipStr);
+                }
+            }
+            
+            // Save WiFi credentials for next time
+            strncpy(gWifiSsid, ssid, sizeof(gWifiSsid) - 1);
+            gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
+            strncpy(gWifiPassword, password, sizeof(gWifiPassword) - 1);
+            gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
+            saveSettings();
+        } else {
+            printf("Connection failed - timeout waiting for network up event\n");
         }
     }
     
