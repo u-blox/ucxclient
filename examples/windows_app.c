@@ -144,9 +144,8 @@ static void socketClose(void);
 static void socketListStatus(void);
 static void spsEnableService(void);
 static void spsConnect(void);
-static void spsSendString(void);
-static void spsSendBinary(void);
-static void spsDisconnect(void);
+static void spsSendData(void);
+static void spsReadData(void);
 
 // ----------------------------------------------------------------
 // HTTP Helper Functions
@@ -663,8 +662,7 @@ static void socketReadData(void)
     
     if (result > 0) {
         buffer[result] = '\0';  // Null terminate for display
-        printf("Received %d bytes:\n", result);
-        printf("%s\n", buffer);
+        printf("Received %d bytes: %s\n", result, buffer);
     } else if (result == 0) {
         printf("No data available\n");
     } else {
@@ -780,14 +778,14 @@ static void spsConnect(void)
     }
 }
 
-static void spsSendString(void)
+static void spsSendData(void)
 {
     if (!gConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
-    printf("\n--- Send SPS String Data ---\n");
+    printf("\n--- Send SPS Data ---\n");
     printf("Enter connection handle: ");
     
     int connHandle;
@@ -801,6 +799,8 @@ static void spsSendString(void)
         if (end) *end = '\0';
         
         size_t len = strlen(data);
+        printf("Sending %zu bytes...\n", len);
+        
         int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, (uint8_t*)data, len);
         
         if (result >= 0) {
@@ -811,60 +811,41 @@ static void spsSendString(void)
     }
 }
 
-static void spsSendBinary(void)
+static void spsReadData(void)
 {
     if (!gConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
-    printf("\n--- Send SPS Binary Data ---\n");
+    printf("\n--- Read SPS Data ---\n");
     printf("Enter connection handle: ");
     
     int connHandle;
     scanf("%d", &connHandle);
     getchar(); // consume newline
     
-    printf("Enter hex data (e.g., 48656C6C6F): ");
-    char hexInput[2001];
-    if (fgets(hexInput, sizeof(hexInput), stdin)) {
-        char *end = strchr(hexInput, '\n');
-        if (end) *end = '\0';
-        
-        // Convert hex string to bytes
-        size_t hexLen = strlen(hexInput);
-        if (hexLen % 2 != 0) {
-            printf("ERROR: Hex string must have even number of characters\n");
-            return;
-        }
-        
-        uint8_t data[1000];
-        size_t dataLen = hexLen / 2;
-        
-        for (size_t i = 0; i < dataLen; i++) {
-            sscanf(&hexInput[i * 2], "%2hhx", &data[i]);
-        }
-        
-        int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, data, dataLen);
-        
-        if (result >= 0) {
-            printf("Successfully sent %d bytes\n", result);
-        } else {
-            printf("ERROR: Failed to send data (code %d)\n", result);
-        }
-    }
-}
-
-static void spsDisconnect(void)
-{
-    if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+    printf("Enter number of bytes to read (max 1000): ");
+    int length;
+    scanf("%d", &length);
+    getchar(); // consume newline
+    
+    if (length <= 0 || length > 1000) {
+        printf("ERROR: Invalid length. Must be 1-1000\n");
         return;
     }
     
-    printf("\n--- Disconnect SPS ---\n");
-    printf("NOTE: To disconnect SPS, disconnect the Bluetooth connection\n");
-    printf("      or close the socket that SPS is running over\n");
+    uint8_t buffer[1001];
+    int32_t result = uCxSpsRead(&gUcxHandle, connHandle, length, buffer);
+    
+    if (result > 0) {
+        buffer[result] = '\0';  // Null terminate for display
+        printf("Received %d bytes: %s\n", result, buffer);
+    } else if (result == 0) {
+        printf("No data available\n");
+    } else {
+        printf("ERROR: Failed to read data (code %d)\n", result);
+    }
 }
 
 // ----------------------------------------------------------------
@@ -1006,9 +987,8 @@ static void printMenu(void)
             printf("--- SPS Menu (Bluetooth Serial Port Service) ---\n");
             printf("  [1] Enable SPS service\n");
             printf("  [2] Connect SPS on BT connection\n");
-            printf("  [3] Send string data\n");
-            printf("  [4] Send binary data\n");
-            printf("  [5] Disconnect SPS\n");
+            printf("  [3] Send data\n");
+            printf("  [4] Read data\n");
             printf("  [0] Back to main menu\n");
             break;
             
@@ -1181,13 +1161,10 @@ static void handleUserInput(void)
                     spsConnect();
                     break;
                 case 3:
-                    spsSendString();
+                    spsSendData();
                     break;
                 case 4:
-                    spsSendBinary();
-                    break;
-                case 5:
-                    spsDisconnect();
+                    spsReadData();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
