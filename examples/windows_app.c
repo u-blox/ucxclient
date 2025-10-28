@@ -286,63 +286,78 @@ static void parseYamlCommands(const char *yamlContent)
     freeApiCommands();
     
     // Allocate initial array
-    int capacity = 100;
+    int capacity = 300;
     gApiCommands = (ApiCommand_t*)malloc(sizeof(ApiCommand_t) * capacity);
     if (!gApiCommands) return;
     
     gApiCommandCount = 0;
     
-    // Simple YAML parsing - look for command definitions
-    const char *ptr = yamlContent;
-    char atCmd[128] = "";
-    char ucxApi[128] = "";
-    char desc[256] = "";
+    // Find the command_groups section
+    const char *cmdGroups = strstr(yamlContent, "command_groups:");
+    if (!cmdGroups) {
+        printf("ERROR: Could not find command_groups in YAML\n");
+        return;
+    }
     
-    while ((ptr = strstr(ptr, "- command:")) != NULL) {
-        ptr += 10;  // Skip past "- command:"
+    // Parse each AT command entry (look for "      AT" with 6 spaces - the indentation level under commands:)
+    const char *ptr = cmdGroups;
+    while ((ptr = strstr(ptr + 1, "\n      AT")) != NULL) {
+        // Extract AT command (from line start to ':')
+        const char *lineStart = ptr + 1;
+        while (*lineStart == ' ') lineStart++;
         
-        // Reset fields
-        atCmd[0] = '\0';
-        ucxApi[0] = '\0';
-        desc[0] = '\0';
+        const char *colonPos = strchr(lineStart, ':');
+        if (!colonPos || colonPos - lineStart > 127) continue;
         
-        // Look for AT command
-        const char *atStart = strstr(ptr, "at: \"");
-        if (atStart && atStart - ptr < 500) {
-            atStart += 5;
+        char atCmd[128] = {0};
+        strncpy(atCmd, lineStart, colonPos - lineStart);
+        atCmd[colonPos - lineStart] = '\0';
+        
+        // Look for api_name and brief in the next ~3000 chars (within this command block)
+        const char *searchEnd = ptr + 3000;
+        const char *nextCmd = strstr(ptr + 10, "\n      AT");
+        if (nextCmd && nextCmd < searchEnd) searchEnd = nextCmd;
+        
+        char ucxApi[128] = {0};
+        char desc[256] = {0};
+        
+        // Find api_name within this command block
+        const char *apiStart = ptr;
+        while (apiStart < searchEnd) {
+            apiStart = strstr(apiStart, "api_name:");
+            if (!apiStart || apiStart >= searchEnd) break;
+            
+            apiStart += 9;
+            while (*apiStart && (*apiStart == ' ' || *apiStart == '\t')) apiStart++;
+            
             int i = 0;
-            while (*atStart && *atStart != '"' && i < 127) {
-                atCmd[i++] = *atStart++;
-            }
-            atCmd[i] = '\0';
-        }
-        
-        // Look for UCX API
-        const char *apiStart = strstr(ptr, "api: \"");
-        if (!apiStart) apiStart = strstr(ptr, "function: \"");
-        if (apiStart && apiStart - ptr < 500) {
-            apiStart += (strstr(apiStart, "api:") == apiStart) ? 6 : 11;
-            int i = 0;
-            while (*apiStart && *apiStart != '"' && i < 127) {
+            while (*apiStart && *apiStart != '\n' && *apiStart != '\r' && i < 127) {
                 ucxApi[i++] = *apiStart++;
             }
             ucxApi[i] = '\0';
+            break;
         }
         
-        // Look for description
-        const char *descStart = strstr(ptr, "description: \"");
-        if (!descStart) descStart = strstr(ptr, "desc: \"");
-        if (descStart && descStart - ptr < 500) {
-            descStart += (strstr(descStart, "description:") == descStart) ? 14 : 7;
+        // Find brief description
+        const char *descStart = ptr;
+        const char *briefPtr = NULL;
+        while (descStart < searchEnd) {
+            briefPtr = strstr(descStart, "brief:");
+            if (!briefPtr || briefPtr >= searchEnd) break;
+            
+            briefPtr += 6;
+            while (*briefPtr && (*briefPtr == ' ' || *briefPtr == '\t')) briefPtr++;
+            
             int i = 0;
-            while (*descStart && *descStart != '"' && i < 255) {
-                desc[i++] = *descStart++;
+            while (*briefPtr && *briefPtr != '\n' && *briefPtr != '\r' && i < 255) {
+                desc[i++] = *briefPtr++;
             }
             desc[i] = '\0';
+            break;
         }
         
-        // Add to array if we have at least AT command or UCX API
-        if (atCmd[0] != '\0' || ucxApi[0] != '\0') {
+        // Add to array if we have valid data
+        if (atCmd[0] != '\0') {
             if (gApiCommandCount >= capacity) {
                 capacity *= 2;
                 ApiCommand_t *newCommands = (ApiCommand_t*)realloc(gApiCommands, sizeof(ApiCommand_t) * capacity);
