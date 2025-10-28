@@ -9,9 +9,16 @@ import os
 os.environ['PYTHONDONTWRITEBYTECODE'] = '1'
 
 import ctypes
+import gc  # Import at module level to avoid GC during import
 from typing import Dict, List, Optional, Any, Tuple, Union
 from dataclasses import dataclass
+from datetime import datetime
 from at_to_api_mapper import APIMapping, APICallType, at_to_api_mapper
+
+def debug_print(message):
+    """Print debug message with timestamp"""
+    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+    print(f"[{timestamp}] {message}")
 
 @dataclass
 class APICallResult:
@@ -173,11 +180,20 @@ class UCXAPIExecutor:
         """Ensure UCX handle is initialized before making API calls"""
         # Trigger lazy initialization if not already done
         if hasattr(self.ucx_wrapper, '_ensure_ucx_handle_initialized'):
-            self.ucx_wrapper._ensure_ucx_handle_initialized()
+            try:
+                debug_print("[DEBUG] Calling _ensure_ucx_handle_initialized()...")
+                self.ucx_wrapper._ensure_ucx_handle_initialized()
+                debug_print("[DEBUG] Lazy initialization completed")
+            except Exception as e:
+                debug_print(f"[DEBUG] Lazy initialization failed: {e}")
         
         # Update our handle reference
         if hasattr(self.ucx_wrapper, 'ucx_handle'):
             self.ucx_handle = self.ucx_wrapper.ucx_handle
+            if self.ucx_handle and self.ucx_handle.value:
+                debug_print(f"[DEBUG] UCX handle updated: 0x{self.ucx_handle.value:x}")
+            else:
+                print(f"[DEBUG] UCX handle still not initialized: {self.ucx_handle}")
     
     def _signal_event(self, event_flag):
         """Signal an event (like C example)"""
@@ -973,9 +989,12 @@ class UCXAPIExecutor:
     def at_test(self) -> APICallResult:
         """Execute AT test command (basic communication test)"""
         try:
+            # Ensure UCX handle is initialized
+            self._ensure_ucx_handle_ready()
+            
             # AT command is just "OK" - we verify communication is working
             # Just check if the handle is valid
-            if self.ucx_handle.value:
+            if self.ucx_handle and self.ucx_handle.value:
                 return APICallResult(
                     success=True,
                     result_data="OK",
@@ -987,90 +1006,98 @@ class UCXAPIExecutor:
             return APICallResult(success=False, error_message=f"AT test failed: {e}")
     
     def ati9_info(self) -> APICallResult:
-        """Execute ATI9 command (get comprehensive device info)"""
+        """Execute ATI9 command (get comprehensive device info) using UCX API"""
         try:
-            # ATI9 returns comprehensive info - we'll get multiple pieces of information
-            info_lines = []
+            debug_print("[DEBUG] ati9_info() called")
             
-            # Get manufacturer
-            if hasattr(self.dll, 'uCxGeneralGetManufacturerIdentificationBegin'):
-                manufacturer = ctypes.c_char_p()
-                begin_func = self.dll.uCxGeneralGetManufacturerIdentificationBegin
-                begin_func.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_char_p)]
-                begin_func.restype = ctypes.c_bool
-                
-                if begin_func(ctypes.byref(self.ucx_handle), ctypes.byref(manufacturer)):
-                    info_lines.append(f"Manufacturer: {manufacturer.value.decode('utf-8') if manufacturer.value else 'N/A'}")
-                    # Call End to complete the command
-                    if hasattr(self.dll, 'uCxEnd'):
-                        end_func = self.dll.uCxEnd
-                        end_func.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
-                        end_func.restype = ctypes.c_int32
-                        end_func(ctypes.byref(self.ucx_handle))
+            # Ensure UCX handle is initialized
+            self._ensure_ucx_handle_ready()
             
-            # Get model
-            if hasattr(self.dll, 'uCxGeneralGetDeviceModelIdentificationBegin'):
-                model = ctypes.c_char_p()
-                begin_func = self.dll.uCxGeneralGetDeviceModelIdentificationBegin
-                begin_func.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_char_p)]
-                begin_func.restype = ctypes.c_bool
-                
-                if begin_func(ctypes.byref(self.ucx_handle), ctypes.byref(model)):
-                    info_lines.append(f"Model: {model.value.decode('utf-8') if model.value else 'N/A'}")
-                    # Call End to complete the command
-                    if hasattr(self.dll, 'uCxEnd'):
-                        end_func = self.dll.uCxEnd
-                        end_func.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
-                        end_func.restype = ctypes.c_int32
-                        end_func(ctypes.byref(self.ucx_handle))
-            
-            # Get version
-            if hasattr(self.dll, 'uCxGeneralGetSoftwareVersionBegin'):
-                version = ctypes.c_char_p()
-                begin_func = self.dll.uCxGeneralGetSoftwareVersionBegin
-                begin_func.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_char_p)]
-                begin_func.restype = ctypes.c_bool
-                
-                if begin_func(ctypes.byref(self.ucx_handle), ctypes.byref(version)):
-                    info_lines.append(f"Software Version: {version.value.decode('utf-8') if version.value else 'N/A'}")
-                    # Call End to complete the command
-                    if hasattr(self.dll, 'uCxEnd'):
-                        end_func = self.dll.uCxEnd
-                        end_func.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
-                        end_func.restype = ctypes.c_int32
-                        end_func(ctypes.byref(self.ucx_handle))
-            
-            # Get serial number
-            if hasattr(self.dll, 'uCxGeneralGetSerialNumberBegin'):
-                serial = ctypes.c_char_p()
-                begin_func = self.dll.uCxGeneralGetSerialNumberBegin
-                begin_func.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_char_p)]
-                begin_func.restype = ctypes.c_bool
-                
-                if begin_func(ctypes.byref(self.ucx_handle), ctypes.byref(serial)):
-                    info_lines.append(f"Serial Number: {serial.value.decode('utf-8') if serial.value else 'N/A'}")
-                    # Call End to complete the command
-                    if hasattr(self.dll, 'uCxEnd'):
-                        end_func = self.dll.uCxEnd
-                        end_func.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
-                        end_func.restype = ctypes.c_int32
-                        end_func(ctypes.byref(self.ucx_handle))
-            
-            if info_lines:
+            # Check if API function exists
+            if not hasattr(self.dll, 'uCxGeneralGetIdentInfoBegin'):
                 return APICallResult(
-                    success=True,
-                    result_data="\n".join(info_lines),
-                    raw_response="ATI9: Device information retrieved"
+                    success=False,
+                    error_message="uCxGeneralGetIdentInfoBegin not available in DLL"
                 )
+            
+            # Define the response structure matching uCxGeneralGetIdentInfo_t
+            class GetIdentInfoResponse(ctypes.Structure):
+                _fields_ = [
+                    ("application_version", ctypes.c_char_p),
+                    ("unique_identifier", ctypes.c_char_p)
+                ]
+            
+            # Setup function prototype
+            begin_func = self.dll.uCxGeneralGetIdentInfoBegin
+            begin_func.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(GetIdentInfoResponse)]
+            begin_func.restype = ctypes.c_bool
+            
+            # Call the API
+            response = GetIdentInfoResponse()
+            debug_print("[DEBUG] Calling uCxGeneralGetIdentInfoBegin...")
+            debug_print(f"[DEBUG] UCX handle value: 0x{self.ucx_handle.value:x}" if self.ucx_handle.value else "[DEBUG] UCX handle is NULL!")
+            
+            if begin_func(ctypes.byref(self.ucx_handle), ctypes.byref(response)):
+                debug_print("[DEBUG] uCxGeneralGetIdentInfoBegin returned True")
+                debug_print(f"[DEBUG] Raw response.application_version: {response.application_version}")
+                debug_print(f"[DEBUG] Raw response.unique_identifier: {response.unique_identifier}")
+                
+                # IMPORTANT: Copy the strings BEFORE calling uCxEnd, as the buffer may be reused
+                info_lines = []
+                if response.application_version:
+                    version_str = response.application_version.decode('utf-8')
+                    info_lines.append(f"Software Version: {version_str}")
+                    debug_print(f"[DEBUG] Copied version: {version_str}")
+                if response.unique_identifier:
+                    id_str = response.unique_identifier.decode('utf-8')
+                    info_lines.append(f"Unique Identifier: {id_str}")
+                    debug_print(f"[DEBUG] Copied identifier: {id_str}")
+                
+                # Call uCxEnd to complete the command
+                if hasattr(self.dll, 'uCxEnd'):
+                    end_func = self.dll.uCxEnd
+                    end_func.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+                    end_func.restype = ctypes.c_int32
+                    error_code = end_func(ctypes.byref(self.ucx_handle))
+                    debug_print(f"[DEBUG] uCxEnd returned error code: {error_code}")
+                    
+                    if error_code == 0:
+                        result_data = "\n".join(info_lines) if info_lines else "No device information available"
+                        debug_print(f"[DEBUG] ATI9 success: {result_data}")
+                        
+                        return APICallResult(
+                            success=True,
+                            result_data=result_data
+                        )
+                    else:
+                        return APICallResult(
+                            success=False,
+                            error_message=f"uCxEnd returned error code: {error_code}"
+                        )
+                else:
+                    return APICallResult(
+                        success=False,
+                        error_message="uCxEnd function not available"
+                    )
             else:
-                return APICallResult(success=False, error_message="No device info available")
+                debug_print("[DEBUG] uCxGeneralGetIdentInfoBegin returned False")
+                return APICallResult(
+                    success=False,
+                    error_message="Failed to get device identification info"
+                )
                 
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            debug_print(f"[DEBUG] ATI9 exception: {error_details}")
             return APICallResult(success=False, error_message=f"ATI9 failed: {e}")
     
     def store_configuration(self) -> APICallResult:
-        """Execute AT&W command (store configuration to flash)"""
+        """Execute AT&W command (store configuration to flash) using UCX API"""
         try:
+            # Ensure UCX handle is initialized
+            self._ensure_ucx_handle_ready()
+            
             if not hasattr(self.dll, 'uCxSystemStoreConfiguration'):
                 return APICallResult(success=False, error_message="uCxSystemStoreConfiguration not available")
             
@@ -1083,18 +1110,22 @@ class UCXAPIExecutor:
             if result == 0:
                 return APICallResult(
                     success=True,
-                    result_data="Configuration stored to flash",
-                    raw_response="AT&W: Configuration saved successfully"
+                    result_data="Configuration stored to flash"
                 )
             else:
                 return APICallResult(success=False, error_message=f"Store configuration failed with error code: {result}")
                 
         except Exception as e:
+            import traceback
+            debug_print(f"[DEBUG] Store config exception: {traceback.format_exc()}")
             return APICallResult(success=False, error_message=f"Store configuration failed: {e}")
     
     def reset_to_defaults(self) -> APICallResult:
-        """Execute AT+USYDS command (reset all settings to default values)"""
+        """Execute AT&F command (reset all settings to default values) using UCX API"""
         try:
+            # Ensure UCX handle is initialized
+            self._ensure_ucx_handle_ready()
+            
             if not hasattr(self.dll, 'uCxSystemDefaultSettings'):
                 return APICallResult(success=False, error_message="uCxSystemDefaultSettings not available")
             
@@ -1107,13 +1138,14 @@ class UCXAPIExecutor:
             if result == 0:
                 return APICallResult(
                     success=True,
-                    result_data="Settings reset to defaults (certificates and BT bonding preserved)",
-                    raw_response="AT+USYDS: Default settings restored"
+                    result_data="Settings reset to defaults (certificates and BT bonding preserved)"
                 )
             else:
                 return APICallResult(success=False, error_message=f"Reset to defaults failed with error code: {result}")
                 
         except Exception as e:
+            import traceback
+            debug_print(f"[DEBUG] Reset to defaults exception: {traceback.format_exc()}")
             return APICallResult(success=False, error_message=f"Reset to defaults failed: {e}")
     
     def factory_reset(self) -> APICallResult:
@@ -1141,8 +1173,11 @@ class UCXAPIExecutor:
             return APICallResult(success=False, error_message=f"Factory reset failed: {e}")
     
     def reboot_device(self) -> APICallResult:
-        """Execute AT+CPWROFF command (reboot the device)"""
+        """Execute AT+CPWROFF command (reboot the device) using UCX API"""
         try:
+            # Ensure UCX handle is initialized
+            self._ensure_ucx_handle_ready()
+            
             if not hasattr(self.dll, 'uCxSystemReboot'):
                 return APICallResult(success=False, error_message="uCxSystemReboot not available")
             
@@ -1155,23 +1190,308 @@ class UCXAPIExecutor:
             if result == 0:
                 return APICallResult(
                     success=True,
-                    result_data="Device rebooting...",
-                    raw_response="AT+CPWROFF: Reboot initiated"
+                    result_data="Device rebooting..."
                 )
             else:
                 return APICallResult(success=False, error_message=f"Reboot failed with error code: {result}")
                 
         except Exception as e:
+            import traceback
+            debug_print(f"[DEBUG] Reboot exception: {traceback.format_exc()}")
             return APICallResult(success=False, error_message=f"Reboot failed: {e}")
+    
+    def bluetooth_get_mode(self) -> APICallResult:
+        """Get current Bluetooth mode"""
+        try:
+            debug_print("[DEBUG] bluetooth_get_mode() called")
+            self._ensure_ucx_handle_ready()
+            
+            if not hasattr(self.dll, 'uCxBluetoothGetMode'):
+                return APICallResult(success=False, error_message="uCxBluetoothGetMode not available")
+            
+            debug_print(f"[DEBUG] UCX handle: 0x{self.ucx_handle.value:x}" if self.ucx_handle.value else "[DEBUG] UCX handle is NULL!")
+            
+            # No need for API lock - UCX library has internal mutex for command serialization
+            func = self.dll.uCxBluetoothGetMode
+            func.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_int32)]
+            func.restype = ctypes.c_int32
+            
+            bt_mode = ctypes.c_int32()
+            debug_print("[DEBUG] Calling uCxBluetoothGetMode...")
+            result = func(ctypes.byref(self.ucx_handle), ctypes.byref(bt_mode))
+            debug_print(f"[DEBUG] uCxBluetoothGetMode returned: {result}, bt_mode value: {bt_mode.value}")
+            
+            # Retry once on timeout (error -65536)
+            if result == -65536:
+                debug_print("[DEBUG] Timeout on first attempt, retrying...")
+                import time
+                time.sleep(0.1)  # Brief delay before retry
+                result = func(ctypes.byref(self.ucx_handle), ctypes.byref(bt_mode))
+                debug_print(f"[DEBUG] Retry result: {result}, bt_mode value: {bt_mode.value}")
+            
+            if result == 0:
+                mode_names = {
+                    0: "Disabled",
+                    1: "Central",
+                    2: "Peripheral", 
+                    3: "Central + Peripheral"
+                }
+                mode_str = mode_names.get(bt_mode.value, f"Unknown ({bt_mode.value})")
+                
+                return APICallResult(
+                    success=True,
+                    result_data=f"Bluetooth Mode: {mode_str}"
+                )
+            else:
+                return APICallResult(success=False, error_message=f"Get BT mode failed with error code: {result}")
+                
+        except Exception as e:
+            import traceback
+            debug_print(f"[DEBUG] BT mode exception: {traceback.format_exc()}")
+            return APICallResult(success=False, error_message=f"Get BT mode failed: {e}")
+    
+    def bluetooth_get_status(self) -> APICallResult:
+        """Get Bluetooth status including active connections"""
+        try:
+            debug_print("[DEBUG] bluetooth_get_status() called")
+            self._ensure_ucx_handle_ready()
+            
+            if not hasattr(self.dll, 'uCxBluetoothGetMode'):
+                return APICallResult(success=False, error_message="Bluetooth mode API not available")
+            
+            if not hasattr(self.dll, 'uCxBluetoothListConnectionsBegin'):
+                return APICallResult(success=False, error_message="Bluetooth list connections API not available")
+            
+            if not hasattr(self.dll, 'uCxBluetoothListConnectionsGetNext'):
+                return APICallResult(success=False, error_message="Bluetooth get next connection API not available")
+                
+            if not hasattr(self.dll, 'uCxEnd'):
+                return APICallResult(success=False, error_message="uCxEnd API not available")
+            
+            # First get the Bluetooth mode
+            func_mode = self.dll.uCxBluetoothGetMode
+            func_mode.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_int32)]
+            func_mode.restype = ctypes.c_int32
+            
+            bt_mode = ctypes.c_int32()
+            debug_print("[DEBUG] Calling uCxBluetoothGetMode...")
+            result = func_mode(ctypes.byref(self.ucx_handle), ctypes.byref(bt_mode))
+            debug_print(f"[DEBUG] uCxBluetoothGetMode returned: {result}, bt_mode value: {bt_mode.value}")
+            
+            if result != 0:
+                return APICallResult(success=False, error_message=f"Get BT mode failed with error code: {result}")
+            
+            mode_names = {
+                0: "Disabled",
+                1: "Central",
+                2: "Peripheral", 
+                3: "Central + Peripheral"
+            }
+            mode_str = mode_names.get(bt_mode.value, f"Unknown ({bt_mode.value})")
+            
+            if bt_mode.value == 0:
+                return APICallResult(
+                    success=True,
+                    result_data="Bluetooth Status: Disabled"
+                )
+            
+            # Define structures for listing connections
+            class MacAddress(ctypes.Structure):
+                _fields_ = [
+                    ("address", ctypes.c_uint8 * 6)
+                ]
+            
+            class BtLeAddress(ctypes.Structure):
+                _fields_ = [
+                    ("type", ctypes.c_int32),
+                    ("address", MacAddress)
+                ]
+            
+            class BluetoothListConnections(ctypes.Structure):
+                _fields_ = [
+                    ("conn_handle", ctypes.c_int32),
+                    ("bd_addr", BtLeAddress)
+                ]
+            
+            # Set up function signatures
+            func_begin = self.dll.uCxBluetoothListConnectionsBegin
+            func_begin.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+            func_begin.restype = None
+            
+            func_get_next = self.dll.uCxBluetoothListConnectionsGetNext
+            func_get_next.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(BluetoothListConnections)]
+            func_get_next.restype = ctypes.c_bool
+            
+            func_end = self.dll.uCxEnd
+            func_end.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+            func_end.restype = ctypes.c_int32
+            
+            # List all connections
+            debug_print("[DEBUG] Calling uCxBluetoothListConnectionsBegin...")
+            func_begin(ctypes.byref(self.ucx_handle))
+            
+            connections = []
+            while True:
+                conn = BluetoothListConnections()
+                result = func_get_next(ctypes.byref(self.ucx_handle), ctypes.byref(conn))
+                if not result:
+                    break
+                
+                # Format MAC address
+                mac_str = ':'.join(f'{conn.bd_addr.address.address[i]:02X}' for i in range(6))
+                addr_type = "Public" if conn.bd_addr.type == 0 else "Random"
+                connections.append(f"  Handle {conn.conn_handle}: {mac_str} ({addr_type})")
+                debug_print(f"[DEBUG] Found connection - Handle: {conn.conn_handle}, MAC: {mac_str}")
+            
+            end_result = func_end(ctypes.byref(self.ucx_handle))
+            debug_print(f"[DEBUG] uCxEnd returned: {end_result}")
+            
+            # Build status message
+            status_msg = f"Bluetooth Status: {mode_str}\n"
+            if connections:
+                status_msg += f"Active Connections: {len(connections)}\n"
+                status_msg += "\n".join(connections)
+            else:
+                status_msg += "Active Connections: 0 (No devices connected)"
+            
+            return APICallResult(
+                success=True,
+                result_data=status_msg
+            )
+                
+        except Exception as e:
+            import traceback
+            debug_print(f"[DEBUG] BT status exception: {traceback.format_exc()}")
+            return APICallResult(success=False, error_message=f"Get BT status failed: {e}")
+
+    
+    def wifi_get_status(self) -> APICallResult:
+        """Get WiFi station status including connection state and SSID"""
+        try:
+            debug_print("[DEBUG] wifi_get_status() called")
+            self._ensure_ucx_handle_ready()
+            
+            if not hasattr(self.dll, 'uCxWifiStationStatusBegin'):
+                return APICallResult(success=False, error_message="WiFi status API not available")
+            
+            if not hasattr(self.dll, 'uCxEnd'):
+                return APICallResult(success=False, error_message="uCxEnd API not available")
+            
+            # Define WiFi status structures matching u_cx_wifi.h
+            class MacAddress(ctypes.Structure):
+                _fields_ = [("address", ctypes.c_uint8 * 6)]
+            
+            class IpAddress(ctypes.Structure):
+                _fields_ = [
+                    ("address", ctypes.c_uint8 * 16),
+                    ("type", ctypes.c_int32)
+                ]
+            
+            class WifiStationStatusRspStr(ctypes.Structure):
+                _fields_ = [
+                    ("wifi_status_id", ctypes.c_int32),
+                    ("ssid", ctypes.c_char_p)
+                ]
+            
+            class WifiStationStatusRspMac(ctypes.Structure):
+                _fields_ = [
+                    ("wifi_status_id", ctypes.c_int32),
+                    ("bssid", MacAddress)
+                ]
+            
+            class WifiStationStatusRspInt(ctypes.Structure):
+                _fields_ = [
+                    ("wifi_status_id", ctypes.c_int32),
+                    ("int_val", ctypes.c_int32)
+                ]
+            
+            class WifiStationStatusUnion(ctypes.Union):
+                _fields_ = [
+                    ("rspWifiStatusIdStr", WifiStationStatusRspStr),
+                    ("rspWifiStatusIdMac", WifiStationStatusRspMac),
+                    ("rspWifiStatusIdInt", WifiStationStatusRspInt)
+                ]
+            
+            class WifiStationStatus(ctypes.Structure):
+                _anonymous_ = ("u",)
+                _fields_ = [
+                    ("type", ctypes.c_int32),
+                    ("u", WifiStationStatusUnion)
+                ]
+            
+            # WiFi Status ID enum values from u_cx_types.h
+            U_WIFI_STATUS_ID_SSID = 0
+            U_WIFI_STATUS_ID_BSSID = 1
+            U_WIFI_STATUS_ID_CHANNEL = 2
+            U_WIFI_STATUS_ID_CONNECTION = 3
+            U_WIFI_STATUS_ID_RSSI = 4
+            
+            # Set up function signatures
+            func_begin = self.dll.uCxWifiStationStatusBegin
+            func_begin.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_int32, ctypes.POINTER(WifiStationStatus)]
+            func_begin.restype = ctypes.c_bool
+            
+            func_end = self.dll.uCxEnd
+            func_end.argtypes = [ctypes.POINTER(ctypes.c_void_p)]
+            func_end.restype = ctypes.c_int32
+            
+            # Get connection status first
+            status_connection = WifiStationStatus()
+            debug_print("[DEBUG] Calling uCxWifiStationStatusBegin for connection status...")
+            result = func_begin(ctypes.byref(self.ucx_handle), U_WIFI_STATUS_ID_CONNECTION, ctypes.byref(status_connection))
+            end_result = func_end(ctypes.byref(self.ucx_handle))
+            
+            debug_print(f"[DEBUG] uCxWifiStationStatusBegin returned: {result}, uCxEnd: {end_result}")
+            
+            if not result or end_result != 0:
+                return APICallResult(
+                    success=True,
+                    result_data="WiFi Status: Not connected or WiFi disabled"
+                )
+            
+            # Connection status: 1 = not connected, 2 = connected
+            connection_state = status_connection.rspWifiStatusIdInt.int_val
+            debug_print(f"[DEBUG] Connection state: {connection_state}")
+            
+            if connection_state != 2:
+                return APICallResult(
+                    success=True,
+                    result_data="WiFi Status: Not connected"
+                )
+            
+            # Get SSID
+            status_ssid = WifiStationStatus()
+            result_ssid = func_begin(ctypes.byref(self.ucx_handle), U_WIFI_STATUS_ID_SSID, ctypes.byref(status_ssid))
+            end_result_ssid = func_end(ctypes.byref(self.ucx_handle))
+            
+            ssid = ""
+            if result_ssid and end_result_ssid == 0:
+                ssid = status_ssid.rspWifiStatusIdStr.ssid.decode('utf-8') if status_ssid.rspWifiStatusIdStr.ssid else "Unknown"
+            
+            # Get RSSI
+            status_rssi = WifiStationStatus()
+            result_rssi = func_begin(ctypes.byref(self.ucx_handle), U_WIFI_STATUS_ID_RSSI, ctypes.byref(status_rssi))
+            end_result_rssi = func_end(ctypes.byref(self.ucx_handle))
+            
+            rssi = ""
+            if result_rssi and end_result_rssi == 0:
+                rssi_val = status_rssi.rspWifiStatusIdInt.int_val
+                if rssi_val != -32768:  # -32768 means not connected
+                    rssi = f"\nRSSI: {rssi_val} dBm"
+            
+            return APICallResult(
+                success=True,
+                result_data=f"WiFi Status: Connected\nSSID: {ssid}{rssi}"
+            )
+                
+        except Exception as e:
+            import traceback
+            debug_print(f"[DEBUG] WiFi status exception: {traceback.format_exc()}")
+            return APICallResult(success=False, error_message=f"Get WiFi status failed: {e}")
+
     
     def validate_api_mapping(self, at_command: str) -> Tuple[bool, str]:
         """Validate that an AT command has a proper API mapping"""
         mapping = at_to_api_mapper.get_api_mapping(at_command)
-        
-        if not mapping:
-            return False, f"No API mapping found for: {at_command}"
-        
-        if not hasattr(self.dll, mapping.api_function):
-            return False, f"API function not available: {mapping.api_function}"
         
         return True, f"Valid mapping: {at_command} -> {mapping.api_function}"

@@ -102,7 +102,40 @@ def main():
         # Import and run the main application
         from main_window import MainWindow
         
+        # Set up global exception handler for Tkinter
+        def handle_exception(exc_type, exc_value, exc_traceback):
+            """Global exception handler to prevent crashes"""
+            import traceback
+            error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+            print(f"\n{'='*60}")
+            print("UNHANDLED EXCEPTION CAUGHT (App continues running):")
+            print(f"{'='*60}")
+            print(error_msg)
+            print(f"{'='*60}\n")
+        
+        sys.excepthook = handle_exception
+        
         app = MainWindow()
+        
+        # Set up Tkinter exception handler too
+        def tk_exception_handler(exc, val, tb):
+            """Handle exceptions in Tkinter event loop"""
+            import traceback
+            error_msg = ''.join(traceback.format_exception(exc, val, tb))
+            print(f"\n{'='*60}")
+            print("TKINTER EXCEPTION CAUGHT (App continues running):")
+            print(f"{'='*60}")
+            print(error_msg)
+            print(f"{'='*60}\n")
+            # Try to log to GUI if possible
+            try:
+                if hasattr(app, '_log'):
+                    app._log(f"⚠ WARNING: Exception caught: {val}")
+            except:
+                pass
+        
+        tk.Tk.report_callback_exception = tk_exception_handler
+        
         app.run()
         
         return 0

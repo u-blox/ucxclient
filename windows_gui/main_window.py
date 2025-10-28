@@ -78,8 +78,18 @@ class MainWindow:
         self.device_name = "U-ConnectXpress Device"
         self.yaml_parser: Optional[YAMLCommandParser] = None
         self.product_loaded = False
+        
+        # Rate limiting for status buttons to prevent GC crashes
+        self.last_command_time = 0
+        self.min_command_interval = 0.5  # Minimum 500ms between commands
+        self.command_in_progress = False  # Prevent concurrent API calls
+        # command_lock removed - UCX DLL handles command serialization internally
         self.dynamic_gui: Optional[DynamicProductGUI] = None
         self.initialization_complete = False
+        
+        # Initialization progress tracking
+        self.init_steps_total = 7  # Total number of initialization steps
+        self.init_steps_completed = 0
         
         # Settings manager
         self.settings = get_settings_manager()
@@ -372,6 +382,26 @@ class MainWindow:
         for tag in ['success', 'error', 'warning', 'info', 'list', 'search', 'at_tx', 'at_rx', 'debug']:
             self.log_text.tag_raise(tag)
         
+        # Progress frame (for initialization status)
+        progress_frame = ttk.Frame(log_frame)
+        progress_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+        
+        # Progress label
+        self.progress_label = ttk.Label(progress_frame, text="Initializing...", 
+                                       foreground=self.theme_colors['fg_light'])
+        self.progress_label.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Progress bar
+        self.progress_var = tk.IntVar(value=0)
+        self.progress_bar = ttk.Progressbar(progress_frame, mode='determinate', 
+                                           variable=self.progress_var, maximum=100)
+        self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Progress percentage label
+        self.progress_percent_label = ttk.Label(progress_frame, text="0%", width=5,
+                                               foreground=self.theme_colors['fg_light'])
+        self.progress_percent_label.pack(side=tk.LEFT, padx=(10, 0))
+        
         # Controls frame
         controls_frame = ttk.Frame(log_frame)
         controls_frame.pack(fill=tk.X, padx=5, pady=5)
@@ -383,13 +413,37 @@ class MainWindow:
         # Separator
         ttk.Separator(controls_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        # Quick commands
-        ttk.Label(controls_frame, text="Quick Commands:").pack(side=tk.LEFT, padx=(5, 10))
-        ttk.Button(controls_frame, text="AT (Test)", command=self._quick_at_test, width=12).pack(side=tk.LEFT, padx=2)
-        ttk.Button(controls_frame, text="ATI9 (Info)", command=self._quick_ati9, width=12).pack(side=tk.LEFT, padx=2)
-        ttk.Button(controls_frame, text="Store (AT&W)", command=self._quick_store_config, width=13).pack(side=tk.LEFT, padx=2)
-        ttk.Button(controls_frame, text="Reboot", command=self._quick_reboot, width=12).pack(side=tk.LEFT, padx=2)
-        ttk.Button(controls_frame, text="Factory Reset", command=self._quick_factory_reset, width=13).pack(side=tk.LEFT, padx=2)
+        # Quick commands - Row 1
+        quick_commands_container = ttk.Frame(controls_frame)
+        quick_commands_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # First row of quick commands
+        quick_row1 = ttk.Frame(quick_commands_container)
+        quick_row1.pack(fill=tk.X)
+        
+        ttk.Label(quick_row1, text="Quick Commands:").pack(side=tk.LEFT, padx=(5, 10))
+        self.btn_at_test = ttk.Button(quick_row1, text="AT (Test)", command=self._quick_at_test, width=12, state=tk.DISABLED)
+        self.btn_at_test.pack(side=tk.LEFT, padx=2)
+        self.btn_ati9 = ttk.Button(quick_row1, text="ATI9 (Info)", command=self._quick_ati9, width=12, state=tk.DISABLED)
+        self.btn_ati9.pack(side=tk.LEFT, padx=2)
+        self.btn_store = ttk.Button(quick_row1, text="Store (AT&W)", command=self._quick_store_config, width=13, state=tk.DISABLED)
+        self.btn_store.pack(side=tk.LEFT, padx=2)
+        self.btn_reboot = ttk.Button(quick_row1, text="Reboot", command=self._quick_reboot, width=12, state=tk.DISABLED)
+        self.btn_reboot.pack(side=tk.LEFT, padx=2)
+        self.btn_factory_reset = ttk.Button(quick_row1, text="Factory Reset", command=self._quick_factory_reset, width=13, state=tk.DISABLED)
+        self.btn_factory_reset.pack(side=tk.LEFT, padx=2)
+        
+        # Second row of quick commands (status commands)
+        quick_row2 = ttk.Frame(quick_commands_container)
+        quick_row2.pack(fill=tk.X, pady=(3, 0))
+        
+        ttk.Label(quick_row2, text="Status:").pack(side=tk.LEFT, padx=(5, 10))
+        self.btn_bt_mode = ttk.Button(quick_row2, text="BT Mode", command=self._quick_bt_mode, width=12, state=tk.DISABLED)
+        self.btn_bt_mode.pack(side=tk.LEFT, padx=2)
+        self.btn_bt_status = ttk.Button(quick_row2, text="BT Status", command=self._quick_bt_status, width=12, state=tk.DISABLED)
+        self.btn_bt_status.pack(side=tk.LEFT, padx=2)
+        self.btn_wifi_status = ttk.Button(quick_row2, text="WiFi Status", command=self._quick_wifi_status, width=13, state=tk.DISABLED)
+        self.btn_wifi_status.pack(side=tk.LEFT, padx=2)
     
     def _create_terminal_tab(self):
         """Create AT Terminal tab"""
@@ -462,6 +516,12 @@ class MainWindow:
             import traceback
             traceback.print_exc()
     
+    def _create_test_tab_with_progress(self):
+        """Create test tab and update progress"""
+        self._create_test_tab()
+        # Defer status update to prevent GC access violation after DLL operations
+        self.root.after(50, lambda: self._update_init_status("✓ Step 5/7: Test tab created", step_complete=True))
+    
     def _create_mapper_tab(self):
         """Create the AT-to-API mapper tab"""
         print("[APP_LIFECYCLE] _create_mapper_tab() called")
@@ -496,6 +556,25 @@ class MainWindow:
             import traceback
             traceback.print_exc()
     
+    def _create_mapper_tab_with_progress(self):
+        """Create mapper tab and update progress"""
+        print("[APP_LIFECYCLE] MAPPER TAB DISABLED - Skipping to avoid GC crashes")
+        # TEMPORARILY DISABLED: Mapper tab causes GC crashes
+        # self._create_mapper_tab()
+        
+        # Update step counter immediately (no Tkinter calls yet)
+        self.init_steps_completed += 1
+        # Defer all Tkinter UI updates to prevent GC access violation after heavy DLL operations
+        def complete_step_6_ui():
+            message = "⚠ Step 6/7: Mapper tab disabled (avoiding crashes)"
+            self._log(message)
+            self.status_var.set(message)
+            progress = int((self.init_steps_completed / self.init_steps_total) * 100)
+            self._update_progress(message, progress)
+            # Schedule finalization after UI updates
+            self.root.after(100, self._finalize_with_step_7)
+        self.root.after(150, complete_step_6_ui)
+    
     def _create_firmware_tab(self):
         """Create the firmware update tab"""
         print("[APP_LIFECYCLE] _create_firmware_tab() called")
@@ -518,6 +597,13 @@ class MainWindow:
             self._log(f"✗ Error creating firmware tab: {e}")
             import traceback
             traceback.print_exc()
+    
+    def _create_firmware_tab_with_progress(self):
+        """Create firmware tab and update progress"""
+        self._create_firmware_tab()
+        self._update_init_status("✓ Step 7/7: Firmware tab created", step_complete=True)
+        # Finalize initialization after all tabs are created
+        self._finalize_initialization()
     
     def _setup_layout(self):
         """Setup window layout - just update sizes, positioning done in _load_window_position"""
@@ -766,18 +852,14 @@ class MainWindow:
             
             # Create test tab now that api_executor exists (schedule in main thread)
             if not self.test_tab:
-                self.root.after(100, self._create_test_tab)
-                self._log("Test tab will be created...")
+                self._update_init_status("⏳ Step 5/7: Creating Test tab...")
+                self.root.after(100, lambda: self._create_test_tab_with_progress())
             
-            # Create mapper tab
+            # Create mapper tab (finalization will be triggered after mapper completes)
             if not self.mapper_tab:
-                self.root.after(200, self._create_mapper_tab)
-                self._log("Mapper tab will be created...")
+                self._update_init_status("⏳ Step 6/7: Creating Mapper tab...")
+                self.root.after(200, lambda: self._create_mapper_tab_with_progress())
             
-            # Create firmware tab
-            if not self.firmware_tab:
-                self.root.after(300, self._create_firmware_tab)
-                self._log("Firmware tab will be created...")
         else:
             self.status_var.set("Connection failed")
             self.status_label.config(foreground="red")
@@ -831,12 +913,14 @@ class MainWindow:
             return
         
         self._log("\n--- AT Test Command ---")
-        result = self.api_executor.at_test()
         
-        if result.success:
-            self._log(f"✓ {result.result_data}")
-        else:
-            self._log(f"✗ {result.error_message}")
+        # Run in background thread to avoid freezing GUI
+        def execute_command():
+            result = self.api_executor.at_test()
+            # Update GUI from main thread
+            self.root.after(0, lambda: self._log(f"✓ {result.result_data}" if result.success else f"✗ {result.error_message}"))
+        
+        threading.Thread(target=execute_command, daemon=True).start()
     
     def _quick_ati9(self):
         """Execute ATI9 device info command"""
@@ -849,12 +933,17 @@ class MainWindow:
             return
         
         self._log("\n--- ATI9 Device Information ---")
-        result = self.api_executor.ati9_info()
         
-        if result.success:
-            self._log(result.result_data)
-        else:
-            self._log(f"✗ {result.error_message}")
+        # Run in background thread to avoid freezing GUI
+        def execute_command():
+            result = self.api_executor.ati9_info()
+            # Update GUI from main thread
+            if result.success:
+                self.root.after(0, lambda: self._log(result.result_data))
+            else:
+                self.root.after(0, lambda: self._log(f"✗ {result.error_message}"))
+        
+        threading.Thread(target=execute_command, daemon=True).start()
     
     def _quick_store_config(self):
         """Execute AT&W store configuration command"""
@@ -866,19 +955,32 @@ class MainWindow:
             messagebox.showerror("Error", "API executor not initialized")
             return
         
+        # UCX DLL handles command serialization internally via cmdMutex
+        
         if messagebox.askyesno("Store Configuration", 
                                "Save current configuration to flash memory?\n\n"
                                "This will store all settings permanently.",
                                parent=self.root):
-            self._log("\n--- Store Configuration (AT&W) ---")
-            result = self.api_executor.store_configuration()
+            self.command_in_progress = True
+            self._disable_quick_buttons()
             
-            if result.success:
-                self._log(f"✓ {result.result_data}")
-                messagebox.showinfo("Success", "Configuration saved successfully!", parent=self.root)
-            else:
-                self._log(f"✗ {result.error_message}")
-                messagebox.showerror("Error", f"Failed to store configuration:\n{result.error_message}", parent=self.root)
+            self._log("\n--- Store Configuration (AT&W) ---")
+            
+            def execute_command():
+                result = self.api_executor.store_configuration()
+                
+                def update_gui():
+                    if result.success:
+                        self._log(f"✓ {result.result_data}")
+                        messagebox.showinfo("Success", "Configuration saved successfully!", parent=self.root)
+                    else:
+                        self._log(f"✗ {result.error_message}")
+                        messagebox.showerror("Error", f"Failed to store configuration:\n{result.error_message}", parent=self.root)
+                    self._command_complete()
+                
+                self.root.after(0, update_gui)
+            
+            threading.Thread(target=execute_command, daemon=True).start()
     
     def _quick_reboot(self):
         """Execute reboot command (AT+CPWROFF)"""
@@ -890,15 +992,24 @@ class MainWindow:
             messagebox.showerror("Error", "API executor not initialized")
             return
         
+        # UCX DLL handles command serialization internally via cmdMutex
+        
+        self.command_in_progress = True
+        self._disable_quick_buttons()
+        
         self._log("\n--- Reboot Device (AT+CPWROFF) ---")
         
         def reboot_thread():
             result = self.api_executor.reboot_device()
             
-            if result.success:
-                self._log("✓ Reboot command sent successfully")
-            else:
-                self._log(f"✗ Reboot failed: {result.error_message}")
+            def update_gui():
+                if result.success:
+                    self._log("✓ Reboot command sent successfully")
+                else:
+                    self._log(f"✗ Reboot failed: {result.error_message}")
+                self._command_complete()
+            
+            self.root.after(0, update_gui)
         
         threading.Thread(target=reboot_thread, daemon=True).start()
     
@@ -912,6 +1023,8 @@ class MainWindow:
             messagebox.showerror("Error", "API executor not initialized")
             return
         
+        # UCX DLL handles command serialization internally via cmdMutex
+        
         if messagebox.askyesno("Factory Reset", 
                                "⚠️ WARNING: Factory Reset ⚠️\n\n"
                                "This will reset ALL settings to factory defaults (AT&F)\n"
@@ -920,28 +1033,168 @@ class MainWindow:
                                "Continue with factory reset?",
                                icon='warning',
                                parent=self.root):
+            self.command_in_progress = True
+            self._disable_quick_buttons()
+            
             self._log("\n--- Factory Reset (AT&F + AT+CPWROFF) ---")
             
-            # First, reset to defaults
-            result1 = self.api_executor.reset_to_defaults()
-            if not result1.success:
-                self._log(f"✗ Reset to defaults failed: {result1.error_message}")
-                messagebox.showerror("Error", f"Failed to reset to defaults:\n{result1.error_message}", parent=self.root)
-                return
+            def factory_reset_thread():
+                # First, reset to defaults
+                result1 = self.api_executor.reset_to_defaults()
+                
+                def update_gui():
+                    if not result1.success:
+                        self._log(f"✗ Reset to defaults failed: {result1.error_message}")
+                        messagebox.showerror("Error", f"Failed to reset to defaults:\n{result1.error_message}", parent=self.root)
+                        self._command_complete()
+                        return
+                    
+                    self._log(f"✓ {result1.result_data}")
+                    
+                    # Then reboot
+                    result2 = self.api_executor.reboot_device()
+                    if result2.success:
+                        self._log(f"✓ {result2.result_data}")
+                        messagebox.showinfo("Success", 
+                                          "Factory reset complete!\n\n"
+                                          "Device is rebooting with factory defaults.",
+                                      parent=self.root)
+                    else:
+                        self._log(f"✗ {result2.error_message}")
+                        messagebox.showerror("Error", f"Reboot failed:\n{result2.error_message}", parent=self.root)
+                    
+                    self._command_complete()
+                
+                self.root.after(0, update_gui)
             
-            self._log(f"✓ {result1.result_data}")
-            
-            # Then reboot
-            result2 = self.api_executor.reboot_device()
-            if result2.success:
-                self._log(f"✓ {result2.result_data}")
-                messagebox.showinfo("Success", 
-                                  "Factory reset complete!\n\n"
-                                  "Device is rebooting with factory defaults.",
-                                  parent=self.root)
-            else:
-                self._log(f"✗ {result2.error_message}")
-                messagebox.showerror("Error", f"Reboot failed:\n{result2.error_message}", parent=self.root)
+            threading.Thread(target=factory_reset_thread, daemon=True).start()
+    
+    def _quick_bt_mode(self):
+        """Execute Bluetooth Get Mode command"""
+        if not self.is_connected():
+            messagebox.showwarning("Not Connected", "Please connect to the device first")
+            return
+        
+        if not self.api_executor:
+            messagebox.showerror("Error", "API executor not initialized")
+            return
+        
+        # Rate limiting to prevent GC crashes from rapid clicking
+        import time
+        current_time = time.time()
+        time_since_last = current_time - self.last_command_time
+        if time_since_last < self.min_command_interval:
+            print(f"[BT MODE] Rate limited - please wait {self.min_command_interval - time_since_last:.1f}s")
+            return
+        
+        self.last_command_time = current_time
+        print("\n[BT MODE] Executing command...")
+        
+        # Execute in main thread without threading
+        def execute_command():
+            try:
+                result = self.api_executor.bluetooth_get_mode()
+                print(f"[BT MODE] Result: success={result.success}, data={result.result_data if result.success else result.error_message}")
+                # Try to log to GUI, but don't crash if it fails
+                try:
+                    if result.success:
+                        self._log(f"\n--- Bluetooth Mode ---\n✓ {result.result_data}")
+                    else:
+                        self._log(f"\n--- Bluetooth Mode ---\n✗ {result.error_message}")
+                except Exception as e:
+                    print(f"[BT MODE] Logging failed: {e}")
+            except Exception as e:
+                print(f"[BT MODE] Command failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Schedule execution in next event loop iteration
+        self.root.after(10, execute_command)
+
+    
+    def _quick_bt_status(self):
+        """Execute Bluetooth Get Status command"""
+        if not self.is_connected():
+            messagebox.showwarning("Not Connected", "Please connect to the device first")
+            return
+        
+        if not self.api_executor:
+            messagebox.showerror("Error", "API executor not initialized")
+            return
+        
+        # Rate limiting to prevent GC crashes from rapid clicking
+        import time
+        current_time = time.time()
+        time_since_last = current_time - self.last_command_time
+        if time_since_last < self.min_command_interval:
+            print(f"[BT STATUS] Rate limited - please wait {self.min_command_interval - time_since_last:.1f}s")
+            return
+        
+        self.last_command_time = current_time
+        print("\n[BT STATUS] Executing command...")
+        
+        # Execute in main thread without threading
+        def execute_command():
+            try:
+                result = self.api_executor.bluetooth_get_status()
+                print(f"[BT STATUS] Result: success={result.success}, data={result.result_data if result.success else result.error_message}")
+                # Try to log to GUI, but don't crash if it fails
+                try:
+                    if result.success:
+                        self._log(f"\n--- Bluetooth Status ---\n✓ {result.result_data}")
+                    else:
+                        self._log(f"\n--- Bluetooth Status ---\n✗ {result.error_message}")
+                except Exception as e:
+                    print(f"[BT STATUS] Logging failed: {e}")
+            except Exception as e:
+                print(f"[BT STATUS] Command failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Schedule execution in next event loop iteration
+        self.root.after(10, execute_command)
+    
+    def _quick_wifi_status(self):
+        """Execute WiFi Get Status command"""
+        if not self.is_connected():
+            messagebox.showwarning("Not Connected", "Please connect to the device first")
+            return
+        
+        if not self.api_executor:
+            messagebox.showerror("Error", "API executor not initialized")
+            return
+        
+        # Rate limiting to prevent GC crashes from rapid clicking
+        import time
+        current_time = time.time()
+        time_since_last = current_time - self.last_command_time
+        if time_since_last < self.min_command_interval:
+            print(f"[WIFI STATUS] Rate limited - please wait {self.min_command_interval - time_since_last:.1f}s")
+            return
+        
+        self.last_command_time = current_time
+        print("\n[WIFI STATUS] Executing command...")
+        
+        # Execute in main thread without threading
+        def execute_command():
+            try:
+                result = self.api_executor.wifi_get_status()
+                print(f"[WIFI STATUS] Result: success={result.success}, data={result.result_data if result.success else result.error_message}")
+                # Try to log to GUI, but don't crash if it fails
+                try:
+                    if result.success:
+                        self._log(f"\n--- WiFi Status ---\n✓ {result.result_data}")
+                    else:
+                        self._log(f"\n--- WiFi Status ---\n✗ {result.error_message}")
+                except Exception as e:
+                    print(f"[WIFI STATUS] Logging failed: {e}")
+            except Exception as e:
+                print(f"[WIFI STATUS] Command failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Schedule execution in next event loop iteration
+        self.root.after(10, execute_command)
     
     def _log(self, message: str):
         """Add color-coded message to log
@@ -958,49 +1211,61 @@ class MainWindow:
             print(f"[LOG] {message}")
             return
         
-        timestamp = time.strftime("%H:%M:%S")
-        log_entry = f"[{timestamp}] {message}\n"
+        # Defer the actual logging to avoid GC issues after DLL calls
+        def do_log():
+            try:
+                timestamp = time.strftime("%H:%M:%S")
+                log_entry = f"[{timestamp}] {message}\n"
+                
+                # Determine color based on message content
+                color_tag = None
+                msg_upper = message.upper()
+                
+                # Check for AT protocol messages first (from UCX logging)
+                if '[AT TX]' in message:
+                    color_tag = 'at_tx'
+                elif '[AT RX]' in message:
+                    color_tag = 'at_rx'
+                elif '[DBG' in message or '[DEBUG]' in message:
+                    color_tag = 'debug'
+                # Check for success indicators
+                elif '✓' in message or '✅' in message or 'SUCCESS' in msg_upper or message.startswith('Successfully'):
+                    color_tag = 'success'
+                # Check for error indicators  
+                elif '✗' in message or '❌' in message or message.startswith('ERROR') or 'ERROR:' in message or 'FAIL' in msg_upper or '[ERROR]' in message:
+                    color_tag = 'error'
+                # Check for warning indicators
+                elif '⚠' in message or message.startswith('WARNING') or message.startswith('WARN') or 'warning' in message.lower() or '[WARN' in message:
+                    color_tag = 'warning'
+                # Check for info indicators
+                elif 'ℹ' in message or '📘' in message or message.startswith('INFO') or message.startswith('ℹ️'):
+                    color_tag = 'info'
+                # Check for list/found indicators
+                elif '📋' in message or 'Found' in message or 'Creating' in message or 'Building' in message or 'Loading' in message:
+                    color_tag = 'list'
+                # Check for search/scan indicators
+                elif '🔍' in message or 'Searching' in message or 'Scanning' in message or 'Auto-detecting' in message or 'Fetching' in message:
+                    color_tag = 'search'
+                
+                self.log_text.config(state=tk.NORMAL)
+                
+                # Insert with color tag using the tags parameter directly
+                if color_tag:
+                    self.log_text.insert(tk.END, log_entry, color_tag)
+                else:
+                    self.log_text.insert(tk.END, log_entry)
+                
+                self.log_text.config(state=tk.DISABLED)
+                self.log_text.see(tk.END)
+            except Exception as e:
+                print(f"[LOG ERROR] Failed to log message: {e}")
         
-        # Determine color based on message content
-        color_tag = None
-        msg_upper = message.upper()
-        
-        # Check for AT protocol messages first (from UCX logging)
-        if '[AT TX]' in message:
-            color_tag = 'at_tx'
-        elif '[AT RX]' in message:
-            color_tag = 'at_rx'
-        elif '[DBG' in message or '[DEBUG]' in message:
-            color_tag = 'debug'
-        # Check for success indicators
-        elif '✓' in message or '✅' in message or 'SUCCESS' in msg_upper or message.startswith('Successfully'):
-            color_tag = 'success'
-        # Check for error indicators  
-        elif '✗' in message or '❌' in message or message.startswith('ERROR') or 'ERROR:' in message or 'FAIL' in msg_upper or '[ERROR]' in message:
-            color_tag = 'error'
-        # Check for warning indicators
-        elif '⚠' in message or message.startswith('WARNING') or message.startswith('WARN') or 'warning' in message.lower() or '[WARN' in message:
-            color_tag = 'warning'
-        # Check for info indicators
-        elif 'ℹ' in message or '📘' in message or message.startswith('INFO') or message.startswith('ℹ️'):
-            color_tag = 'info'
-        # Check for list/found indicators
-        elif '📋' in message or 'Found' in message or 'Creating' in message or 'Building' in message or 'Loading' in message:
-            color_tag = 'list'
-        # Check for search/scan indicators
-        elif '🔍' in message or 'Searching' in message or 'Scanning' in message or 'Auto-detecting' in message or 'Fetching' in message:
-            color_tag = 'search'
-        
-        self.log_text.config(state=tk.NORMAL)
-        
-        # Insert with color tag using the tags parameter directly
-        if color_tag:
-            self.log_text.insert(tk.END, log_entry, color_tag)
-        else:
-            self.log_text.insert(tk.END, log_entry)
-        
-        self.log_text.config(state=tk.DISABLED)
-        self.log_text.see(tk.END)
+        # Schedule logging for next event loop iteration to avoid GC issues
+        try:
+            self.root.after(100, do_log)
+        except Exception as e:
+            print(f"[LOG ERROR] Failed to schedule log: {e}")
+            print(f"[LOG] {message}")
     
     def _handle_ucx_log(self, message: str):
         """Handle UCX logging callback - redirect to Log Window
@@ -1121,52 +1386,51 @@ class MainWindow:
         """Run heavy initialization tasks in background thread"""
         print("[APP_LIFECYCLE] _background_initialization() started")
         try:
-            # Step 1: Initialize UCX wrapper
+            # Step 1: Initialize UCX wrapper (14% progress)
             print("[APP_LIFECYCLE] Step 1: Initializing UCX wrapper")
-            self._update_init_status("⏳ Initializing UCX handle...")
+            self._update_init_status("⏳ Step 1/7: Initializing UCX wrapper...")
             try:
                 self.ucx_client = UcxClientWrapper()
-                self._update_init_status("✓ UCX handle initialized")
+                self._update_init_status("✓ Step 1/7: UCX wrapper initialized", step_complete=True)
                 print("[APP_LIFECYCLE] UCX wrapper initialized successfully")
                 
                 # Register log callback after UCX wrapper is created
-                if self.ucx_client and hasattr(self, 'root') and self.root:
-                    try:
-                        print("[CALLBACK_DEBUG] About to register log callback...")
-                        self.ucx_client.register_log_callback(self._handle_ucx_log)
-                        print("[CALLBACK_DEBUG] Log callback registration completed")
-                        self._update_init_status("✓ Log callback registered")
-                    except Exception as e:
-                        print(f"[CALLBACK_DEBUG] Log callback registration failed: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        self._update_init_status(f"⚠ Log callback warning: {e}")
-                else:
-                    print(f"[CALLBACK_DEBUG] Cannot register callback - ucx_client={self.ucx_client}, root={hasattr(self, 'root')}")
+                # DISABLED: Causes access violation crashes due to threading issues with Python GC
+                print("[CALLBACK_DEBUG] Log callback disabled to prevent threading crashes")
+                # if self.ucx_client and hasattr(self, 'root') and self.root:
+                #     try:
+                #         print("[CALLBACK_DEBUG] About to register log callback...")
+                #         self.ucx_client.register_log_callback(self._handle_ucx_log)
+                #         print("[CALLBACK_DEBUG] Log callback registration completed")
+                #     except Exception as e:
+                #         print(f"[CALLBACK_DEBUG] Log callback registration failed: {e}")
+                #         import traceback
+                #         traceback.print_exc()
+                # else:
+                #     print(f"[CALLBACK_DEBUG] Cannot register callback - ucx_client={self.ucx_client}, root={hasattr(self, 'root')}")
                 
             except Exception as e:
                 print(f"[APP_LIFECYCLE] UCX initialization failed: {e}")
                 import traceback
                 traceback.print_exc()
-                self._update_init_status(f"⚠ UCX initialization warning: {e}")
+                self._update_init_status(f"⚠ Step 1/7: UCX initialization warning: {e}", step_complete=True)
                 self.ucx_client = None
             
-            # Step 2: Auto-detect EVK
+            # Step 2: Auto-detect EVK (28% progress)
             print("[APP_LIFECYCLE] Step 2: Auto-detecting EVK")
-            self._update_init_status("🔍 Auto-detecting u-blox EVK...")
+            self._update_init_status("🔍 Step 2/7: Auto-detecting u-blox EVK...")
             detected = self._auto_detect_evk_silent()
             
             if detected:
                 print(f"[APP_LIFECYCLE] EVK detected: {detected['desc']} on {detected['port']}")
-                self._update_init_status(f"✓ EVK detected: {detected['desc']}")
-                self._update_init_status(f"✓ AT Port: {detected['port']}")
+                self._update_init_status(f"✓ Step 2/7: EVK detected: {detected['desc']} on {detected['port']}", step_complete=True)
             else:
                 print("[APP_LIFECYCLE] No EVK auto-detected")
-                self._update_init_status("ℹ No EVK auto-detected - please select COM port manually")
+                self._update_init_status("ℹ Step 2/7: No EVK detected - manual selection required", step_complete=True)
             
-            # Step 3: Load product configuration (this does GitHub fetch)
+            # Step 3: Load product configuration (42% progress)
             print("[APP_LIFECYCLE] Step 3: Loading product configuration")
-            self._update_init_status("⏳ Loading product configuration...")
+            self._update_init_status("⏳ Step 3/7: Loading product configuration...")
             product_config = self.settings.get_product_config()
             
             # Check if we should auto-load saved configuration
@@ -1196,23 +1460,136 @@ class MainWindow:
             self._update_init_status(f"✗ Initialization error: {e}")
             self.initialization_complete = True
     
-    def _update_init_status(self, message: str):
-        """Update initialization status (thread-safe)"""
+    def _update_init_status(self, message: str, step_complete: bool = False):
+        """Update initialization status (thread-safe)
+        
+        Args:
+            message: Status message to display
+            step_complete: If True, increment the completed steps counter
+        """
         self.root.after(0, lambda: self._log(message))
         self.root.after(0, lambda: self.status_var.set(message))
+        
+        if step_complete:
+            self.init_steps_completed += 1
+            progress = int((self.init_steps_completed / self.init_steps_total) * 100)
+            self.root.after(0, lambda: self._update_progress(message, progress))
+    
+    def _update_progress(self, message: str, percent: int):
+        """Update progress bar and label
+        
+        Args:
+            message: Progress message
+            percent: Percentage complete (0-100)
+        """
+        self.progress_var.set(percent)
+        self.progress_label.config(text=message)
+        self.progress_percent_label.config(text=f"{percent}%")
+        
+        # Hide progress bar when complete
+        if percent >= 100:
+            self.root.after(1000, self._hide_progress_bar)
+    
+    def _hide_progress_bar(self):
+        """Hide the progress bar after initialization"""
+        if hasattr(self, 'progress_bar'):
+            self.progress_bar.pack_forget()
+            self.progress_label.pack_forget()
+            self.progress_percent_label.pack_forget()
+    
+    def _finalize_with_step_7(self):
+        """Mark step 7 complete and finalize initialization"""
+        # Firmware tab temporarily disabled - mark step 7 complete and finalize
+        # TODO: Fix firmware tab initialization issue
+        # Update step counter immediately (no Tkinter calls yet)
+        self.init_steps_completed += 1
+        # Update UI directly without using root.after() to avoid nested GC issues
+        message = "✓ Step 7/7: Initialization complete (firmware tab skipped)"
+        self._log(message)
+        self.status_var.set(message)
+        progress = int((self.init_steps_completed / self.init_steps_total) * 100)
+        self._update_progress(message, progress)
+        # Call finalization directly - we're already in a deferred context
+        # No need to schedule another root.after() which would trigger GC crash
+        self._finalize_initialization()
     
     def _finalize_initialization(self):
         """Finalize initialization and enable auto-connect"""
-        print("[APP_LIFECYCLE] _finalize_initialization() called")
-        self.initialization_complete = True
-        self.status_var.set("Ready")
-        self._log("✓ Initialization complete")
-        print("[APP_LIFECYCLE] Application fully initialized and ready")
+        print(f"[APP_LIFECYCLE] _finalize_initialization() called (steps: {self.init_steps_completed}/{self.init_steps_total})")
+        
+        # Only mark as fully complete and enable buttons if all 7 steps are done
+        if self.init_steps_completed >= self.init_steps_total:
+            print("[APP_LIFECYCLE] All steps complete, marking as initialized...")
+            self.initialization_complete = True
+            print("[APP_LIFECYCLE] Updating UI directly...")
+            # Update UI directly without using _update_init_status() to avoid GC issues
+            message = "✓ Initialization complete - Ready"
+            self._log(message)
+            self.status_var.set("Ready")
+            print("[APP_LIFECYCLE] Application fully initialized and ready")
+            
+            # Enable quick command buttons only when fully complete
+            # Schedule button enable for next event loop iteration to avoid threading conflicts
+            self.root.after(100, self._enable_quick_buttons)
+            return  # Don't trigger auto-connect again
+        
+        # Partial initialization complete, trigger auto-connect
+        print(f"[APP_LIFECYCLE] Partial init complete, checking auto-connect...")
         
         if not self.connected and self.port_var.get() and self.product_loaded:
             print("[APP_LIFECYCLE] Auto-connecting to EVK...")
             self._log("🔗 Auto-connecting to EVK...")
             self._connect()
+    
+    def _enable_quick_buttons(self):
+        """Enable quick command buttons after initialization"""
+        try:
+            if hasattr(self, 'btn_at_test') and self.btn_at_test.winfo_exists():
+                self.btn_at_test.config(state=tk.NORMAL)
+            if hasattr(self, 'btn_ati9') and self.btn_ati9.winfo_exists():
+                self.btn_ati9.config(state=tk.NORMAL)
+            if hasattr(self, 'btn_store') and self.btn_store.winfo_exists():
+                self.btn_store.config(state=tk.NORMAL)
+            if hasattr(self, 'btn_reboot') and self.btn_reboot.winfo_exists():
+                self.btn_reboot.config(state=tk.NORMAL)
+            if hasattr(self, 'btn_factory_reset') and self.btn_factory_reset.winfo_exists():
+                self.btn_factory_reset.config(state=tk.NORMAL)
+            if hasattr(self, 'btn_bt_mode') and self.btn_bt_mode.winfo_exists():
+                self.btn_bt_mode.config(state=tk.NORMAL)
+            if hasattr(self, 'btn_bt_status') and self.btn_bt_status.winfo_exists():
+                self.btn_bt_status.config(state=tk.NORMAL)
+            if hasattr(self, 'btn_wifi_status') and self.btn_wifi_status.winfo_exists():
+                self.btn_wifi_status.config(state=tk.NORMAL)
+        except Exception as e:
+            print(f"[APP_LIFECYCLE] ERROR enabling buttons: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _disable_quick_buttons(self):
+        """Disable all quick command buttons during command execution"""
+        if hasattr(self, 'btn_at_test'):
+            self.btn_at_test.config(state=tk.DISABLED)
+        if hasattr(self, 'btn_ati9'):
+            self.btn_ati9.config(state=tk.DISABLED)
+        if hasattr(self, 'btn_store'):
+            self.btn_store.config(state=tk.DISABLED)
+        if hasattr(self, 'btn_reboot'):
+            self.btn_reboot.config(state=tk.DISABLED)
+        if hasattr(self, 'btn_factory_reset'):
+            self.btn_factory_reset.config(state=tk.DISABLED)
+        if hasattr(self, 'btn_bt_mode'):
+            self.btn_bt_mode.config(state=tk.DISABLED)
+        if hasattr(self, 'btn_bt_status'):
+            self.btn_bt_status.config(state=tk.DISABLED)
+        if hasattr(self, 'btn_wifi_status'):
+            self.btn_wifi_status.config(state=tk.DISABLED)
+    
+    def _command_complete(self):
+        """Called when a command finishes executing"""
+        self.command_in_progress = False
+        if self.connected:
+            self._enable_quick_buttons()
+        # command_lock removed - UCX DLL handles command serialization
     
     def _show_product_selector_after_init(self):
         """Show product selector after initialization"""
@@ -1303,7 +1680,7 @@ class MainWindow:
                 self.product_loaded = True
                 num_cmds = len(self.yaml_parser.commands)
                 num_groups = len(self.yaml_parser.command_groups)
-                self._update_init_status(f"  Found {num_cmds} AT commands in {num_groups} groups")
+                self._update_init_status(f"✓ Step 3/7: Product config loaded ({num_cmds} cmds, {num_groups} groups)", step_complete=True)
                 
                 # Update title on main thread
                 product_ver = f"{self.yaml_parser.product} v{self.yaml_parser.version}"
@@ -1312,15 +1689,15 @@ class MainWindow:
                 # Build API mappings
                 at_to_api_mapper.set_yaml_parser(self.yaml_parser)
                 api_mapping_count = len(at_to_api_mapper.get_all_mappings())
-                self._update_init_status(f"  Built {api_mapping_count} AT-to-API mappings dynamically from YAML")
+                self._log(f"  Built {api_mapping_count} AT-to-API mappings dynamically from YAML")
                 
-                # Build dynamic GUI on main thread
-                self.root.after(0, self._build_dynamic_product_gui)
-                
-                # Finalize initialization
-                self.root.after(0, self._finalize_initialization)
+                # Build dynamic GUI on main thread (Step 4)
+                self._update_init_status("⏳ Step 4/7: Building dynamic GUI...")
+                self.root.after(0, self._build_dynamic_product_gui_with_progress)
+                # Note: Don't call _finalize_initialization yet - wait for connection & tabs
             else:
                 # Mark complete even on failure
+                self.init_steps_completed = self.init_steps_total  # Mark all as complete
                 self.root.after(0, self._finalize_initialization)
                 
         except Exception as e:
@@ -1415,35 +1792,24 @@ class MainWindow:
             self.dynamic_gui.build_gui()
             print("[APP_LIFECYCLE] dynamic_gui.build_gui() completed")
             self._log("✓ Dynamic product GUI ready")
-            
-            # Recreate Test and Mapper tabs with new YAML
-            if self.api_executor and self.connected:
-                print("[APP_LIFECYCLE] Creating Test, Mapper and Firmware tabs...")
-                self._log("Recreating Test, Mapper and Firmware tabs for new product...")
-                
-                print("[APP_LIFECYCLE] Creating test tab...")
-                self._create_test_tab()
-                print("[APP_LIFECYCLE] Test tab created")
-                
-                print("[APP_LIFECYCLE] Creating mapper tab...")
-                self._create_mapper_tab()
-                print("[APP_LIFECYCLE] Mapper tab created")
-                
-                print("[APP_LIFECYCLE] Creating firmware tab...")
-                self._create_firmware_tab()
-                print("[APP_LIFECYCLE] Firmware tab created")
-                
-                print("[APP_LIFECYCLE] All tabs created successfully")
-            else:
-                self._log("Test, Mapper and Firmware tabs will be created after device connection")
-            
             print("[APP_LIFECYCLE] _build_dynamic_product_gui() completed successfully")
+            
+            # Test, Mapper tabs will be created in _connection_result() with proper step tracking
+            
         except Exception as e:
             print(f"[APP_LIFECYCLE] ERROR in _build_dynamic_product_gui(): {e}")
             import traceback
             traceback.print_exc()
             self._log(f"✗ Error building GUI: {e}")
             raise
+    
+    def _build_dynamic_product_gui_with_progress(self):
+        """Build dynamic GUI and update progress"""
+        self._build_dynamic_product_gui()
+        self._update_init_status("✓ Step 4/7: Dynamic GUI built", step_complete=True)
+        # Trigger initial finalize which will auto-connect if needed
+        # Connection will then create tabs (steps 5, 6, 7) and finalize again
+        self.root.after(50, self._finalize_initialization)
     
     def _change_product(self):
         """Allow user to change product/version"""
@@ -1826,6 +2192,12 @@ class MainWindow:
     def run(self):
         """Run application"""
         print("[APP_LIFECYCLE] run() called - setting up event handlers")
+        
+        # Add heartbeat to verify mainloop is running
+        def heartbeat():
+            print("[HEARTBEAT] Mainloop is alive")
+            self.root.after(5000, heartbeat)  # Print every 5 seconds
+        
         def on_closing():
             print("[APP_LIFECYCLE] on_closing() called - user closing window")
             # Save window position
@@ -1841,9 +2213,14 @@ class MainWindow:
             self.root.destroy()
         
         self.root.protocol("WM_DELETE_WINDOW", on_closing)
+        
+        # Start heartbeat
+        self.root.after(5000, heartbeat)
+        
         print("[APP_LIFECYCLE] Starting mainloop()...")
         self.root.mainloop()
         print("[APP_LIFECYCLE] mainloop() exited")
+
 
 
 if __name__ == "__main__":

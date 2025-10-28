@@ -22,13 +22,41 @@ class MapperTab:
         self.theme_colors = theme_colors or {}
         self.ucx_dll = ucx_dll  # DLL reference to check if functions exist
         self.main_window = main_window  # Reference to main window to get DLL later
+        self.parent = parent_notebook  # For after() calls
         
         # Create the tab
         self.frame = ttk.Frame(parent_notebook)
         parent_notebook.add(self.frame, text="🗺️ Mapper")
         
-        self._create_ui()
-        self._load_mappings()
+        try:
+            self._create_ui()
+            # Load mappings with significant delay to allow GC to settle after DLL initialization
+            print("[MAPPER] Scheduling mapping load with 500ms delay...")
+            parent_notebook.after(500, self._safe_load_mappings)
+        except Exception as e:
+            print(f"[MAPPER] FATAL ERROR in __init__: {e}")
+            import traceback
+            traceback.print_exc()
+            # Show error in tab
+            error_label = ttk.Label(self.frame, text=f"Failed to initialize mapper tab:\n{e}", foreground="red")
+            error_label.pack(expand=True, fill='both', padx=20, pady=20)
+    
+    def _safe_load_mappings(self):
+        """Wrapper for _load_mappings with exception handling"""
+        try:
+            self._load_mappings()
+        except Exception as e:
+            print(f"[MAPPER] ERROR loading mappings: {e}")
+            import traceback
+            traceback.print_exc()
+            # Try to show error in UI
+            try:
+                error_msg = f"Failed to load mappings: {e}"
+                if hasattr(self, 'tree'):
+                    self.tree.insert('', 'end', values=("ERROR", error_msg, "", "", ""))
+            except:
+                pass
+
     
     def _create_ui(self):
         """Create the mapper UI"""
@@ -283,20 +311,6 @@ class MapperTab:
                 
                 self.all_mappings.append(mapping)
                 
-                # Add to tree with color tag
-                try:
-                    self.tree.insert('', 'end', values=(
-                        at_cmd,
-                        at_api_name,
-                        ucx_api_function,
-                        status,
-                        type_str
-                    ), tags=(tag,))
-                except Exception as tree_error:
-                    print(f"[MAPPER ERROR] Failed to insert command {at_cmd} into tree: {tree_error}")
-                    import traceback
-                    traceback.print_exc()
-                
             except Exception as outer_error:
                 print(f"[MAPPER FATAL] Error processing command {cmd_name}: {outer_error}")
                 import traceback
@@ -306,8 +320,47 @@ class MapperTab:
         total = len(self.all_mappings)
         print(f"[MAPPER] ✓ Loaded {total} commands: {implemented_count} implemented (green), {pending_count} pending (orange)")
         
-        # Update stats
+        # DON'T populate tree automatically - too risky with GC after DLL operations
+        # Tree will be populated on first view or manually
+        print(f"[MAPPER] Mapping data ready. Tree will populate on demand to avoid crashes.")
+        self.tree_populated = False
+        
+        # Update stats with data we have
         self._update_stats(len(self.all_mappings), len(self.all_mappings))
+        
+        # Add a button to manually populate if needed
+        self._add_populate_button()
+    
+    def _populate_tree(self):
+        """Populate the tree widget with all mappings (deferred to avoid GC crashes)"""
+        try:
+            import gc
+            # Force GC to complete NOW before we touch Tkinter widgets
+            # This prevents GC from running during Tkinter operations
+            print(f"[MAPPER] Running GC collection before tree operations...")
+            gc.collect()
+            print(f"[MAPPER] GC complete, now populating tree with {len(self.all_mappings)} commands...")
+            
+            for mapping in self.all_mappings:
+                try:
+                    self.tree.insert('', 'end', values=(
+                        mapping['at_cmd'],
+                        mapping['at_api_name'],
+                        mapping['ucx_api_function'],
+                        mapping['status'],
+                        mapping['type']
+                    ), tags=(mapping['tag'],))
+                except Exception as tree_error:
+                    print(f"[MAPPER ERROR] Failed to insert command {mapping['at_cmd']} into tree: {tree_error}")
+            
+            print(f"[MAPPER] ✓ Tree populated successfully")
+            
+            # Update stats after tree is populated
+            self._update_stats(len(self.all_mappings), len(self.all_mappings))
+        except Exception as e:
+            print(f"[MAPPER ERROR] Failed to populate tree: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _on_search(self, *args):
         """Handle search input"""

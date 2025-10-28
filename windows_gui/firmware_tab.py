@@ -24,26 +24,39 @@ class FirmwareUpdateTab:
             ucx_wrapper: UCX wrapper instance
             settings_manager: Settings manager instance
         """
-        self.parent = parent
-        self.ucx_wrapper = ucx_wrapper
-        self.settings = settings_manager
-        self.update_in_progress = False
-        
-        # Create main frame
-        self.main_frame = ttk.Frame(parent, padding=10)
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self._create_widgets()
-        self._load_saved_settings()
+        try:
+            print("[FIRMWARE_TAB] __init__ started")
+            self.parent = parent
+            self.ucx_wrapper = ucx_wrapper
+            self.settings = settings_manager
+            self.update_in_progress = False
+            
+            print("[FIRMWARE_TAB] Creating main frame...")
+            # Create main frame (don't pack it - parent will add it to notebook)
+            self.main_frame = ttk.Frame(parent, padding=10)
+            
+            print("[FIRMWARE_TAB] Creating widgets...")
+            self._create_widgets()
+            print("[FIRMWARE_TAB] Loading saved settings...")
+            self._load_saved_settings()
+            print("[FIRMWARE_TAB] __init__ completed successfully")
+        except Exception as e:
+            print(f"[FIRMWARE_TAB] ERROR in __init__: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     def _create_widgets(self):
         """Create all widgets for the firmware update tab"""
         
+        print("[FIRMWARE_TAB] Creating title...")
         # Title
         title_label = ttk.Label(self.main_frame, text="Firmware Update via XMODEM",
                                font=('Segoe UI', 12, 'bold'))
         title_label.pack(pady=(0, 15))
+        print("[FIRMWARE_TAB] Title created")
         
+        print("[FIRMWARE_TAB] Creating file frame...")
         # File selection frame
         file_frame = ttk.LabelFrame(self.main_frame, text="Firmware File", padding=10)
         file_frame.pack(fill=tk.X, pady=(0, 10))
@@ -64,7 +77,9 @@ class FirmwareUpdateTab:
         # File info
         self.file_info_label = ttk.Label(file_frame, text="No file selected", foreground='gray')
         self.file_info_label.pack(pady=(5, 0))
+        print("[FIRMWARE_TAB] File frame created")
         
+        print("[FIRMWARE_TAB] Creating config frame...")
         # Configuration frame
         config_frame = ttk.LabelFrame(self.main_frame, text="Transfer Configuration", padding=10)
         config_frame.pack(fill=tk.X, pady=(0, 10))
@@ -83,6 +98,9 @@ class FirmwareUpdateTab:
         
         ttk.Label(baud_row, text="(higher = faster transfer)", 
                  foreground='gray').pack(side=tk.LEFT, padx=(5, 0))
+        print("[FIRMWARE_TAB] Config frame created")
+        
+        print("[FIRMWARE_TAB] _create_widgets completed")
         
         # Block size selection
         block_row = ttk.Frame(config_frame)

@@ -19,9 +19,15 @@ from ctypes import Structure, POINTER, c_int32, c_uint32, c_char_p, c_void_p, c_
 from enum import IntEnum
 import threading
 import time
+from datetime import datetime
 import platform
 import atexit
 from typing import Callable, Optional, List, Tuple, Dict
+
+def debug_print(message):
+    """Print debug message with timestamp"""
+    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]  # millisecond precision
+    print(f"[{timestamp}] {message}")
 
 # Windows-specific imports
 if sys.platform == "win32":
@@ -86,6 +92,8 @@ class UcxClientWrapper:
         self._baud_rate = 115200
         self._flow_control = False
         self._serial = None  # Serial port object (pyserial)
+        self._serial_lock = threading.RLock()  # Lock for thread-safe serial access
+        self._api_lock = threading.RLock()  # Lock for thread-safe API calls
         self.ucx_handle = None  # UCX handle (not used in simple serial mode)
         self.handle = None  # Handle for firmware update compatibility
         
@@ -161,8 +169,8 @@ class UcxClientWrapper:
         self._log_callback_func = None  # Keep reference to prevent garbage collection
         if hasattr(self._dll, 'uPortRegisterLogCallback'):
             # Define callback type: void (*callback)(const char *pMessage, void *pUserData)
-            # Use CFUNCTYPE for cdecl calling convention (default for C functions)
-            self.LOG_CALLBACK_TYPE = ctypes.CFUNCTYPE(None, c_char_p, c_void_p)
+            # Use PYFUNCTYPE to automatically handle GIL when called from C threads
+            self.LOG_CALLBACK_TYPE = ctypes.PYFUNCTYPE(None, c_char_p, c_void_p)
             
             self._dll.uPortRegisterLogCallback.restype = None
             self._dll.uPortRegisterLogCallback.argtypes = [self.LOG_CALLBACK_TYPE, c_void_p]
@@ -173,7 +181,8 @@ class UcxClientWrapper:
         # Firmware update functions (if available)
         if hasattr(self._dll, 'uCxFirmwareUpdate'):
             # Progress callback type: void (*callback)(size_t total, size_t transferred, int32_t percent, void* userdata)
-            self._dll.uCxFirmwareUpdateProgress_t = ctypes.CFUNCTYPE(
+            # Use PYFUNCTYPE to automatically handle GIL when called from C threads
+            self._dll.uCxFirmwareUpdateProgress_t = ctypes.PYFUNCTYPE(
                 None,  # return type
                 ctypes.c_size_t,  # total bytes
                 ctypes.c_size_t,  # transferred bytes
@@ -502,8 +511,9 @@ class UcxClientWrapper:
         self._urc_buffer = (ctypes.c_char * urc_buffer_size)()
         
         # Define callback function types matching u_cx_at_client.h
+        # Use PYFUNCTYPE instead of CFUNCTYPE to automatically handle GIL when called from C threads
         # int32_t (*write)(uCxAtClient_t *pClient, void *pStreamHandle, const void *pData, size_t length)
-        WRITE_CALLBACK_TYPE = ctypes.CFUNCTYPE(
+        WRITE_CALLBACK_TYPE = ctypes.PYFUNCTYPE(
             ctypes.c_int32,  # return type
             ctypes.c_void_p,  # pClient
             ctypes.c_void_p,  # pStreamHandle
@@ -512,7 +522,7 @@ class UcxClientWrapper:
         )
         
         # int32_t (*read)(uCxAtClient_t *pClient, void *pStreamHandle, void *pData, size_t length, int32_t timeoutMs)
-        READ_CALLBACK_TYPE = ctypes.CFUNCTYPE(
+        READ_CALLBACK_TYPE = ctypes.PYFUNCTYPE(
             ctypes.c_int32,   # return type
             ctypes.c_void_p,  # pClient
             ctypes.c_void_p,  # pStreamHandle
@@ -564,14 +574,21 @@ class UcxClientWrapper:
             pContext=None
         )
         
-        # Call uCxAtClientInit directly (like README example)
-        # void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
-        self._dll.uCxAtClientInit.argtypes = [ctypes.POINTER(UcxAtClientConfig), ctypes.c_void_p]
-        self._dll.uCxAtClientInit.restype = None
+        # CRITICAL: Call uPortAtInit (like windows_test.c line 154)
+        # This function does EVERYTHING:
+        # 1. Sets up static buffers (rxBuf, urcBuf)  
+        # 2. Initializes the uPortContext_t
+        # 3. Calls uCxAtClientInit internally (line 383 of u_port_windows.c)
+        # NOTE: uPortAtInit has NO return value - it's void!
+        # void uPortAtInit(uCxAtClient_t *pClient)
+        self._dll.uPortAtInit.argtypes = [ctypes.c_void_p]
+        self._dll.uPortAtInit.restype = None  # VOID function!
         
-        print(f"[DEBUG] Calling uCxAtClientInit with client at: 0x{self._client_handle.value:x}")
-        self._dll.uCxAtClientInit(ctypes.byref(self._at_config), self._client_handle)
-        print(f"[DEBUG] uCxAtClientInit completed")
+        debug_print(f"[DEBUG] Calling uPortAtInit...")
+        self._dll.uPortAtInit(ctypes.cast(self._client_buffer, ctypes.c_void_p))
+        debug_print(f"[DEBUG] uPortAtInit succeeded")
+        
+        # Do NOT call uCxAtClientInit here - uPortAtInit already calls it!
         
         self._client_initialized = True
         
@@ -584,37 +601,36 @@ class UcxClientWrapper:
     def _uart_write(self, pClient, pStreamHandle, pData, length):
         """Write callback for AT client (called from C DLL)"""
         try:
-            if self._serial and self._serial.is_open:
-                data = ctypes.string_at(pData, length)
-                written = self._serial.write(data)
-                return written
-            return -1
+            with self._serial_lock:
+                if self._serial and self._serial.is_open:
+                    data = ctypes.string_at(pData, length)
+                    written = self._serial.write(data)
+                    self._serial.flush()  # Ensure data is sent immediately
+                    return written
+                return -1
         except:
-            # Silent failure - C thread calling Python code
             return -1
     
     def _uart_read(self, pClient, pStreamHandle, pData, length, timeoutMs):
         """Read callback for AT client (called from C DLL)"""
         try:
-            if self._serial and self._serial.is_open:
-                # Set timeout in seconds
-                old_timeout = self._serial.timeout
-                self._serial.timeout = timeoutMs / 1000.0 if timeoutMs > 0 else None
-                
-                data = self._serial.read(length)
-                bytes_read = len(data)
-                
-                # Copy data to output buffer
-                if bytes_read > 0:
-                    ctypes.memmove(pData, data, bytes_read)
-                
-                self._serial.timeout = old_timeout
-                return bytes_read
-            return -1
+            with self._serial_lock:
+                if self._serial and self._serial.is_open:
+                    # Set timeout in seconds
+                    old_timeout = self._serial.timeout
+                    self._serial.timeout = timeoutMs / 1000.0 if timeoutMs > 0 else None
+                    
+                    data = self._serial.read(length)
+                    bytes_read = len(data)
+                    
+                    # Copy data to output buffer
+                    if bytes_read > 0:
+                        ctypes.memmove(pData, data, bytes_read)
+                    
+                    self._serial.timeout = old_timeout
+                    return bytes_read
+                return -1
         except:
-            # Silent failure - C thread calling Python code
-            return -1
-            print(f"[ERROR] UART read failed: {e}")
             return -1
     
     def connect(self, port_name: str, baud_rate: int = 115200, flow_control: bool = False) -> bool:
@@ -637,45 +653,50 @@ class UcxClientWrapper:
             self.disconnect()
         
         try:
-            # Open serial port first (this is our pStreamHandle)
-            import serial
+            # Use UCX library's port layer to open COM port (like windows_test.c does)
+            # This is the correct way - don't use pyserial directly!
+            debug_print(f"[DEBUG] Attempting to open {port_name} at {baud_rate} baud using uPortAtOpen...")
             
-            print(f"[DEBUG] Attempting to open {port_name} at {baud_rate} baud...")
-            
-            self._serial = serial.Serial(
-                port=port_name,
-                baudrate=baud_rate,
-                timeout=1.0,
-                write_timeout=1.0,
-                rtscts=flow_control
+            # Call uPortAtOpen - pass the client buffer directly (not byref of the handle)
+            # uPortAtOpen expects: (uCxAtClient_t *pClient, const char *pPort, int baud, bool flowControl)
+            result = self._dll.uPortAtOpen(
+                ctypes.cast(self._client_buffer, ctypes.c_void_p),  # Pass the structure itself
+                port_name.encode('ascii'),
+                baud_rate,
+                flow_control
             )
             
-            print(f"[DEBUG] Serial port {port_name} opened at {baud_rate} baud")
+            if not result:
+                print(f"[ERROR] uPortAtOpen failed for {port_name}")
+                return False
             
-            # Update pStreamHandle in config to point to serial port
-            self._at_config.pStreamHandle = None
+            debug_print(f"[DEBUG] COM port {port_name} opened successfully via uPortAtOpen")
             
             self._connected = True
             self._port_name = port_name
             self._baud_rate = baud_rate
             self._flow_control = flow_control
             
-            # DON'T initialize UCX handle here - it will be lazy-initialized when first needed
-            # Calling uCxInit immediately causes crashes due to internal threading issues
-            print(f"[DEBUG] UCX handle will be lazy-initialized when first API call is made")
+            # Initialize UCX handle now that port is open (like windows_test.c does)
+            # uCxInit expects: (uCxAtClient_t *pClient, uCxHandle_t *pHandle)
+            debug_print(f"[DEBUG] Initializing UCX handle with uCxInit...")
+            uCxInit = self._dll.uCxInit
+            uCxInit.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+            uCxInit.restype = None
+            uCxInit(
+                ctypes.cast(self._client_buffer, ctypes.c_void_p),  # Pass client structure
+                ctypes.byref(self.ucx_handle)  # Pass pointer to handle
+            )
+            debug_print(f"[DEBUG] UCX handle initialized: 0x{self.ucx_handle.value:x}")
             
             # Start callback thread for UCX API
-            self._start_callback_thread()
+            # DISABLED: Causes threading crashes with Python GC
+            # self._start_callback_thread()
             return True
             
         except Exception as e:
             error_msg = str(e)
-            if "PermissionError" in str(type(e)) or "Access is denied" in error_msg:
-                error_msg = f"Port {port_name} is already in use by another program. Please close it first."
             print(f"[ERROR] Failed to connect: {e}")
-            if self._serial and self._serial.is_open:
-                self._serial.close()
-            self._serial = None
             self._connected = False
             return False
     
@@ -687,15 +708,14 @@ class UcxClientWrapper:
         # Stop callback thread for UCX API
         self._stop_callback_thread()
         
-        # Close serial port
-        if self._serial and self._serial.is_open:
+        # Close COM port using UCX library's port layer (like windows_test.c does)
+        if self._connected and hasattr(self._dll, 'uPortAtClose'):
             try:
-                self._serial.close()
-                print("[DEBUG] Serial port closed")
+                self._dll.uPortAtClose(ctypes.cast(self._client_buffer, ctypes.c_void_p))
+                debug_print("[DEBUG] COM port closed via uPortAtClose")
             except Exception as e:
-                print(f"[ERROR] Failed to close serial port: {e}")
+                print(f"[ERROR] Failed to close COM port: {e}")
         
-        self._serial = None
         self._connected = False
         
         # Reset UCX handle
@@ -747,18 +767,18 @@ class UcxClientWrapper:
         if not self._connected:
             raise UcxClientError("Cannot initialize UCX handle - not connected")
         
+        debug_print(f"[DEBUG] Lazy-initializing UCX handle for API functions...")
+        
         # Initialize UCX handle now
         # void uCxInit(uCxAtClient_t *pAtClient, uCxHandle_t *puCxHandle)
         if hasattr(self._dll, 'uCxInit'):
             self._dll.uCxInit.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
             self._dll.uCxInit.restype = None
             
-            print(f"[DEBUG] Lazy-initializing UCX handle for API functions...")
-            
             # Pass the AT client pointer to uCxInit
             self._dll.uCxInit(self._client_handle, ctypes.byref(self.ucx_handle))
             
-            print(f"[DEBUG] UCX handle initialized at 0x{self.ucx_handle.value:x}")
+            debug_print(f"[DEBUG] UCX handle initialized at 0x{self.ucx_handle.value:x}")
         else:
             raise UcxClientError("uCxInit not available in DLL")
     
@@ -835,59 +855,71 @@ class UcxClientWrapper:
         Returns:
             Tuple of (success, response)
         """
-        if not self._serial or not self._serial.is_open:
-            return (False, "Serial port not open")
-        
-        if not command:
-            return (False, "Empty command")
-        
-        cmd = command.strip()
-        
-        try:
-            # Clear any pending input
-            self._serial.reset_input_buffer()
+        # Acquire API lock to prevent concurrent AT commands
+        with self._api_lock:
+            if not self._serial or not self._serial.is_open:
+                return (False, "Serial port not open")
             
-            # Send command with CR+LF
-            cmd_bytes = (cmd + "\r\n").encode('ascii')
-            self._serial.write(cmd_bytes)
-            self._serial.flush()
+            if not command:
+                return (False, "Empty command")
             
-            # Read response with timeout
-            response_lines = []
-            timeout_time = time.time() + 2.0  # 2 second timeout
+            cmd = command.strip()
             
-            while time.time() < timeout_time:
-                if self._serial.in_waiting > 0:
-                    try:
-                        line = self._serial.readline().decode('ascii', errors='ignore').strip()
-                        if line:
-                            response_lines.append(line)
-                            # Check for final response
-                            if line in ['OK', 'ERROR'] or line.startswith('ERROR') or line.startswith('+CME ERROR'):
-                                break
-                    except Exception as e:
-                        print(f"[DEBUG] Error reading line: {e}")
-                        break
-                else:
-                    time.sleep(0.01)  # Small delay to avoid busy waiting
-            
-            # Join all response lines
-            response = "\n".join(response_lines)
-            
-            # Check if successful
-            if 'OK' in response_lines:
-                return (True, response)
-            elif 'ERROR' in response or any('ERROR' in line for line in response_lines):
-                return (False, response if response else "ERROR")
-            elif response:
-                # Got response but no OK/ERROR - still consider it success
-                return (True, response)
-            else:
-                return (False, "No response")
+            try:
+                # Clear any pending input and wait for buffer to settle
+                self._serial.reset_input_buffer()
+                self._serial.reset_output_buffer()
+                time.sleep(0.05)  # 50ms delay to let buffers clear
                 
-        except Exception as e:
-            import traceback
-            return (False, f"Exception: {str(e)}\n{traceback.format_exc()}")
+                # Send command with CR+LF
+                cmd_bytes = (cmd + "\r\n").encode('ascii')
+                self._serial.write(cmd_bytes)
+                self._serial.flush()
+                
+                # Read response with timeout
+                response_lines = []
+                timeout_time = time.time() + 3.0  # 3 second timeout (increased from 2)
+                first_data_received = False
+                
+                while time.time() < timeout_time:
+                    if self._serial.in_waiting > 0:
+                        try:
+                            line = self._serial.readline().decode('ascii', errors='ignore').strip()
+                            if line:
+                                first_data_received = True
+                                # Skip command echo
+                                if line == cmd:
+                                    continue
+                                response_lines.append(line)
+                                # Check for final response
+                                if line in ['OK', 'ERROR'] or line.startswith('ERROR') or line.startswith('+CME ERROR'):
+                                    break
+                        except Exception as e:
+                            print(f"[DEBUG] Error reading line: {e}")
+                            break
+                    else:
+                        # If we got data and now nothing is waiting, might be done
+                        if first_data_received and 'OK' in response_lines:
+                            break
+                        time.sleep(0.01)  # Small delay to avoid busy waiting
+                
+                # Join all response lines
+                response = "\n".join(response_lines)
+                
+                # Check if successful
+                if 'OK' in response_lines:
+                    return (True, response)
+                elif 'ERROR' in response or any('ERROR' in line for line in response_lines):
+                    return (False, response if response else "ERROR")
+                elif response:
+                    # Got response but no OK/ERROR - still consider it success
+                    return (True, response)
+                else:
+                    return (False, "No response")
+                    
+            except Exception as e:
+                import traceback
+                return (False, f"Exception: {str(e)}\n{traceback.format_exc()}")
     
     def __del__(self):
         """Cleanup when object is destroyed"""
