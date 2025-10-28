@@ -32,6 +32,9 @@
 #include <windows.h>  // For Sleep() and CreateFile()
 #include <stdbool.h>
 #include <conio.h>  // For _kbhit() and _getch()
+#include <winhttp.h>  // For HTTP client to fetch from GitHub
+
+#pragma comment(lib, "winhttp.lib")
 
 // Include ucxclient headers
 #include "u_cx_at_client.h"
@@ -88,6 +91,16 @@ typedef enum {
 
 static MenuState_t gMenuState = MENU_MAIN;
 
+// API Command structure for dynamic listing
+typedef struct {
+    char atCommand[128];
+    char ucxApi[128];
+    char description[256];
+} ApiCommand_t;
+
+static ApiCommand_t *gApiCommands = NULL;
+static int gApiCommandCount = 0;
+
 // Forward declarations
 static void printHeader(void);
 static void printMenu(void);
@@ -97,6 +110,11 @@ static void disconnectDevice(void);
 static void listAvailableComPorts(void);
 static char* selectComPortFromList(void);
 static void listAllApiCommands(void);
+static bool fetchApiCommandsFromGitHub(const char *product, const char *version);
+static void parseYamlCommands(const char *yamlContent);
+static void freeApiCommands(void);
+static char* fetchLatestVersion(const char *product);
+static char* httpGetRequest(const wchar_t *server, const wchar_t *path);
 static void executeAtTest(void);
 static void executeAti9(void);
 static void showBluetoothStatus(void);
@@ -114,11 +132,253 @@ static void obfuscatePassword(const char *input, char *output, size_t outputSize
 static void deobfuscatePassword(const char *input, char *output, size_t outputSize);
 
 // ----------------------------------------------------------------
+// HTTP Helper Functions
+// ----------------------------------------------------------------
+
+static char* httpGetRequest(const wchar_t *server, const wchar_t *path)
+{
+    HINTERNET hSession = NULL;
+    HINTERNET hConnect = NULL;
+    HINTERNET hRequest = NULL;
+    char *result = NULL;
+    DWORD dwSize = 0;
+    DWORD dwDownloaded = 0;
+    DWORD totalSize = 0;
+    char *buffer = NULL;
+    
+    // Initialize WinHTTP
+    hSession = WinHttpOpen(L"ucxclient/1.0",
+                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                          WINHTTP_NO_PROXY_NAME,
+                          WINHTTP_NO_PROXY_BYPASS, 0);
+    
+    if (!hSession) goto cleanup;
+    
+    // Connect to server
+    hConnect = WinHttpConnect(hSession, server, INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!hConnect) goto cleanup;
+    
+    // Create request
+    hRequest = WinHttpOpenRequest(hConnect, L"GET", path,
+                                 NULL, WINHTTP_NO_REFERER,
+                                 WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                 WINHTTP_FLAG_SECURE);
+    
+    if (!hRequest) goto cleanup;
+    
+    // Send request
+    if (!WinHttpSendRequest(hRequest,
+                           WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                           WINHTTP_NO_REQUEST_DATA, 0,
+                           0, 0)) goto cleanup;
+    
+    // Receive response
+    if (!WinHttpReceiveResponse(hRequest, NULL)) goto cleanup;
+    
+    // Allocate initial buffer
+    buffer = (char*)malloc(4096);
+    if (!buffer) goto cleanup;
+    
+    // Read data
+    do {
+        dwSize = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
+        
+        if (dwSize == 0) break;
+        
+        // Reallocate buffer if needed
+        char *newBuffer = (char*)realloc(buffer, totalSize + dwSize + 1);
+        if (!newBuffer) {
+            free(buffer);
+            goto cleanup;
+        }
+        buffer = newBuffer;
+        
+        if (!WinHttpReadData(hRequest, buffer + totalSize, dwSize, &dwDownloaded)) break;
+        
+        totalSize += dwDownloaded;
+    } while (dwSize > 0);
+    
+    if (totalSize > 0) {
+        buffer[totalSize] = '\0';
+        result = buffer;
+        buffer = NULL;  // Don't free it in cleanup
+    }
+    
+cleanup:
+    if (buffer) free(buffer);
+    if (hRequest) WinHttpCloseHandle(hRequest);
+    if (hConnect) WinHttpCloseHandle(hConnect);
+    if (hSession) WinHttpCloseHandle(hSession);
+    
+    return result;
+}
+
+static char* fetchLatestVersion(const char *product)
+{
+    wchar_t path[512];
+    swprintf(path, 512, L"/repos/u-blox/u-connectXpress/contents/%S", product);
+    
+    char *response = httpGetRequest(L"api.github.com", path);
+    if (!response) return NULL;
+    
+    // Simple parsing - look for directory names that match version pattern (e.g., "3.1.0")
+    char *latestVersion = NULL;
+    int maxMajor = 0, maxMinor = 0, maxPatch = 0;
+    
+    char *ptr = response;
+    while ((ptr = strstr(ptr, "\"name\":\"")) != NULL) {
+        ptr += 8;  // Skip past "name":"
+        char name[32];
+        int i = 0;
+        while (*ptr != '"' && i < 31) {
+            name[i++] = *ptr++;
+        }
+        name[i] = '\0';
+        
+        // Check if this looks like a version number
+        int major, minor, patch;
+        if (sscanf(name, "%d.%d.%d", &major, &minor, &patch) == 3) {
+            if (major > maxMajor ||
+                (major == maxMajor && minor > maxMinor) ||
+                (major == maxMajor && minor == maxMinor && patch > maxPatch)) {
+                maxMajor = major;
+                maxMinor = minor;
+                maxPatch = patch;
+            }
+        }
+    }
+    
+    if (maxMajor > 0) {
+        latestVersion = (char*)malloc(32);
+        if (latestVersion) {
+            sprintf(latestVersion, "%d.%d.%d", maxMajor, maxMinor, maxPatch);
+        }
+    }
+    
+    free(response);
+    return latestVersion;
+}
+
+static bool fetchApiCommandsFromGitHub(const char *product, const char *version)
+{
+    printf("Fetching API commands for %s version %s from GitHub...\n", product, version);
+    
+    wchar_t path[512];
+    swprintf(path, 512, L"/u-blox/u-connectXpress/main/%S/%S/compiled_product.yaml", product, version);
+    
+    char *yamlContent = httpGetRequest(L"raw.githubusercontent.com", path);
+    
+    if (!yamlContent) {
+        printf("ERROR: Failed to fetch YAML file from GitHub\n");
+        return false;
+    }
+    
+    parseYamlCommands(yamlContent);
+    free(yamlContent);
+    
+    return gApiCommandCount > 0;
+}
+
+static void parseYamlCommands(const char *yamlContent)
+{
+    // Free existing commands
+    freeApiCommands();
+    
+    // Allocate initial array
+    int capacity = 100;
+    gApiCommands = (ApiCommand_t*)malloc(sizeof(ApiCommand_t) * capacity);
+    if (!gApiCommands) return;
+    
+    gApiCommandCount = 0;
+    
+    // Simple YAML parsing - look for command definitions
+    const char *ptr = yamlContent;
+    char atCmd[128] = "";
+    char ucxApi[128] = "";
+    char desc[256] = "";
+    
+    while ((ptr = strstr(ptr, "- command:")) != NULL) {
+        ptr += 10;  // Skip past "- command:"
+        
+        // Reset fields
+        atCmd[0] = '\0';
+        ucxApi[0] = '\0';
+        desc[0] = '\0';
+        
+        // Look for AT command
+        const char *atStart = strstr(ptr, "at: \"");
+        if (atStart && atStart - ptr < 500) {
+            atStart += 5;
+            int i = 0;
+            while (*atStart && *atStart != '"' && i < 127) {
+                atCmd[i++] = *atStart++;
+            }
+            atCmd[i] = '\0';
+        }
+        
+        // Look for UCX API
+        const char *apiStart = strstr(ptr, "api: \"");
+        if (!apiStart) apiStart = strstr(ptr, "function: \"");
+        if (apiStart && apiStart - ptr < 500) {
+            apiStart += (strstr(apiStart, "api:") == apiStart) ? 6 : 11;
+            int i = 0;
+            while (*apiStart && *apiStart != '"' && i < 127) {
+                ucxApi[i++] = *apiStart++;
+            }
+            ucxApi[i] = '\0';
+        }
+        
+        // Look for description
+        const char *descStart = strstr(ptr, "description: \"");
+        if (!descStart) descStart = strstr(ptr, "desc: \"");
+        if (descStart && descStart - ptr < 500) {
+            descStart += (strstr(descStart, "description:") == descStart) ? 14 : 7;
+            int i = 0;
+            while (*descStart && *descStart != '"' && i < 255) {
+                desc[i++] = *descStart++;
+            }
+            desc[i] = '\0';
+        }
+        
+        // Add to array if we have at least AT command or UCX API
+        if (atCmd[0] != '\0' || ucxApi[0] != '\0') {
+            if (gApiCommandCount >= capacity) {
+                capacity *= 2;
+                ApiCommand_t *newCommands = (ApiCommand_t*)realloc(gApiCommands, sizeof(ApiCommand_t) * capacity);
+                if (!newCommands) break;
+                gApiCommands = newCommands;
+            }
+            
+            strncpy(gApiCommands[gApiCommandCount].atCommand, atCmd, 127);
+            gApiCommands[gApiCommandCount].atCommand[127] = '\0';
+            strncpy(gApiCommands[gApiCommandCount].ucxApi, ucxApi, 127);
+            gApiCommands[gApiCommandCount].ucxApi[127] = '\0';
+            strncpy(gApiCommands[gApiCommandCount].description, desc, 255);
+            gApiCommands[gApiCommandCount].description[255] = '\0';
+            
+            gApiCommandCount++;
+        }
+    }
+    
+    printf("Parsed %d API commands\n", gApiCommandCount);
+}
+
+static void freeApiCommands(void)
+{
+    if (gApiCommands) {
+        free(gApiCommands);
+        gApiCommands = NULL;
+    }
+    gApiCommandCount = 0;
+}
+
+// ----------------------------------------------------------------
 // Password Obfuscation Helper Functions
 // ----------------------------------------------------------------
 
 // Simple XOR-based obfuscation (not cryptographically secure, but better than plaintext)
-#define OBFUSCATION_KEY "uBloxNORAW36-2024"
+#define OBFUSCATION_KEY "uBloxUcxClient"
 
 static void obfuscatePassword(const char *input, char *output, size_t outputSize)
 {
@@ -262,6 +522,9 @@ int main(int argc, char *argv[])
     if (gConnected) {
         disconnectDevice();
     }
+    
+    // Free API commands if loaded
+    freeApiCommands();
     
     printf("\nGoodbye!\n");
     return 0;
@@ -628,93 +891,183 @@ static void listAllApiCommands(void)
 {
     printf("\n=============== UCX API Command Reference ===============\n\n");
     
-    printf("--- GENERAL API (u_cx_general.h) ---\n");
-    printf("  uCxGeneralGetManufacturerIdentificationBegin()  - Get manufacturer ID\n");
-    printf("  uCxGeneralGetDeviceModelIdentificationBegin()   - Get device model\n");
-    printf("  uCxGeneralGetSoftwareVersionBegin()             - Get software version\n");
-    printf("  uCxGeneralGetIdentInfoBegin()                   - Get identification info\n");
-    printf("  uCxGeneralGetSerialNumberBegin()                - Get device serial number\n");
-    printf("\n");
+    // Ask user for product
+    printf("Select product:\n");
+    printf("  [1] NORA-W36\n");
+    printf("  [2] NORA-B26\n");
+    printf("  [3] Use static list (offline)\n");
+    printf("\nChoice: ");
     
-    printf("--- SYSTEM API (u_cx_system.h) ---\n");
-    printf("  uCxSystemStoreConfiguration()                   - Store current config to flash\n");
-    printf("  uCxSystemDefaultSettings()                      - Reset to factory defaults\n");
-    printf("  uCxSystemReboot()                               - Reboot the module\n");
-    printf("  uCxSystemGetLocalAddressBegin()                 - Get local MAC addresses\n");
-    printf("\n");
+    char input[128];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
     
-    printf("--- BLUETOOTH API (u_cx_bluetooth.h) ---\n");
-    printf("  uCxBluetoothSetMode()                           - Set BT mode (off/classic/LE)\n");
-    printf("  uCxBluetoothGetMode()                           - Get current BT mode\n");
-    printf("  uCxBluetoothListConnectionsBegin()              - List active BT connections\n");
-    printf("  uCxBluetoothDiscoverBegin()                     - Start device discovery\n");
-    printf("  uCxBluetoothDiscoverGetNext()                   - Get next discovered device\n");
-    printf("  uCxBluetoothConnect()                           - Connect to remote device\n");
-    printf("  uCxBluetoothDisconnect()                        - Disconnect from device\n");
-    printf("  uCxBluetoothGetBondingStatusBegin()             - Get bonded devices\n");
-    printf("  uCxBluetoothSetPin()                            - Set PIN code\n");
-    printf("\n");
+    int choice = atoi(input);
+    const char *product = NULL;
     
-    printf("--- WIFI API (u_cx_wifi.h) ---\n");
-    printf("  uCxWifiStationSetConnectionParamsBegin()        - Set WiFi connection params\n");
-    printf("  uCxWifiStationConnectBegin()                    - Connect to WiFi network\n");
-    printf("  uCxWifiStationDisconnectBegin()                 - Disconnect from WiFi\n");
-    printf("  uCxWifiStationStatusBegin()                     - Get WiFi connection status\n");
-    printf("  uCxWifiStationScanDefaultBegin()                - Scan for WiFi networks\n");
-    printf("  uCxWifiStationScanDefaultGetNext()              - Get next scan result\n");
-    printf("  uCxWifiApSetConnectionParamsBegin()             - Set AP mode params\n");
-    printf("  uCxWifiApStartBegin()                           - Start AP mode\n");
-    printf("  uCxWifiApStopBegin()                            - Stop AP mode\n");
-    printf("  uCxWifiApGetStationListBegin()                  - List connected stations\n");
-    printf("\n");
+    switch (choice) {
+        case 1:
+            product = "NORA-W36";
+            break;
+        case 2:
+            product = "NORA-B26";
+            break;
+        case 3:
+            // Fall through to static list
+            break;
+        default:
+            printf("Invalid choice\n");
+            return;
+    }
     
-    printf("--- SOCKET API (u_cx_socket.h) ---\n");
-    printf("  uCxSocketCreate()                               - Create TCP/UDP socket\n");
-    printf("  uCxSocketConnect()                              - Connect socket to remote\n");
-    printf("  uCxSocketListen()                               - Listen for connections\n");
-    printf("  uCxSocketAccept()                               - Accept incoming connection\n");
-    printf("  uCxSocketClose()                                - Close socket\n");
-    printf("  uCxSocketWrite()                                - Write data to socket\n");
-    printf("  uCxSocketRead()                                 - Read data from socket\n");
-    printf("\n");
+    if (product) {
+        // Ask for version or use latest
+        printf("\nEnter version (e.g., 3.1.0) or press Enter to use latest: ");
+        char version[32];
+        if (fgets(version, sizeof(version), stdin)) {
+            char *end = strchr(version, '\n');
+            if (end) *end = '\0';
+            
+            char *versionToUse = NULL;
+            
+            if (strlen(version) == 0) {
+                printf("Fetching latest version for %s...\n", product);
+                versionToUse = fetchLatestVersion(product);
+                if (versionToUse) {
+                    printf("Latest version: %s\n", versionToUse);
+                } else {
+                    printf("ERROR: Failed to fetch latest version\n");
+                    return;
+                }
+            } else {
+                versionToUse = version;
+            }
+            
+            // Fetch commands from GitHub
+            if (fetchApiCommandsFromGitHub(product, versionToUse)) {
+                printf("\n========== API Commands (%s %s) ==========\n\n", product, versionToUse);
+                
+                // Display commands
+                for (int i = 0; i < gApiCommandCount; i++) {
+                    printf("[%d]\n", i + 1);
+                    if (gApiCommands[i].atCommand[0] != '\0') {
+                        printf("  AT Command: %s\n", gApiCommands[i].atCommand);
+                    }
+                    if (gApiCommands[i].ucxApi[0] != '\0') {
+                        printf("  UCX API:    %s\n", gApiCommands[i].ucxApi);
+                    }
+                    if (gApiCommands[i].description[0] != '\0') {
+                        printf("  Description: %s\n", gApiCommands[i].description);
+                    }
+                    printf("\n");
+                    
+                    // Pause every 20 commands
+                    if ((i + 1) % 20 == 0 && i + 1 < gApiCommandCount) {
+                        printf("--- Press Enter for more commands ---");
+                        getchar();
+                    }
+                }
+                
+                printf("========================================\n");
+                printf("Total: %d commands\n", gApiCommandCount);
+            }
+            
+            if (versionToUse != version && versionToUse) {
+                free(versionToUse);
+            }
+        }
+    } else {
+        // Static fallback list
+        printf("\n--- GENERAL API (u_cx_general.h) ---\n");
+        printf("  uCxGeneralGetManufacturerIdentificationBegin()  - Get manufacturer ID\n");
+        printf("  uCxGeneralGetDeviceModelIdentificationBegin()   - Get device model\n");
+        printf("  uCxGeneralGetSoftwareVersionBegin()             - Get software version\n");
+        printf("  uCxGeneralGetIdentInfoBegin()                   - Get identification info\n");
+        printf("  uCxGeneralGetSerialNumberBegin()                - Get device serial number\n");
+        printf("\n");
+        
+        printf("--- SYSTEM API (u_cx_system.h) ---\n");
+        printf("  uCxSystemStoreConfiguration()                   - Store current config to flash\n");
+        printf("  uCxSystemDefaultSettings()                      - Reset to factory defaults\n");
+        printf("  uCxSystemReboot()                               - Reboot the module\n");
+        printf("  uCxSystemGetLocalAddressBegin()                 - Get local MAC addresses\n");
+        printf("\n");
+        
+        printf("--- BLUETOOTH API (u_cx_bluetooth.h) ---\n");
+        printf("  uCxBluetoothSetMode()                           - Set BT mode (off/classic/LE)\n");
+        printf("  uCxBluetoothGetMode()                           - Get current BT mode\n");
+        printf("  uCxBluetoothListConnectionsBegin()              - List active BT connections\n");
+        printf("  uCxBluetoothDiscoverBegin()                     - Start device discovery\n");
+        printf("  uCxBluetoothDiscoverGetNext()                   - Get next discovered device\n");
+        printf("  uCxBluetoothConnect()                           - Connect to remote device\n");
+        printf("  uCxBluetoothDisconnect()                        - Disconnect from device\n");
+        printf("  uCxBluetoothGetBondingStatusBegin()             - Get bonded devices\n");
+        printf("  uCxBluetoothSetPin()                            - Set PIN code\n");
+        printf("\n");
+        
+        printf("--- WIFI API (u_cx_wifi.h) ---\n");
+        printf("  uCxWifiStationSetConnectionParamsBegin()        - Set WiFi connection params\n");
+        printf("  uCxWifiStationConnectBegin()                    - Connect to WiFi network\n");
+        printf("  uCxWifiStationDisconnectBegin()                 - Disconnect from WiFi\n");
+        printf("  uCxWifiStationStatusBegin()                     - Get WiFi connection status\n");
+        printf("  uCxWifiStationScanDefaultBegin()                - Scan for WiFi networks\n");
+        printf("  uCxWifiStationScanDefaultGetNext()              - Get next scan result\n");
+        printf("  uCxWifiApSetConnectionParamsBegin()             - Set AP mode params\n");
+        printf("  uCxWifiApStartBegin()                           - Start AP mode\n");
+        printf("  uCxWifiApStopBegin()                            - Stop AP mode\n");
+        printf("  uCxWifiApGetStationListBegin()                  - List connected stations\n");
+        printf("\n");
+        
+        printf("--- SOCKET API (u_cx_socket.h) ---\n");
+        printf("  uCxSocketCreate()                               - Create TCP/UDP socket\n");
+        printf("  uCxSocketConnect()                              - Connect socket to remote\n");
+        printf("  uCxSocketListen()                               - Listen for connections\n");
+        printf("  uCxSocketAccept()                               - Accept incoming connection\n");
+        printf("  uCxSocketClose()                                - Close socket\n");
+        printf("  uCxSocketWrite()                                - Write data to socket\n");
+        printf("  uCxSocketRead()                                 - Read data from socket\n");
+        printf("\n");
+        
+        printf("--- MQTT API (u_cx_mqtt.h) ---\n");
+        printf("  uCxMqttConnectBegin()                           - Connect to MQTT broker\n");
+        printf("  uCxMqttDisconnect()                             - Disconnect from broker\n");
+        printf("  uCxMqttPublishBegin()                           - Publish message to topic\n");
+        printf("  uCxMqttSubscribeBegin()                         - Subscribe to topic\n");
+        printf("  uCxMqttUnsubscribeBegin()                       - Unsubscribe from topic\n");
+        printf("\n");
+        
+        printf("--- SECURITY API (u_cx_security.h) ---\n");
+        printf("  uCxSecurityTlsCertificateStoreBegin()           - Store TLS certificate\n");
+        printf("  uCxSecurityTlsCertificateRemove()               - Remove certificate\n");
+        printf("  uCxSecurityTlsCertificateListBegin()            - List stored certificates\n");
+        printf("\n");
+        
+        printf("--- GATT CLIENT API (u_cx_gatt_client.h) ---\n");
+        printf("  uCxGattClientDiscoverAllPrimaryServicesBegin()  - Discover GATT services\n");
+        printf("  uCxGattClientDiscoverCharacteristicsBegin()     - Discover characteristics\n");
+        printf("  uCxGattClientWriteCharacteristicBegin()         - Write to characteristic\n");
+        printf("  uCxGattClientReadCharacteristicBegin()          - Read from characteristic\n");
+        printf("  uCxGattClientSubscribeBegin()                   - Subscribe to notifications\n");
+        printf("\n");
+        
+        printf("--- GATT SERVER API (u_cx_gatt_server.h) ---\n");
+        printf("  uCxGattServerAddServiceBegin()                  - Add GATT service\n");
+        printf("  uCxGattServerAddCharacteristicBegin()           - Add characteristic\n");
+        printf("  uCxGattServerSetCharacteristicValueBegin()      - Set characteristic value\n");
+        printf("\n");
+        
+        printf("--- SPS API (u_cx_sps.h) ---\n");
+        printf("  uCxSpsConnect()                                 - Connect SPS channel\n");
+        printf("  uCxSpsDisconnect()                              - Disconnect SPS channel\n");
+        printf("  uCxSpsWrite()                                   - Write SPS data\n");
+        printf("  uCxSpsRead()                                    - Read SPS data\n");
+        printf("\n");
+        
+        printf("=========================================================\n");
+    }
     
-    printf("--- MQTT API (u_cx_mqtt.h) ---\n");
-    printf("  uCxMqttConnectBegin()                           - Connect to MQTT broker\n");
-    printf("  uCxMqttDisconnect()                             - Disconnect from broker\n");
-    printf("  uCxMqttPublishBegin()                           - Publish message to topic\n");
-    printf("  uCxMqttSubscribeBegin()                         - Subscribe to topic\n");
-    printf("  uCxMqttUnsubscribeBegin()                       - Unsubscribe from topic\n");
-    printf("\n");
-    
-    printf("--- SECURITY API (u_cx_security.h) ---\n");
-    printf("  uCxSecurityTlsCertificateStoreBegin()           - Store TLS certificate\n");
-    printf("  uCxSecurityTlsCertificateRemove()               - Remove certificate\n");
-    printf("  uCxSecurityTlsCertificateListBegin()            - List stored certificates\n");
-    printf("\n");
-    
-    printf("--- GATT CLIENT API (u_cx_gatt_client.h) ---\n");
-    printf("  uCxGattClientDiscoverAllPrimaryServicesBegin()  - Discover GATT services\n");
-    printf("  uCxGattClientDiscoverCharacteristicsBegin()     - Discover characteristics\n");
-    printf("  uCxGattClientWriteCharacteristicBegin()         - Write to characteristic\n");
-    printf("  uCxGattClientReadCharacteristicBegin()          - Read from characteristic\n");
-    printf("  uCxGattClientSubscribeBegin()                   - Subscribe to notifications\n");
-    printf("\n");
-    
-    printf("--- GATT SERVER API (u_cx_gatt_server.h) ---\n");
-    printf("  uCxGattServerAddServiceBegin()                  - Add GATT service\n");
-    printf("  uCxGattServerAddCharacteristicBegin()           - Add characteristic\n");
-    printf("  uCxGattServerSetCharacteristicValueBegin()      - Set characteristic value\n");
-    printf("\n");
-    
-    printf("--- SPS API (u_cx_sps.h) ---\n");
-    printf("  uCxSpsConnect()                                 - Connect SPS channel\n");
-    printf("  uCxSpsDisconnect()                              - Disconnect SPS channel\n");
-    printf("  uCxSpsWrite()                                   - Write SPS data\n");
-    printf("  uCxSpsRead()                                    - Read SPS data\n");
-    printf("\n");
-    
-    printf("=========================================================\n");
-    printf("Press Enter to continue...");
+    printf("\nPress Enter to continue...");
     getchar();
 }
 
