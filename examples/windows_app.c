@@ -110,6 +110,56 @@ static void wifiConnect(void);
 static void wifiDisconnect(void);
 static void loadSettings(void);
 static void saveSettings(void);
+static void obfuscatePassword(const char *input, char *output, size_t outputSize);
+static void deobfuscatePassword(const char *input, char *output, size_t outputSize);
+
+// ----------------------------------------------------------------
+// Password Obfuscation Helper Functions
+// ----------------------------------------------------------------
+
+// Simple XOR-based obfuscation (not cryptographically secure, but better than plaintext)
+#define OBFUSCATION_KEY "uBloxNORAW36-2024"
+
+static void obfuscatePassword(const char *input, char *output, size_t outputSize)
+{
+    size_t inputLen = strlen(input);
+    size_t keyLen = strlen(OBFUSCATION_KEY);
+    
+    if (inputLen == 0) {
+        output[0] = '\0';
+        return;
+    }
+    
+    // Convert to hex with XOR
+    size_t outIdx = 0;
+    for (size_t i = 0; i < inputLen && outIdx < outputSize - 3; i++) {
+        unsigned char c = input[i] ^ OBFUSCATION_KEY[i % keyLen];
+        snprintf(&output[outIdx], outputSize - outIdx, "%02x", c);
+        outIdx += 2;
+    }
+    output[outIdx] = '\0';
+}
+
+static void deobfuscatePassword(const char *input, char *output, size_t outputSize)
+{
+    size_t inputLen = strlen(input);
+    size_t keyLen = strlen(OBFUSCATION_KEY);
+    
+    if (inputLen == 0 || inputLen % 2 != 0) {
+        output[0] = '\0';
+        return;
+    }
+    
+    // Convert from hex with XOR
+    size_t outIdx = 0;
+    for (size_t i = 0; i < inputLen && outIdx < outputSize - 1; i += 2) {
+        char hexByte[3] = {input[i], input[i+1], '\0'};
+        unsigned char c = (unsigned char)strtol(hexByte, NULL, 16);
+        output[outIdx] = c ^ OBFUSCATION_KEY[outIdx % keyLen];
+        outIdx++;
+    }
+    output[outIdx] = '\0';
+}
 
 // ----------------------------------------------------------------
 // URC Event Helper Functions
@@ -486,8 +536,11 @@ static void loadSettings(void)
                 gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
             }
             else if (strncmp(line, "wifi_password=", 14) == 0) {
-                strncpy(gWifiPassword, line + 14, sizeof(gWifiPassword) - 1);
-                gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
+                // Deobfuscate password from hex
+                char obfuscated[128];
+                strncpy(obfuscated, line + 14, sizeof(obfuscated) - 1);
+                obfuscated[sizeof(obfuscated) - 1] = '\0';
+                deobfuscatePassword(obfuscated, gWifiPassword, sizeof(gWifiPassword));
             }
             else if (strncmp(line, "remote_address=", 15) == 0) {
                 strncpy(gRemoteAddress, line + 15, sizeof(gRemoteAddress) - 1);
@@ -505,7 +558,12 @@ static void saveSettings(void)
     if (f) {
         fprintf(f, "last_port=%s\n", gComPort);
         fprintf(f, "wifi_ssid=%s\n", gWifiSsid);
-        fprintf(f, "wifi_password=%s\n", gWifiPassword);
+        
+        // Obfuscate password before saving
+        char obfuscatedPassword[128];
+        obfuscatePassword(gWifiPassword, obfuscatedPassword, sizeof(obfuscatedPassword));
+        fprintf(f, "wifi_password=%s\n", obfuscatedPassword);
+        
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
         fclose(f);
     }
