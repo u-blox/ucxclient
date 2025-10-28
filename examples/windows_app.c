@@ -35,6 +35,7 @@
 
 // Include ucxclient headers
 #include "u_cx_at_client.h"
+#include "u_cx_log.h"
 #include "u_cx.h"
 #include "u_cx_general.h"
 #include "u_cx_system.h"
@@ -123,6 +124,12 @@ int main(int argc, char *argv[])
     
     printHeader();
     
+    // Enable UCX logging to see AT commands and responses
+    printf("Enabling UCX logging (AT commands, responses, debug info)...\n");
+    uCxLogEnable();
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Windows Console App started");
+    printf("UCX logging is now active - you'll see detailed AT traffic below\n\n");
+    
     // Try to auto-connect
     printf("Attempting to connect to %s...\n", gComPort);
     if (connectDevice(gComPort)) {
@@ -154,7 +161,10 @@ static void printHeader(void)
     printf("  u-connectXpress Console App v%s\n", APP_VERSION);
     printf("========================================\n");
     printf("Simple C application for NORA-W36\n");
-    printf("No Python, no DLL complexity!\n");
+    printf("\n");
+    printf("NOTE: UCX Logging is %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
+    printf("      AT commands/responses will appear in this console\n");
+    printf("      Use menu option [8] to toggle logging on/off\n");
     printf("\n");
 }
 
@@ -170,6 +180,7 @@ static void printMenu(void)
             } else {
                 printf("  Status: Not connected\n");
             }
+            printf("  UCX Logging: %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
             printf("\n");
             printf("  [1] Connect to device\n");
             printf("  [2] Disconnect\n");
@@ -178,6 +189,7 @@ static void printMenu(void)
             printf("  [5] ATI9 (device info)\n");
             printf("  [6] Bluetooth menu\n");
             printf("  [7] WiFi menu\n");
+            printf("  [8] Toggle UCX logging (AT traffic)\n");
             printf("  [0] Exit\n");
             break;
             
@@ -255,6 +267,16 @@ static void handleUserInput(void)
                     break;
                 case 7:
                     gMenuState = MENU_WIFI;
+                    break;
+                case 8:
+                    if (uCxLogIsEnabled()) {
+                        uCxLogDisable();
+                        printf("UCX logging DISABLED\n");
+                    } else {
+                        uCxLogEnable();
+                        printf("UCX logging ENABLED\n");
+                        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Logging re-enabled from menu");
+                    }
                     break;
                 case 0:
                     gMenuState = MENU_EXIT;
@@ -553,12 +575,20 @@ static void executeAtTest(void)
     }
     
     printf("\n--- AT Test ---\n");
+    if (uCxLogIsEnabled()) {
+        printf(">>> WATCH BELOW FOR AT TRAFFIC <<<\n");
+        printf("===================================\n");
+    }
     
     // Simple AT command
     int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "AT");
     
+    if (uCxLogIsEnabled()) {
+        printf("===================================\n");
+    }
+    
     if (result == 0) {
-        printf("Result: OK\n");
+        printf("Result: OK - Device responded successfully\n");
     } else {
         printf("Result: ERROR (code %d)\n", result);
     }
@@ -572,17 +602,27 @@ static void executeAti9(void)
     }
     
     printf("\n--- ATI9 Device Information ---\n");
+    if (uCxLogIsEnabled()) {
+        printf(">>> WATCH BELOW FOR AT TRAFFIC <<<\n");
+        printf("===================================\n");
+    }
     
     // Use uCxGeneralGetIdentInfoBegin to get device info
     uCxGeneralGetIdentInfo_t info;
     
     if (uCxGeneralGetIdentInfoBegin(&gUcxHandle, &info)) {
+        if (uCxLogIsEnabled()) {
+            printf("===================================\n");
+        }
         printf("Application Version: %s\n", info.application_version);
         printf("Unique Identifier:   %s\n", info.unique_identifier);
         
         // Call uCxEnd to complete the command
         uCxEnd(&gUcxHandle);
     } else {
+        if (uCxLogIsEnabled()) {
+            printf("===================================\n");
+        }
         printf("ERROR: Failed to get device information\n");
     }
 }
