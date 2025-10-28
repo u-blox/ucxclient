@@ -945,13 +945,12 @@ static void wifiConnect(void)
                 if (connState == 2) {
                     printf("✓ Successfully connected to '%s'!\n", ssid);
                     
-                    // Get IP address if available
-                    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_IPV4, &status)) {
-                        printf("  IP Address: %d.%d.%d.%d\n",
-                               status.rspWifiStatusIdIpv4.status_val.ipv4[0],
-                               status.rspWifiStatusIdIpv4.status_val.ipv4[1],
-                               status.rspWifiStatusIdIpv4.status_val.ipv4[2],
-                               status.rspWifiStatusIdIpv4.status_val.ipv4[3]);
+                    // Get RSSI
+                    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
+                        int32_t rssi = status.rspWifiStatusIdInt.int_val;
+                        if (rssi != -32768) {
+                            printf("  Signal strength: %d dBm\n", rssi);
+                        }
                         uCxEnd(&gUcxHandle);
                     }
                 } else {
