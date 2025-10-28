@@ -134,7 +134,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                     ret = AT_PARSER_GOT_STATUS;
                 }
             }
-        } else if ((pLine[0] != '+') && (pLine[0] != '*') && (strncmp(pLine, "AT", 2) != 0)) {
+        } else if ((pLine[0] != '+') && (pLine[0] != '*') && (strncmp(pLine, "AT+", 2) != 0)) {
             pClient->pRspParams = &pLine[0];
             ret = AT_PARSER_GOT_RSP;
         }

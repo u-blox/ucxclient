@@ -358,6 +358,13 @@ static bool connectDevice(const char *comPort)
     
     printf("COM port opened successfully\n");
     
+    // Turn off echo to avoid "Unexpected data" warnings
+    //printf("Disabling AT echo...\n");
+    //int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
+    //if (result != 0) {
+    //    printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
+    //}
+    
     // Initialize UCX handle
     uCxInit(&gAtClient, &gUcxHandle);
     
@@ -580,7 +587,6 @@ static void executeAtTest(void)
         printf("===================================\n");
         // Test if logging works at all
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting AT test - logging is enabled");
-        fflush(stdout);  // Force flush to see output immediately
     }
     
     // Simple AT command
@@ -588,7 +594,6 @@ static void executeAtTest(void)
     
     if (uCxLogIsEnabled()) {
         printf("===================================\n");
-        fflush(stdout);
     }
     
     if (result == 0) {
@@ -898,30 +903,61 @@ static void wifiConnect(void)
             printf("Connecting to '%s'...\n", ssid);
             
             // Set connection parameters (wlan_handle = 0, default)
-            // Note: The API doesn't support password directly, need to use security settings
-            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) == 0) {
-                // Try to connect
-                if (uCxWifiStationConnect(&gUcxHandle, 0) == 0) {
-                    // Wait a moment for connection
-                    Sleep(3000);
-                    
-                    // Check status
-                    uCxWifiStationStatus_t status;
-                    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
-                        int32_t connState = status.rspWifiStatusIdInt.int_val;
-                        uCxEnd(&gUcxHandle);
-                        
-                        if (connState == 2) {
-                            printf("Successfully connected to '%s'!\n", ssid);
-                        } else {
-                            printf("Connection status: %d (0=disabled, 1=connecting, 2=connected, 3=error)\n", connState);
-                        }
-                    }
-                } else {
-                    printf("ERROR: Failed to initiate connection\n");
+            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
+                printf("ERROR: Failed to set connection parameters\n");
+                return;
+            }
+            
+            // Set security based on password
+            if (strlen(password) > 0) {
+                // WPA2/WPA3 with password (threshold = WPA2 or higher)
+                printf("Setting WPA2/WPA3 security...\n");
+                if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
+                    printf("ERROR: Failed to set WPA security\n");
+                    return;
                 }
             } else {
-                printf("ERROR: Failed to set connection parameters\n");
+                // Open network (no password)
+                printf("Setting open security (no password)...\n");
+                if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+                    printf("ERROR: Failed to set open security\n");
+                    return;
+                }
+            }
+            
+            // Try to connect
+            printf("Initiating connection...\n");
+            if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
+                printf("ERROR: Failed to initiate connection\n");
+                return;
+            }
+            
+            // Wait for connection to establish
+            printf("Waiting for connection (this may take several seconds)...\n");
+            Sleep(5000);
+            
+            // Check status
+            uCxWifiStationStatus_t status;
+            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
+                int32_t connState = status.rspWifiStatusIdInt.int_val;
+                uCxEnd(&gUcxHandle);
+                
+                if (connState == 2) {
+                    printf("✓ Successfully connected to '%s'!\n", ssid);
+                    
+                    // Get IP address if available
+                    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_IPV4, &status)) {
+                        printf("  IP Address: %d.%d.%d.%d\n",
+                               status.rspWifiStatusIdIpv4.status_val.ipv4[0],
+                               status.rspWifiStatusIdIpv4.status_val.ipv4[1],
+                               status.rspWifiStatusIdIpv4.status_val.ipv4[2],
+                               status.rspWifiStatusIdIpv4.status_val.ipv4[3]);
+                        uCxEnd(&gUcxHandle);
+                    }
+                } else {
+                    printf("✗ Connection failed!\n");
+                    printf("  Status: %d (0=disabled, 1=connecting, 2=connected, 3=error)\n", connState);
+                }
             }
         }
     }
