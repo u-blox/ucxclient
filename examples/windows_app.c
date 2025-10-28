@@ -418,7 +418,7 @@ static bool connectDevice(const char *comPort)
     
     // Turn off echo to avoid "Unexpected data" warnings
     //printf("Disabling AT echo...\n");
-    //int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
+    ////int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
     //if (result != 0) {
     //    printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
     //}
@@ -1014,22 +1014,25 @@ static void wifiConnect(void)
                     uCxEnd(&gUcxHandle);
                 }
                 
-                // Get IP address configuration
-                uCxWifiStationGetIpConfig_t ipConfig;
-                if (uCxWifiStationGetIpConfig(&gUcxHandle, 0, &ipConfig) == 0) {
-                    if (ipConfig.type == U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE_IP_IP_IP_IP_IP) {
-                        char ipStr[40];  // Allow for IPv6
-                        if (uCxIpAddressToString(&ipConfig.rspIpModeIpIpIpIpIp.ip_addr, ipStr, sizeof(ipStr)) > 0) {
-                            printf("IP address: %s\n", ipStr);
-                        }
-                        
-                        if (uCxIpAddressToString(&ipConfig.rspIpModeIpIpIpIpIp.subnet_mask, ipStr, sizeof(ipStr)) > 0) {
-                            printf("Subnet mask: %s\n", ipStr);
-                        }
-                        
-                        if (uCxIpAddressToString(&ipConfig.rspIpModeIpIpIpIpIp.gateway, ipStr, sizeof(ipStr)) > 0) {
-                            printf("Gateway: %s\n", ipStr);
-                        }
+                // Get IP address using WiFi Station Network Status (AT+UWSNST)
+                uSockIpAddress_t ipAddr;
+                char ipStr[40];  // Allow for IPv6
+                
+                if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
+                    if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                        printf("IP address: %s\n", ipStr);
+                    }
+                }
+                
+                if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_SUBNET, &ipAddr) == 0) {
+                    if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                        printf("Subnet mask: %s\n", ipStr);
+                    }
+                }
+                
+                if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
+                    if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                        printf("Gateway: %s\n", ipStr);
                     }
                 }
             } else {
