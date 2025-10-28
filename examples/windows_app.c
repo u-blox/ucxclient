@@ -578,6 +578,9 @@ static void executeAtTest(void)
     if (uCxLogIsEnabled()) {
         printf(">>> WATCH BELOW FOR AT TRAFFIC <<<\n");
         printf("===================================\n");
+        // Test if logging works at all
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting AT test - logging is enabled");
+        fflush(stdout);  // Force flush to see output immediately
     }
     
     // Simple AT command
@@ -585,6 +588,7 @@ static void executeAtTest(void)
     
     if (uCxLogIsEnabled()) {
         printf("===================================\n");
+        fflush(stdout);
     }
     
     if (result == 0) {

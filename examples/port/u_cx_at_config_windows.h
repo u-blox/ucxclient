@@ -23,11 +23,11 @@
 
 #include "u_port_windows.h"
 
-/* Disable problematic logging for Windows builds */
-#define U_CX_LOG_AT 0
-#define U_CX_LOG_ERROR 0
-#define U_CX_LOG_WARNING 0
-#define U_CX_LOG_DEBUG 0
-#define U_CX_LOG_USE_ANSI_COLOR 0
+/* Enable logging for Windows builds */
+#define U_CX_LOG_AT 1
+#define U_CX_LOG_ERROR 1
+#define U_CX_LOG_WARNING 1
+#define U_CX_LOG_DEBUG 1
+#define U_CX_LOG_USE_ANSI_COLOR 1
 
 #endif /* U_CX_AT_CONFIG_WINDOWS_H */
