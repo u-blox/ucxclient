@@ -70,6 +70,9 @@ static uCxAtClient_t gAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gConnected = false;
 
+// Socket tracking
+static int32_t gCurrentSocket = -1;
+
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
 static char gWifiSsid[64] = "";               // Last WiFi SSID
@@ -85,6 +88,8 @@ typedef enum {
     MENU_MAIN,
     MENU_BLUETOOTH,
     MENU_WIFI,
+    MENU_SOCKET,
+    MENU_SPS,
     MENU_API_LIST,
     MENU_EXIT
 } MenuState_t;
@@ -130,6 +135,18 @@ static void loadSettings(void);
 static void saveSettings(void);
 static void obfuscatePassword(const char *input, char *output, size_t outputSize);
 static void deobfuscatePassword(const char *input, char *output, size_t outputSize);
+static void socketCreateTcp(void);
+static void socketCreateUdp(void);
+static void socketConnect(void);
+static void socketSendData(void);
+static void socketReadData(void);
+static void socketClose(void);
+static void socketListStatus(void);
+static void spsEnableService(void);
+static void spsConnect(void);
+static void spsSendString(void);
+static void spsSendBinary(void);
+static void spsDisconnect(void);
 
 // ----------------------------------------------------------------
 // HTTP Helper Functions
@@ -482,6 +499,375 @@ static void networkDownUrc(struct uCxHandle *puCxHandle)
 }
 
 // ----------------------------------------------------------------
+// Socket Functions
+// ----------------------------------------------------------------
+
+static void socketCreateTcp(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Create TCP Socket ---\n");
+    
+    int32_t socketHandle = -1;
+    int32_t result = uCxSocketCreate1(&gUcxHandle, U_PROTOCOL_TCP, &socketHandle);
+    
+    if (result == 0) {
+        printf("Successfully created TCP socket\n");
+        printf("Socket handle: %d\n", socketHandle);
+        gCurrentSocket = socketHandle;
+    } else {
+        printf("ERROR: Failed to create socket (code %d)\n", result);
+    }
+}
+
+static void socketCreateUdp(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Create UDP Socket ---\n");
+    
+    int32_t socketHandle = -1;
+    int32_t result = uCxSocketCreate1(&gUcxHandle, U_PROTOCOL_UDP, &socketHandle);
+    
+    if (result == 0) {
+        printf("Successfully created UDP socket\n");
+        printf("Socket handle: %d\n", socketHandle);
+        gCurrentSocket = socketHandle;
+    } else {
+        printf("ERROR: Failed to create socket (code %d)\n", result);
+    }
+}
+
+static void socketConnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created. Create a socket first.\n");
+        return;
+    }
+    
+    printf("\n--- Connect Socket ---\n");
+    printf("Socket handle: %d\n", gCurrentSocket);
+    
+    char hostname[129];
+    int port;
+    
+    // Use saved remote address if available
+    if (strlen(gRemoteAddress) > 0) {
+        printf("Enter hostname/IP [%s]: ", gRemoteAddress);
+    } else {
+        printf("Enter hostname/IP: ");
+    }
+    
+    if (fgets(hostname, sizeof(hostname), stdin)) {
+        char *end = strchr(hostname, '\n');
+        if (end) *end = '\0';
+        
+        // Use saved address if empty input
+        if (strlen(hostname) == 0 && strlen(gRemoteAddress) > 0) {
+            strncpy(hostname, gRemoteAddress, sizeof(hostname) - 1);
+            printf("Using saved address: %s\n", hostname);
+        }
+    }
+    
+    printf("Enter port: ");
+    scanf("%d", &port);
+    getchar(); // consume newline
+    
+    printf("Connecting to %s:%d...\n", hostname, port);
+    
+    int32_t result = uCxSocketConnect(&gUcxHandle, gCurrentSocket, hostname, port);
+    
+    if (result == 0) {
+        printf("Successfully connected\n");
+        // Save the address
+        strncpy(gRemoteAddress, hostname, sizeof(gRemoteAddress) - 1);
+        gRemoteAddress[sizeof(gRemoteAddress) - 1] = '\0';
+        saveSettings();
+    } else {
+        printf("ERROR: Failed to connect (code %d)\n", result);
+    }
+}
+
+static void socketSendData(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created/connected. Connect a socket first.\n");
+        return;
+    }
+    
+    printf("\n--- Send Socket Data ---\n");
+    printf("Socket handle: %d\n", gCurrentSocket);
+    printf("Enter data to send: ");
+    
+    char data[1001];
+    if (fgets(data, sizeof(data), stdin)) {
+        char *end = strchr(data, '\n');
+        if (end) *end = '\0';
+        
+        size_t len = strlen(data);
+        printf("Sending %zu bytes...\n", len);
+        
+        int32_t result = uCxSocketWrite(&gUcxHandle, gCurrentSocket, (uint8_t*)data, len);
+        
+        if (result >= 0) {
+            printf("Successfully sent %d bytes\n", result);
+        } else {
+            printf("ERROR: Failed to send data (code %d)\n", result);
+        }
+    }
+}
+
+static void socketReadData(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created/connected\n");
+        return;
+    }
+    
+    printf("\n--- Read Socket Data ---\n");
+    printf("Socket handle: %d\n", gCurrentSocket);
+    printf("Enter number of bytes to read (max 1000): ");
+    
+    int length;
+    scanf("%d", &length);
+    getchar(); // consume newline
+    
+    if (length <= 0 || length > 1000) {
+        printf("ERROR: Invalid length. Must be 1-1000\n");
+        return;
+    }
+    
+    uint8_t buffer[1001];
+    int32_t result = uCxSocketRead(&gUcxHandle, gCurrentSocket, length, buffer);
+    
+    if (result > 0) {
+        buffer[result] = '\0';  // Null terminate for display
+        printf("Received %d bytes:\n", result);
+        printf("%s\n", buffer);
+    } else if (result == 0) {
+        printf("No data available\n");
+    } else {
+        printf("ERROR: Failed to read data (code %d)\n", result);
+    }
+}
+
+static void socketClose(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket to close\n");
+        return;
+    }
+    
+    printf("\n--- Close Socket ---\n");
+    printf("Closing socket %d...\n", gCurrentSocket);
+    
+    int32_t result = uCxSocketClose(&gUcxHandle, gCurrentSocket);
+    
+    if (result == 0) {
+        printf("Successfully closed socket\n");
+        gCurrentSocket = -1;
+    } else {
+        printf("ERROR: Failed to close socket (code %d)\n", result);
+    }
+}
+
+static void socketListStatus(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Socket Status ---\n");
+    
+    uCxSocketListStatusBegin(&gUcxHandle);
+    
+    uCxSocketListStatus_t status;
+    int count = 0;
+    
+    while (uCxSocketListStatusGetNext(&gUcxHandle, &status)) {
+        count++;
+        printf("Socket %d: Protocol=%s, Status=%s\n",
+               status.socket_handle,
+               status.protocol == U_PROTOCOL_TCP ? "TCP" : "UDP",
+               status.socket_status == 0 ? "Not Connected" :
+               status.socket_status == 1 ? "Listening" : "Connected");
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (count == 0) {
+        printf("  No sockets\n");
+    }
+    
+    if (gCurrentSocket >= 0) {
+        printf("\nCurrent socket: %d\n", gCurrentSocket);
+    }
+}
+
+// ----------------------------------------------------------------
+// SPS Functions
+// ----------------------------------------------------------------
+
+static void spsEnableService(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Enable SPS Service ---\n");
+    
+    int32_t result = uCxSpsSetServiceEnable(&gUcxHandle, U_SPS_SERVICE_OPTION_ENABLE_SPS_SERVICE);
+    
+    if (result == 0) {
+        printf("Successfully enabled SPS service\n");
+        printf("NOTE: SPS will be active after reboot\n");
+    } else {
+        printf("ERROR: Failed to enable SPS (code %d)\n", result);
+    }
+}
+
+static void spsConnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Connect SPS ---\n");
+    printf("Enter Bluetooth connection handle: ");
+    
+    int connHandle;
+    scanf("%d", &connHandle);
+    getchar(); // consume newline
+    
+    printf("Connecting SPS on connection %d...\n", connHandle);
+    
+    int32_t result = uCxSpsConnect2(&gUcxHandle, connHandle, 0);  // No flow control
+    
+    if (result == 0) {
+        printf("Successfully initiated SPS connection\n");
+        printf("Wait for +UESPSC URC event...\n");
+    } else {
+        printf("ERROR: Failed to connect SPS (code %d)\n", result);
+    }
+}
+
+static void spsSendString(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Send SPS String Data ---\n");
+    printf("Enter connection handle: ");
+    
+    int connHandle;
+    scanf("%d", &connHandle);
+    getchar(); // consume newline
+    
+    printf("Enter data to send: ");
+    char data[1001];
+    if (fgets(data, sizeof(data), stdin)) {
+        char *end = strchr(data, '\n');
+        if (end) *end = '\0';
+        
+        size_t len = strlen(data);
+        int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, (uint8_t*)data, len);
+        
+        if (result >= 0) {
+            printf("Successfully sent %d bytes\n", result);
+        } else {
+            printf("ERROR: Failed to send data (code %d)\n", result);
+        }
+    }
+}
+
+static void spsSendBinary(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Send SPS Binary Data ---\n");
+    printf("Enter connection handle: ");
+    
+    int connHandle;
+    scanf("%d", &connHandle);
+    getchar(); // consume newline
+    
+    printf("Enter hex data (e.g., 48656C6C6F): ");
+    char hexInput[2001];
+    if (fgets(hexInput, sizeof(hexInput), stdin)) {
+        char *end = strchr(hexInput, '\n');
+        if (end) *end = '\0';
+        
+        // Convert hex string to bytes
+        size_t hexLen = strlen(hexInput);
+        if (hexLen % 2 != 0) {
+            printf("ERROR: Hex string must have even number of characters\n");
+            return;
+        }
+        
+        uint8_t data[1000];
+        size_t dataLen = hexLen / 2;
+        
+        for (size_t i = 0; i < dataLen; i++) {
+            sscanf(&hexInput[i * 2], "%2hhx", &data[i]);
+        }
+        
+        int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, data, dataLen);
+        
+        if (result >= 0) {
+            printf("Successfully sent %d bytes\n", result);
+        } else {
+            printf("ERROR: Failed to send data (code %d)\n", result);
+        }
+    }
+}
+
+static void spsDisconnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Disconnect SPS ---\n");
+    printf("NOTE: To disconnect SPS, disconnect the Bluetooth connection\n");
+    printf("      or close the socket that SPS is running over\n");
+}
+
+// ----------------------------------------------------------------
 // Main Function
 // ----------------------------------------------------------------
 
@@ -581,6 +967,8 @@ static void printMenu(void)
             printf("  [6] Bluetooth menu\n");
             printf("  [7] WiFi menu\n");
             printf("  [8] Toggle UCX logging (AT traffic)\n");
+            printf("  [9] Socket menu (TCP/UDP)\n");
+            printf("  [a] SPS menu (Bluetooth Serial)\n");
             printf("  [0] Exit\n");
             break;
             
@@ -599,6 +987,28 @@ static void printMenu(void)
             printf("  [2] Scan networks\n");
             printf("  [3] Connect to network\n");
             printf("  [4] Disconnect from network\n");
+            printf("  [0] Back to main menu\n");
+            break;
+            
+        case MENU_SOCKET:
+            printf("--- Socket Menu (TCP/UDP) ---\n");
+            printf("  [1] Create TCP socket\n");
+            printf("  [2] Create UDP socket\n");
+            printf("  [3] Connect socket\n");
+            printf("  [4] Send data\n");
+            printf("  [5] Read data\n");
+            printf("  [6] Close socket\n");
+            printf("  [7] List sockets\n");
+            printf("  [0] Back to main menu\n");
+            break;
+            
+        case MENU_SPS:
+            printf("--- SPS Menu (Bluetooth Serial Port Service) ---\n");
+            printf("  [1] Enable SPS service\n");
+            printf("  [2] Connect SPS on BT connection\n");
+            printf("  [3] Send string data\n");
+            printf("  [4] Send binary data\n");
+            printf("  [5] Disconnect SPS\n");
             printf("  [0] Back to main menu\n");
             break;
             
@@ -669,6 +1079,12 @@ static void handleUserInput(void)
                         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Logging re-enabled from menu");
                     }
                     break;
+                case 9:
+                    gMenuState = MENU_SOCKET;
+                    break;
+                case 10:  // Also accept 'a' or 'A'
+                    gMenuState = MENU_SPS;
+                    break;
                 case 0:
                     gMenuState = MENU_EXIT;
                     break;
@@ -714,6 +1130,64 @@ static void handleUserInput(void)
                     break;
                 case 4:
                     wifiDisconnect();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_SOCKET:
+            switch (choice) {
+                case 1:
+                    socketCreateTcp();
+                    break;
+                case 2:
+                    socketCreateUdp();
+                    break;
+                case 3:
+                    socketConnect();
+                    break;
+                case 4:
+                    socketSendData();
+                    break;
+                case 5:
+                    socketReadData();
+                    break;
+                case 6:
+                    socketClose();
+                    break;
+                case 7:
+                    socketListStatus();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_SPS:
+            switch (choice) {
+                case 1:
+                    spsEnableService();
+                    break;
+                case 2:
+                    spsConnect();
+                    break;
+                case 3:
+                    spsSendString();
+                    break;
+                case 4:
+                    spsSendBinary();
+                    break;
+                case 5:
+                    spsDisconnect();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
