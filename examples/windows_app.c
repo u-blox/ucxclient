@@ -35,6 +35,7 @@
 
 // Include ucxclient headers
 #include "u_cx_at_client.h"
+#include "u_cx_at_params.h"
 #include "u_cx_log.h"
 #include "u_cx.h"
 #include "u_cx_general.h"
@@ -57,11 +58,19 @@
 // Settings file
 #define SETTINGS_FILE "windows_app_settings.ini"
 
+// URC Event flags
+#define URC_FLAG_NETWORK_UP         (1 << 0)
+#define URC_FLAG_NETWORK_DOWN       (1 << 1)
+
 // Global handles
 static uCxAtClient_t gAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gConnected = false;
 static char gComPort[16] = "COM31";  // Default COM port
+
+// URC event handling
+static U_CX_MUTEX_HANDLE gUrcMutex;
+static volatile uint32_t gUrcEventFlags = 0;
 
 // Menu state
 typedef enum {
@@ -96,6 +105,55 @@ static void wifiConnect(void);
 static void wifiDisconnect(void);
 static void loadSettings(void);
 static void saveSettings(void);
+
+// ----------------------------------------------------------------
+// URC Event Helper Functions
+// ----------------------------------------------------------------
+
+static bool waitEvent(uint32_t evtFlag, uint32_t timeoutS)
+{
+    int32_t timeoutMs = timeoutS * 1000;
+    int32_t startTime = U_CX_PORT_GET_TIME_MS();
+
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%d, %d)", evtFlag, timeoutS);
+    do {
+        U_CX_MUTEX_TRY_LOCK(gUrcMutex, 100);
+        if (gUrcEventFlags & evtFlag) {
+            gUrcEventFlags &= ~evtFlag;  // Clear the flag
+            U_CX_MUTEX_UNLOCK(gUrcMutex);
+            return true;
+        }
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+    } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
+
+    U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
+    return false;
+}
+
+static void signalEvent(uint32_t evtFlag)
+{
+    U_CX_MUTEX_LOCK(gUrcMutex);
+    gUrcEventFlags |= evtFlag;
+    U_CX_MUTEX_UNLOCK(gUrcMutex);
+}
+
+static void networkUpUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Network UP");
+    signalEvent(URC_FLAG_NETWORK_UP);
+}
+
+static void networkDownUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Network DOWN");
+    signalEvent(URC_FLAG_NETWORK_DOWN);
+}
+
+// ----------------------------------------------------------------
+// Main Function
+// ----------------------------------------------------------------
 
 // Main function
 int main(int argc, char *argv[])
@@ -158,9 +216,9 @@ static void printHeader(void)
 {
     printf("\n");
     printf("========================================\n");
-    printf("  u-connectXpress Console App v%s\n", APP_VERSION);
+    printf("  u-connectXpress ucxclient App v%s\n", APP_VERSION);
     printf("========================================\n");
-    printf("Simple C application for NORA-W36\n");
+    printf("Simple C application for NORA-B26 and NORA-W36\n");
     printf("\n");
     printf("NOTE: UCX Logging is %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
     printf("      AT commands/responses will appear in this console\n");
@@ -368,6 +426,13 @@ static bool connectDevice(const char *comPort)
     // Initialize UCX handle
     uCxInit(&gAtClient, &gUcxHandle);
     
+    // Create mutex for URC event handling
+    U_CX_MUTEX_CREATE(gUrcMutex);
+    
+    // Register URC handlers for WiFi network events
+    uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
+    uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
+    
     printf("UCX initialized successfully\n");
     
     gConnected = true;
@@ -382,6 +447,9 @@ static void disconnectDevice(void)
     }
     
     printf("Disconnecting...\n");
+    
+    // Delete mutex
+    U_CX_MUTEX_DELETE(gUrcMutex);
     
     // Close COM port
     uPortAtClose(&gAtClient);
@@ -612,7 +680,6 @@ static void executeAti9(void)
     
     printf("\n--- ATI9 Device Information ---\n");
     if (uCxLogIsEnabled()) {
-        printf(">>> WATCH BELOW FOR AT TRAFFIC <<<\n");
         printf("===================================\n");
     }
     
@@ -932,31 +999,41 @@ static void wifiConnect(void)
                 return;
             }
             
-            // Wait for connection to establish
-            printf("Waiting for connection (this may take several seconds)...\n");
-            Sleep(5000);
-            
-            // Check status
-            uCxWifiStationStatus_t status;
-            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
-                int32_t connState = status.rspWifiStatusIdInt.int_val;
-                uCxEnd(&gUcxHandle);
+            // Wait for network up event (using URC handler)
+            printf("Waiting for network up event...\n");
+            if (waitEvent(URC_FLAG_NETWORK_UP, 20)) {
+                printf("Successfully connected to '%s'\n", ssid);
                 
-                if (connState == 2) {
-                    printf("✓ Successfully connected to '%s'!\n", ssid);
-                    
-                    // Get RSSI
-                    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
-                        int32_t rssi = status.rspWifiStatusIdInt.int_val;
-                        if (rssi != -32768) {
-                            printf("  Signal strength: %d dBm\n", rssi);
-                        }
-                        uCxEnd(&gUcxHandle);
+                // Get RSSI
+                uCxWifiStationStatus_t status;
+                if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
+                    int32_t rssi = status.rspWifiStatusIdInt.int_val;
+                    if (rssi != -32768) {
+                        printf("Signal strength: %d dBm\n", rssi);
                     }
-                } else {
-                    printf("✗ Connection failed!\n");
-                    printf("  Status: %d (0=disabled, 1=connecting, 2=connected, 3=error)\n", connState);
+                    uCxEnd(&gUcxHandle);
                 }
+                
+                // Get IP address configuration
+                uCxWifiStationGetIpConfig_t ipConfig;
+                if (uCxWifiStationGetIpConfig(&gUcxHandle, 0, &ipConfig) == 0) {
+                    if (ipConfig.type == U_CX_WIFI_STATION_GET_IP_CONFIG_RSP_TYPE_IP_MODE_IP_IP_IP_IP_IP) {
+                        char ipStr[40];  // Allow for IPv6
+                        if (uCxIpAddressToString(&ipConfig.rspIpModeIpIpIpIpIp.ip_addr, ipStr, sizeof(ipStr)) > 0) {
+                            printf("IP address: %s\n", ipStr);
+                        }
+                        
+                        if (uCxIpAddressToString(&ipConfig.rspIpModeIpIpIpIpIp.subnet_mask, ipStr, sizeof(ipStr)) > 0) {
+                            printf("Subnet mask: %s\n", ipStr);
+                        }
+                        
+                        if (uCxIpAddressToString(&ipConfig.rspIpModeIpIpIpIpIp.gateway, ipStr, sizeof(ipStr)) > 0) {
+                            printf("Gateway: %s\n", ipStr);
+                        }
+                    }
+                }
+            } else {
+                printf("Connection failed - timeout waiting for network up event\n");
             }
         }
     }
