@@ -63,6 +63,9 @@ endif()
 if(WIN32)
   set(U_EXAMPLE_UART "COM3" CACHE STRING "The COM port to use for Windows examples")
   
+  # Add /FS flag globally for Windows to fix PDB file locking issues with parallel builds
+  add_compile_options(/FS)
+  
   # HTTP Example for Windows
   add_executable(http_example_windows
     examples/http_example.c
@@ -101,23 +104,22 @@ if(WIN32)
   target_include_directories(windows_test PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
   target_link_libraries(windows_test PRIVATE setupapi)
 
-  # Firmware Update Test Application
-  add_executable(firmware_update_test
-    examples/firmware_update_test.c
+  # Windows Console Application (Simple Menu-based App)
+  add_executable(windows_app
+    examples/windows_app.c
     examples/port/u_port_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(firmware_update_test PRIVATE /W4)
-  target_compile_definitions(firmware_update_test PRIVATE
+  target_compile_options(windows_app PRIVATE /W4 /FS)
+  target_compile_definitions(windows_app PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
-    U_CX_LOG_DEBUG=1
   )
-  target_include_directories(firmware_update_test PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(firmware_update_test PRIVATE setupapi)
+  target_include_directories(windows_app PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+  target_link_libraries(windows_app PRIVATE setupapi)
 
   # Windows shared library for Python integration
   add_library(ucxclient_windows SHARED

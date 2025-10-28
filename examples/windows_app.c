@@ -397,7 +397,7 @@ static void showBluetoothStatus(void)
     printf("\n--- Bluetooth Status ---\n");
     
     // Get Bluetooth mode
-    int32_t btMode;
+    uBtMode_t btMode;
     int32_t result = uCxBluetoothGetMode(&gUcxHandle, &btMode);
     
     if (result == 0) {
@@ -423,13 +423,13 @@ static void showBluetoothStatus(void)
                 connCount++;
                 printf("  Handle %d: %02X:%02X:%02X:%02X:%02X:%02X (%s)\n",
                        conn.conn_handle,
-                       conn.bd_addr.address.address[0],
-                       conn.bd_addr.address.address[1],
-                       conn.bd_addr.address.address[2],
-                       conn.bd_addr.address.address[3],
-                       conn.bd_addr.address.address[4],
-                       conn.bd_addr.address.address[5],
-                       conn.bd_addr.type == 0 ? "Public" : "Random");
+                       conn.bd_addr.address[0],
+                       conn.bd_addr.address[1],
+                       conn.bd_addr.address[2],
+                       conn.bd_addr.address[3],
+                       conn.bd_addr.address[4],
+                       conn.bd_addr.address[5],
+                       conn.bd_addr.type == U_BD_ADDRESS_TYPE_PUBLIC ? "Public" : "Random");
             }
             
             if (connCount == 0) {
