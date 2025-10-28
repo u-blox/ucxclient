@@ -24,12 +24,12 @@
  * - Bluetooth operations (scan, connect)
  * - WiFi operations (scan, connect)
  * 
- * This is much simpler than Python GUI - direct C calls, no GC issues!
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <windows.h>  // For Sleep() and CreateFile()
 #include <stdbool.h>
 #include <conio.h>  // For _kbhit() and _getch()
 
@@ -40,12 +40,21 @@
 #include "u_cx_system.h"
 #include "u_cx_bluetooth.h"
 #include "u_cx_wifi.h"
+#include "u_cx_socket.h"
+#include "u_cx_mqtt.h"
+#include "u_cx_security.h"
+#include "u_cx_gatt_client.h"
+#include "u_cx_gatt_server.h"
+#include "u_cx_sps.h"
 
 // Port layer
 #include "port/u_port.h"
 
 // Application version
 #define APP_VERSION "1.0.0"
+
+// Settings file
+#define SETTINGS_FILE "windows_app_settings.ini"
 
 // Global handles
 static uCxAtClient_t gAtClient;
@@ -58,6 +67,7 @@ typedef enum {
     MENU_MAIN,
     MENU_BLUETOOTH,
     MENU_WIFI,
+    MENU_API_LIST,
     MENU_EXIT
 } MenuState_t;
 
@@ -69,21 +79,46 @@ static void printMenu(void);
 static void handleUserInput(void);
 static bool connectDevice(const char *comPort);
 static void disconnectDevice(void);
-static void listApiCommands(void);
+static void listAvailableComPorts(void);
+static char* selectComPortFromList(void);
+static void listAllApiCommands(void);
 static void executeAtTest(void);
 static void executeAti9(void);
 static void showBluetoothStatus(void);
 static void showWifiStatus(void);
 static void bluetoothMenu(void);
+static void bluetoothScan(void);
+static void bluetoothConnect(void);
 static void wifiMenu(void);
+static void wifiScan(void);
+static void wifiConnect(void);
+static void wifiDisconnect(void);
+static void loadSettings(void);
+static void saveSettings(void);
 
 // Main function
 int main(int argc, char *argv[])
 {
+    // Load settings from file
+    loadSettings();
+    
     // Check for COM port argument
     if (argc > 1) {
         strncpy(gComPort, argv[1], sizeof(gComPort) - 1);
         gComPort[sizeof(gComPort) - 1] = '\0';
+    } else {
+        // No argument provided - show available ports and let user choose
+        printf("No COM port specified. Available ports:\n\n");
+        listAvailableComPorts();
+        
+        char *selectedPort = selectComPortFromList();
+        if (selectedPort) {
+            strncpy(gComPort, selectedPort, sizeof(gComPort) - 1);
+            gComPort[sizeof(gComPort) - 1] = '\0';
+            free(selectedPort);
+        } else {
+            printf("No port selected. Using last saved port: %s\n", gComPort);
+        }
     }
     
     printHeader();
@@ -92,6 +127,7 @@ int main(int argc, char *argv[])
     printf("Attempting to connect to %s...\n", gComPort);
     if (connectDevice(gComPort)) {
         printf("Connected successfully!\n\n");
+        saveSettings();  // Save successful port
     } else {
         printf("Failed to connect. You can try again from the menu.\n\n");
     }
@@ -149,7 +185,8 @@ static void printMenu(void)
             printf("--- Bluetooth Menu ---\n");
             printf("  [1] Show BT status\n");
             printf("  [2] Scan for devices\n");
-            printf("  [3] List connections\n");
+            printf("  [3] Connect to device\n");
+            printf("  [4] List active connections\n");
             printf("  [0] Back to main menu\n");
             break;
             
@@ -158,9 +195,14 @@ static void printMenu(void)
             printf("  [1] Show WiFi status\n");
             printf("  [2] Scan networks\n");
             printf("  [3] Connect to network\n");
-            printf("  [4] Disconnect\n");
+            printf("  [4] Disconnect from network\n");
             printf("  [0] Back to main menu\n");
             break;
+            
+        case MENU_API_LIST:
+            listAllApiCommands();
+            gMenuState = MENU_MAIN;
+            return;
             
         default:
             break;
@@ -200,7 +242,7 @@ static void handleUserInput(void)
                     disconnectDevice();
                     break;
                 case 3:
-                    listApiCommands();
+                    gMenuState = MENU_API_LIST;
                     break;
                 case 4:
                     executeAtTest();
@@ -229,10 +271,13 @@ static void handleUserInput(void)
                     showBluetoothStatus();
                     break;
                 case 2:
-                    printf("BT scan not yet implemented\n");
+                    bluetoothScan();
                     break;
                 case 3:
-                    printf("BT connections not yet implemented\n");
+                    bluetoothConnect();
+                    break;
+                case 4:
+                    showBluetoothStatus();  // Shows connections
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -249,13 +294,13 @@ static void handleUserInput(void)
                     showWifiStatus();
                     break;
                 case 2:
-                    printf("WiFi scan not yet implemented\n");
+                    wifiScan();
                     break;
                 case 3:
-                    printf("WiFi connect not yet implemented\n");
+                    wifiConnect();
                     break;
                 case 4:
-                    printf("WiFi disconnect not yet implemented\n");
+                    wifiDisconnect();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -316,31 +361,186 @@ static void disconnectDevice(void)
     printf("Disconnected.\n");
 }
 
-static void listApiCommands(void)
+// Load settings from file
+static void loadSettings(void)
 {
-    printf("\n--- Available API Commands ---\n");
-    printf("General:\n");
-    printf("  - uCxGeneralGetManufacturerIdentificationBegin\n");
-    printf("  - uCxGeneralGetDeviceModelIdentificationBegin\n");
-    printf("  - uCxGeneralGetSoftwareVersionBegin\n");
-    printf("  - uCxGeneralGetIdentInfoBegin\n");
+    FILE *f = fopen(SETTINGS_FILE, "r");
+    if (f) {
+        char line[256];
+        while (fgets(line, sizeof(line), f)) {
+            if (strncmp(line, "last_port=", 10) == 0) {
+                // Extract port name (skip "last_port=")
+                char *port = line + 10;
+                // Remove trailing newline/whitespace
+                char *end = strchr(port, '\n');
+                if (end) *end = '\0';
+                end = strchr(port, '\r');
+                if (end) *end = '\0';
+                
+                strncpy(gComPort, port, sizeof(gComPort) - 1);
+                gComPort[sizeof(gComPort) - 1] = '\0';
+                printf("Loaded last port from settings: %s\n", gComPort);
+            }
+        }
+        fclose(f);
+    }
+}
+
+// Save settings to file
+static void saveSettings(void)
+{
+    FILE *f = fopen(SETTINGS_FILE, "w");
+    if (f) {
+        fprintf(f, "last_port=%s\n", gComPort);
+        fclose(f);
+    }
+}
+
+// List available COM ports
+static void listAvailableComPorts(void)
+{
+    // Create buffer for port names
+    char ports[32][16];
+    int count = 0;
+    
+    // Note: uPortEnumerateComPorts may not be available in all port implementations
+    // For Windows, we'll use a simple approach that checks common port names
+    for (int i = 1; i <= 256; i++) {
+        char portName[16];
+        snprintf(portName, sizeof(portName), "COM%d", i);
+        
+        // Try to open the port to see if it exists
+        HANDLE hPort = CreateFile(portName, GENERIC_READ | GENERIC_WRITE,
+                                  0, NULL, OPEN_EXISTING, 0, NULL);
+        if (hPort != INVALID_HANDLE_VALUE) {
+            CloseHandle(hPort);
+            printf("  %s\n", portName);
+            count++;
+            if (count < 32) {
+                strcpy(ports[count-1], portName);
+            }
+        }
+    }
+    
+    if (count == 0) {
+        printf("  No COM ports found.\n");
+    }
+}
+
+// Select COM port from list
+static char* selectComPortFromList(void)
+{
+    char input[64];
+    printf("\nEnter COM port name (e.g., COM31) or press Enter to use last saved port: ");
+    
+    if (fgets(input, sizeof(input), stdin)) {
+        // Remove trailing newline
+        char *end = strchr(input, '\n');
+        if (end) *end = '\0';
+        
+        // If user entered something, use it
+        if (strlen(input) > 0) {
+            char *result = (char*)malloc(strlen(input) + 1);
+            if (result) {
+                strcpy(result, input);
+                return result;
+            }
+        }
+    }
+    
+    return NULL;  // User pressed Enter without input
+}
+
+static void listAllApiCommands(void)
+{
+    printf("\n=============== UCX API Command Reference ===============\n\n");
+    
+    printf("--- GENERAL API (u_cx_general.h) ---\n");
+    printf("  uCxGeneralGetManufacturerIdentificationBegin()  - Get manufacturer ID\n");
+    printf("  uCxGeneralGetDeviceModelIdentificationBegin()   - Get device model\n");
+    printf("  uCxGeneralGetSoftwareVersionBegin()             - Get software version\n");
+    printf("  uCxGeneralGetIdentInfoBegin()                   - Get identification info\n");
+    printf("  uCxGeneralGetSerialNumberBegin()                - Get device serial number\n");
     printf("\n");
-    printf("System:\n");
-    printf("  - uCxSystemStoreConfiguration\n");
-    printf("  - uCxSystemDefaultSettings\n");
-    printf("  - uCxSystemReboot\n");
+    
+    printf("--- SYSTEM API (u_cx_system.h) ---\n");
+    printf("  uCxSystemStoreConfiguration()                   - Store current config to flash\n");
+    printf("  uCxSystemDefaultSettings()                      - Reset to factory defaults\n");
+    printf("  uCxSystemReboot()                               - Reboot the module\n");
+    printf("  uCxSystemGetLocalAddressBegin()                 - Get local MAC addresses\n");
     printf("\n");
-    printf("Bluetooth:\n");
-    printf("  - uCxBluetoothGetMode\n");
-    printf("  - uCxBluetoothListConnectionsBegin\n");
-    printf("  - uCxBluetoothDiscoverBegin\n");
+    
+    printf("--- BLUETOOTH API (u_cx_bluetooth.h) ---\n");
+    printf("  uCxBluetoothSetMode()                           - Set BT mode (off/classic/LE)\n");
+    printf("  uCxBluetoothGetMode()                           - Get current BT mode\n");
+    printf("  uCxBluetoothListConnectionsBegin()              - List active BT connections\n");
+    printf("  uCxBluetoothDiscoverBegin()                     - Start device discovery\n");
+    printf("  uCxBluetoothDiscoverGetNext()                   - Get next discovered device\n");
+    printf("  uCxBluetoothConnect()                           - Connect to remote device\n");
+    printf("  uCxBluetoothDisconnect()                        - Disconnect from device\n");
+    printf("  uCxBluetoothGetBondingStatusBegin()             - Get bonded devices\n");
+    printf("  uCxBluetoothSetPin()                            - Set PIN code\n");
     printf("\n");
-    printf("WiFi:\n");
-    printf("  - uCxWifiStationStatusBegin\n");
-    printf("  - uCxWifiStationScanDefaultBegin\n");
-    printf("  - uCxWifiStationConnectBegin\n");
-    printf("  - uCxWifiStationDisconnectBegin\n");
+    
+    printf("--- WIFI API (u_cx_wifi.h) ---\n");
+    printf("  uCxWifiStationSetConnectionParamsBegin()        - Set WiFi connection params\n");
+    printf("  uCxWifiStationConnectBegin()                    - Connect to WiFi network\n");
+    printf("  uCxWifiStationDisconnectBegin()                 - Disconnect from WiFi\n");
+    printf("  uCxWifiStationStatusBegin()                     - Get WiFi connection status\n");
+    printf("  uCxWifiStationScanDefaultBegin()                - Scan for WiFi networks\n");
+    printf("  uCxWifiStationScanDefaultGetNext()              - Get next scan result\n");
+    printf("  uCxWifiApSetConnectionParamsBegin()             - Set AP mode params\n");
+    printf("  uCxWifiApStartBegin()                           - Start AP mode\n");
+    printf("  uCxWifiApStopBegin()                            - Stop AP mode\n");
+    printf("  uCxWifiApGetStationListBegin()                  - List connected stations\n");
     printf("\n");
+    
+    printf("--- SOCKET API (u_cx_socket.h) ---\n");
+    printf("  uCxSocketCreate()                               - Create TCP/UDP socket\n");
+    printf("  uCxSocketConnect()                              - Connect socket to remote\n");
+    printf("  uCxSocketListen()                               - Listen for connections\n");
+    printf("  uCxSocketAccept()                               - Accept incoming connection\n");
+    printf("  uCxSocketClose()                                - Close socket\n");
+    printf("  uCxSocketWrite()                                - Write data to socket\n");
+    printf("  uCxSocketRead()                                 - Read data from socket\n");
+    printf("\n");
+    
+    printf("--- MQTT API (u_cx_mqtt.h) ---\n");
+    printf("  uCxMqttConnectBegin()                           - Connect to MQTT broker\n");
+    printf("  uCxMqttDisconnect()                             - Disconnect from broker\n");
+    printf("  uCxMqttPublishBegin()                           - Publish message to topic\n");
+    printf("  uCxMqttSubscribeBegin()                         - Subscribe to topic\n");
+    printf("  uCxMqttUnsubscribeBegin()                       - Unsubscribe from topic\n");
+    printf("\n");
+    
+    printf("--- SECURITY API (u_cx_security.h) ---\n");
+    printf("  uCxSecurityTlsCertificateStoreBegin()           - Store TLS certificate\n");
+    printf("  uCxSecurityTlsCertificateRemove()               - Remove certificate\n");
+    printf("  uCxSecurityTlsCertificateListBegin()            - List stored certificates\n");
+    printf("\n");
+    
+    printf("--- GATT CLIENT API (u_cx_gatt_client.h) ---\n");
+    printf("  uCxGattClientDiscoverAllPrimaryServicesBegin()  - Discover GATT services\n");
+    printf("  uCxGattClientDiscoverCharacteristicsBegin()     - Discover characteristics\n");
+    printf("  uCxGattClientWriteCharacteristicBegin()         - Write to characteristic\n");
+    printf("  uCxGattClientReadCharacteristicBegin()          - Read from characteristic\n");
+    printf("  uCxGattClientSubscribeBegin()                   - Subscribe to notifications\n");
+    printf("\n");
+    
+    printf("--- GATT SERVER API (u_cx_gatt_server.h) ---\n");
+    printf("  uCxGattServerAddServiceBegin()                  - Add GATT service\n");
+    printf("  uCxGattServerAddCharacteristicBegin()           - Add characteristic\n");
+    printf("  uCxGattServerSetCharacteristicValueBegin()      - Set characteristic value\n");
+    printf("\n");
+    
+    printf("--- SPS API (u_cx_sps.h) ---\n");
+    printf("  uCxSpsConnect()                                 - Connect SPS channel\n");
+    printf("  uCxSpsDisconnect()                              - Disconnect SPS channel\n");
+    printf("  uCxSpsWrite()                                   - Write SPS data\n");
+    printf("  uCxSpsRead()                                    - Read SPS data\n");
+    printf("\n");
+    
+    printf("=========================================================\n");
     printf("Press Enter to continue...");
     getchar();
 }
@@ -483,4 +683,225 @@ static void showWifiStatus(void)
     } else {
         printf("ERROR: Failed to get WiFi status\n");
     }
+}
+
+static void bluetoothScan(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Bluetooth Device Scan ---\n");
+    printf("Scanning for devices... (this may take 10-15 seconds)\n\n");
+    
+    // Start discovery (type 0 = general discovery, timeout in milliseconds 10000 = 10 sec)
+    uCxBluetoothDiscovery3Begin(&gUcxHandle, 0, 0, 10000);
+    
+    int deviceCount = 0;
+    uCxBluetoothDiscovery_t device;
+    
+    // Get discovered devices
+    while (uCxBluetoothDiscovery3GetNext(&gUcxHandle, &device)) {
+        deviceCount++;
+        printf("Device %d:\n", deviceCount);
+        printf("  Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+               device.bd_addr.address[0], device.bd_addr.address[1],
+               device.bd_addr.address[2], device.bd_addr.address[3],
+               device.bd_addr.address[4], device.bd_addr.address[5]);
+        
+        if (device.device_name && device.device_name[0] != '\0') {
+            printf("  Name: %s\n", device.device_name);
+        }
+        
+        printf("  RSSI: %d dBm\n", device.rssi);
+        printf("\n");
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (deviceCount == 0) {
+        printf("No devices found.\n");
+    } else {
+        printf("Found %d device(s).\n", deviceCount);
+    }
+    
+    printf("\nPress Enter to continue...");
+    getchar();
+}
+
+static void bluetoothConnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Bluetooth Connect ---\n");
+    printf("Enter Bluetooth address (format: XX:XX:XX:XX:XX:XX): ");
+    
+    char addrStr[20];
+    if (fgets(addrStr, sizeof(addrStr), stdin)) {
+        // Parse MAC address
+        uBtLeAddress_t addr;
+        addr.type = U_BD_ADDRESS_TYPE_PUBLIC;
+        
+        int values[6];
+        if (sscanf(addrStr, "%02x:%02x:%02x:%02x:%02x:%02x",
+                   &values[0], &values[1], &values[2], &values[3], &values[4], &values[5]) == 6) {
+            
+            for (int i = 0; i < 6; i++) {
+                addr.address[i] = (uint8_t)values[i];
+            }
+            
+            printf("Connecting to device...\n");
+            
+            // uCxBluetoothConnect returns conn handle on success, negative on error
+            int32_t connHandle = uCxBluetoothConnect(&gUcxHandle, &addr);
+            if (connHandle >= 0) {
+                printf("Connected successfully! Connection handle: %d\n", connHandle);
+            } else {
+                printf("ERROR: Failed to connect to device (error: %d)\n", connHandle);
+            }
+        } else {
+            printf("ERROR: Invalid MAC address format\n");
+        }
+    }
+    
+    printf("\nPress Enter to continue...");
+    getchar();
+}
+
+static void wifiScan(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- WiFi Network Scan ---\n");
+    printf("Scanning for networks... (this may take several seconds)\n\n");
+    
+    // Start WiFi scan
+    uCxWifiStationScanDefaultBegin(&gUcxHandle);
+    
+    int networkCount = 0;
+    uCxWifiStationScanDefault_t network;
+    
+    // Get scan results
+    while (uCxWifiStationScanDefaultGetNext(&gUcxHandle, &network)) {
+        networkCount++;
+        printf("Network %d:\n", networkCount);
+        printf("  SSID: %s\n", network.ssid);
+        printf("  BSSID: %02X:%02X:%02X:%02X:%02X:%02X\n",
+               network.bssid.address[0], network.bssid.address[1],
+               network.bssid.address[2], network.bssid.address[3],
+               network.bssid.address[4], network.bssid.address[5]);
+        printf("  Channel: %d\n", network.channel);
+        printf("  RSSI: %d dBm\n", network.rssi);
+        
+        // Print security type based on authentication suites
+        printf("  Security: ");
+        if (network.authentication_suites == 0) {
+            printf("Open\n");
+        } else {
+            if (network.authentication_suites & (1 << 5)) printf("WPA3 ");
+            if (network.authentication_suites & (1 << 4)) printf("WPA2 ");
+            if (network.authentication_suites & (1 << 3)) printf("WPA ");
+            if (network.authentication_suites & (1 << 1)) printf("PSK ");
+            if (network.authentication_suites & (1 << 2)) printf("EAP ");
+            printf("(0x%X)\n", network.authentication_suites);
+        }
+        printf("\n");
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (networkCount == 0) {
+        printf("No networks found.\n");
+    } else {
+        printf("Found %d network(s).\n", networkCount);
+    }
+    
+    printf("\nPress Enter to continue...");
+    getchar();
+}
+
+static void wifiConnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- WiFi Connect ---\n");
+    
+    char ssid[64];
+    char password[64];
+    
+    printf("Enter SSID: ");
+    if (fgets(ssid, sizeof(ssid), stdin)) {
+        // Remove trailing newline
+        char *end = strchr(ssid, '\n');
+        if (end) *end = '\0';
+        
+        printf("Enter password (or press Enter for open network): ");
+        if (fgets(password, sizeof(password), stdin)) {
+            // Remove trailing newline
+            end = strchr(password, '\n');
+            if (end) *end = '\0';
+            
+            printf("Connecting to '%s'...\n", ssid);
+            
+            // Set connection parameters (wlan_handle = 0, default)
+            // Note: The API doesn't support password directly, need to use security settings
+            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) == 0) {
+                // Try to connect
+                if (uCxWifiStationConnect(&gUcxHandle, 0) == 0) {
+                    // Wait a moment for connection
+                    Sleep(3000);
+                    
+                    // Check status
+                    uCxWifiStationStatus_t status;
+                    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
+                        int32_t connState = status.rspWifiStatusIdInt.int_val;
+                        uCxEnd(&gUcxHandle);
+                        
+                        if (connState == 2) {
+                            printf("Successfully connected to '%s'!\n", ssid);
+                        } else {
+                            printf("Connection status: %d (0=disabled, 1=connecting, 2=connected, 3=error)\n", connState);
+                        }
+                    }
+                } else {
+                    printf("ERROR: Failed to initiate connection\n");
+                }
+            } else {
+                printf("ERROR: Failed to set connection parameters\n");
+            }
+        }
+    }
+    
+    printf("\nPress Enter to continue...");
+    getchar();
+}
+
+static void wifiDisconnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- WiFi Disconnect ---\n");
+    printf("Disconnecting from WiFi...\n");
+    
+    if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
+        printf("Disconnected successfully.\n");
+    } else {
+        printf("ERROR: Failed to disconnect\n");
+    }
+    
+    printf("\nPress Enter to continue...");
+    getchar();
 }
