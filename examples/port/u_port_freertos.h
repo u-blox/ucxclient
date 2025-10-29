@@ -29,6 +29,8 @@
  * - Texas Instruments MSP432 and Tiva C series
  * - Silicon Labs EFM32 and EFR32 (Gecko)
  * - Renesas RA series
+ * - ARM Cortex-A with FreeRTOS+POSIX (i.MX, Zynq, etc.)
+ * - RISC-V cores (SiFive, GigaDevice, Nuclei, etc.)
  *
  * To use this port:
  * 1. Define your platform (e.g., U_PORT_STM32_HAL, U_PORT_ESP32)
@@ -45,6 +47,8 @@
  * - U_PORT_TI_DRIVERLIB : Texas Instruments DriverLib
  * - U_PORT_SILABS_GECKO : Silicon Labs Gecko SDK
  * - U_PORT_RENESAS_FSP  : Renesas FSP
+ * - U_PORT_ARM_CORTEXA  : ARM Cortex-A with FreeRTOS+POSIX
+ * - U_PORT_RISCV        : RISC-V with memory-mapped UART
  */
 
 #ifndef U_PORT_FREERTOS_H

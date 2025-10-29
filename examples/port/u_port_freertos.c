@@ -29,6 +29,8 @@
  * - U_PORT_TI_DRIVERLIB : For TI DriverLib
  * - U_PORT_SILABS_GECKO : For Silicon Labs Gecko SDK
  * - U_PORT_RENESAS_FSP  : For Renesas FSP
+ * - U_PORT_ARM_CORTEXA  : For ARM Cortex-A with FreeRTOS+POSIX
+ * - U_PORT_RISCV        : For RISC-V with memory-mapped UART
  *
  * STM32 EXAMPLE:
  * ==============
@@ -88,6 +90,8 @@
  * U_PORT_TI_DRIVERLIB - Texas Instruments DriverLib (MSP432, Tiva C)
  * U_PORT_SILABS_GECKO - Silicon Labs Gecko SDK (EFM32/EFR32)
  * U_PORT_RENESAS_FSP  - Renesas FSP (RA series)
+ * U_PORT_ARM_CORTEXA  - ARM Cortex-A (with FreeRTOS+POSIX)
+ * U_PORT_RISCV        - RISC-V cores (SiFive, GigaDevice, etc.)
  * -------------------------------------------------------------- */
 
 /* Platform-specific includes */
@@ -157,11 +161,43 @@
   #include "hal_data.h"
   typedef uart_instance_t* uPortUartHandle_t;
 
+#elif defined(U_PORT_ARM_CORTEXA)
+  /* ARM Cortex-A with FreeRTOS+POSIX */
+  #include <fcntl.h>
+  #include <termios.h>
+  #include <unistd.h>
+  #include <sys/ioctl.h>
+  #include <poll.h>
+  typedef int uPortUartHandle_t;  // POSIX file descriptor
+
+#elif defined(U_PORT_RISCV)
+  /* RISC-V - Generic implementation using memory-mapped UART */
+  /* Common for SiFive FE310, GD32VF103, Nuclei, etc. */
+  #include <stdint.h>
+  
+  /* UART register structure (standard 16550-compatible or platform-specific) */
+  typedef struct {
+      volatile uint32_t data;      /* Data register */
+      volatile uint32_t status;    /* Status register */
+      volatile uint32_t control;   /* Control register */
+      volatile uint32_t baud;      /* Baud rate divisor */
+  } riscv_uart_regs_t;
+  
+  typedef riscv_uart_regs_t* uPortUartHandle_t;
+  
+  /* Define UART base addresses for your platform */
+  #ifndef RISCV_UART0_BASE
+    #define RISCV_UART0_BASE 0x10013000  /* SiFive FE310 default */
+  #endif
+  #ifndef RISCV_UART1_BASE
+    #define RISCV_UART1_BASE 0x10023000
+  #endif
+
 #else
   /* Generic/Custom platform */
   typedef void* uPortUartHandle_t;
   #warning "No platform defined. UART functions will return placeholder values."
-  #warning "Define U_PORT_STM32_HAL, U_PORT_ESP32, or another supported platform."
+  #warning "Define U_PORT_STM32_HAL, U_PORT_ESP32, U_PORT_ARM_CORTEXA, U_PORT_RISCV, or another supported platform."
 #endif
 
 /* ----------------------------------------------------------------
@@ -219,6 +255,24 @@ typedef struct {
 #elif defined(U_PORT_RENESAS_FSP)
   /* Renesas FSP - declare your UART instances */
   extern const uart_instance_t g_uart0;
+
+#elif defined(U_PORT_ARM_CORTEXA)
+  /* ARM Cortex-A uses POSIX device names */
+  /* e.g., "/dev/ttyS0", "/dev/ttyAMA0", "/dev/ttyUSB0" */
+
+#elif defined(U_PORT_RISCV)
+  /* RISC-V UART base addresses */
+  /* Adjust these for your specific RISC-V SoC */
+  #define UART0_REGS ((riscv_uart_regs_t*)RISCV_UART0_BASE)
+  #define UART1_REGS ((riscv_uart_regs_t*)RISCV_UART1_BASE)
+  
+  /* Status register bit definitions (platform-specific) */
+  #ifndef UART_STATUS_RXNE
+    #define UART_STATUS_RXNE (1 << 0)  /* RX not empty */
+  #endif
+  #ifndef UART_STATUS_TXE
+    #define UART_STATUS_TXE  (1 << 1)  /* TX empty */
+  #endif
 #endif
 
 /* ----------------------------------------------------------------
@@ -464,6 +518,115 @@ static uPortUartHandle_t uPortUartOpen(const char *pDevName, int baudRate, bool 
     
     return p_uart;
 
+#elif defined(U_PORT_ARM_CORTEXA)
+    /* ===== ARM Cortex-A with FreeRTOS+POSIX Implementation ===== */
+    int fd;
+    struct termios options;
+    
+    /* Open the serial port */
+    fd = open(pDevName, O_RDWR | O_NOCTTY | O_NDELAY);
+    if (fd == -1) {
+        return -1;
+    }
+    
+    /* Configure port to be non-blocking */
+    fcntl(fd, F_SETFL, 0);
+    
+    /* Get current options */
+    tcgetattr(fd, &options);
+    
+    /* Set baud rate */
+    speed_t speed;
+    switch (baudRate) {
+        case 9600:   speed = B9600;   break;
+        case 19200:  speed = B19200;  break;
+        case 38400:  speed = B38400;  break;
+        case 57600:  speed = B57600;  break;
+        case 115200: speed = B115200; break;
+        case 230400: speed = B230400; break;
+        case 460800: speed = B460800; break;
+        case 921600: speed = B921600; break;
+        default:     speed = B115200; break;
+    }
+    cfsetispeed(&options, speed);
+    cfsetospeed(&options, speed);
+    
+    /* 8N1 mode */
+    options.c_cflag &= ~PARENB;  /* No parity */
+    options.c_cflag &= ~CSTOPB;  /* 1 stop bit */
+    options.c_cflag &= ~CSIZE;
+    options.c_cflag |= CS8;      /* 8 data bits */
+    
+    /* Hardware flow control */
+    if (useFlowControl) {
+        options.c_cflag |= CRTSCTS;
+    } else {
+        options.c_cflag &= ~CRTSCTS;
+    }
+    
+    /* Enable receiver, ignore modem control lines */
+    options.c_cflag |= (CLOCAL | CREAD);
+    
+    /* Raw input */
+    options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    
+    /* Raw output */
+    options.c_oflag &= ~OPOST;
+    
+    /* Set input modes */
+    options.c_iflag &= ~(IXON | IXOFF | IXANY);  /* No software flow control */
+    options.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL);
+    
+    /* Apply options */
+    tcsetattr(fd, TCSANOW, &options);
+    
+    /* Flush any existing data */
+    tcflush(fd, TCIOFLUSH);
+    
+    return fd;
+
+#elif defined(U_PORT_RISCV)
+    /* ===== RISC-V Memory-Mapped UART Implementation ===== */
+    riscv_uart_regs_t *uart = NULL;
+    
+    /* Map device name to UART instance */
+    if (strcmp(pDevName, "UART0") == 0) {
+        uart = UART0_REGS;
+    } else if (strcmp(pDevName, "UART1") == 0) {
+        uart = UART1_REGS;
+    } else {
+        return NULL;
+    }
+    
+    /* Calculate baud rate divisor */
+    /* Assuming 32 MHz clock - adjust for your RISC-V SoC */
+    #ifndef RISCV_CLOCK_FREQ
+      #define RISCV_CLOCK_FREQ 32000000
+    #endif
+    
+    uint32_t divisor = RISCV_CLOCK_FREQ / baudRate;
+    uart->baud = divisor;
+    
+    /* Configure control register */
+    /* Typical format: enable TX, enable RX, 8 data bits, 1 stop bit, no parity */
+    uint32_t ctrl = 0;
+    ctrl |= (1 << 0);  /* Enable UART */
+    ctrl |= (1 << 1);  /* Enable TX */
+    ctrl |= (1 << 2);  /* Enable RX */
+    
+    if (useFlowControl) {
+        ctrl |= (1 << 3);  /* Enable hardware flow control (if supported) */
+    }
+    
+    uart->control = ctrl;
+    
+    /* Clear any pending data */
+    while (uart->status & UART_STATUS_RXNE) {
+        (void)uart->data;  /* Read and discard */
+    }
+    
+    return uart;
+
 #else
     /* ===== Generic/Placeholder Implementation ===== */
     (void)pDevName;
@@ -471,7 +634,7 @@ static uPortUartHandle_t uPortUartOpen(const char *pDevName, int baudRate, bool 
     (void)useFlowControl;
     
     U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "uPortUartOpen() not implemented for your platform!");
-    U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Define U_PORT_STM32_HAL, U_PORT_ESP32, or another supported platform.");
+    U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Define U_PORT_STM32_HAL, U_PORT_ESP32, U_PORT_ARM_CORTEXA, U_PORT_RISCV, or another supported platform.");
     
     return NULL;
 #endif
@@ -511,6 +674,19 @@ static void uPortUartClose(uPortUartHandle_t pUartHandle)
 #elif defined(U_PORT_RENESAS_FSP)
     uart_instance_t *p_uart = (uart_instance_t *)pUartHandle;
     p_uart->p_api->close(p_uart->p_ctrl);
+
+#elif defined(U_PORT_ARM_CORTEXA)
+    int fd = (int)pUartHandle;
+    if (fd >= 0) {
+        close(fd);
+    }
+
+#elif defined(U_PORT_RISCV)
+    riscv_uart_regs_t *uart = (riscv_uart_regs_t *)pUartHandle;
+    if (uart != NULL) {
+        /* Disable UART */
+        uart->control = 0;
+    }
 
 #else
     (void)pUartHandle;
@@ -581,6 +757,24 @@ static int32_t uPortUartWrite(uPortUartHandle_t pUartHandle, const void *pData, 
         return (int32_t)length;
     }
     return -1;
+
+#elif defined(U_PORT_ARM_CORTEXA)
+    int fd = (int)pUartHandle;
+    ssize_t written = write(fd, pData, length);
+    return (int32_t)written;
+
+#elif defined(U_PORT_RISCV)
+    riscv_uart_regs_t *uart = (riscv_uart_regs_t *)pUartHandle;
+    const uint8_t *p = (const uint8_t *)pData;
+    
+    for (size_t i = 0; i < length; i++) {
+        /* Wait for TX ready */
+        while ((uart->status & UART_STATUS_TXE) == 0) {
+            /* Busy wait */
+        }
+        uart->data = p[i];
+    }
+    return (int32_t)length;
 
 #else
     (void)pUartHandle;
@@ -760,6 +954,61 @@ static int32_t uPortUartRead(uPortUartHandle_t pUartHandle, void *pData, size_t 
     }
     return 0;
 
+#elif defined(U_PORT_ARM_CORTEXA)
+    int fd = (int)pUartHandle;
+    
+    if (timeoutMs == 0) {
+        /* Non-blocking read */
+        /* Check if data is available without blocking */
+        int bytes_avail = 0;
+        ioctl(fd, FIONREAD, &bytes_avail);
+        if (bytes_avail == 0) {
+            return 0;
+        }
+        
+        ssize_t n = read(fd, pData, 1);
+        return (n > 0) ? (int32_t)n : 0;
+    }
+    
+    /* Blocking read with timeout using poll() */
+    struct pollfd fds;
+    fds.fd = fd;
+    fds.events = POLLIN;
+    
+    int poll_result = poll(&fds, 1, timeoutMs);
+    if (poll_result > 0 && (fds.revents & POLLIN)) {
+        ssize_t n = read(fd, pData, 1);
+        return (n > 0) ? (int32_t)n : 0;
+    }
+    return 0;  // Timeout or no data
+
+#elif defined(U_PORT_RISCV)
+    riscv_uart_regs_t *uart = (riscv_uart_regs_t *)pUartHandle;
+    uint8_t *pByte = (uint8_t *)pData;
+    
+    if (timeoutMs == 0) {
+        /* Non-blocking */
+        if (uart->status & UART_STATUS_RXNE) {
+            *pByte = uart->data;
+            return 1;
+        }
+        return 0;
+    }
+    
+    /* Blocking with timeout */
+    uint32_t startTick = xTaskGetTickCount();
+    uint32_t timeoutTicks = pdMS_TO_TICKS(timeoutMs);
+    
+    while ((uart->status & UART_STATUS_RXNE) == 0) {
+        if ((xTaskGetTickCount() - startTick) >= timeoutTicks) {
+            return 0;  // Timeout
+        }
+        vTaskDelay(1);
+    }
+    
+    *pByte = uart->data;
+    return 1;
+
 #else
     (void)pUartHandle;
     (void)pData;
@@ -831,6 +1080,20 @@ static void uPortUartFlush(uPortUartHandle_t pUartHandle)
     
     /* Abort any ongoing operations */
     p_uart->p_api->communicationAbort(p_uart->p_ctrl, UART_DIR_RX_TX);
+
+#elif defined(U_PORT_ARM_CORTEXA)
+    int fd = (int)pUartHandle;
+    
+    /* Flush both input and output buffers */
+    tcflush(fd, TCIOFLUSH);
+
+#elif defined(U_PORT_RISCV)
+    riscv_uart_regs_t *uart = (riscv_uart_regs_t *)pUartHandle;
+    
+    /* Clear RX buffer by reading all pending data */
+    while (uart->status & UART_STATUS_RXNE) {
+        (void)uart->data;  /* Read and discard */
+    }
 
 #else
     (void)pUartHandle;

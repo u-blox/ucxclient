@@ -40,6 +40,8 @@ The port includes complete UART implementations for the following platforms:
 | **Texas Instruments** | `U_PORT_TI_DRIVERLIB` | MSP432, Tiva C (TM4C) | TI DriverLib |
 | **Silicon Labs** | `U_PORT_SILABS_GECKO` | EFM32, EFR32 | Gecko SDK |
 | **Renesas** | `U_PORT_RENESAS_FSP` | RA series | Renesas FSP |
+| **ARM Cortex-A** | `U_PORT_ARM_CORTEXA` | i.MX, Zynq, Versatile, etc. | FreeRTOS+POSIX |
+| **RISC-V** | `U_PORT_RISCV` | SiFive, GigaDevice, Nuclei | Memory-mapped UART |
 
 ### Features
 - Uses FreeRTOS semaphores (`xSemaphoreCreateMutex`) for thread-safe mutex operations
@@ -139,6 +141,120 @@ Similar configuration applies:
 - **TI**: `U_PORT_TI_DRIVERLIB` - Configure EUSCI module
 - **Silicon Labs**: `U_PORT_SILABS_GECKO` - Configure USART pins and clocks
 - **Renesas**: `U_PORT_RENESAS_FSP` - Configure UART instance in FSP configurator
+
+#### ARM Cortex-A (U_PORT_ARM_CORTEXA)
+
+**Build Configuration:**
+```c
+#define U_PORT_FREERTOS
+#define U_PORT_ARM_CORTEXA
+```
+
+**Platform Details:**
+- For more powerful applications using ARM Cortex-A processors with FreeRTOS+POSIX
+- Common platforms: NXP i.MX series, Xilinx Zynq, ARM Versatile Express
+- Uses POSIX serial port API (termios, open, read, write)
+- Device names are platform-specific (e.g., "/dev/ttyS0", "/dev/ttyAMA0", "/dev/ttyUSB0")
+
+**Hardware Setup:**
+1. Ensure FreeRTOS+POSIX layer is enabled in your FreeRTOS configuration
+2. Serial device drivers must be available in your system
+3. Device nodes should be accessible via standard POSIX open()
+
+**Example:**
+```c
+#include "u_port.h"
+#include "u_cx.h"
+
+void ucxTask(void *pvParameters)
+{
+    uCxAtClient_t client;
+    uCxHandle_t ucxHandle;
+    
+    uPortAtInit(&client);
+    
+    // Use POSIX device name
+    if (!uPortAtOpen(&client, "/dev/ttyS0", 115200, true)) {
+        // Handle error
+        return;
+    }
+    
+    uCxInit(&client, &ucxHandle);
+    
+    // Use the API...
+    
+    uPortAtClose(&client);
+}
+```
+
+**Notes:**
+- Supports standard baud rates: 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
+- Hardware flow control (CTS/RTS) is supported via termios CRTSCTS flag
+- Timeout-based reads use poll() for efficient waiting
+
+#### RISC-V (U_PORT_RISCV)
+
+**Build Configuration:**
+```c
+#define U_PORT_FREERTOS
+#define U_PORT_RISCV
+```
+
+**Platform Details:**
+- For RISC-V cores with official FreeRTOS support
+- Common platforms: SiFive FE310, GigaDevice GD32VF103, Nuclei cores
+- Uses memory-mapped UART registers (16550-compatible or platform-specific)
+- Default UART base addresses: 0x10013000 (UART0), 0x10023000 (UART1)
+
+**Hardware Setup:**
+1. Adjust UART base addresses for your RISC-V SoC:
+   ```c
+   #define RISCV_UART0_BASE 0x10013000  // SiFive FE310 UART0
+   #define RISCV_UART1_BASE 0x10023000  // SiFive FE310 UART1
+   ```
+
+2. Adjust clock frequency if different from 32 MHz:
+   ```c
+   #define RISCV_CLOCK_FREQ 32000000  // 32 MHz default
+   ```
+
+3. Verify UART status register bit definitions match your hardware:
+   ```c
+   #define UART_STATUS_RXNE (1 << 0)  // RX not empty
+   #define UART_STATUS_TXE  (1 << 1)  // TX empty
+   ```
+
+**Example:**
+```c
+#include "u_port.h"
+#include "u_cx.h"
+
+void ucxTask(void *pvParameters)
+{
+    uCxAtClient_t client;
+    uCxHandle_t ucxHandle;
+    
+    uPortAtInit(&client);
+    
+    // Use generic device name
+    if (!uPortAtOpen(&client, "UART0", 115200, true)) {
+        // Handle error
+        return;
+    }
+    
+    uCxInit(&client, &ucxHandle);
+    
+    // Use the API...
+    
+    uPortAtClose(&client);
+}
+```
+
+**Notes:**
+- GPIO and clock initialization must be done in your board init code
+- The implementation assumes a standard UART register layout
+- You may need to adjust register offsets and bit definitions for your specific RISC-V SoC
+- Hardware flow control support depends on your UART peripheral
 
 ### Hardware Integration Required
 
