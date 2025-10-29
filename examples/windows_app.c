@@ -112,6 +112,7 @@ static int32_t gCurrentSocket = -1;
 
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
+static char gLastDeviceModel[64] = "";        // Last connected device model
 static char gWifiSsid[64] = "";               // Last WiFi SSID
 static char gWifiPassword[64] = "";           // Last WiFi password
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
@@ -153,7 +154,8 @@ static void printMenu(void);
 static void handleUserInput(void);
 static bool connectDevice(const char *comPort);
 static void disconnectDevice(void);
-static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize);
+static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize, 
+                                   char *recommendedDevice, size_t recommendedDeviceSize);
 static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
 static bool fetchApiCommandsFromGitHub(const char *product, const char *version);
@@ -974,17 +976,32 @@ int main(int argc, char *argv[])
     } else {
         // No argument provided - show available ports and let user choose
         char recommendedPort[32];
+        char recommendedDevice[64];
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No COM port specified. Available ports:");
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-        listAvailableComPorts(recommendedPort, sizeof(recommendedPort));
+        listAvailableComPorts(recommendedPort, sizeof(recommendedPort),
+                             recommendedDevice, sizeof(recommendedDevice));
         
-        char *selectedPort = selectComPortFromList(recommendedPort);
-        if (selectedPort) {
-            strncpy(gComPort, selectedPort, sizeof(gComPort) - 1);
-            gComPort[sizeof(gComPort) - 1] = '\0';
-            free(selectedPort);
+        // Auto-connect if saved port matches recommended port AND device model matches
+        if (recommendedPort[0] != '\0' && 
+            strcmp(gComPort, recommendedPort) == 0 &&
+            recommendedDevice[0] != '\0' &&
+            gLastDeviceModel[0] != '\0' &&
+            strcmp(gLastDeviceModel, recommendedDevice) == 0) {
+            // Same port and same device - auto-connect without asking
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Auto-connecting to saved %s on %s...", 
+                         recommendedDevice, recommendedPort);
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
         } else {
-            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No port selected. Using last saved port: %s", gComPort);
+            // Port changed, device changed, or no saved device - ask user
+            char *selectedPort = selectComPortFromList(recommendedPort);
+            if (selectedPort) {
+                strncpy(gComPort, selectedPort, sizeof(gComPort) - 1);
+                gComPort[sizeof(gComPort) - 1] = '\0';
+                free(selectedPort);
+            } else {
+                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No port selected. Using last saved port: %s", gComPort);
+            }
         }
     }
     
@@ -1323,12 +1340,6 @@ static bool connectDevice(const char *comPort)
     
     printf("COM port opened successfully\n");
     
-    // Turn off echo to avoid "Unexpected data" warnings
-    printf("Disabling AT echo...\n");
-    int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
-    if (result != 0) {
-        printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
-    }
     
     // Initialize UCX handle
     uCxInit(&gAtClient, &gUcxHandle);
@@ -1350,6 +1361,13 @@ static bool connectDevice(const char *comPort)
     uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
+
+    // Turn off echo to avoid "Unexpected data" warnings
+    printf("Disabling AT echo...\n");
+    int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
+    if (result != 0) {
+        printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
+    }
     
     // Read device information
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
@@ -1370,14 +1388,17 @@ static bool connectDevice(const char *comPort)
     const char *model = NULL;
     if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            %s", model);
-        // Save model for menu display
+        // Save model for menu display and settings
         strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
         gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+        strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+        gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
         uCxEnd(&gUcxHandle);
     } else {
         uCxEnd(&gUcxHandle);
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            (not available)");
         gDeviceModel[0] = '\0';
+        gLastDeviceModel[0] = '\0';
     }
     
     // AT+GMR - Software version
@@ -1422,6 +1443,9 @@ static void disconnectDevice(void)
     
     // Delete mutex
     U_CX_MUTEX_DELETE(gUrcMutex);
+
+    // Deinitialize UCX handle
+    uCxAtClientDeinit(&gAtClient);
     
     // Close COM port
     uPortAtClose(&gAtClient);
@@ -1452,6 +1476,13 @@ static void loadSettings(void)
                 gComPort[sizeof(gComPort) - 1] = '\0';
                 printf("Loaded last port from settings: %s\n", gComPort);
             }
+            else if (strncmp(line, "last_device=", 12) == 0) {
+                strncpy(gLastDeviceModel, line + 12, sizeof(gLastDeviceModel) - 1);
+                gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                if (strlen(gLastDeviceModel) > 0) {
+                    printf("Loaded last device from settings: %s\n", gLastDeviceModel);
+                }
+            }
             else if (strncmp(line, "wifi_ssid=", 10) == 0) {
                 strncpy(gWifiSsid, line + 10, sizeof(gWifiSsid) - 1);
                 gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
@@ -1478,6 +1509,7 @@ static void saveSettings(void)
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (f) {
         fprintf(f, "last_port=%s\n", gComPort);
+        fprintf(f, "last_device=%s\n", gLastDeviceModel);
         fprintf(f, "wifi_ssid=%s\n", gWifiSsid);
         
         // Obfuscate password before saving
@@ -1897,14 +1929,18 @@ static bool getComPortFriendlyName(const char *portName, char *friendlyName, siz
 }
 
 // List available COM ports
-static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize)
+static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize, 
+                                   char *recommendedDevice, size_t recommendedDeviceSize)
 {
     HKEY hKey;
     LONG result;
     
-    // Initialize recommended port
+    // Initialize recommended port and device
     if (recommendedPort && recommendedPortSize > 0) {
         recommendedPort[0] = '\0';
+    }
+    if (recommendedDevice && recommendedDeviceSize > 0) {
+        recommendedDevice[0] = '\0';
     }
     
     // Open the registry key where COM ports are listed
@@ -1989,12 +2025,24 @@ static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortS
                     // Check if this is a NORA device and should be recommended
                     if (recommendedPort && recommendedPortSize > 0 && recommendedPort[0] == '\0') {
                         // Check if it's available and contains NORA-W36 or NORA-B26
-                        if (hPort != INVALID_HANDLE_VALUE && 
-                            (strstr(deviceDesc, "NORA-W36") || strstr(deviceDesc, "NORA-B26"))) {
+                        const char *noraModel = NULL;
+                        if (strstr(deviceDesc, "NORA-W36")) {
+                            noraModel = "NORA-W36";
+                        } else if (strstr(deviceDesc, "NORA-B26")) {
+                            noraModel = "NORA-B26";
+                        }
+                        
+                        if (hPort != INVALID_HANDLE_VALUE && noraModel) {
                             // Prefer AT port if available, otherwise any NORA port
                             if (portLabel[0] == '\0' || strcmp(portLabel, "AT") == 0) {
                                 strncpy(recommendedPort, portName, recommendedPortSize - 1);
                                 recommendedPort[recommendedPortSize - 1] = '\0';
+                                
+                                // Save recommended device model
+                                if (recommendedDevice && recommendedDeviceSize > 0) {
+                                    strncpy(recommendedDevice, noraModel, recommendedDeviceSize - 1);
+                                    recommendedDevice[recommendedDeviceSize - 1] = '\0';
+                                }
                             }
                         }
                     }

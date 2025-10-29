@@ -73,7 +73,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(http_example_windows PRIVATE /W4)
+  target_compile_options(http_example_windows PRIVATE /W4 /wd4200 /wd4201)
   target_compile_definitions(http_example_windows PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -92,7 +92,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(windows_test PRIVATE /W4)
+  target_compile_options(windows_test PRIVATE /W4 /wd4200 /wd4201)
   target_compile_definitions(windows_test PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -111,7 +111,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(windows_app PRIVATE /W4 /FS)
+  target_compile_options(windows_app PRIVATE /W4 /FS /wd4200 /wd4201)
   target_compile_definitions(windows_app PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -127,7 +127,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(ucxclient_windows PRIVATE /W4)
+  target_compile_options(ucxclient_windows PRIVATE /W4 /wd4200 /wd4201)
   target_compile_definitions(ucxclient_windows PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
