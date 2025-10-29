@@ -119,6 +119,21 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
                           uCxFirmwareUpdateProgress_t progressCallback,
                           void *pUserData)
 {
+    // Default to 128-byte blocks (safer for initial connection)
+    return uCxFirmwareUpdateEx(puCxHandle, pFirmwareFile, pDeviceName,
+                               baudRate, useFlowControl, false,
+                               progressCallback, pUserData);
+}
+
+int32_t uCxFirmwareUpdateEx(uCxHandle_t *puCxHandle,
+                            const char *pFirmwareFile,
+                            const char *pDeviceName,
+                            int32_t baudRate,
+                            bool useFlowControl,
+                            bool use1K,
+                            uCxFirmwareUpdateProgress_t progressCallback,
+                            void *pUserData)
+{
     if (puCxHandle == NULL || pFirmwareFile == NULL || pDeviceName == NULL) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, "Invalid parameters");
         return -1;
@@ -126,6 +141,7 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "=== Firmware Update Started ===");
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Firmware file: %s", pFirmwareFile);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Block size: %s bytes", use1K ? "1024 (1K)" : "128");
     
     // Use default baudrate if not specified
     if (baudRate <= 0) {
@@ -168,7 +184,7 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Starting XMODEM transfer...");
     result = uCxAtClientXmodemSendFile(puCxHandle->pAtClient,
                                        pFirmwareFile,
-                                       true,  // Use 1K blocks for faster transfer
+                                       use1K,  // Block size mode
                                        xmodemProgressWrapper,
                                        &callbackContext);
     

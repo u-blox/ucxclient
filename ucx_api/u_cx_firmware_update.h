@@ -111,6 +111,31 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
                                   uCxFirmwareUpdateProgress_t progressCallback,
                                   void *pUserData);
 
+/**
+ * Update module firmware with explicit block size control
+ * 
+ * Extended version of uCxFirmwareUpdate with explicit control over XMODEM block size.
+ * Use this for testing or when you need to force 128-byte blocks.
+ * 
+ * @param[in] puCxHandle      uCX API handle
+ * @param[in] pFirmwareFile   Path to firmware file (.bin)
+ * @param[in] pDeviceName     Device/COM port name
+ * @param     baudRate        Baudrate for transfer (0 = keep current)
+ * @param     useFlowControl  Use hardware flow control
+ * @param     use1K           true = 1024-byte blocks, false = 128-byte blocks
+ * @param     progressCallback  Optional progress callback
+ * @param     pUserData       User data for callback
+ * @return                    0 on success, negative value on error
+ */
+int32_t uCxFirmwareUpdateEx(uCxHandle_t *puCxHandle,
+                            const char *pFirmwareFile,
+                            const char *pDeviceName,
+                            int32_t baudRate,
+                            bool useFlowControl,
+                            bool use1K,
+                            uCxFirmwareUpdateProgress_t progressCallback,
+                            void *pUserData);
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */

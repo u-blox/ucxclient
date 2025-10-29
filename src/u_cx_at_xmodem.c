@@ -99,15 +99,19 @@ static int32_t xmodemWaitForStart(uCxAtClient_t *pClient, int32_t timeoutMs)
     uint8_t startChar;
     int32_t bytesRead;
     int32_t startTime = uPortGetTickTimeMs();
+    int32_t attemptsCount = 0;
     
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Waiting for start signal...");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Waiting for start signal (timeout=%dms)...", timeoutMs);
     
     while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
         bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &startChar, 1, 100);
         
         if (bytesRead == 1) {
+            attemptsCount++;
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Received byte 0x%02X (attempt %d)", startChar, attemptsCount);
+            
             if (startChar == U_CX_XMODEM_CCHR) {
-                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Receiver ready (CRC mode)");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Receiver ready (CRC mode) - starting transfer");
                 return 0;
             } else if (startChar == U_CX_XMODEM_NAK) {
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Receiver ready (checksum mode - not supported)");
@@ -115,11 +119,14 @@ static int32_t xmodemWaitForStart(uCxAtClient_t *pClient, int32_t timeoutMs)
             } else if (startChar == U_CX_XMODEM_CAN) {
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Transfer cancelled by receiver");
                 return -3;
+            } else {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Ignoring unexpected byte 0x%02X", startChar);
             }
         }
     }
     
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Timeout waiting for start signal");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Timeout waiting for start signal (received %d bytes in %dms)", 
+                    attemptsCount, (int32_t)(uPortGetTickTimeMs() - startTime));
     return -1;
 }
 
@@ -135,54 +142,90 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
     uint8_t response;
     int32_t bytesRead;
     
-    // Build packet
+    // Build packet header
     packet[0] = (blockSize == U_CX_XMODEM_BLOCK_SIZE_1K) ? U_CX_XMODEM_STX : U_CX_XMODEM_SOH;
     packet[1] = blockNum;
-    packet[2] = ~blockNum;  // Block number complement (bitwise NOT)
+    packet[2] = ~blockNum;  // Block number complement (bitwise NOT = 255 - blockNum)
     
-    // Copy data and pad with 0x1A (EOF) if needed
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                    "XMODEM: Block header: [0]=0x%02X (%s), [1]=0x%02X (num=%u), [2]=0x%02X (~num=%u)",
+                    packet[0], (packet[0] == U_CX_XMODEM_STX) ? "STX/1K" : "SOH/128", 
+                    packet[1], packet[1], packet[2], packet[2]);
+    
+    // Copy data and pad with 0x1A (EOF/Ctrl-Z) if needed
     memset(&packet[3], 0x1A, blockSize);
     memcpy(&packet[3], pData, dataLen);  // Only copy actual data length
     
-    // Calculate and append CRC
+    if (dataLen < blockSize) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "XMODEM: Padding block %u with %zu bytes of 0x1A (data=%zu, block=%zu)",
+                        blockNum, blockSize - dataLen, dataLen, blockSize);
+    }
+    
+    // Calculate and append CRC16-CCITT
     uint16_t crc = xmodemCrc16(&packet[3], blockSize);
-    packet[3 + blockSize] = (crc >> 8) & 0xFF;
-    packet[3 + blockSize + 1] = crc & 0xFF;
+    packet[3 + blockSize] = (crc >> 8) & 0xFF;      // CRC high byte
+    packet[3 + blockSize + 1] = crc & 0xFF;         // CRC low byte
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                    "XMODEM: Block %u: CRC16=0x%04X, packet size=%zu bytes",
+                    blockNum, crc, packetSize);
     
     // Try sending the block with retries
     for (int32_t retry = 0; retry < maxRetries; retry++) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Sending block %u (try %d/%d)", blockNum, retry + 1, maxRetries);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "XMODEM: >>> Sending block %u (try %d/%d, %zu bytes)...", 
+                        blockNum, retry + 1, maxRetries, packetSize);
         
         // Send packet
-        if (pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, packet, packetSize) != (int32_t)packetSize) {
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Write error on block %u", blockNum);
+        int32_t bytesWritten = pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, packet, packetSize);
+        if (bytesWritten != (int32_t)packetSize) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                            "XMODEM: Write error on block %u (wrote %d of %zu bytes)", 
+                            blockNum, bytesWritten, packetSize);
             continue;
         }
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: <<< Waiting for response (timeout=%dms)...", timeoutMs);
         
         // Wait for response
         bytesRead = 0;
         int32_t startTime = uPortGetTickTimeMs();
+        int32_t readAttempts = 0;
+        
         while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
             bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &response, 1, 100);
             
             if (bytesRead == 1) {
+                readAttempts++;
+                int32_t elapsed = uPortGetTickTimeMs() - startTime;
+                
                 if (response == U_CX_XMODEM_ACK) {
-                    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Block %u ACKed", blockNum);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                                    "XMODEM: <<< Block %u ACKed (0x06) after %dms", blockNum, elapsed);
                     return 0;  // Success
                 } else if (response == U_CX_XMODEM_NAK) {
-                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Block %u NAKed, retrying...", blockNum);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
+                                    "XMODEM: <<< Block %u NAKed (0x15) after %dms, retrying...", 
+                                    blockNum, elapsed);
                     break;  // Retry
                 } else if (response == U_CX_XMODEM_CAN) {
-                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Transfer cancelled by receiver");
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                                    "XMODEM: <<< Transfer cancelled by receiver (CAN=0x18)");
                     return -3;
                 } else {
-                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Unexpected response: 0x%02X", response);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
+                                    "XMODEM: <<< Unexpected response 0x%02X (attempt %d, elapsed %dms)", 
+                                    response, readAttempts, elapsed);
                 }
             }
         }
         
+        int32_t totalElapsed = uPortGetTickTimeMs() - startTime;
         if (bytesRead != 1) {
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Timeout waiting for ACK on block %u", blockNum);
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
+                            "XMODEM: Timeout waiting for ACK on block %u (waited %dms, read attempts=%d)", 
+                            blockNum, totalElapsed, readAttempts);
         }
     }
     
@@ -199,29 +242,48 @@ static int32_t xmodemSendEot(uCxAtClient_t *pClient, int32_t timeoutMs)
     uint8_t response;
     int32_t bytesRead;
     
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: Sending EOT...");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: >>> Sending EOT (0x04)...");
     
-    if (pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, &eot, 1) != 1) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Failed to write EOT");
+    int32_t bytesWritten = pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, &eot, 1);
+    if (bytesWritten != 1) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Failed to write EOT (wrote %d bytes)", bytesWritten);
         return -1;
     }
     
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: <<< Waiting for final ACK (timeout=%dms)...", timeoutMs);
+    
     // Wait for final ACK
     int32_t startTime = uPortGetTickTimeMs();
+    int32_t readAttempts = 0;
+    
     while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
         bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &response, 1, 100);
         
         if (bytesRead == 1) {
+            readAttempts++;
+            int32_t elapsed = uPortGetTickTimeMs() - startTime;
+            
             if (response == U_CX_XMODEM_ACK) {
-                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: EOT ACKed - transfer complete");
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                                "XMODEM: <<< EOT ACKed (0x06) after %dms - TRANSFER COMPLETE!", elapsed);
                 return 0;
+            } else if (response == U_CX_XMODEM_NAK) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
+                                "XMODEM: <<< EOT NAKed (0x15) - receiver may want EOT resent");
+                // Some receivers NAK the first EOT - try sending it again
+                // But don't implement retry here yet, just log it
             } else {
-                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "XMODEM: Unexpected response to EOT: 0x%02X", response);
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
+                                "XMODEM: <<< Unexpected response to EOT: 0x%02X (attempt %d, elapsed %dms)", 
+                                response, readAttempts, elapsed);
             }
         }
     }
     
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Timeout waiting for ACK after EOT");
+    int32_t totalElapsed = uPortGetTickTimeMs() - startTime;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                    "XMODEM: Timeout waiting for ACK after EOT (waited %dms, read attempts=%d)", 
+                    totalElapsed, readAttempts);
     return -1;
 }
 
@@ -269,25 +331,39 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
     }
     
     // Send all blocks
-    uint8_t blockNum = 1;
+    uint8_t blockNum = 1;  // XMODEM spec: first block is 1, not 0
     size_t offset = 0;
+    size_t totalBlocks = (dataLen + blockSize - 1) / blockSize;  // Ceiling division
+    size_t blocksSent = 0;
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                    "XMODEM: Transfer details: total_size=%zu, block_size=%zu, total_blocks=%zu",
+                    dataLen, blockSize, totalBlocks);
     
     while (offset < dataLen) {
         size_t remainingBytes = dataLen - offset;
         size_t currentBlockSize = (remainingBytes < blockSize) ? remainingBytes : blockSize;
+        blocksSent++;
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "XMODEM: === Block %u/%zu (num=%u, offset=%zu, data=%zu/%zu, remaining=%zu) ===",
+                        blocksSent, totalBlocks, blockNum, offset, currentBlockSize, blockSize, remainingBytes);
         
         // Send block - pass actual data size and block size separately
         result = xmodemSendBlock(pClient, blockNum, &pData[offset], currentBlockSize, blockSize,
                                 pConfig->timeoutMs, pConfig->maxRetries);
         if (result != 0) {
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "XMODEM: Transfer failed at block %u", blockNum);
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                            "XMODEM: === TRANSFER FAILED at block %u (sent %zu/%zu blocks) ===",
+                            blockNum, blocksSent, totalBlocks);
             return result;
         }
         
         offset += currentBlockSize;
         
-        // Increment block number with natural 8-bit wraparound (same as working code)
-        // This gives sequence: 1, 2, 3, ..., 255, 0, 1, 2, 3, ...
+        // Increment block number with natural 8-bit wraparound per XMODEM spec
+        // Sequence: 1, 2, 3, ..., 255, 0, 1, 2, 3, ...
+        // Note: spec says "when reaches 256 it is reset to 0"
         blockNum = (blockNum + 1) % 256;
         
         // Call progress callback
@@ -295,6 +371,10 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
             progressCallback(dataLen, offset, pUserData);
         }
     }
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                    "XMODEM: === All blocks sent (%zu/%zu) - sending EOT ===",
+                    blocksSent, totalBlocks);
     
     // Send EOT
     result = xmodemSendEot(pClient, pConfig->timeoutMs);

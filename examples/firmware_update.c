@@ -85,6 +85,7 @@ int main(int argc, char *argv[])
     const char *uart = U_EXAMPLE_UART;
     const char *firmwareFile = NULL;
     int32_t baudrate = U_EXAMPLE_BAUDRATE;
+    bool use1K = false;  // Default to 128-byte mode for initial testing
     int32_t result;
     
     printf("\n");
@@ -94,8 +95,11 @@ int main(int argc, char *argv[])
     
     // Parse command line arguments
     if (argc < 2) {
-        printf("Usage: %s <firmware.bin> [COM_PORT] [BAUDRATE]\n", argv[0]);
-        printf("Example: %s NORA-W36.bin COM11 115200\n\n", argv[0]);
+        printf("Usage: %s <firmware.bin> [COM_PORT] [BAUDRATE] [BLOCK_SIZE]\n", argv[0]);
+        printf("Example: %s NORA-W36.bin COM11 115200 1K\n", argv[0]);
+        printf("\n");
+        printf("  BLOCK_SIZE: 128 or 1K (default: 128 for testing)\n");
+        printf("\n");
         return 1;
     }
     
@@ -106,11 +110,17 @@ int main(int argc, char *argv[])
     if (argc >= 4) {
         baudrate = atoi(argv[3]);
     }
+    if (argc >= 5) {
+        if (strcmp(argv[4], "1K") == 0 || strcmp(argv[4], "1k") == 0 || strcmp(argv[4], "1024") == 0) {
+            use1K = true;
+        }
+    }
     
     printf("Configuration:\n");
     printf("  Firmware file: %s\n", firmwareFile);
     printf("  COM port: %s\n", uart);
     printf("  Baudrate: %d\n", baudrate);
+    printf("  Block size: %s bytes\n", use1K ? "1024 (1K)" : "128");
     printf("\n");
     
     // Check if firmware file exists
@@ -170,13 +180,14 @@ int main(int argc, char *argv[])
     printf("Entering firmware update mode...\n");
     printf("(This may take a few seconds)\n\n");
     
-    result = uCxFirmwareUpdate(&gUcxHandle, 
-                               firmwareFile,
-                               uart,          // Device/COM port name
-                               baudrate,
-                               false,         // No flow control
-                               progressCallback,
-                               NULL);
+    result = uCxFirmwareUpdateEx(&gUcxHandle, 
+                                 firmwareFile,
+                                 uart,          // Device/COM port name
+                                 baudrate,
+                                 false,         // No flow control
+                                 use1K,         // Block size mode
+                                 progressCallback,
+                                 NULL);
     
     printf("\n");
     
