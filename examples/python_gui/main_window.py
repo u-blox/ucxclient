@@ -305,8 +305,8 @@ class MainWindow:
         # Log tab (main output)
         self._create_log_tab()
         
-        # Terminal tab (always present)
-        self._create_terminal_tab()
+        # Terminal tab - DISABLED: Direct AT commands not supported (use API commands instead)
+        # self._create_terminal_tab()
         
         # Test and Mapper tabs (will be created after product is loaded)
         self.test_tab = None

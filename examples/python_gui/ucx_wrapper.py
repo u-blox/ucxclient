@@ -91,10 +91,8 @@ class UcxClientWrapper:
         self._port_name = None
         self._baud_rate = 115200
         self._flow_control = False
-        self._serial = None  # Serial port object (pyserial)
-        self._serial_lock = threading.RLock()  # Lock for thread-safe serial access
         self._api_lock = threading.RLock()  # Lock for thread-safe API calls
-        self.ucx_handle = None  # UCX handle (not used in simple serial mode)
+        self.ucx_handle = None  # UCX handle
         self.handle = None  # Handle for firmware update compatibility
         
         # Register cleanup handler to ensure clean disconnect before Python exits
@@ -104,10 +102,12 @@ class UcxClientWrapper:
         if dll_path is None:
             lib_name = get_library_name()
             # Search in common build directories (prefer Release over Debug)
+            # Go up two levels from examples/python_gui to project root
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             possible_paths = [
-                os.path.join(os.path.dirname(__file__), "..", "build", "Release", lib_name),
-                os.path.join(os.path.dirname(__file__), "..", "build", "Debug", lib_name),
-                os.path.join(os.path.dirname(__file__), "..", "build", lib_name),
+                os.path.join(project_root, "build", "Release", lib_name),
+                os.path.join(project_root, "build", "Debug", lib_name),
+                os.path.join(project_root, "build", lib_name),
                 lib_name  # Current directory or PATH
             ]
             
@@ -461,38 +461,6 @@ class UcxClientWrapper:
         except Exception:
             return "Bluetooth Status Unknown"
     
-    def _parse_wifi_status(self, response: str) -> str:
-        """Parse WiFi status response"""
-        if "+UNTWST:" in response:
-            # Extract status from response
-            lines = response.split('\n')
-            for line in lines:
-                if "+UNTWST:" in line:
-                    status_part = line.split("+UNTWST:")[1].strip()
-                    if status_part.startswith("0"):
-                        return "Disconnected"
-                    elif status_part.startswith("1"):
-                        return "Connected"
-                    else:
-                        return f"Status: {status_part}"
-        return "Unknown"
-    
-    def _parse_bluetooth_status(self, response: str) -> str:
-        """Parse Bluetooth status response"""
-        if "+UBTST:" in response:
-            # Extract status from response
-            lines = response.split('\n')
-            for line in lines:
-                if "+UBTST:" in line:
-                    status_part = line.split("+UBTST:")[1].strip()
-                    if status_part.startswith("0"):
-                        return "Disabled"
-                    elif status_part.startswith("1"):
-                        return "Enabled"
-                    else:
-                        return f"Status: {status_part}"
-        return "Unknown"
-    
     def initialize_client(self):
         """Initialize the AT client following README.md example pattern"""
         if self._client_initialized:
@@ -503,76 +471,6 @@ class UcxClientWrapper:
         client_size = 512
         self._client_buffer = (ctypes.c_uint8 * client_size)()
         self._client_handle = ctypes.cast(self._client_buffer, ctypes.c_void_p)
-        
-        # Allocate RX and URC buffers (static in C example)
-        rx_buffer_size = 2048
-        urc_buffer_size = 1024
-        self._rx_buffer = (ctypes.c_char * rx_buffer_size)()
-        self._urc_buffer = (ctypes.c_char * urc_buffer_size)()
-        
-        # Define callback function types matching u_cx_at_client.h
-        # Use PYFUNCTYPE instead of CFUNCTYPE to automatically handle GIL when called from C threads
-        # int32_t (*write)(uCxAtClient_t *pClient, void *pStreamHandle, const void *pData, size_t length)
-        WRITE_CALLBACK_TYPE = ctypes.PYFUNCTYPE(
-            ctypes.c_int32,  # return type
-            ctypes.c_void_p,  # pClient
-            ctypes.c_void_p,  # pStreamHandle
-            ctypes.c_void_p,  # pData
-            ctypes.c_size_t   # length
-        )
-        
-        # int32_t (*read)(uCxAtClient_t *pClient, void *pStreamHandle, void *pData, size_t length, int32_t timeoutMs)
-        READ_CALLBACK_TYPE = ctypes.PYFUNCTYPE(
-            ctypes.c_int32,   # return type
-            ctypes.c_void_p,  # pClient
-            ctypes.c_void_p,  # pStreamHandle
-            ctypes.c_void_p,  # pData
-            ctypes.c_size_t,  # length
-            ctypes.c_int32    # timeoutMs
-        )
-        
-        # Create callback instances that will persist
-        self._write_callback = WRITE_CALLBACK_TYPE(self._uart_write)
-        self._read_callback = READ_CALLBACK_TYPE(self._uart_read)
-        
-        # Create uCxAtClientConfig_t structure
-        # typedef struct uCxAtClientConfig {
-        #     void *pRxBuffer;
-        #     size_t rxBufferLen;
-        #     void *pUrcBuffer;       (if U_CX_USE_URC_QUEUE == 1)
-        #     size_t urcBufferLen;    (if U_CX_USE_URC_QUEUE == 1)
-        #     void *pStreamHandle;
-        #     int32_t (*write)(...);
-        #     int32_t (*read)(...);
-        #     int32_t timeoutMs;
-        #     void *pContext;
-        # } uCxAtClientConfig_t;
-        
-        class UcxAtClientConfig(ctypes.Structure):
-            _fields_ = [
-                ("pRxBuffer", ctypes.c_void_p),
-                ("rxBufferLen", ctypes.c_size_t),
-                ("pUrcBuffer", ctypes.c_void_p),
-                ("urcBufferLen", ctypes.c_size_t),
-                ("pStreamHandle", ctypes.c_void_p),
-                ("write", WRITE_CALLBACK_TYPE),
-                ("read", READ_CALLBACK_TYPE),
-                ("timeoutMs", ctypes.c_int32),
-                ("pContext", ctypes.c_void_p)
-            ]
-        
-        # Initialize config structure
-        self._at_config = UcxAtClientConfig(
-            pRxBuffer=ctypes.cast(self._rx_buffer, ctypes.c_void_p),
-            rxBufferLen=rx_buffer_size,
-            pUrcBuffer=ctypes.cast(self._urc_buffer, ctypes.c_void_p),
-            urcBufferLen=urc_buffer_size,
-            pStreamHandle=None,  # Will be set to serial port handle
-            write=self._write_callback,
-            read=self._read_callback,
-            timeoutMs=10000,
-            pContext=None
-        )
         
         # CRITICAL: Call uPortAtInit (like windows_basic.c line 154)
         # This function does EVERYTHING:
@@ -597,41 +495,6 @@ class UcxClientWrapper:
         
         # Expose handle for firmware update
         self.handle = ctypes.byref(self.ucx_handle)
-    
-    def _uart_write(self, pClient, pStreamHandle, pData, length):
-        """Write callback for AT client (called from C DLL)"""
-        try:
-            with self._serial_lock:
-                if self._serial and self._serial.is_open:
-                    data = ctypes.string_at(pData, length)
-                    written = self._serial.write(data)
-                    self._serial.flush()  # Ensure data is sent immediately
-                    return written
-                return -1
-        except:
-            return -1
-    
-    def _uart_read(self, pClient, pStreamHandle, pData, length, timeoutMs):
-        """Read callback for AT client (called from C DLL)"""
-        try:
-            with self._serial_lock:
-                if self._serial and self._serial.is_open:
-                    # Set timeout in seconds
-                    old_timeout = self._serial.timeout
-                    self._serial.timeout = timeoutMs / 1000.0 if timeoutMs > 0 else None
-                    
-                    data = self._serial.read(length)
-                    bytes_read = len(data)
-                    
-                    # Copy data to output buffer
-                    if bytes_read > 0:
-                        ctypes.memmove(pData, data, bytes_read)
-                    
-                    self._serial.timeout = old_timeout
-                    return bytes_read
-                return -1
-        except:
-            return -1
     
     def connect(self, port_name: str, baud_rate: int = 115200, flow_control: bool = False) -> bool:
         """Connect to a COM port
@@ -845,81 +708,6 @@ class UcxClientWrapper:
                 raise UcxClientError("AT client pointer is NULL")
             
             return ctypes.c_void_p(at_client_ptr)
-    
-    def send_at_command(self, command: str) -> Tuple[bool, str]:
-        """Send AT command directly over serial port (bypasses UCX API)
-        
-        Args:
-            command: AT command string (e.g. "AT", "ATI", "ATI9", "AT+GMR")
-            
-        Returns:
-            Tuple of (success, response)
-        """
-        # Acquire API lock to prevent concurrent AT commands
-        with self._api_lock:
-            if not self._serial or not self._serial.is_open:
-                return (False, "Serial port not open")
-            
-            if not command:
-                return (False, "Empty command")
-            
-            cmd = command.strip()
-            
-            try:
-                # Clear any pending input and wait for buffer to settle
-                self._serial.reset_input_buffer()
-                self._serial.reset_output_buffer()
-                time.sleep(0.05)  # 50ms delay to let buffers clear
-                
-                # Send command with CR+LF
-                cmd_bytes = (cmd + "\r\n").encode('ascii')
-                self._serial.write(cmd_bytes)
-                self._serial.flush()
-                
-                # Read response with timeout
-                response_lines = []
-                timeout_time = time.time() + 3.0  # 3 second timeout (increased from 2)
-                first_data_received = False
-                
-                while time.time() < timeout_time:
-                    if self._serial.in_waiting > 0:
-                        try:
-                            line = self._serial.readline().decode('ascii', errors='ignore').strip()
-                            if line:
-                                first_data_received = True
-                                # Skip command echo
-                                if line == cmd:
-                                    continue
-                                response_lines.append(line)
-                                # Check for final response
-                                if line in ['OK', 'ERROR'] or line.startswith('ERROR') or line.startswith('+CME ERROR'):
-                                    break
-                        except Exception as e:
-                            print(f"[DEBUG] Error reading line: {e}")
-                            break
-                    else:
-                        # If we got data and now nothing is waiting, might be done
-                        if first_data_received and 'OK' in response_lines:
-                            break
-                        time.sleep(0.01)  # Small delay to avoid busy waiting
-                
-                # Join all response lines
-                response = "\n".join(response_lines)
-                
-                # Check if successful
-                if 'OK' in response_lines:
-                    return (True, response)
-                elif 'ERROR' in response or any('ERROR' in line for line in response_lines):
-                    return (False, response if response else "ERROR")
-                elif response:
-                    # Got response but no OK/ERROR - still consider it success
-                    return (True, response)
-                else:
-                    return (False, "No response")
-                    
-            except Exception as e:
-                import traceback
-                return (False, f"Exception: {str(e)}\n{traceback.format_exc()}")
     
     def __del__(self):
         """Cleanup when object is destroyed"""
