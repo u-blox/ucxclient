@@ -26,6 +26,8 @@
 # include "u_port_no_os.h"
 #elif defined(U_PORT_POSIX)
 # include "u_port_posix.h"
+#elif defined(U_PORT_FREERTOS)
+# include "u_port_freertos.h"
 #elif defined(U_PORT_WINDOWS)
 # include "u_port_windows.h"
 #endif
