@@ -64,6 +64,9 @@
 // URC Event flags
 #define URC_FLAG_NETWORK_UP         (1 << 0)
 #define URC_FLAG_NETWORK_DOWN       (1 << 1)
+#define URC_FLAG_SOCK_CONNECTED     (1 << 2)
+#define URC_FLAG_SOCK_DATA          (1 << 3)
+#define URC_FLAG_SPS_DATA           (1 << 4)
 
 // Global handles
 static uCxAtClient_t gAtClient;
@@ -497,6 +500,32 @@ static void networkDownUrc(struct uCxHandle *puCxHandle)
     signalEvent(URC_FLAG_NETWORK_DOWN);
 }
 
+static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
+{
+    (void)puCxHandle;
+    (void)socket_handle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Socket connected: %d", socket_handle);
+    signalEvent(URC_FLAG_SOCK_CONNECTED);
+}
+
+static void socketDataAvailable(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes)
+{
+    (void)puCxHandle;
+    (void)socket_handle;
+    (void)number_bytes;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Socket data available: %d bytes on socket %d", number_bytes, socket_handle);
+    signalEvent(URC_FLAG_SOCK_DATA);
+}
+
+static void spsDataAvailable(struct uCxHandle *puCxHandle, int32_t connection_handle, int32_t number_bytes)
+{
+    (void)puCxHandle;
+    (void)connection_handle;
+    (void)number_bytes;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS data available: %d bytes on connection %d", number_bytes, connection_handle);
+    signalEvent(URC_FLAG_SPS_DATA);
+}
+
 // ----------------------------------------------------------------
 // Socket Functions
 // ----------------------------------------------------------------
@@ -646,7 +675,15 @@ static void socketReadData(void)
     
     printf("\n--- Read Socket Data ---\n");
     printf("Socket handle: %d\n", gCurrentSocket);
-    printf("Enter number of bytes to read (max 1000): ");
+    printf("Waiting for data (timeout 5s)...\n");
+    
+    // Wait for data available event
+    if (!waitEvent(URC_FLAG_SOCK_DATA, 5)) {
+        printf("No data available (timeout)\n");
+        return;
+    }
+    
+    printf("Data available! Enter number of bytes to read (max 1000): ");
     
     int length;
     scanf("%d", &length);
@@ -825,7 +862,15 @@ static void spsReadData(void)
     scanf("%d", &connHandle);
     getchar(); // consume newline
     
-    printf("Enter number of bytes to read (max 1000): ");
+    printf("Waiting for data (timeout 5s)...\n");
+    
+    // Wait for data available event
+    if (!waitEvent(URC_FLAG_SPS_DATA, 5)) {
+        printf("No data available (timeout)\n");
+        return;
+    }
+    
+    printf("Data available! Enter number of bytes to read (max 1000): ");
     int length;
     scanf("%d", &length);
     getchar(); // consume newline
@@ -1216,6 +1261,13 @@ static bool connectDevice(const char *comPort)
     // Register URC handlers for WiFi network events
     uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
     uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
+    
+    // Register URC handlers for socket events
+    uCxSocketRegisterConnect(&gUcxHandle, sockConnected);
+    uCxSocketRegisterDataAvailable(&gUcxHandle, socketDataAvailable);
+    
+    // Register URC handler for SPS events
+    uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
     printf("UCX initialized successfully\n");
     
