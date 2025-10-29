@@ -90,6 +90,9 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Settings file
 #define SETTINGS_FILE "windows_app_settings.ini"
 
+// Buffer size constants
+#define MAX_DATA_BUFFER 1000
+
 // URC Event flags
 #define URC_FLAG_NETWORK_UP         (1 << 0)
 #define URC_FLAG_NETWORK_DOWN       (1 << 1)
@@ -692,7 +695,7 @@ static void socketSendData(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", gCurrentSocket);
     printf("Enter data to send: ");
     
-    char data[1001];
+    char data[MAX_DATA_BUFFER + 1];
     if (fgets(data, sizeof(data), stdin)) {
         char *end = strchr(data, '\n');
         if (end) *end = '\0';
@@ -733,18 +736,18 @@ static void socketReadData(void)
         return;
     }
     
-    printf("Data available! Enter number of bytes to read (max 1000): ");
+    printf("Data available! Enter number of bytes to read (max %d): ", MAX_DATA_BUFFER);
     
     int length;
     scanf("%d", &length);
     getchar(); // consume newline
     
-    if (length <= 0 || length > 1000) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid length. Must be 1-1000");
+    if (length <= 0 || length > MAX_DATA_BUFFER) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid length. Must be 1-%d", MAX_DATA_BUFFER);
         return;
     }
     
-    uint8_t buffer[1001];
+    uint8_t buffer[MAX_DATA_BUFFER + 1];
     int32_t result = uCxSocketRead(&gUcxHandle, gCurrentSocket, length, buffer);
     
     if (result > 0) {
@@ -886,7 +889,7 @@ static void spsSendData(void)
     getchar(); // consume newline
     
     printf("Enter data to send: ");
-    char data[1001];
+    char data[MAX_DATA_BUFFER + 1];
     if (fgets(data, sizeof(data), stdin)) {
         char *end = strchr(data, '\n');
         if (end) *end = '\0';
@@ -927,17 +930,17 @@ static void spsReadData(void)
         return;
     }
     
-    printf("Data available! Enter number of bytes to read (max 1000): ");
+    printf("Data available! Enter number of bytes to read (max %d): ", MAX_DATA_BUFFER);
     int length;
     scanf("%d", &length);
     getchar(); // consume newline
     
-    if (length <= 0 || length > 1000) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid length. Must be 1-1000");
+    if (length <= 0 || length > MAX_DATA_BUFFER) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid length. Must be 1-%d", MAX_DATA_BUFFER);
         return;
     }
     
-    uint8_t buffer[1001];
+    uint8_t buffer[MAX_DATA_BUFFER + 1];
     int32_t result = uCxSpsRead(&gUcxHandle, connHandle, length, buffer);
     
     if (result > 0) {
@@ -967,7 +970,8 @@ int main(int argc, char *argv[])
     } else {
         // No argument provided - show available ports and let user choose
         char recommendedPort[32];
-        printf("No COM port specified. Available ports:\n\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No COM port specified. Available ports:");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
         listAvailableComPorts(recommendedPort, sizeof(recommendedPort));
         
         char *selectedPort = selectComPortFromList(recommendedPort);
@@ -976,7 +980,7 @@ int main(int argc, char *argv[])
             gComPort[sizeof(gComPort) - 1] = '\0';
             free(selectedPort);
         } else {
-            printf("No port selected. Using last saved port: %s\n", gComPort);
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No port selected. Using last saved port: %s", gComPort);
         }
     }
     
@@ -1014,22 +1018,23 @@ int main(int argc, char *argv[])
     // Free API commands if loaded
     freeApiCommands();
     
-    printf("\nGoodbye!\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Goodbye!");
     return 0;
 }
 
 static void printHeader(void)
 {
-    printf("\n");
-    printf("========================================\n");
-    printf("  u-connectXpress ucxclient App v%s\n", APP_VERSION);
-    printf("========================================\n");
-    printf("Simple C application for NORA-B26 and NORA-W36\n");
-    printf("\n");
-    printf("NOTE: UCX Logging is %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
-    printf("      AT commands/responses will appear in this console\n");
-    printf("      Use menu option [8] to toggle logging on/off\n");
-    printf("\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "========================================");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "  u-connectXpress ucxclient App v%s", APP_VERSION);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "========================================");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Simple C application for NORA-B26 and NORA-W36");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "NOTE: UCX Logging is %s", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "      AT commands/responses will appear in this console");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "      Use menu option [8] to toggle logging on/off");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
 }
 
 static void printMenu(void)
