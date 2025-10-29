@@ -33,8 +33,37 @@
 #include <stdbool.h>
 #include <conio.h>  // For _kbhit() and _getch()
 #include <winhttp.h>  // For HTTP client to fetch from GitHub
+#include <setupapi.h>  // For device enumeration
+#include <devguid.h>   // For GUID_DEVCLASS_PORTS
+#include <regstr.h>    // For registry string constants
 
 #pragma comment(lib, "winhttp.lib")
+#pragma comment(lib, "setupapi.lib")
+
+// FTD2XX library dynamic loading
+// Note: FT_HANDLE in FTD2XX is actually a pointer type despite being typedef'd as ULONG
+typedef PVOID FT_HANDLE;
+typedef ULONG FT_STATUS;
+
+#define FT_OK 0
+#define FT_LIST_NUMBER_ONLY     0x80000000
+#define FT_LIST_BY_INDEX        0x40000000
+#define FT_LIST_ALL             0x20000000
+#define FT_OPEN_BY_SERIAL_NUMBER 1
+#define FT_OPEN_BY_DESCRIPTION   2
+
+typedef FT_STATUS (WINAPI *PFN_FT_ListDevices)(PVOID, PVOID, DWORD);
+typedef FT_STATUS (WINAPI *PFN_FT_Open)(int, FT_HANDLE*);
+typedef FT_STATUS (WINAPI *PFN_FT_OpenEx)(PVOID, DWORD, FT_HANDLE*);
+typedef FT_STATUS (WINAPI *PFN_FT_GetComPortNumber)(FT_HANDLE, LPLONG);
+typedef FT_STATUS (WINAPI *PFN_FT_Close)(FT_HANDLE);
+
+static HMODULE gFtd2xxModule = NULL;
+static PFN_FT_ListDevices gpFT_ListDevices = NULL;
+static PFN_FT_Open gpFT_Open = NULL;
+static PFN_FT_OpenEx gpFT_OpenEx = NULL;
+static PFN_FT_GetComPortNumber gpFT_GetComPortNumber = NULL;
+static PFN_FT_Close gpFT_Close = NULL;
 
 // Include ucxclient headers
 #include "u_cx_at_client.h"
@@ -117,8 +146,8 @@ static void printMenu(void);
 static void handleUserInput(void);
 static bool connectDevice(const char *comPort);
 static void disconnectDevice(void);
-static void listAvailableComPorts(void);
-static char* selectComPortFromList(void);
+static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize);
+static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
 static bool fetchApiCommandsFromGitHub(const char *product, const char *version);
 static void parseYamlCommands(const char *yamlContent);
@@ -283,7 +312,7 @@ static char* fetchLatestVersion(const char *product)
 
 static bool fetchApiCommandsFromGitHub(const char *product, const char *version)
 {
-    printf("Fetching API commands for %s version %s from GitHub...\n", product, version);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Fetching API commands for %s version %s from GitHub...", product, version);
     
     wchar_t path[512];
     swprintf(path, 512, L"/u-blox/u-connectXpress/main/%S/%S/compiled_product.yaml", product, version);
@@ -291,7 +320,7 @@ static bool fetchApiCommandsFromGitHub(const char *product, const char *version)
     char *yamlContent = httpGetRequest(L"raw.githubusercontent.com", path);
     
     if (!yamlContent) {
-        printf("ERROR: Failed to fetch YAML file from GitHub\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to fetch YAML file from GitHub");
         return false;
     }
     
@@ -316,7 +345,7 @@ static void parseYamlCommands(const char *yamlContent)
     // Find the command_groups section
     const char *cmdGroups = strstr(yamlContent, "command_groups:");
     if (!cmdGroups) {
-        printf("ERROR: Could not find command_groups in YAML\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Could not find command_groups in YAML");
         return;
     }
     
@@ -397,7 +426,7 @@ static void parseYamlCommands(const char *yamlContent)
         }
     }
     
-    printf("Parsed %d API commands\n", gApiCommandCount);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Parsed %d API commands", gApiCommandCount);
 }
 
 static void freeApiCommands(void)
@@ -531,16 +560,14 @@ static void spsDataAvailable(struct uCxHandle *puCxHandle, int32_t connection_ha
 static void spsConnected(struct uCxHandle *puCxHandle, int32_t connection_handle)
 {
     (void)puCxHandle;
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS connected: connection handle %d", connection_handle);
-    printf("\n*** SPS Connection established! Connection handle: %d ***\n", connection_handle);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** SPS Connection established! Connection handle: %d ***", connection_handle);
     signalEvent(URC_FLAG_SPS_CONNECTED);
 }
 
 static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_handle)
 {
     (void)puCxHandle;
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS disconnected: connection handle %d", connection_handle);
-    printf("\n*** SPS Disconnected! Connection handle: %d ***\n", connection_handle);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** SPS Disconnected! Connection handle: %d ***", connection_handle);
     signalEvent(URC_FLAG_SPS_DISCONNECTED);
 }
 
@@ -551,59 +578,62 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
 static void socketCreateTcp(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
-    printf("\n--- Create TCP Socket ---\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Create TCP Socket ---");
     
     int32_t socketHandle = -1;
     int32_t result = uCxSocketCreate1(&gUcxHandle, U_PROTOCOL_TCP, &socketHandle);
     
     if (result == 0) {
-        printf("Successfully created TCP socket\n");
-        printf("Socket handle: %d\n", socketHandle);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully created TCP socket");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", socketHandle);
         gCurrentSocket = socketHandle;
     } else {
-        printf("ERROR: Failed to create socket (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create socket (code %d)", result);
     }
 }
 
 static void socketCreateUdp(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
-    printf("\n--- Create UDP Socket ---\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Create UDP Socket ---");
     
     int32_t socketHandle = -1;
     int32_t result = uCxSocketCreate1(&gUcxHandle, U_PROTOCOL_UDP, &socketHandle);
     
     if (result == 0) {
-        printf("Successfully created UDP socket\n");
-        printf("Socket handle: %d\n", socketHandle);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully created UDP socket");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", socketHandle);
         gCurrentSocket = socketHandle;
     } else {
-        printf("ERROR: Failed to create socket (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create socket (code %d)", result);
     }
 }
 
 static void socketConnect(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
     if (gCurrentSocket < 0) {
-        printf("ERROR: No socket created. Create a socket first.\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No socket created. Create a socket first.");
         return;
     }
     
-    printf("\n--- Connect Socket ---\n");
-    printf("Socket handle: %d\n", gCurrentSocket);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Connect Socket ---");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", gCurrentSocket);
     
     char hostname[129];
     int port;
@@ -622,7 +652,7 @@ static void socketConnect(void)
         // Use saved address if empty input
         if (strlen(hostname) == 0 && strlen(gRemoteAddress) > 0) {
             strncpy(hostname, gRemoteAddress, sizeof(hostname) - 1);
-            printf("Using saved address: %s\n", hostname);
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Using saved address: %s", hostname);
         }
     }
     
@@ -630,35 +660,36 @@ static void socketConnect(void)
     scanf("%d", &port);
     getchar(); // consume newline
     
-    printf("Connecting to %s:%d...\n", hostname, port);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connecting to %s:%d...", hostname, port);
     
     int32_t result = uCxSocketConnect(&gUcxHandle, gCurrentSocket, hostname, port);
     
     if (result == 0) {
-        printf("Successfully connected\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully connected");
         // Save the address
         strncpy(gRemoteAddress, hostname, sizeof(gRemoteAddress) - 1);
         gRemoteAddress[sizeof(gRemoteAddress) - 1] = '\0';
         saveSettings();
     } else {
-        printf("ERROR: Failed to connect (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to connect (code %d)", result);
     }
 }
 
 static void socketSendData(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
     if (gCurrentSocket < 0) {
-        printf("ERROR: No socket created/connected. Connect a socket first.\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No socket created/connected. Connect a socket first.");
         return;
     }
     
-    printf("\n--- Send Socket Data ---\n");
-    printf("Socket handle: %d\n", gCurrentSocket);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Send Socket Data ---");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", gCurrentSocket);
     printf("Enter data to send: ");
     
     char data[1001];
@@ -667,14 +698,14 @@ static void socketSendData(void)
         if (end) *end = '\0';
         
         size_t len = strlen(data);
-        printf("Sending %zu bytes...\n", len);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Sending %zu bytes...", len);
         
         int32_t result = uCxSocketWrite(&gUcxHandle, gCurrentSocket, (uint8_t*)data, len);
         
         if (result >= 0) {
-            printf("Successfully sent %d bytes\n", result);
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully sent %d bytes", result);
         } else {
-            printf("ERROR: Failed to send data (code %d)\n", result);
+            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to send data (code %d)", result);
         }
     }
 }
@@ -682,22 +713,23 @@ static void socketSendData(void)
 static void socketReadData(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
     if (gCurrentSocket < 0) {
-        printf("ERROR: No socket created/connected\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No socket created/connected");
         return;
     }
     
-    printf("\n--- Read Socket Data ---\n");
-    printf("Socket handle: %d\n", gCurrentSocket);
-    printf("Waiting for data (timeout 5s)...\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Read Socket Data ---");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", gCurrentSocket);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Waiting for data (timeout 5s)...");
     
     // Wait for data available event
     if (!waitEvent(URC_FLAG_SOCK_DATA, 5)) {
-        printf("No data available (timeout)\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No data available (timeout)");
         return;
     }
     
@@ -708,7 +740,7 @@ static void socketReadData(void)
     getchar(); // consume newline
     
     if (length <= 0 || length > 1000) {
-        printf("ERROR: Invalid length. Must be 1-1000\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid length. Must be 1-1000");
         return;
     }
     
@@ -717,47 +749,49 @@ static void socketReadData(void)
     
     if (result > 0) {
         buffer[result] = '\0';  // Null terminate for display
-        printf("Received %d bytes: %s\n", result, buffer);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Received %d bytes: %s", result, buffer);
     } else if (result == 0) {
-        printf("No data available\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No data available");
     } else {
-        printf("ERROR: Failed to read data (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read data (code %d)", result);
     }
 }
 
 static void socketClose(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
     if (gCurrentSocket < 0) {
-        printf("ERROR: No socket to close\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No socket to close");
         return;
     }
     
-    printf("\n--- Close Socket ---\n");
-    printf("Closing socket %d...\n", gCurrentSocket);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Close Socket ---");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Closing socket %d...", gCurrentSocket);
     
     int32_t result = uCxSocketClose(&gUcxHandle, gCurrentSocket);
     
     if (result == 0) {
-        printf("Successfully closed socket\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully closed socket");
         gCurrentSocket = -1;
     } else {
-        printf("ERROR: Failed to close socket (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to close socket (code %d)", result);
     }
 }
 
 static void socketListStatus(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
-    printf("\n--- Socket Status ---\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Socket Status ---");
     
     uCxSocketListStatusBegin(&gUcxHandle);
     
@@ -766,7 +800,7 @@ static void socketListStatus(void)
     
     while (uCxSocketListStatusGetNext(&gUcxHandle, &status)) {
         count++;
-        printf("Socket %d: Protocol=%s, Status=%s\n",
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket %d: Protocol=%s, Status=%s",
                status.socket_handle,
                status.protocol == U_PROTOCOL_TCP ? "TCP" : "UDP",
                status.socket_status == 0 ? "Not Connected" :
@@ -776,11 +810,12 @@ static void socketListStatus(void)
     uCxEnd(&gUcxHandle);
     
     if (count == 0) {
-        printf("  No sockets\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "  No sockets");
     }
     
     if (gCurrentSocket >= 0) {
-        printf("\nCurrent socket: %d\n", gCurrentSocket);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Current socket: %d", gCurrentSocket);
     }
 }
 
@@ -791,56 +826,59 @@ static void socketListStatus(void)
 static void spsEnableService(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
-    printf("\n--- Enable SPS Service ---\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Enable SPS Service ---");
     
     int32_t result = uCxSpsSetServiceEnable(&gUcxHandle, U_SPS_SERVICE_OPTION_ENABLE_SPS_SERVICE);
     
     if (result == 0) {
-        printf("Successfully enabled SPS service\n");
-        printf("NOTE: SPS will be active after reboot\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully enabled SPS service");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "NOTE: SPS will be active after reboot");
     } else {
-        printf("ERROR: Failed to enable SPS (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to enable SPS (code %d)", result);
     }
 }
 
 static void spsConnect(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
-    printf("\n--- Connect SPS ---\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Connect SPS ---");
     printf("Enter Bluetooth connection handle: ");
     
     int connHandle;
     scanf("%d", &connHandle);
     getchar(); // consume newline
     
-    printf("Connecting SPS on connection %d...\n", connHandle);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connecting SPS on connection %d...", connHandle);
     
     int32_t result = uCxSpsConnect2(&gUcxHandle, connHandle, 0);  // No flow control
     
     if (result == 0) {
-        printf("Successfully initiated SPS connection\n");
-        printf("Wait for +UESPSC URC event...\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully initiated SPS connection");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Wait for +UESPSC URC event...");
     } else {
-        printf("ERROR: Failed to connect SPS (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to connect SPS (code %d)", result);
     }
 }
 
 static void spsSendData(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
-    printf("\n--- Send SPS Data ---\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Send SPS Data ---");
     printf("Enter connection handle: ");
     
     int connHandle;
@@ -854,14 +892,14 @@ static void spsSendData(void)
         if (end) *end = '\0';
         
         size_t len = strlen(data);
-        printf("Sending %zu bytes...\n", len);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Sending %zu bytes...", len);
         
         int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, (uint8_t*)data, len);
         
         if (result >= 0) {
-            printf("Successfully sent %d bytes\n", result);
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully sent %d bytes", result);
         } else {
-            printf("ERROR: Failed to send data (code %d)\n", result);
+            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to send data (code %d)", result);
         }
     }
 }
@@ -869,22 +907,23 @@ static void spsSendData(void)
 static void spsReadData(void)
 {
     if (!gConnected) {
-        printf("ERROR: Not connected to device\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
     
-    printf("\n--- Read SPS Data ---\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Read SPS Data ---");
     printf("Enter connection handle: ");
     
     int connHandle;
     scanf("%d", &connHandle);
     getchar(); // consume newline
     
-    printf("Waiting for data (timeout 5s)...\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Waiting for data (timeout 5s)...");
     
     // Wait for data available event
     if (!waitEvent(URC_FLAG_SPS_DATA, 5)) {
-        printf("No data available (timeout)\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No data available (timeout)");
         return;
     }
     
@@ -894,7 +933,7 @@ static void spsReadData(void)
     getchar(); // consume newline
     
     if (length <= 0 || length > 1000) {
-        printf("ERROR: Invalid length. Must be 1-1000\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid length. Must be 1-1000");
         return;
     }
     
@@ -903,11 +942,11 @@ static void spsReadData(void)
     
     if (result > 0) {
         buffer[result] = '\0';  // Null terminate for display
-        printf("Received %d bytes: %s\n", result, buffer);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Received %d bytes: %s", result, buffer);
     } else if (result == 0) {
-        printf("No data available\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No data available");
     } else {
-        printf("ERROR: Failed to read data (code %d)\n", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read data (code %d)", result);
     }
 }
 
@@ -927,10 +966,11 @@ int main(int argc, char *argv[])
         gComPort[sizeof(gComPort) - 1] = '\0';
     } else {
         // No argument provided - show available ports and let user choose
+        char recommendedPort[32];
         printf("No COM port specified. Available ports:\n\n");
-        listAvailableComPorts();
+        listAvailableComPorts(recommendedPort, sizeof(recommendedPort));
         
-        char *selectedPort = selectComPortFromList();
+        char *selectedPort = selectComPortFromList(recommendedPort);
         if (selectedPort) {
             strncpy(gComPort, selectedPort, sizeof(gComPort) - 1);
             gComPort[sizeof(gComPort) - 1] = '\0';
@@ -943,18 +983,21 @@ int main(int argc, char *argv[])
     printHeader();
     
     // Enable UCX logging to see AT commands and responses
-    printf("Enabling UCX logging (AT commands, responses, debug info)...\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Enabling UCX logging (AT commands, responses, debug info)...");
     uCxLogEnable();
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Windows Console App started");
-    printf("UCX logging is now active - you'll see detailed AT traffic below\n\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX logging is now active - you'll see detailed AT traffic below");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     
     // Try to auto-connect
-    printf("Attempting to connect to %s...\n", gComPort);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Attempting to connect to %s...", gComPort);
     if (connectDevice(gComPort)) {
-        printf("Connected successfully!\n\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connected successfully!");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
         saveSettings();  // Save successful port
     } else {
-        printf("Failed to connect. You can try again from the menu.\n\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Failed to connect. You can try again from the menu.");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     }
     
     // Main menu loop
@@ -1289,7 +1332,55 @@ static bool connectDevice(const char *comPort)
     uCxSpsRegisterDisconnect(&gUcxHandle, spsDisconnected);
     uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
-    printf("UCX initialized successfully\n");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
+    
+    // Read device information
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Device Information:");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "-------------------");
+    
+    // AT+GMI - Manufacturer identification
+    const char *manufacturer = NULL;
+    if (uCxGeneralGetManufacturerIdentificationBegin(&gUcxHandle, &manufacturer) && manufacturer != NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Manufacturer:     %s", manufacturer);
+        uCxEnd(&gUcxHandle);
+    } else {
+        uCxEnd(&gUcxHandle);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Manufacturer:     (not available)");
+    }
+    
+    // AT+GMM - Model identification
+    const char *model = NULL;
+    if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            %s", model);
+        uCxEnd(&gUcxHandle);
+    } else {
+        uCxEnd(&gUcxHandle);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            (not available)");
+    }
+    
+    // AT+GMR - Software version
+    const char *fwVersion = NULL;
+    if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Firmware Version: %s", fwVersion);
+        uCxEnd(&gUcxHandle);
+    } else {
+        uCxEnd(&gUcxHandle);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Firmware Version: (not available)");
+    }
+    
+    // AT+GSN - Serial number
+    const char *serialNumber = NULL;
+    if (uCxGeneralGetSerialNumberBegin(&gUcxHandle, &serialNumber) && serialNumber != NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Serial Number:    %s", serialNumber);
+        uCxEnd(&gUcxHandle);
+    } else {
+        uCxEnd(&gUcxHandle);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Serial Number:    (not available)");
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "-------------------");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     
     gConnected = true;
     return true;
@@ -1368,6 +1459,244 @@ static void saveSettings(void)
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
         fclose(f);
     }
+}
+
+// Initialize FTD2XX library (dynamic loading)
+static bool initFtd2xxLibrary(void)
+{
+    if (gFtd2xxModule != NULL) {
+        return true;  // Already loaded
+    }
+    
+    // Try to load ftd2xx64.dll from examples/ftdi directory
+    char dllPath[MAX_PATH];
+    GetModuleFileName(NULL, dllPath, sizeof(dllPath));
+    char *lastSlash = strrchr(dllPath, '\\');
+    if (lastSlash) {
+        *(lastSlash + 1) = '\0';
+        strcat(dllPath, "ftd2xx64.dll");
+    }
+    
+    gFtd2xxModule = LoadLibrary(dllPath);
+    if (gFtd2xxModule == NULL) {
+        // Try current directory
+        gFtd2xxModule = LoadLibrary("ftd2xx64.dll");
+    }
+    
+    if (gFtd2xxModule == NULL) {
+        return false;
+    }
+    
+    // Load function pointers
+    gpFT_ListDevices = (PFN_FT_ListDevices)GetProcAddress(gFtd2xxModule, "FT_ListDevices");
+    gpFT_Open = (PFN_FT_Open)GetProcAddress(gFtd2xxModule, "FT_Open");
+    gpFT_OpenEx = (PFN_FT_OpenEx)GetProcAddress(gFtd2xxModule, "FT_OpenEx");
+    gpFT_GetComPortNumber = (PFN_FT_GetComPortNumber)GetProcAddress(gFtd2xxModule, "FT_GetComPortNumber");
+    gpFT_Close = (PFN_FT_Close)GetProcAddress(gFtd2xxModule, "FT_Close");
+    
+    if (!gpFT_ListDevices || !gpFT_Open || !gpFT_GetComPortNumber || !gpFT_Close) {
+        FreeLibrary(gFtd2xxModule);
+        gFtd2xxModule = NULL;
+        return false;
+    }
+    
+    return true;
+}
+
+// Helper function to get FTDI device info using FTD2XX library
+static bool getFtdiDeviceInfo(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
+{
+    DWORD numDevs = 0;
+    FT_STATUS status;
+    
+    // Initialize outputs
+    deviceDesc[0] = '\0';
+    portLabel[0] = '\0';
+    
+    // Initialize library if not already done
+    if (!initFtd2xxLibrary()) {
+        return false;
+    }
+    
+    // Get number of devices
+    status = gpFT_ListDevices(&numDevs, NULL, FT_LIST_NUMBER_ONLY);
+    if (status != FT_OK || numDevs == 0) {
+        return false;
+    }
+    
+    // Enumerate devices and find the one with matching COM port
+    for (DWORD i = 0; i < numDevs; i++) {
+        char description[256];
+        
+        // Get device description by index
+        status = gpFT_ListDevices((PVOID)(DWORD_PTR)i, description, FT_LIST_BY_INDEX | FT_OPEN_BY_DESCRIPTION);
+        if (status != FT_OK) {
+            continue;
+        }
+        
+        // Try to open the device to get its COM port number
+        FT_HANDLE ftHandle;
+        status = gpFT_Open(i, &ftHandle);
+        if (status == FT_OK) {
+            LONG comPortNumber = -1;
+            status = gpFT_GetComPortNumber(ftHandle, &comPortNumber);
+            
+            gpFT_Close(ftHandle);
+            
+            if (status == FT_OK && comPortNumber > 0) {
+                char comPortStr[16];
+                snprintf(comPortStr, sizeof(comPortStr), "COM%ld", comPortNumber);
+                
+                if (strcmp(comPortStr, portName) == 0) {
+                    // Found it!
+                    strncpy(deviceDesc, description, deviceDescSize - 1);
+                    deviceDesc[deviceDescSize - 1] = '\0';
+                    
+                    // Extract label from description
+                    // Common formats: 
+                    // "EVK-NORA-W36 A" -> A = AT command port
+                    // "EVK-NORA-W36 B" -> B = (not used)
+                    // "EVK-NORA-W36 C" -> C = LOG port
+                    // "EVK-NORA-W36 D" -> D = (not used)
+                    
+                    // Check for single letter suffix (A, B, C, D)
+                    size_t len = strlen(description);
+                    if (len >= 2 && description[len-2] == ' ') {
+                        char suffix = description[len-1];
+                        if (suffix == 'A') {
+                            strncpy(portLabel, "AT", portLabelSize - 1);
+                            portLabel[portLabelSize - 1] = '\0';
+                        } else if (suffix == 'C') {
+                            strncpy(portLabel, "LOG", portLabelSize - 1);
+                            portLabel[portLabelSize - 1] = '\0';
+                        }
+                    } else {
+                        // Try to extract from " - XXX" format
+                        char *dashPos = strrchr(description, '-');
+                        if (dashPos) {
+                            dashPos++;
+                            while (*dashPos == ' ') dashPos++;
+                            
+                            if (strncmp(dashPos, "AT", 2) == 0 || strncmp(dashPos, "LOG", 3) == 0) {
+                                strncpy(portLabel, dashPos, portLabelSize - 1);
+                                portLabel[portLabelSize - 1] = '\0';
+                                
+                                // Remove any trailing spaces
+                                char *end = portLabel + strlen(portLabel) - 1;
+                                while (end > portLabel && *end == ' ') {
+                                    *end = '\0';
+                                    end--;
+                                }
+                            }
+                        }
+                    }
+                    
+                    return true;
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to get device info using Windows SetupAPI
+// This works without admin rights and for all COM port devices
+static bool getDeviceInfoFromSetupAPI(const char *portName, char *deviceDesc, size_t deviceDescSize, char *portLabel, size_t portLabelSize)
+{
+    HDEVINFO deviceInfoSet;
+    SP_DEVINFO_DATA deviceInfoData;
+    DWORD i;
+    bool found = false;
+    
+    // Initialize outputs
+    deviceDesc[0] = '\0';
+    portLabel[0] = '\0';
+    
+    // Get the device information set for all COM ports
+    deviceInfoSet = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL, DIGCF_PRESENT);
+    if (deviceInfoSet == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    
+    // Enumerate through all devices
+    deviceInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    for (i = 0; SetupDiEnumDeviceInfo(deviceInfoSet, i, &deviceInfoData); i++) {
+        HKEY hDeviceRegistryKey;
+        char portNameFromReg[256];
+        DWORD dataType;
+        DWORD dataSize;
+        
+        // Open the device registry key
+        hDeviceRegistryKey = SetupDiOpenDevRegKey(deviceInfoSet, &deviceInfoData,
+                                                   DICS_FLAG_GLOBAL, 0,
+                                                   DIREG_DEV, KEY_QUERY_VALUE);
+        
+        if (hDeviceRegistryKey == INVALID_HANDLE_VALUE) {
+            continue;
+        }
+        
+        // Get the port name from registry
+        dataSize = sizeof(portNameFromReg);
+        if (RegQueryValueEx(hDeviceRegistryKey, "PortName", NULL, &dataType,
+                           (LPBYTE)portNameFromReg, &dataSize) == ERROR_SUCCESS) {
+            
+            // Check if this is the port we're looking for
+            if (strcmp(portNameFromReg, portName) == 0) {
+                // Found it! Get the friendly name
+                char friendlyName[256];
+                if (SetupDiGetDeviceRegistryProperty(deviceInfoSet, &deviceInfoData,
+                                                     SPDRP_FRIENDLYNAME,
+                                                     &dataType,
+                                                     (PBYTE)friendlyName,
+                                                     sizeof(friendlyName),
+                                                     &dataSize)) {
+                    strncpy(deviceDesc, friendlyName, deviceDescSize - 1);
+                    deviceDesc[deviceDescSize - 1] = '\0';
+                    
+                    // Try to extract port label from friendly name
+                    // Format can be: "USB Serial Port (COM25) - AT" or "EVK NORA-W36 - AT (COM25)"
+                    char *dashPos = strrchr(friendlyName, '-');
+                    if (dashPos) {
+                        // Skip whitespace after dash
+                        dashPos++;
+                        while (*dashPos == ' ') dashPos++;
+                        
+                        // Extract label
+                        char *comPos = strstr(dashPos, " (COM");
+                        if (comPos) {
+                            size_t len = comPos - dashPos;
+                            if (len >= portLabelSize) len = portLabelSize - 1;
+                            strncpy(portLabel, dashPos, len);
+                            portLabel[len] = '\0';
+                        } else {
+                            // Check for space or end of string
+                            char *spacePos = strchr(dashPos, ' ');
+                            if (spacePos) {
+                                size_t len = spacePos - dashPos;
+                                if (len >= portLabelSize) len = portLabelSize - 1;
+                                strncpy(portLabel, dashPos, len);
+                                portLabel[len] = '\0';
+                            } else {
+                                strncpy(portLabel, dashPos, portLabelSize - 1);
+                                portLabel[portLabelSize - 1] = '\0';
+                            }
+                        }
+                        
+                    }
+                    
+                    found = true;
+                }
+            }
+        }
+        
+        RegCloseKey(hDeviceRegistryKey);
+        
+        if (found) break;
+    }
+    
+    SetupDiDestroyDeviceInfoList(deviceInfoSet);
+    return found;
 }
 
 // List available COM ports
@@ -1539,10 +1868,15 @@ static bool getComPortFriendlyName(const char *portName, char *friendlyName, siz
 }
 
 // List available COM ports
-static void listAvailableComPorts(void)
+static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize)
 {
     HKEY hKey;
     LONG result;
+    
+    // Initialize recommended port
+    if (recommendedPort && recommendedPortSize > 0) {
+        recommendedPort[0] = '\0';
+    }
     
     // Open the registry key where COM ports are listed
     result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
@@ -1594,22 +1928,46 @@ static void listAvailableComPorts(void)
                     status = "In use";
                 }
                 
-                // Get friendly name and port label
-                char friendlyName[256];
+                // Try to get device info from FTDI library first, then SetupAPI
+                char deviceDesc[256];
                 char portLabel[64];
-                if (getComPortFriendlyName(portName, friendlyName, sizeof(friendlyName), 
-                                          portLabel, sizeof(portLabel))) {
+                bool gotInfo = false;
+                
+                // First try: FTDI library (for FTDI devices with detailed info)
+                if (getFtdiDeviceInfo(portName, deviceDesc, sizeof(deviceDesc), 
+                                     portLabel, sizeof(portLabel))) {
+                    gotInfo = true;
+                } else {
+                    // Second try: Windows SetupAPI (for all devices)
+                    gotInfo = getDeviceInfoFromSetupAPI(portName, deviceDesc, sizeof(deviceDesc), 
+                                                         portLabel, sizeof(portLabel));
+                }
+                
+                if (gotInfo) {
                     // Extract device name (before the COM port part)
                     char deviceName[256];
-                    char *comPart = strstr(friendlyName, " (COM");
+                    char *comPart = strstr(deviceDesc, " (COM");
                     if (comPart) {
-                        size_t len = comPart - friendlyName;
+                        size_t len = comPart - deviceDesc;
                         if (len >= sizeof(deviceName)) len = sizeof(deviceName) - 1;
-                        strncpy(deviceName, friendlyName, len);
+                        strncpy(deviceName, deviceDesc, len);
                         deviceName[len] = '\0';
                     } else {
-                        strncpy(deviceName, friendlyName, sizeof(deviceName) - 1);
+                        strncpy(deviceName, deviceDesc, sizeof(deviceName) - 1);
                         deviceName[sizeof(deviceName) - 1] = '\0';
+                    }
+                    
+                    // Check if this is a NORA device and should be recommended
+                    if (recommendedPort && recommendedPortSize > 0 && recommendedPort[0] == '\0') {
+                        // Check if it's available and contains NORA-W36 or NORA-B26
+                        if (hPort != INVALID_HANDLE_VALUE && 
+                            (strstr(deviceDesc, "NORA-W36") || strstr(deviceDesc, "NORA-B26"))) {
+                            // Prefer AT port if available, otherwise any NORA port
+                            if (portLabel[0] == '\0' || strcmp(portLabel, "AT") == 0) {
+                                strncpy(recommendedPort, portName, recommendedPortSize - 1);
+                                recommendedPort[recommendedPortSize - 1] = '\0';
+                            }
+                        }
                     }
                     
                     printf("%-8s %-12s %-40s %s\n", 
@@ -1656,10 +2014,15 @@ static void listAvailableComPorts(void)
 }
 
 // Select COM port from list
-static char* selectComPortFromList(void)
+static char* selectComPortFromList(const char *recommendedPort)
 {
     char input[64];
-    printf("\nEnter COM port name (e.g., COM31) or press Enter to use last saved port: ");
+    
+    if (recommendedPort && recommendedPort[0] != '\0') {
+        printf("\nEnter COM port name or press Enter to use recommended [%s]: ", recommendedPort);
+    } else {
+        printf("\nEnter COM port name (e.g., COM31) or press Enter to use last saved port: ");
+    }
     
     if (fgets(input, sizeof(input), stdin)) {
         // Remove trailing newline
@@ -1674,9 +2037,18 @@ static char* selectComPortFromList(void)
                 return result;
             }
         }
+        
+        // User pressed Enter without input - use recommended port if available
+        if (recommendedPort && recommendedPort[0] != '\0') {
+            char *result = (char*)malloc(strlen(recommendedPort) + 1);
+            if (result) {
+                strcpy(result, recommendedPort);
+                return result;
+            }
+        }
     }
     
-    return NULL;  // User pressed Enter without input
+    return NULL;  // No recommendation and user pressed Enter without input
 }
 
 static void listAllApiCommands(void)

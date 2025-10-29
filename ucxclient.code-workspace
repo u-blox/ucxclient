@@ -7,7 +7,8 @@
 	"settings": {
 		"files.associations": {
 			"*.h": "c",
-			"ostream": "c"
+			"ostream": "c",
+			"FTD2XX.H": "cpp"
 		},
 		"ceedlingExplorer.problemMatching": {"mode": "gcc"},
 		"ceedlingExplorer.debugConfiguration": "Ceedling Test Explorer Debug"
