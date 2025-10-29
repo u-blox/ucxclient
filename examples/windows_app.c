@@ -1371,6 +1371,173 @@ static void saveSettings(void)
 }
 
 // List available COM ports
+// Helper function to get friendly name for a COM port
+static bool getComPortFriendlyName(const char *portName, char *friendlyName, size_t friendlyNameSize, char *portLabel, size_t portLabelSize)
+{
+    bool found = false;
+    
+    // Initialize output
+    friendlyName[0] = '\0';
+    portLabel[0] = '\0';
+    
+    // Search through multiple device paths
+    const char *devicePaths[] = {
+        "SYSTEM\\CurrentControlSet\\Enum\\FTDIBUS",
+        "SYSTEM\\CurrentControlSet\\Enum\\USB",
+        "SYSTEM\\CurrentControlSet\\Enum\\BTHENUM"
+    };
+    
+    for (int pathIdx = 0; pathIdx < 3 && !found; pathIdx++) {
+        HKEY hDeviceKey;
+        
+        LONG result = RegOpenKeyEx(HKEY_LOCAL_MACHINE, devicePaths[pathIdx], 0, KEY_READ, &hDeviceKey);
+        if (result != ERROR_SUCCESS) continue;
+        
+        // Enumerate device IDs
+        DWORD deviceIndex = 0;
+        char deviceId[256];
+        while (RegEnumKey(hDeviceKey, deviceIndex++, deviceId, sizeof(deviceId)) == ERROR_SUCCESS) {
+            // Enumerate instances under this device
+            char instancePath[512];
+            snprintf(instancePath, sizeof(instancePath), "%s\\%s", devicePaths[pathIdx], deviceId);
+            
+            HKEY hInstancesKey;
+            if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, instancePath, 0, KEY_READ, &hInstancesKey) == ERROR_SUCCESS) {
+                DWORD instanceIndex = 0;
+                char instanceId[256];
+                
+                while (RegEnumKey(hInstancesKey, instanceIndex++, instanceId, sizeof(instanceId)) == ERROR_SUCCESS) {
+                    char fullPath[512];
+                    snprintf(fullPath, sizeof(fullPath), "%s\\%s\\Device Parameters", instancePath, instanceId);
+                    
+                    HKEY hParamsKey;
+                    if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, fullPath, 0, KEY_READ, &hParamsKey) == ERROR_SUCCESS) {
+                        BYTE portData[256];
+                        DWORD portDataSize = sizeof(portData);
+                        DWORD portType;
+                        
+                        // Check if this device has our COM port
+                        if (RegQueryValueEx(hParamsKey, "PortName", NULL, &portType, portData, &portDataSize) == ERROR_SUCCESS) {
+                            if (strcmp((char*)portData, portName) == 0) {
+                                // Found our port! Get the friendly name and parent device info
+                                char parentPath[512];
+                                snprintf(parentPath, sizeof(parentPath), "%s\\%s", instancePath, instanceId);
+                                
+                                HKEY hDevKey;
+                                if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, parentPath, 0, KEY_READ, &hDevKey) == ERROR_SUCCESS) {
+                                    BYTE nameData[256];
+                                    DWORD nameDataSize = sizeof(nameData);
+                                    DWORD nameType;
+                                    
+                                    // Get friendly name
+                                    if (RegQueryValueEx(hDevKey, "FriendlyName", NULL, &nameType, nameData, &nameDataSize) == ERROR_SUCCESS) {
+                                        strncpy(friendlyName, (char*)nameData, friendlyNameSize - 1);
+                                        friendlyName[friendlyNameSize - 1] = '\0';
+                                        
+                                        // Try to extract port label from friendly name
+                                        // Format can be: "USB Serial Port (COM25) - AT" or "EVK NORA-W36 - AT (COM25)"
+                                        char *dashPos = strrchr(friendlyName, '-');
+                                        if (dashPos) {
+                                            // Skip whitespace after dash
+                                            dashPos++;
+                                            while (*dashPos == ' ') dashPos++;
+                                            
+                                            // Extract label (might have COM port after it)
+                                            char *comPos = strstr(dashPos, " (COM");
+                                            if (comPos) {
+                                                size_t len = comPos - dashPos;
+                                                if (len >= portLabelSize) len = portLabelSize - 1;
+                                                strncpy(portLabel, dashPos, len);
+                                                portLabel[len] = '\0';
+                                            } else {
+                                                strncpy(portLabel, dashPos, portLabelSize - 1);
+                                                portLabel[portLabelSize - 1] = '\0';
+                                            }
+                                        }
+                                        
+                                        found = true;
+                                    }
+                                    
+                                    // Also try to get device description (for parent device name)
+                                    if (!found || friendlyName[0] == '\0') {
+                                        nameDataSize = sizeof(nameData);
+                                        if (RegQueryValueEx(hDevKey, "DeviceDesc", NULL, &nameType, nameData, &nameDataSize) == ERROR_SUCCESS) {
+                                            strncpy(friendlyName, (char*)nameData, friendlyNameSize - 1);
+                                            friendlyName[friendlyNameSize - 1] = '\0';
+                                            found = true;
+                                        }
+                                    }
+                                    
+                                    RegCloseKey(hDevKey);
+                                }
+                                
+                                // Try to get parent device name (e.g., "EVK NORA-W36")
+                                if (found) {
+                                    // Go up one level to get parent device
+                                    char parentDevicePath[512];
+                                    snprintf(parentDevicePath, sizeof(parentDevicePath), "%s", instancePath);
+                                    
+                                    // For FTDI devices, the parent might have the EVK name
+                                    char *lastSlash = strrchr(parentDevicePath, '\\');
+                                    if (lastSlash) {
+                                        *lastSlash = '\0';  // Go up one level
+                                        
+                                        HKEY hParentKey;
+                                        if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, parentDevicePath, 0, KEY_READ, &hParentKey) == ERROR_SUCCESS) {
+                                            // Enumerate parent's instances
+                                            DWORD parentInstIndex = 0;
+                                            char parentInstId[256];
+                                            
+                                            while (RegEnumKey(hParentKey, parentInstIndex++, parentInstId, sizeof(parentInstId)) == ERROR_SUCCESS) {
+                                                char parentFullPath[512];
+                                                snprintf(parentFullPath, sizeof(parentFullPath), "%s\\%s", parentDevicePath, parentInstId);
+                                                
+                                                HKEY hPDevKey;
+                                                if (RegOpenKeyEx(HKEY_LOCAL_MACHINE, parentFullPath, 0, KEY_READ, &hPDevKey) == ERROR_SUCCESS) {
+                                                    BYTE pNameData[256];
+                                                    DWORD pNameDataSize = sizeof(pNameData);
+                                                    
+                                                    if (RegQueryValueEx(hPDevKey, "FriendlyName", NULL, NULL, pNameData, &pNameDataSize) == ERROR_SUCCESS) {
+                                                        // Check if this looks like the EVK name (e.g., "EVK NORA-W36")
+                                                        char *parentName = (char*)pNameData;
+                                                        if (strstr(parentName, "EVK") || strstr(parentName, "NORA")) {
+                                                            // Prepend parent name to our friendly name
+                                                            char temp[256];
+                                                            strncpy(temp, friendlyName, sizeof(temp) - 1);
+                                                            snprintf(friendlyName, friendlyNameSize, "%s", parentName);
+                                                        }
+                                                    }
+                                                    
+                                                    RegCloseKey(hPDevKey);
+                                                    break;  // Found parent, no need to continue
+                                                }
+                                            }
+                                            
+                                            RegCloseKey(hParentKey);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        RegCloseKey(hParamsKey);
+                    }
+                    
+                    if (found) break;
+                }
+                
+                RegCloseKey(hInstancesKey);
+            }
+            
+            if (found) break;
+        }
+        
+        RegCloseKey(hDeviceKey);
+    }
+    
+    return found;
+}
+
 // List available COM ports
 static void listAvailableComPorts(void)
 {
@@ -1393,7 +1560,9 @@ static void listAvailableComPorts(void)
         DWORD type;
         int count = 0;
         
-        printf("Available COM ports (from registry):\n");
+        printf("Available COM ports:\n");
+        printf("%-8s %-12s %-40s %s\n", "Port", "Status", "Device", "Function");
+        printf("%-8s %-12s %-40s %s\n", "--------", "------------", "----------------------------------------", "--------");
         
         // Enumerate all values in the registry key
         while (1) {
@@ -1409,24 +1578,47 @@ static void listAvailableComPorts(void)
             
             if (result == ERROR_SUCCESS && type == REG_SZ) {
                 count++;
-                // data contains the COM port name (e.g., "COM25")
-                printf("  %s", (char*)data);
+                char *portName = (char*)data;
                 
                 // Try to open to see if it's available (not in use)
                 char fullName[32];
-                snprintf(fullName, sizeof(fullName), "\\\\.\\%s", (char*)data);
+                snprintf(fullName, sizeof(fullName), "\\\\.\\%s", portName);
                 HANDLE hPort = CreateFile(fullName, GENERIC_READ | GENERIC_WRITE,
                                         0, NULL, OPEN_EXISTING, 0, NULL);
+                
+                const char *status;
                 if (hPort != INVALID_HANDLE_VALUE) {
                     CloseHandle(hPort);
-                    printf(" [Available]");
+                    status = "Available";
                 } else {
-                    printf(" [In use or access denied]");
+                    status = "In use";
                 }
                 
-                // Show device description from registry value name
-                printf(" (%s)", valueName);
-                printf("\n");
+                // Get friendly name and port label
+                char friendlyName[256];
+                char portLabel[64];
+                if (getComPortFriendlyName(portName, friendlyName, sizeof(friendlyName), 
+                                          portLabel, sizeof(portLabel))) {
+                    // Extract device name (before the COM port part)
+                    char deviceName[256];
+                    char *comPart = strstr(friendlyName, " (COM");
+                    if (comPart) {
+                        size_t len = comPart - friendlyName;
+                        if (len >= sizeof(deviceName)) len = sizeof(deviceName) - 1;
+                        strncpy(deviceName, friendlyName, len);
+                        deviceName[len] = '\0';
+                    } else {
+                        strncpy(deviceName, friendlyName, sizeof(deviceName) - 1);
+                        deviceName[sizeof(deviceName) - 1] = '\0';
+                    }
+                    
+                    printf("%-8s %-12s %-40s %s\n", 
+                           portName, status, deviceName,
+                           portLabel[0] ? portLabel : "-");
+                } else {
+                    printf("%-8s %-12s %-40s %s\n", 
+                           portName, status, valueName, "-");
+                }
             }
             
             index++;
@@ -1435,11 +1627,11 @@ static void listAvailableComPorts(void)
         RegCloseKey(hKey);
         
         if (count == 0) {
-            printf("  No COM ports found in registry.\n");
+            printf("\nNo COM ports found in registry.\n");
         }
     } else {
-        printf("  ERROR: Could not access registry to enumerate COM ports.\n");
-        printf("  Falling back to simple scan...\n\n");
+        printf("ERROR: Could not access registry to enumerate COM ports.\n");
+        printf("Falling back to simple scan...\n\n");
         
         // Fallback: try common port numbers
         int count = 0;
