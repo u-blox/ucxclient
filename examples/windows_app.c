@@ -1371,33 +1371,95 @@ static void saveSettings(void)
 }
 
 // List available COM ports
+// List available COM ports
 static void listAvailableComPorts(void)
 {
-    // Create buffer for port names
-    char ports[32][16];
-    int count = 0;
+    HKEY hKey;
+    LONG result;
     
-    // Note: uPortEnumerateComPorts may not be available in all port implementations
-    // For Windows, we'll use a simple approach that checks common port names
-    for (int i = 1; i <= 256; i++) {
-        char portName[16];
-        snprintf(portName, sizeof(portName), "COM%d", i);
+    // Open the registry key where COM ports are listed
+    result = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
+                         "HARDWARE\\DEVICEMAP\\SERIALCOMM",
+                         0,
+                         KEY_READ,
+                         &hKey);
+    
+    if (result == ERROR_SUCCESS) {
+        DWORD index = 0;
+        char valueName[256];
+        DWORD valueNameSize;
+        BYTE data[256];
+        DWORD dataSize;
+        DWORD type;
+        int count = 0;
         
-        // Try to open the port to see if it exists
-        HANDLE hPort = CreateFile(portName, GENERIC_READ | GENERIC_WRITE,
-                                  0, NULL, OPEN_EXISTING, 0, NULL);
-        if (hPort != INVALID_HANDLE_VALUE) {
-            CloseHandle(hPort);
-            printf("  %s\n", portName);
-            count++;
-            if (count < 32) {
-                strcpy(ports[count-1], portName);
+        printf("Available COM ports (from registry):\n");
+        
+        // Enumerate all values in the registry key
+        while (1) {
+            valueNameSize = sizeof(valueName);
+            dataSize = sizeof(data);
+            
+            result = RegEnumValue(hKey, index, valueName, &valueNameSize,
+                                NULL, &type, data, &dataSize);
+            
+            if (result == ERROR_NO_MORE_ITEMS) {
+                break;
+            }
+            
+            if (result == ERROR_SUCCESS && type == REG_SZ) {
+                count++;
+                // data contains the COM port name (e.g., "COM25")
+                printf("  %s", (char*)data);
+                
+                // Try to open to see if it's available (not in use)
+                char fullName[32];
+                snprintf(fullName, sizeof(fullName), "\\\\.\\%s", (char*)data);
+                HANDLE hPort = CreateFile(fullName, GENERIC_READ | GENERIC_WRITE,
+                                        0, NULL, OPEN_EXISTING, 0, NULL);
+                if (hPort != INVALID_HANDLE_VALUE) {
+                    CloseHandle(hPort);
+                    printf(" [Available]");
+                } else {
+                    printf(" [In use or access denied]");
+                }
+                
+                // Show device description from registry value name
+                printf(" (%s)", valueName);
+                printf("\n");
+            }
+            
+            index++;
+        }
+        
+        RegCloseKey(hKey);
+        
+        if (count == 0) {
+            printf("  No COM ports found in registry.\n");
+        }
+    } else {
+        printf("  ERROR: Could not access registry to enumerate COM ports.\n");
+        printf("  Falling back to simple scan...\n\n");
+        
+        // Fallback: try common port numbers
+        int count = 0;
+        for (int i = 1; i <= 256; i++) {
+            char portName[32];
+            snprintf(portName, sizeof(portName), "\\\\.\\COM%d", i);
+            
+            // Try to open the port to see if it exists
+            HANDLE hPort = CreateFile(portName, GENERIC_READ | GENERIC_WRITE,
+                                    0, NULL, OPEN_EXISTING, 0, NULL);
+            if (hPort != INVALID_HANDLE_VALUE) {
+                CloseHandle(hPort);
+                printf("  COM%d\n", i);
+                count++;
             }
         }
-    }
-    
-    if (count == 0) {
-        printf("  No COM ports found.\n");
+        
+        if (count == 0) {
+            printf("  No COM ports found.\n");
+        }
     }
 }
 
