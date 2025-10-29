@@ -25,75 +25,154 @@ You will also need to add corresponding .c file to your build (not needed for Ze
 
 ## FreeRTOS Port Details
 
-The FreeRTOS port (`u_port_freertos`) provides integration with FreeRTOS RTOS for embedded platforms like STM32, ESP32, and others.
+The FreeRTOS port (`u_port_freertos`) provides integration with FreeRTOS RTOS for embedded platforms.
+
+### Supported Platforms
+
+The port includes complete UART implementations for the following platforms:
+
+| Platform | Define | MCU Families | SDK/HAL |
+|----------|--------|--------------|---------|
+| **STM32** | `U_PORT_STM32_HAL` | F0/F1/F2/F3/F4/F7/G0/G4/H7/L0/L1/L4/L5/U5/WB/WL | STM32 HAL |
+| **ESP32** | `U_PORT_ESP32` | ESP32, ESP32-S2/S3/C2/C3/C6 | ESP-IDF |
+| **NXP** | `U_PORT_NXP_SDK` | Kinetis, LPC, i.MX RT | MCUXpresso SDK |
+| **Microchip/Atmel** | `U_PORT_ATMEL_ASF` | SAM D/E/C/S/L | Atmel ASF |
+| **Texas Instruments** | `U_PORT_TI_DRIVERLIB` | MSP432, Tiva C (TM4C) | TI DriverLib |
+| **Silicon Labs** | `U_PORT_SILABS_GECKO` | EFM32, EFR32 | Gecko SDK |
+| **Renesas** | `U_PORT_RENESAS_FSP` | RA series | Renesas FSP |
 
 ### Features
 - Uses FreeRTOS semaphores (`xSemaphoreCreateMutex`) for thread-safe mutex operations
 - Uses FreeRTOS tick count (`xTaskGetTickCount`) for timing
 - Supports timeout-based mutex locking
 - Ready for multi-threaded applications
+- Complete UART implementations with:
+  - Configurable baud rate
+  - Hardware flow control (CTS/RTS) support
+  - Timeout-based blocking and non-blocking reads
+  - Buffer flushing
 
-### Hardware Integration Required
+### Platform-Specific Setup
 
-The FreeRTOS port includes **placeholder implementations** for UART functions that you must implement for your specific hardware:
+#### STM32 (U_PORT_STM32_HAL)
 
-- `uPortUartOpen()` - Initialize and configure UART
-- `uPortUartClose()` - Deinitialize UART
-- `uPortUartWrite()` - Write data to UART
-- `uPortUartRead()` - Read data from UART (with timeout support)
-- `uPortUartFlush()` - Flush UART buffers
-
-Example implementations are provided in `u_port_freertos.c` for STM32 HAL, but you should adapt them to your specific hardware and UART driver.
-
-### Example for STM32 with HAL
-
+**Build Configuration:**
 ```c
-// In u_port_freertos.c, implement the UART functions:
-
-static void *uPortUartOpen(const char *pDevName, int baudRate, bool useFlowControl)
-{
-    UART_HandleTypeDef *pHuart = &huart1;  // Your UART handle
-    
-    pHuart->Init.BaudRate = baudRate;
-    pHuart->Init.WordLength = UART_WORDLENGTH_8B;
-    pHuart->Init.StopBits = UART_STOPBITS_1;
-    pHuart->Init.Parity = UART_PARITY_NONE;
-    pHuart->Init.Mode = UART_MODE_TX_RX;
-    pHuart->Init.HwFlowCtl = useFlowControl ? UART_HWCONTROL_RTS_CTS : UART_HWCONTROL_NONE;
-    
-    if (HAL_UART_Init(pHuart) != HAL_OK) {
-        return NULL;
-    }
-    return pHuart;
-}
+// In your compiler defines:
+#define U_PORT_FREERTOS
+#define U_PORT_STM32_HAL
+#define STM32F4  // Or your STM32 family: F0, F1, F7, H7, L4, etc.
 ```
 
-### Usage in Your Application
+**Hardware Setup:**
+1. Use STM32CubeMX to generate UART initialization code
+2. The port expects `huart1`, `huart2`, `huart3` etc. as extern variables
+3. GPIO and clock configuration is handled by CubeMX init code
 
+**Example:**
 ```c
 #include "u_port.h"
 #include "u_cx.h"
 
-void myTask(void *pvParameters)
+void ucxTask(void *pvParameters)
 {
     uCxAtClient_t client;
     uCxHandle_t ucxHandle;
     
-    // Initialize the port layer
     uPortAtInit(&client);
     
-    // Open UART connection
+    // "UART1" or "USART1" both work
     if (!uPortAtOpen(&client, "UART1", 115200, true)) {
         // Handle error
         return;
     }
     
-    // Initialize uCx API
     uCxInit(&client, &ucxHandle);
     
     // Use the API...
     
-    // Cleanup
     uPortAtClose(&client);
 }
+```
+
+#### ESP32 (U_PORT_ESP32)
+
+**Build Configuration:**
+```c
+// In your component CMakeLists.txt or project config:
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    U_PORT_FREERTOS
+    U_PORT_ESP32
+)
+```
+
+**Hardware Setup:**
+```c
+// In your main app_main():
+// Configure UART pins before using uPortAtOpen
+uart_set_pin(UART_NUM_1, TX_PIN, RX_PIN, RTS_PIN, CTS_PIN);
+uart_driver_install(UART_NUM_1, 1024, 1024, 0, NULL, 0);
+```
+
+**Example:**
+```c
+uPortAtInit(&client);
+uPortAtOpen(&client, "UART1", 115200, true);  // Uses UART_NUM_1
+```
+
+#### NXP (U_PORT_NXP_SDK)
+
+**Build Configuration:**
+```c
+#define U_PORT_FREERTOS
+#define U_PORT_NXP_SDK
+```
+
+**Hardware Setup:**
+1. Initialize UART clocks in your board init code
+2. Use device names: "UART0", "UART1", "UART2"
+
+#### Other Platforms
+
+Similar configuration applies:
+- **Atmel**: `U_PORT_ATMEL_ASF` - Configure SERCOM pins
+- **TI**: `U_PORT_TI_DRIVERLIB` - Configure EUSCI module
+- **Silicon Labs**: `U_PORT_SILABS_GECKO` - Configure USART pins and clocks
+- **Renesas**: `U_PORT_RENESAS_FSP` - Configure UART instance in FSP configurator
+
+### Hardware Integration Required
+
+While the UART functions are fully implemented, you still need to:
+
+1. **Initialize GPIO pins** for UART TX/RX/CTS/RTS
+2. **Enable clocks** for the UART peripheral
+3. **Configure interrupts** if using interrupt-driven mode (optional)
+4. **Declare UART handles** as extern in your main.c (for HAL-based platforms)
+
+Most of this is handled automatically by:
+- **STM32CubeMX** for STM32
+- **ESP-IDF menuconfig** for ESP32
+- **MCUXpresso Config Tools** for NXP
+- Platform configurators for other vendors
+
+### Build System Integration
+
+**CMake Example:**
+```cmake
+# Add FreeRTOS port
+target_sources(your_app PRIVATE
+    ${UCXCLIENT_DIR}/examples/port/u_port_freertos.c
+)
+
+target_compile_definitions(your_app PRIVATE
+    U_PORT_FREERTOS
+    U_PORT_STM32_HAL
+    STM32F4
+)
+```
+
+**Makefile Example:**
+```makefile
+CFLAGS += -DU_PORT_FREERTOS -DU_PORT_STM32_HAL -DSTM32F4
+SOURCES += $(UCXCLIENT_DIR)/examples/port/u_port_freertos.c
 ```

@@ -18,14 +18,33 @@
  * @brief FreeRTOS port example
  *
  * This port layer provides integration with FreeRTOS for STM32 and other
- * embedded platforms. It uses FreeRTOS sempahores for mutex support and
+ * embedded platforms. It uses FreeRTOS semaphores for mutex support and
  * FreeRTOS tick count for timing.
  *
+ * Supported Platforms:
+ * - STM32 (all families: F0/F1/F2/F3/F4/F7/G0/G4/H7/L0/L1/L4/L5/U5/WB/WL)
+ * - ESP32/ESP32-S/ESP32-C series
+ * - NXP Kinetis, LPC, and i.MX RT series
+ * - Microchip/Atmel SAM D/E/C/S/L series
+ * - Texas Instruments MSP432 and Tiva C series
+ * - Silicon Labs EFM32 and EFR32 (Gecko)
+ * - Renesas RA series
+ *
  * To use this port:
- * 1. Define U_PORT_FREERTOS in your build
- * 2. Add u_port_freertos.c to your build
- * 3. Implement the UART functions for your specific hardware (see u_port_freertos.c)
- * 4. Include "u_port.h" in your application code
+ * 1. Define your platform (e.g., U_PORT_STM32_HAL, U_PORT_ESP32)
+ * 2. Define U_PORT_FREERTOS in your build
+ * 3. Add u_port_freertos.c to your build
+ * 4. Configure UART pins and clocks in your hardware initialization
+ * 5. Include "u_port.h" in your application code
+ *
+ * Platform Selection (define one):
+ * - U_PORT_STM32_HAL    : STM32 using HAL library
+ * - U_PORT_ESP32        : ESP32/ESP-IDF
+ * - U_PORT_NXP_SDK      : NXP MCUXpresso SDK
+ * - U_PORT_ATMEL_ASF    : Microchip/Atmel ASF
+ * - U_PORT_TI_DRIVERLIB : Texas Instruments DriverLib
+ * - U_PORT_SILABS_GECKO : Silicon Labs Gecko SDK
+ * - U_PORT_RENESAS_FSP  : Renesas FSP
  */
 
 #ifndef U_PORT_FREERTOS_H
