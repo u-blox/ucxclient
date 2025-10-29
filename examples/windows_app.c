@@ -116,6 +116,10 @@ static char gWifiSsid[64] = "";               // Last WiFi SSID
 static char gWifiPassword[64] = "";           // Last WiFi password
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
 
+// Device information (populated after connection)
+static char gDeviceModel[64] = "";            // Device model (e.g., "NORA-W36")
+static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0d-xxx")
+
 // URC event handling
 static U_CX_MUTEX_HANDLE gUrcMutex;
 static volatile uint32_t gUrcEventFlags = 0;
@@ -1045,14 +1049,22 @@ static void printMenu(void)
         case MENU_MAIN:
             printf("--- Main Menu ---\n");
             if (gConnected) {
-                printf("  Connected to: %s\n", gComPort);
+                printf("  Connected: %s", gComPort);
+                if (gDeviceModel[0] != '\0') {
+                    printf(" (%s", gDeviceModel);
+                    if (gDeviceFirmware[0] != '\0') {
+                        printf(" %s", gDeviceFirmware);
+                    }
+                    printf(")");
+                }
+                printf("\n");
             } else {
                 printf("  Status: Not connected\n");
             }
             printf("  UCX Logging: %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
             printf("\n");
-            printf("  [1] Connect to device\n");
-            printf("  [2] Disconnect\n");
+            printf("  [1] Connect to UCX device\n");
+            printf("  [2] Disconnect from device\n");
             printf("  [3] List API commands\n");
             printf("  [4] AT test (basic communication)\n");
             printf("  [5] ATI9 (device info)\n");
@@ -1358,20 +1370,28 @@ static bool connectDevice(const char *comPort)
     const char *model = NULL;
     if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            %s", model);
+        // Save model for menu display
+        strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+        gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
         uCxEnd(&gUcxHandle);
     } else {
         uCxEnd(&gUcxHandle);
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            (not available)");
+        gDeviceModel[0] = '\0';
     }
     
     // AT+GMR - Software version
     const char *fwVersion = NULL;
     if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Firmware Version: %s", fwVersion);
+        // Save firmware version for menu display
+        strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+        gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
         uCxEnd(&gUcxHandle);
     } else {
         uCxEnd(&gUcxHandle);
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Firmware Version: (not available)");
+        gDeviceFirmware[0] = '\0';
     }
     
     // AT+GSN - Serial number
@@ -1405,6 +1425,10 @@ static void disconnectDevice(void)
     
     // Close COM port
     uPortAtClose(&gAtClient);
+    
+    // Clear device info
+    gDeviceModel[0] = '\0';
+    gDeviceFirmware[0] = '\0';
     
     gConnected = false;
     printf("Disconnected.\n");
