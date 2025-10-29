@@ -158,7 +158,7 @@ Traditional tools hardcode AT commands and UI layouts, requiring code changes fo
 
 All platforms can also launch directly with Python:
 ```bash
-cd windows_gui
+cd examples/python_gui
 python3 launcher.py  # or python launcher.py on Windows
 ```
 
@@ -264,15 +264,15 @@ ucxclient/
 ├── src/                           # uAtClient API implementation
 ├── ucx_api/                       # u-connectXpress API (C functions)
 ├── examples/                      # Example applications and ports
+│   ├── python_gui/                # Python GUI Application
+│   │   ├── launcher.py            # GUI application launcher
+│   │   ├── main_window.py         # Main window with connection management
+│   │   ├── dynamic_product_gui.py # ⭐ Dynamic GUI builder (s-center-inspired)
+│   │   ├── yaml_parser.py         # ⭐ YAML product config parser + GitHub API
+│   │   ├── at_to_api_mapper.py    # ⭐ Dynamic AT→API mapping engine
+│   │   ├── ucx_api_executor.py    # ⭐ UCX API command executor
+│   │   └── product_selector_dialog.py # Product/version selection dialog
 ├── test/                          # Unit tests
-├── windows_gui/                   # Windows GUI Application
-│   ├── launcher.py                # GUI application launcher
-│   ├── main_window.py             # Main window with connection management
-│   ├── dynamic_product_gui.py     # ⭐ Dynamic GUI builder (s-center-inspired)
-│   ├── yaml_parser.py             # ⭐ YAML product config parser + GitHub API
-│   ├── at_to_api_mapper.py        # ⭐ Dynamic AT→API mapping engine
-│   ├── ucx_api_executor.py        # ⭐ UCX API command executor
-│   ├── product_selector_dialog.py # Product/version selection dialog
 │   ├── ucx_wrapper.py             # Python wrapper for ucxclient DLL
 │   ├── dynamic_wrapper.py         # Device-agnostic wrapper factory
 │   └── dynamic_at_gui.py          # Legacy AT command interface

@@ -2075,8 +2075,8 @@ class MainWindow:
     
     def _run_build(self, build_type: str):
         """Run build command using the log window"""
-        # Get project root (parent of windows_gui)
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Get project root (grandparent of examples/python_gui)
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
         # Determine build script and arguments based on platform
         if sys.platform == "win32":

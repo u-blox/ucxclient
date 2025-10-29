@@ -574,7 +574,7 @@ class UcxClientWrapper:
             pContext=None
         )
         
-        # CRITICAL: Call uPortAtInit (like windows_test.c line 154)
+        # CRITICAL: Call uPortAtInit (like windows_basic.c line 154)
         # This function does EVERYTHING:
         # 1. Sets up static buffers (rxBuf, urcBuf)  
         # 2. Initializes the uPortContext_t
@@ -653,7 +653,7 @@ class UcxClientWrapper:
             self.disconnect()
         
         try:
-            # Use UCX library's port layer to open COM port (like windows_test.c does)
+            # Use UCX library's port layer to open COM port (like windows_basic.c does)
             # This is the correct way - don't use pyserial directly!
             debug_print(f"[DEBUG] Attempting to open {port_name} at {baud_rate} baud using uPortAtOpen...")
             
@@ -677,7 +677,7 @@ class UcxClientWrapper:
             self._baud_rate = baud_rate
             self._flow_control = flow_control
             
-            # Initialize UCX handle now that port is open (like windows_test.c does)
+            # Initialize UCX handle now that port is open (like windows_basic.c does)
             # uCxInit expects: (uCxAtClient_t *pClient, uCxHandle_t *pHandle)
             debug_print(f"[DEBUG] Initializing UCX handle with uCxInit...")
             uCxInit = self._dll.uCxInit
@@ -708,7 +708,7 @@ class UcxClientWrapper:
         # Stop callback thread for UCX API
         self._stop_callback_thread()
         
-        # Close COM port using UCX library's port layer (like windows_test.c does)
+        # Close COM port using UCX library's port layer (like windows_basic.c does)
         if self._connected and hasattr(self._dll, 'uPortAtClose'):
             try:
                 self._dll.uPortAtClose(ctypes.cast(self._client_buffer, ctypes.c_void_p))

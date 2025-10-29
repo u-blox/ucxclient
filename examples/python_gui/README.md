@@ -55,18 +55,21 @@ This will create `ucxclient_windows.dll` in the build directory.
 Before using the GUI, test the console application:
 
 ```powershell
-# Run the Windows test application
-.\Release\windows_test.exe COM3 MyWiFiSSID MyWiFiPassword
+# Run the Windows basic test application
+.\Release\windows_basic.exe COM3 MyWiFiSSID MyWiFiPassword
 
 # Or without arguments to see usage and available ports
-.\Release\windows_test.exe --help
+.\Release\windows_basic.exe --help
 ```
 
 ### Step 3: Launch the GUI
 
 ```powershell
-# Navigate to the GUI directory
-cd ..\windows_gui
+# From ucxclient root, use the launcher script
+launch_gui.cmd
+
+# Or navigate to the GUI directory
+cd examples\python_gui
 
 # Launch the GUI application
 python launcher.py
@@ -153,7 +156,7 @@ python -c "from ucx_wrapper import get_available_com_ports; print(get_available_
 ### Project Structure
 
 ```
-windows_gui/
+examples/python_gui/
 ├── launcher.py          # Application launcher with requirements checking
 ├── main_window.py       # Main GUI application
 ├── ucx_wrapper.py       # Python wrapper for ucxclient DLL

@@ -146,18 +146,18 @@ if exist "Debug" (
 REM Test the console application
 echo.
 echo Testing console application...
-if exist "Release\windows_test.exe" (
-    echo Found Release\windows_test.exe
+if exist "Release\windows_basic.exe" (
+    echo Found Release\windows_basic.exe
     echo.
     echo Running port detection test...
-    Release\windows_test.exe --help
-) else if exist "Debug\windows_test.exe" (
-    echo Found Debug\windows_test.exe
+    Release\windows_basic.exe --help
+) else if exist "Debug\windows_basic.exe" (
+    echo Found Debug\windows_basic.exe
     echo.
     echo Running port detection test...
-    Debug\windows_test.exe --help
+    Debug\windows_basic.exe --help
 ) else (
-    echo WARNING: windows_test.exe not found
+    echo WARNING: windows_basic.exe not found
 )
 
 REM Return to root directory
@@ -195,7 +195,7 @@ echo tkinter is available
 REM Test the Python wrapper
 echo.
 echo Testing Python wrapper...
-cd windows_gui
+cd examples\python_gui
 python -c "from ucx_wrapper import get_available_com_ports; ports = get_available_com_ports(); print(f'Found {len(ports)} COM ports: {ports}')"
 if errorlevel 1 (
     echo WARNING: Python wrapper test failed
@@ -203,6 +203,7 @@ if errorlevel 1 (
 ) else (
     echo Python wrapper test successful
 )
+cd ..\.
 
 cd ..
 
@@ -222,7 +223,7 @@ echo To run the GUI application:
 echo   launch_gui.cmd
 echo.
 echo To test with a COM port:
-echo   build\Release\windows_test.exe COM3
+echo   build\Release\windows_basic.exe COM3
 echo.
 
 if /i not "%BUILD_ACTION%"=="clean" if /i not "%BUILD_ACTION%"=="cleanall" pause

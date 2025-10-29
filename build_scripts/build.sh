@@ -152,7 +152,7 @@ test_python_wrapper() {
     fi
     
     # Test the wrapper
-    cd "${PROJECT_ROOT}/windows_gui"
+    cd "${PROJECT_ROOT}/examples/python_gui"
     if python3 -c "from ucx_wrapper import UcxClientWrapper; w = UcxClientWrapper(); print('Python wrapper test successful')" 2>/dev/null; then
         print_success "Python wrapper test successful"
     else

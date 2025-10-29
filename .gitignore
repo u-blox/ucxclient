@@ -9,16 +9,17 @@ __pycache__/
 # IDE
 .vscode/
 
-# Windows GUI test and debug files
-windows_gui/test_*.py
-windows_gui/debug_*.py
-windows_gui/temp_*.py
+# Python GUI test and debug files
+examples/python_gui/test_*.py
+examples/python_gui/debug_*.py
+examples/python_gui/temp_*.py
 .idea/
 *.swp
 *.swo
 
 # User settings (contains credentials)
 settings.json
+windows_app_settings.ini
 .ucxclient/
 
 # OS

@@ -49,7 +49,7 @@ This is the easiest and most reliable way to build native Linux binaries on Wind
 
 5. **Test the GUI from WSL**:
    ```bash
-   cd /mnt/c/u-blox/ucxclient/windows_gui
+   cd /mnt/c/u-blox/ucxclient/examples/python_gui
    python3 launcher.py
    ```
    
@@ -215,7 +215,7 @@ cmake ..
 cmake --build .
 
 # 5. Run GUI (if you have WSLg on Windows 11)
-cd ../windows_gui
+cd ../examples/python_gui
 python3 launcher.py
 
 # Done! You now have libucxclient.so

@@ -7,7 +7,7 @@ This directory contains application examples of how to use ucxclient. The exampl
 | http_example.c       | Example of doing a HTTP GET request using the uCx API. | Linux (POSIX) |
 | http_example_no_os.c | Same example as http_example.c but illustrating how it could be done on a bare-metal system with no OS. | No OS (bare-metal) |
 | windows_app.c        | Interactive Windows console application with menu-driven interface for Bluetooth, WiFi, Socket, and SPS operations. | Windows |
-| windows_test.c       | Simple Windows test application for basic AT command validation. | Windows |
+| windows_basic.c      | Simple Windows test application for basic AT command validation. | Windows |
 
 ## Available Ports
 
@@ -75,7 +75,7 @@ start build\ucxclient.sln
 
 After building, you'll find:
 - `build\Debug\windows_app.exe` - Interactive menu-driven application
-- `build\Debug\windows_test.exe` - Simple test application
+- `build\Debug\windows_basic.exe` - Simple test application
 - `build\Debug\http_example_windows.exe` - HTTP example for Windows
 - `build\Debug\ucxclient_windows.dll` - Shared library
 
@@ -271,12 +271,12 @@ Choice: 7
 Choice: 3
 ```
 
-### Windows: windows_test.exe
+### Windows: windows_basic.exe
 
 Simple test application for basic validation:
 
 ```powershell
-.\build\Debug\windows_test.exe COM31
+.\build\Debug\windows_basic.exe COM31
 ```
 
 This runs a series of automated tests to verify:

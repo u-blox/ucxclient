@@ -20,7 +20,7 @@
  * This is a simple console application to test the Windows port of ucxclient.
  * It can be used to verify COM port connectivity and basic AT commands.
  *
- * Usage: windows_test.exe [COM_PORT] [SSID] [WPA_PSK]
+ * Usage: windows_basic.exe [COM_PORT] [SSID] [WPA_PSK]
  */
 
 #include <stdio.h>

@@ -65,6 +65,14 @@ static PFN_FT_OpenEx gpFT_OpenEx = NULL;
 static PFN_FT_GetComPortNumber gpFT_GetComPortNumber = NULL;
 static PFN_FT_Close gpFT_Close = NULL;
 
+// Disable MSVC warnings for auto-generated UCX API headers
+// C4200: zero-sized array in struct (valid C99/C11 feature)
+// C4201: nameless struct/union (valid C11 feature)
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200 4201)
+#endif
+
 // Include ucxclient headers
 #include "u_cx_at_client.h"
 #include "u_cx_at_params.h"
@@ -1329,7 +1337,7 @@ static bool connectDevice(const char *comPort)
     
     printf("Connecting to %s...\n", comPort);
     
-    // Initialize AT client (like windows_test.c)
+    // Initialize AT client (like windows_basic.c)
     uPortAtInit(&gAtClient);
     
     // Open COM port

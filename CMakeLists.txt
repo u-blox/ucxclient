@@ -73,7 +73,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(http_example_windows PRIVATE /W4 /wd4200 /wd4201)
+  target_compile_options(http_example_windows PRIVATE /W4)
   target_compile_definitions(http_example_windows PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -85,15 +85,15 @@ if(WIN32)
   target_include_directories(http_example_windows PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
   target_link_libraries(http_example_windows PRIVATE setupapi)
 
-  # Windows Test Application
-  add_executable(windows_test
-    examples/windows_test.c
+  # Windows Basic Application
+  add_executable(windows_basic
+    examples/windows_basic.c
     examples/port/u_port_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(windows_test PRIVATE /W4 /wd4200 /wd4201)
-  target_compile_definitions(windows_test PRIVATE
+  target_compile_options(windows_basic PRIVATE /W4)
+  target_compile_definitions(windows_basic PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
@@ -101,8 +101,8 @@ if(WIN32)
     U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
     U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
   )
-  target_include_directories(windows_test PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(windows_test PRIVATE setupapi)
+  target_include_directories(windows_basic PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+  target_link_libraries(windows_basic PRIVATE setupapi)
 
   # Windows Console Application (Simple Menu-based App)
   add_executable(windows_app
@@ -111,7 +111,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(windows_app PRIVATE /W4 /FS /wd4200 /wd4201)
+  target_compile_options(windows_app PRIVATE /W4 /FS)
   target_compile_definitions(windows_app PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -127,7 +127,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(ucxclient_windows PRIVATE /W4 /wd4200 /wd4201)
+  target_compile_options(ucxclient_windows PRIVATE /W4)
   target_compile_definitions(ucxclient_windows PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"

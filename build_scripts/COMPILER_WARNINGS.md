@@ -21,7 +21,7 @@ All targets now compile with **maximum warnings enabled** and **warnings treated
    - Before: `/W0` (warnings disabled) + specific warning suppressions
    - After: `/W4 /WX` (all warnings, treat as errors)
 
-2. **`windows_test`** (Windows test application)
+2. **`windows_basic`** (Windows basic test application)
    - Before: `/W0` (warnings disabled) + specific warning suppressions
    - After: `/W4 /WX` (all warnings, treat as errors)
 

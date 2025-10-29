@@ -41,7 +41,7 @@ def check_requirements():
     
     # Check if library exists
     launcher_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(launcher_dir)  # Go up one directory from windows_gui
+    project_root = os.path.dirname(os.path.dirname(launcher_dir))  # Go up two directories from examples/python_gui
     
     lib_name = get_library_name()
     lib_paths = [

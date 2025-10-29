@@ -1,15 +1,15 @@
 @echo off
-REM Launch script for ucxclient Windows GUI
+REM Launch script for ucxclient Python GUI
 REM This script launches the GUI application
 
 echo ===================================
-echo ucxclient Windows GUI Launcher
+echo ucxclient Python GUI Launcher
 echo ===================================
 echo.
 
 REM Check if we're in the right directory
-if not exist "windows_gui\launcher.py" (
-    echo ERROR: windows_gui\launcher.py not found!
+if not exist "examples\python_gui\launcher.py" (
+    echo ERROR: examples\python_gui\launcher.py not found!
     echo Please run this script from the ucxclient root directory.
     pause
     exit /b 1
@@ -46,8 +46,9 @@ echo.
 REM Prevent Python from creating bytecode cache files
 set PYTHONDONTWRITEBYTECODE=1
 
-cd windows_gui
+cd examples\python_gui
 python -B launcher.py
 
 REM Return to root directory
-cd ..
+cd ..\..
+

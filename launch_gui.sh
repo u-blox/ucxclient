@@ -66,7 +66,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Launch the GUI
-cd "$SCRIPT_DIR/windows_gui"
+cd "$SCRIPT_DIR/examples/python_gui"
 $PYTHON_CMD launcher.py
 
 exit $?
