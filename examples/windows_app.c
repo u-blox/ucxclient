@@ -66,7 +66,9 @@
 #define URC_FLAG_NETWORK_DOWN       (1 << 1)
 #define URC_FLAG_SOCK_CONNECTED     (1 << 2)
 #define URC_FLAG_SOCK_DATA          (1 << 3)
-#define URC_FLAG_SPS_DATA           (1 << 4)
+#define URC_FLAG_SPS_CONNECTED      (1 << 4)
+#define URC_FLAG_SPS_DISCONNECTED   (1 << 5)
+#define URC_FLAG_SPS_DATA           (1 << 6)
 
 // Global handles
 static uCxAtClient_t gAtClient;
@@ -524,6 +526,22 @@ static void spsDataAvailable(struct uCxHandle *puCxHandle, int32_t connection_ha
     (void)number_bytes;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS data available: %d bytes on connection %d", number_bytes, connection_handle);
     signalEvent(URC_FLAG_SPS_DATA);
+}
+
+static void spsConnected(struct uCxHandle *puCxHandle, int32_t connection_handle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS connected: connection handle %d", connection_handle);
+    printf("\n*** SPS Connection established! Connection handle: %d ***\n", connection_handle);
+    signalEvent(URC_FLAG_SPS_CONNECTED);
+}
+
+static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_handle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS disconnected: connection handle %d", connection_handle);
+    printf("\n*** SPS Disconnected! Connection handle: %d ***\n", connection_handle);
+    signalEvent(URC_FLAG_SPS_DISCONNECTED);
 }
 
 // ----------------------------------------------------------------
@@ -1266,7 +1284,9 @@ static bool connectDevice(const char *comPort)
     uCxSocketRegisterConnect(&gUcxHandle, sockConnected);
     uCxSocketRegisterDataAvailable(&gUcxHandle, socketDataAvailable);
     
-    // Register URC handler for SPS events
+    // Register URC handlers for SPS events
+    uCxSpsRegisterConnect(&gUcxHandle, spsConnected);
+    uCxSpsRegisterDisconnect(&gUcxHandle, spsDisconnected);
     uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
     printf("UCX initialized successfully\n");
