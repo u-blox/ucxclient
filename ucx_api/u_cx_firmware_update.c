@@ -141,14 +141,15 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
     }
     
     // Give module time to switch to XMODEM mode
+    // The module needs time to switch modes, close AT command interface, and start XMODEM receiver
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Waiting for module to enter firmware update mode...");
-    SLEEP_MS(2000);  // 2 second delay
+    SLEEP_MS(3000);  // 3 second delay (increased from 2s)
     
     // Close and reopen port to ensure clean state for XMODEM transfer
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Closing port to reset state...");
     uPortAtClose(puCxHandle->pAtClient);
     
-    SLEEP_MS(500);  // Wait for port to fully close
+    SLEEP_MS(1000);  // Wait for port to fully close (increased from 500ms)
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Reopening port for XMODEM transfer...");
     if (!uPortAtOpen(puCxHandle->pAtClient, pDeviceName, baudRate, useFlowControl)) {
@@ -156,8 +157,12 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
         return U_CX_ERROR_IO;
     }
     
-    // Flush any stale data from buffers
+    // Flush any stale data from buffers multiple times
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Flushing serial buffers...");
+    uPortAtFlush(puCxHandle->pAtClient);
+    SLEEP_MS(100);
+    uPortAtFlush(puCxHandle->pAtClient);
+    SLEEP_MS(100);
     uPortAtFlush(puCxHandle->pAtClient);
     
     // Prepare progress callback context

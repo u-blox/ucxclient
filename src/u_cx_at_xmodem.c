@@ -168,8 +168,10 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
     packet[3 + blockSize + 1] = crc & 0xFF;         // CRC low byte
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
-                    "XMODEM: Block %u: CRC16=0x%04X, packet size=%zu bytes",
-                    blockNum, crc, packetSize);
+                    "XMODEM: Block %u: CRC16=0x%04X, packet size=%zu bytes, first 16 bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+                    blockNum, crc, packetSize,
+                    packet[3], packet[4], packet[5], packet[6], packet[7], packet[8], packet[9], packet[10],
+                    packet[11], packet[12], packet[13], packet[14], packet[15], packet[16], packet[17], packet[18]);
     
     // Try sending the block with retries
     for (int32_t retry = 0; retry < maxRetries; retry++) {
@@ -369,6 +371,17 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
         // Call progress callback
         if (progressCallback != NULL) {
             progressCallback(dataLen, offset, pUserData);
+        }
+        
+        // Give receiver time to process the block (especially for flash writes)
+        // Python implementation that works uses 10ms delay between blocks
+        if (blockSize == U_CX_XMODEM_BLOCK_SIZE_1K && offset < dataLen) {
+            // For 1K blocks, give module time to write to flash
+            // Use busy-wait since we're already in a timing-critical section
+            int32_t delayEnd = uPortGetTickTimeMs() + 10;
+            while (uPortGetTickTimeMs() < delayEnd) {
+                // Busy wait
+            }
         }
     }
     
