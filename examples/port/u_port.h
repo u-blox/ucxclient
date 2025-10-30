@@ -79,4 +79,28 @@ void uPortAtClose(uCxAtClient_t *pClient);
   */
 void uPortAtFlush(uCxAtClient_t *pClient);
 
+/**
+  * @brief Pause RX thread for raw serial access
+  *
+  * Temporarily stops the background RX thread that processes AT responses.
+  * This is CRITICAL for protocols like XMODEM that need exclusive access to the
+  * serial port without the AT parser consuming bytes.
+  *
+  * IMPORTANT: Always call uPortAtResumeRx() when raw serial access is complete
+  * to restore normal AT command processing.
+  *
+  * @param[in] pClient:  pointer to the uCxAtClient_t struct initialized with uPortAtInit().
+  */
+void uPortAtPauseRx(uCxAtClient_t *pClient);
+
+/**
+  * @brief Resume RX thread after raw serial access
+  *
+  * Restarts the background RX thread after it was paused with uPortAtPauseRx().
+  * This restores normal AT command processing.
+  *
+  * @param[in] pClient:  pointer to the uCxAtClient_t struct initialized with uPortAtInit().
+  */
+void uPortAtResumeRx(uCxAtClient_t *pClient);
+
 #endif

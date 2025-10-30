@@ -1208,6 +1208,28 @@ void uPortAtClose(uCxAtClient_t *pClient)
     pCtx->pUartHandle = NULL;
 }
 
+void uPortAtPauseRx(uCxAtClient_t *pClient)
+{
+    // No-op for FreeRTOS implementation (polling-based).
+    // This port doesn't use a background RX task - the application calls
+    // uCxAtClientHandleRx() explicitly, so it already has control over when
+    // AT command processing happens. Raw binary protocols like XMODEM work
+    // naturally without needing to pause anything.
+    //
+    // NOTE: If your FreeRTOS application DOES use a separate RX task that
+    // calls uCxAtClientHandleRx() in the background, you should implement
+    // pause/resume similar to the Windows/POSIX ports by using vTaskSuspend()
+    // and vTaskResume() or by deleting and recreating the task.
+    (void)pClient;
+}
+
+void uPortAtResumeRx(uCxAtClient_t *pClient)
+{
+    // No-op for FreeRTOS implementation (polling-based).
+    // See note in uPortAtPauseRx() above.
+    (void)pClient;
+}
+
 void uPortAtFlush(uCxAtClient_t *pClient)
 {
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;

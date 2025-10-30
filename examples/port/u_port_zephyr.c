@@ -230,6 +230,62 @@ void uPortAtClose(uCxAtClient_t *pClient)
     pCtx->pUartDev = NULL;
 }
 
+void uPortAtPauseRx(uCxAtClient_t *pClient)
+{
+    // CRITICAL: The RX work queue handler (rxTask) continuously calls
+    // uCxAtClientHandleRx() which reads bytes from the ring buffer and
+    // tries to parse them as AT responses. During XMODEM transfer (or
+    // other raw binary protocols), this causes ACK bytes to be consumed
+    // before the XMODEM code can read them, leading to timeouts, retries,
+    // and eventual module errors.
+    //
+    // This function temporarily disables the RX work queue to give exclusive
+    // serial port access to raw binary protocols like XMODEM.
+    
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx != NULL && pCtx->pUartDev != NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "Pausing RX work queue for raw serial access...");
+        
+        // Cancel any pending work
+        k_work_cancel(&pCtx->rxWork);
+        
+        // Set flag to prevent ISR from submitting new work
+        gDisableRxWorker = true;
+        
+        // Flush any remaining work (ensure work queue is idle)
+        k_work_flush(&pCtx->rxWork, NULL);
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "RX work queue paused - raw serial access enabled");
+    }
+}
+
+void uPortAtResumeRx(uCxAtClient_t *pClient)
+{
+    // Resume the RX work queue after raw binary protocol transfer completes.
+    // This restores normal AT command processing.
+    
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx != NULL && pCtx->pUartDev != NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "Resuming RX work queue...");
+        
+        // Re-enable the RX worker
+        gDisableRxWorker = false;
+        
+        // If there's data in the ring buffer, submit work to process it
+        if (!ring_buf_is_empty(&pCtx->rxRingBuf)) {
+            k_work_submit(&pCtx->rxWork);
+        }
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "RX work queue resumed - AT command mode restored");
+    }
+}
+
 void uPortAtFlush(uCxAtClient_t *pClient)
 {
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;

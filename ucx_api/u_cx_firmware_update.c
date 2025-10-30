@@ -56,7 +56,7 @@ typedef struct {
  * -------------------------------------------------------------- */
 
 static void xmodemProgressWrapper(size_t totalBytes, size_t bytesTransferred, void *pUserData);
-static int32_t enterFirmwareUpdateMode(uCxHandle_t *puCxHandle, int32_t baudRate);
+static int32_t enterFirmwareUpdateMode(uCxHandle_t *puCxHandle, int32_t baudRate, bool useFlowControl);
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -81,25 +81,42 @@ static void xmodemProgressWrapper(size_t totalBytes, size_t bytesTransferred, vo
  * Note: This requires platform-specific implementation to actually change
  * the host's UART baudrate. This function only sends the AT command.
  */
-static int32_t enterFirmwareUpdateMode(uCxHandle_t *puCxHandle, int32_t baudRate)
+static int32_t enterFirmwareUpdateMode(uCxHandle_t *puCxHandle, int32_t baudRate, bool useFlowControl)
 {
     char cmd[64];
-    int32_t result;
+    int32_t bytesWritten;
     
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Entering firmware update mode at %d baud...", baudRate);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Entering firmware update mode at %d baud (flow control: %s)...", 
+                    baudRate, useFlowControl ? "ON" : "OFF");
     
-    // Build AT+USYFWUS=<baudrate> command
-    // Note: Only baudrate parameter, no flow control parameter!
-    // The working implementation shows this is the correct syntax for NORA-W36
-    snprintf(cmd, sizeof(cmd), "AT+USYFWUS=%d", baudRate);
+    // Build AT+USYFWUS=<baudrate>[,<flow_control>] command
+    // CRITICAL: This command does NOT return OK or ERROR!
+    // It returns "\r\n> C" where:
+    //   \r\n = newline
+    //   >    = firmware update prompt
+    //   C    = XMODEM CRC mode start signal
+    // We must send this command directly without using the AT client parser!
+    if (useFlowControl) {
+        snprintf(cmd, sizeof(cmd), "AT+USYFWUS=%d,1\r", baudRate);
+    } else {
+        snprintf(cmd, sizeof(cmd), "AT+USYFWUS=%d\r", baudRate);
+    }
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Sending command: %s", cmd);
     
-    // Send command
-    result = uCxAtClientExecSimpleCmd(puCxHandle->pAtClient, cmd);
-    if (result != 0) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, "Failed to enter firmware update mode: %d", result);
-        return result;
+    // Send command directly (bypass AT client parser since no OK/ERROR response)
+    bytesWritten = puCxHandle->pAtClient->pConfig->write(
+        puCxHandle->pAtClient,
+        puCxHandle->pAtClient->pConfig->pStreamHandle,
+        cmd,
+        strlen(cmd)
+    );
+    
+    if (bytesWritten != (int32_t)strlen(cmd)) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, 
+                        "Failed to send firmware update command (wrote %d of %zu bytes)", 
+                        bytesWritten, strlen(cmd));
+        return U_CX_ERROR_IO;
     }
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Firmware update mode command sent successfully");
@@ -134,36 +151,56 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
         baudRate = 115200;  // Default baudrate
     }
     
-    // Enter firmware update mode
-    int32_t result = enterFirmwareUpdateMode(puCxHandle, baudRate);
+    // Enter firmware update mode - tell module what flow control to expect
+    // AT+USYFWUS=<baudrate>[,<flow_control>]
+    int32_t result = enterFirmwareUpdateMode(puCxHandle, baudRate, useFlowControl);
     if (result != 0) {
         return result;
     }
     
-    // Give module time to switch to XMODEM mode
-    // The module needs time to switch modes, close AT command interface, and start XMODEM receiver
+    // Give module time to process the command
+    // Module responds with "\r\n> C" but we need to clear buffers
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Waiting for module to enter firmware update mode...");
-    SLEEP_MS(3000);  // 3 second delay (increased from 2s)
+    SLEEP_MS(1000);  // 1 second for module to switch modes
     
-    // Close and reopen port to ensure clean state for XMODEM transfer
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Closing port to reset state...");
+    // CRITICAL: Must close and reopen port to:
+    // 1. Clear all RX/TX buffers (the AT response "\r\n> C" is in the buffer)
+    // 2. Ensure clean state for XMODEM transfer
+    // 3. This matches the working s-center tool behavior
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Closing port to clear buffers...");
     uPortAtClose(puCxHandle->pAtClient);
     
-    SLEEP_MS(1000);  // Wait for port to fully close (increased from 500ms)
+    SLEEP_MS(500);  // Wait for port to fully close
     
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Reopening port for XMODEM transfer...");
+    // Reopen with the same flow control setting we told the module to use
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Reopening port (flow control: %s)...", 
+                    useFlowControl ? "ON" : "OFF");
     if (!uPortAtOpen(puCxHandle->pAtClient, pDeviceName, baudRate, useFlowControl)) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, "Failed to reopen port");
         return U_CX_ERROR_IO;
     }
     
-    // Flush any stale data from buffers multiple times
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Flushing serial buffers...");
+    // Flush buffers to clear any stale data
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Flushing serial buffers for XMODEM transfer...");
     uPortAtFlush(puCxHandle->pAtClient);
     SLEEP_MS(100);
     uPortAtFlush(puCxHandle->pAtClient);
     SLEEP_MS(100);
     uPortAtFlush(puCxHandle->pAtClient);
+    SLEEP_MS(100);
+    uPortAtFlush(puCxHandle->pAtClient);
+    SLEEP_MS(100);
+    uPortAtFlush(puCxHandle->pAtClient);
+    
+    // CRITICAL: Pause the RX thread before XMODEM transfer!
+    // The RX thread continuously calls uCxAtClientHandleRx() which reads bytes from the
+    // serial port and tries to parse them as AT responses. During XMODEM transfer, this
+    // causes ACK bytes (0x06) to be consumed before the XMODEM code can read them,
+    // leading to timeouts, retries, and eventual module reboot with ERROR:46.
+    // By pausing the RX thread, we give XMODEM exclusive access to the serial port.
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                    "Pausing RX thread for XMODEM transfer (prevents byte consumption)...");
+    uPortAtPauseRx(puCxHandle->pAtClient);
     
     // Prepare progress callback context
     progressCallbackContext_t callbackContext = {
@@ -178,6 +215,10 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
                                        use1K,  // Block size mode
                                        xmodemProgressWrapper,
                                        &callbackContext);
+    
+    // Resume RX thread regardless of transfer result
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Resuming RX thread...");
+    uPortAtResumeRx(puCxHandle->pAtClient);
     
     if (result != 0) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, "XMODEM transfer failed: %d", result);
@@ -211,8 +252,8 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
         baudRate = 115200;
     }
     
-    // Enter firmware update mode
-    int32_t result = enterFirmwareUpdateMode(puCxHandle, baudRate);
+    // Enter firmware update mode (no flow control for memory-based update)
+    int32_t result = enterFirmwareUpdateMode(puCxHandle, baudRate, false);
     if (result != 0) {
         return result;
     }

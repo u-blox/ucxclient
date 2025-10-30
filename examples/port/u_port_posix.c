@@ -274,6 +274,66 @@ void uPortAtClose(uCxAtClient_t *pClient)
     pCtx->uartFd = -1;
 }
 
+void uPortAtPauseRx(uCxAtClient_t *pClient)
+{
+    // CRITICAL: The RX thread continuously calls uCxAtClientHandleRx() which reads
+    // bytes from the serial port and tries to parse them as AT responses.
+    // During XMODEM transfer (or other raw binary protocols), this causes ACK
+    // bytes to be consumed before the XMODEM code can read them, leading to
+    // timeouts, retries, and eventual module errors.
+    //
+    // This function temporarily stops the RX thread to give exclusive serial
+    // port access to raw binary protocols like XMODEM.
+    
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx != NULL && !pCtx->terminateRxTask) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "Pausing RX thread for raw serial access...");
+        
+        // Signal the RX thread to terminate
+        pCtx->terminateRxTask = true;
+        
+        // Wait for the thread to exit (with reasonable timeout via join)
+        pthread_join(pCtx->rxThread, NULL);
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "RX thread paused - raw serial access enabled");
+    }
+}
+
+void uPortAtResumeRx(uCxAtClient_t *pClient)
+{
+    // Resume the RX thread after raw binary protocol transfer completes.
+    // This restores normal AT command processing.
+    
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx != NULL && pCtx->terminateRxTask) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                        "Resuming RX thread...");
+        
+        // Reset the termination flag
+        pCtx->terminateRxTask = false;
+        
+        // Recreate the RX thread
+        pthread_attr_t attr;
+        struct sched_param param;
+        pthread_attr_init(&attr);
+        pthread_attr_getschedparam(&attr, &param);
+        param.sched_priority = 9;
+        pthread_attr_setschedparam(&attr, &param);
+        
+        if (pthread_create(&pCtx->rxThread, &attr, rxTask, pCtx) != 0) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                            "Failed to restart RX thread!");
+        } else {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                            "RX thread resumed - AT command mode restored");
+        }
+    }
+}
+
 void uPortAtFlush(uCxAtClient_t *pClient)
 {
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;

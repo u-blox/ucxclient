@@ -190,10 +190,12 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
         
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: <<< Waiting for response (timeout=%dms)...", timeoutMs);
         
-        // Wait for response
+        // Wait for response - read ALL available data to catch multi-byte errors
         bytesRead = 0;
         int32_t startTime = uPortGetTickTimeMs();
         int32_t readAttempts = 0;
+        uint8_t rxBuffer[256];  // Buffer for unexpected multi-byte responses
+        int32_t rxBufferLen = 0;
         
         while ((uPortGetTickTimeMs() - startTime) < timeoutMs) {
             bytesRead = pClient->pConfig->read(pClient, pClient->pConfig->pStreamHandle, &response, 1, 100);
@@ -201,6 +203,10 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
             if (bytesRead == 1) {
                 readAttempts++;
                 int32_t elapsed = uPortGetTickTimeMs() - startTime;
+                
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                                "XMODEM: <<< Received byte 0x%02X ('%c') after %dms (attempt %d)", 
+                                response, (response >= 0x20 && response < 0x7F) ? response : '.', elapsed, readAttempts);
                 
                 if (response == U_CX_XMODEM_ACK) {
                     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
@@ -216,11 +222,25 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
                                     "XMODEM: <<< Transfer cancelled by receiver (CAN=0x18)");
                     return -3;
                 } else {
+                    // Unexpected byte - buffer it for logging
+                    if (rxBufferLen < sizeof(rxBuffer)) {
+                        rxBuffer[rxBufferLen++] = response;
+                    }
+                    
                     U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
-                                    "XMODEM: <<< Unexpected response 0x%02X (attempt %d, elapsed %dms)", 
-                                    response, readAttempts, elapsed);
+                                    "XMODEM: <<< Unexpected response 0x%02X ('%c') (attempt %d, elapsed %dms)", 
+                                    response, (response >= 0x20 && response < 0x7F) ? response : '.', readAttempts, elapsed);
+                    
+                    // Continue reading to capture full error message
                 }
             }
+        }
+        
+        // Log buffered unexpected data if any
+        if (rxBufferLen > 0) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                            "XMODEM: Block %u - Captured unexpected data (%d bytes): '%.*s'",
+                            blockNum, rxBufferLen, rxBufferLen, rxBuffer);
         }
         
         int32_t totalElapsed = uPortGetTickTimeMs() - startTime;

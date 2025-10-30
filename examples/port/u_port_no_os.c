@@ -222,6 +222,22 @@ void uPortAtClose(uCxAtClient_t *pClient)
     pCtx->uartFd = -1;
 }
 
+void uPortAtPauseRx(uCxAtClient_t *pClient)
+{
+    // No-op for no-OS implementation.
+    // There's no background RX thread in this port, so the application
+    // already has exclusive control over when uCxAtClientHandleRx() is called.
+    // Raw binary protocols like XMODEM work naturally without pausing anything.
+    (void)pClient;
+}
+
+void uPortAtResumeRx(uCxAtClient_t *pClient)
+{
+    // No-op for no-OS implementation.
+    // There's no RX thread to resume since this port doesn't use threading.
+    (void)pClient;
+}
+
 void uPortAtFlush(uCxAtClient_t *pClient)
 {
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;

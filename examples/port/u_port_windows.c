@@ -137,23 +137,28 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
     dcb.ByteSize = 8;
     dcb.Parity = NOPARITY;
     dcb.StopBits = ONESTOPBIT;
+    dcb.fBinary = TRUE;  // CRITICAL: Enable binary mode (no character processing)
     
     if (useFlowControl) {
         dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
         dcb.fOutxCtsFlow = TRUE;
     } else {
-        dcb.fRtsControl = RTS_CONTROL_DISABLE;
+        // IMPORTANT: Even without flow control handshaking, keep RTS asserted
+        // Many devices (including NORA-W36) require RTS to be high to remain active
+        dcb.fRtsControl = RTS_CONTROL_ENABLE;  // Changed from DISABLE to ENABLE
         dcb.fOutxCtsFlow = FALSE;
     }
     
+    // CRITICAL: Enable DTR to keep device active
+    // Many UART devices (including u-blox modules) need DTR asserted
+    dcb.fDtrControl = DTR_CONTROL_ENABLE;  // Changed from DISABLE to ENABLE
     dcb.fOutxDsrFlow = FALSE;
-    dcb.fDtrControl = DTR_CONTROL_DISABLE;
     dcb.fDsrSensitivity = FALSE;
-    dcb.fOutX = FALSE;
-    dcb.fInX = FALSE;
-    dcb.fErrorChar = FALSE;
-    dcb.fNull = FALSE;
-    dcb.fAbortOnError = FALSE;
+    dcb.fOutX = FALSE;  // Disable XON/XOFF output flow control
+    dcb.fInX = FALSE;   // Disable XON/XOFF input flow control
+    dcb.fErrorChar = FALSE;  // Don't replace error characters
+    dcb.fNull = FALSE;  // Don't discard NULL bytes (critical for binary!)
+    dcb.fAbortOnError = FALSE;  // Continue on errors
 
     if (!SetCommState(hComPort, &dcb)) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "SetCommState failed");
@@ -161,12 +166,16 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
         return INVALID_HANDLE_VALUE;
     }
 
-    // Set timeouts
-    timeouts.ReadIntervalTimeout = 50;         // Max time between chars (ms)
-    timeouts.ReadTotalTimeoutMultiplier = 10;  // ms per char
-    timeouts.ReadTotalTimeoutConstant = 100;   // Base timeout (ms)
-    timeouts.WriteTotalTimeoutMultiplier = 10;
-    timeouts.WriteTotalTimeoutConstant = 100;
+    // Set timeouts for reliable XMODEM transfers
+    // ReadIntervalTimeout: Maximum time between two consecutive bytes
+    //   Setting to 0 means "no interval timeout" - only total timeout matters
+    // ReadTotalTimeoutMultiplier: Timeout per byte to read (ms)
+    // ReadTotalTimeoutConstant: Base timeout regardless of bytes requested (ms)
+    timeouts.ReadIntervalTimeout = 0;          // No interval timeout (read all available data)
+    timeouts.ReadTotalTimeoutMultiplier = 0;   // No per-byte timeout
+    timeouts.ReadTotalTimeoutConstant = 100;   // 100ms base timeout
+    timeouts.WriteTotalTimeoutMultiplier = 0;  // No per-byte write timeout
+    timeouts.WriteTotalTimeoutConstant = 1000; // 1 second write timeout (for flash writing)
 
     if (!SetCommTimeouts(hComPort, &timeouts)) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "SetCommTimeouts failed");
@@ -414,6 +423,51 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     }
 
     return true;
+}
+
+void uPortAtPauseRx(uCxAtClient_t *pClient)
+{
+    // Temporarily pause the RX thread to allow raw serial access (e.g., for XMODEM)
+    // CRITICAL: The RX thread calls uCxAtClientHandleRx() which consumes bytes and
+    // tries to parse them as AT responses. During XMODEM transfer, this causes ACK
+    // bytes (0x06) to be consumed before the XMODEM code can read them, leading to
+    // timeouts and retries. We must stop the RX thread during XMODEM.
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx != NULL && pCtx->hRxThread != NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Pausing RX thread for raw serial access...");
+        
+        pCtx->bTerminateRxTask = true;
+        SetEvent(pCtx->hStopEvent);
+
+        // Wait for RX thread to terminate
+        WaitForSingleObject(pCtx->hRxThread, 5000); // Wait up to 5 seconds
+        CloseHandle(pCtx->hRxThread);
+        pCtx->hRxThread = NULL;
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "RX thread paused - raw serial access enabled");
+    }
+}
+
+void uPortAtResumeRx(uCxAtClient_t *pClient)
+{
+    // Resume the RX thread after raw serial access
+    uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
+    
+    if (pCtx != NULL && pCtx->hRxThread == NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Resuming RX thread...");
+        
+        pCtx->bTerminateRxTask = false;
+        ResetEvent(pCtx->hStopEvent);
+
+        // Recreate RX thread
+        pCtx->hRxThread = CreateThread(NULL, 0, rxThread, pCtx, 0, &pCtx->dwThreadId);
+        if (pCtx->hRxThread == NULL) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to resume RX thread");
+        } else {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "RX thread resumed - AT command mode restored");
+        }
+    }
 }
 
 void uPortAtClose(uCxAtClient_t *pClient)

@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
                                firmwareFile,
                                uart,          // Device/COM port name
                                baudrate,
-                               false,         // No flow control
+                               false,         // Disable flow control (DTR/RTS now properly enabled)
                                use1K,         // Block size mode
                                progressCallback,
                                NULL);
