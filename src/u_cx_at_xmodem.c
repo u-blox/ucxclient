@@ -43,9 +43,9 @@
 #define U_CX_XMODEM_HEADER_SIZE     3       /**< SOH/STX + block_num + block_num_complement */
 #define U_CX_XMODEM_CRC_SIZE        2
 
-#define U_CX_XMODEM_DEFAULT_TIMEOUT_MS  15000  /**< 15 second timeout matches working Python implementation */
+#define U_CX_XMODEM_DEFAULT_TIMEOUT_MS  15000  /**< 15 second timeout */
 #define U_CX_XMODEM_DEFAULT_MAX_RETRIES 10
-#define U_CX_XMODEM_START_TIMEOUT_MS    60000  /**< 60 seconds for initial handshake (Python uses 60s) */
+#define U_CX_XMODEM_START_TIMEOUT_MS    60000  /**< 60 seconds for initial handshake*/
 
 /* ----------------------------------------------------------------
  * TYPES
@@ -394,7 +394,7 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
         }
         
         // Give receiver time to process the block (especially for flash writes)
-        // Python implementation that works uses 10ms delay between blocks
+        // A 10ms delay between blocks allows the module time to write to flash
         if (blockSize == U_CX_XMODEM_BLOCK_SIZE_1K && offset < dataLen) {
             // For 1K blocks, give module time to write to flash
             // Use busy-wait since we're already in a timing-critical section
