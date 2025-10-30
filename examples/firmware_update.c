@@ -180,14 +180,14 @@ int main(int argc, char *argv[])
     printf("Entering firmware update mode...\n");
     printf("(This may take a few seconds)\n\n");
     
-    result = uCxFirmwareUpdateEx(&gUcxHandle, 
-                                 firmwareFile,
-                                 uart,          // Device/COM port name
-                                 baudrate,
-                                 false,         // No flow control
-                                 use1K,         // Block size mode
-                                 progressCallback,
-                                 NULL);
+    result = uCxFirmwareUpdate(&gUcxHandle, 
+                               firmwareFile,
+                               uart,          // Device/COM port name
+                               baudrate,
+                               false,         // No flow control
+                               use1K,         // Block size mode
+                               progressCallback,
+                               NULL);
     
     printf("\n");
     

@@ -121,6 +121,23 @@ if(WIN32)
   target_include_directories(windows_app PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
   target_link_libraries(windows_app PRIVATE setupapi)
 
+  # Firmware Update Standalone Application
+  add_executable(firmware_update
+    examples/firmware_update.c
+    examples/port/u_port_windows.c
+    ${UCXCLIENT_UCX_API_SRC}
+    ${UCXCLIENT_AT_API_SRC}
+  )
+  target_compile_options(firmware_update PRIVATE /W4 /FS)
+  target_compile_definitions(firmware_update PRIVATE
+    U_PORT_WINDOWS
+    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    _CRT_SECURE_NO_WARNINGS
+    U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+  )
+  target_include_directories(firmware_update PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+  target_link_libraries(firmware_update PRIVATE setupapi)
+
   # Windows shared library for Python integration
   add_library(ucxclient_windows SHARED
     examples/port/u_port_windows.c

@@ -116,23 +116,9 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
                           const char *pDeviceName,
                           int32_t baudRate,
                           bool useFlowControl,
+                          bool use1K,
                           uCxFirmwareUpdateProgress_t progressCallback,
                           void *pUserData)
-{
-    // Default to 128-byte blocks (safer for initial connection)
-    return uCxFirmwareUpdateEx(puCxHandle, pFirmwareFile, pDeviceName,
-                               baudRate, useFlowControl, false,
-                               progressCallback, pUserData);
-}
-
-int32_t uCxFirmwareUpdateEx(uCxHandle_t *puCxHandle,
-                            const char *pFirmwareFile,
-                            const char *pDeviceName,
-                            int32_t baudRate,
-                            bool useFlowControl,
-                            bool use1K,
-                            uCxFirmwareUpdateProgress_t progressCallback,
-                            void *pUserData)
 {
     if (puCxHandle == NULL || pFirmwareFile == NULL || pDeviceName == NULL) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, "Invalid parameters");
@@ -203,6 +189,7 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
                                   const uint8_t *pFirmwareData,
                                   size_t dataLen,
                                   int32_t baudRate,
+                                  bool use1K,
                                   uCxFirmwareUpdateProgress_t progressCallback,
                                   void *pUserData)
 {
@@ -237,7 +224,7 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
     // Configure XMODEM
     uCxXmodemConfig_t config;
     uCxAtClientXmodemConfigInit(&config);
-    config.use1K = true;  // Use 1K blocks for faster transfer
+    config.use1K = use1K;
     
     // Transfer firmware via XMODEM
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Starting XMODEM transfer...");

@@ -51,10 +51,10 @@ typedef void (*uCxFirmwareUpdateProgress_t)(size_t totalBytes,
 /**
  * Update module firmware via XMODEM protocol
  * 
- * This is a convenience function that:
- * 1. Enters firmware update mode (if needed)
+ * This function:
+ * 1. Enters firmware update mode (AT+USYFWUS)
  * 2. Changes baudrate (if requested)
- * 3. Transfers firmware file via XMODEM
+ * 3. Transfers firmware file via XMODEM with CRC
  * 4. Waits for update completion
  * 
  * Note: The module will reboot after successful firmware update.
@@ -66,6 +66,7 @@ typedef void (*uCxFirmwareUpdateProgress_t)(size_t totalBytes,
  * @param     baudRate        Baudrate to use for transfer (0 = keep current)
  *                            Common values: 115200, 230400, 460800, 921600
  * @param     useFlowControl  Use hardware flow control (CTS/RTS)
+ * @param     use1K           true = 1024-byte blocks, false = 128-byte blocks
  * @param     progressCallback  Optional progress callback (NULL to disable)
  * @param     pUserData       User data pointer passed to callback
  * @return                    0 on success, negative value on error
@@ -76,8 +77,8 @@ typedef void (*uCxFirmwareUpdateProgress_t)(size_t totalBytes,
  *     printf("Firmware update: %d%% (%zu/%zu bytes)\n", percent, transferred, total);
  * }
  * 
- * int32_t result = uCxFirmwareUpdate(puCxHandle, "firmware_v3.2.0.bin", 
- *                                    921600, progressCallback, NULL);
+ * int32_t result = uCxFirmwareUpdate(puCxHandle, "firmware.bin", "COM8",
+ *                                    115200, false, false, progressCallback, NULL);
  * if (result == 0) {
  *     printf("Firmware updated successfully. Module will reboot.\n");
  * }
@@ -88,6 +89,7 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
                           const char *pDeviceName,
                           int32_t baudRate,
                           bool useFlowControl,
+                          bool use1K,
                           uCxFirmwareUpdateProgress_t progressCallback,
                           void *pUserData);
 
@@ -100,6 +102,7 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
  * @param[in] pFirmwareData   Pointer to firmware data
  * @param     dataLen         Length of firmware data in bytes
  * @param     baudRate        Baudrate to use for transfer (0 = keep current)
+ * @param     use1K           true = 1024-byte blocks, false = 128-byte blocks
  * @param     progressCallback  Optional progress callback (NULL to disable)
  * @param     pUserData       User data pointer passed to callback
  * @return                    0 on success, negative value on error
@@ -108,33 +111,9 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
                                   const uint8_t *pFirmwareData,
                                   size_t dataLen,
                                   int32_t baudRate,
+                                  bool use1K,
                                   uCxFirmwareUpdateProgress_t progressCallback,
                                   void *pUserData);
-
-/**
- * Update module firmware with explicit block size control
- * 
- * Extended version of uCxFirmwareUpdate with explicit control over XMODEM block size.
- * Use this for testing or when you need to force 128-byte blocks.
- * 
- * @param[in] puCxHandle      uCX API handle
- * @param[in] pFirmwareFile   Path to firmware file (.bin)
- * @param[in] pDeviceName     Device/COM port name
- * @param     baudRate        Baudrate for transfer (0 = keep current)
- * @param     useFlowControl  Use hardware flow control
- * @param     use1K           true = 1024-byte blocks, false = 128-byte blocks
- * @param     progressCallback  Optional progress callback
- * @param     pUserData       User data for callback
- * @return                    0 on success, negative value on error
- */
-int32_t uCxFirmwareUpdateEx(uCxHandle_t *puCxHandle,
-                            const char *pFirmwareFile,
-                            const char *pDeviceName,
-                            int32_t baudRate,
-                            bool useFlowControl,
-                            bool use1K,
-                            uCxFirmwareUpdateProgress_t progressCallback,
-                            void *pUserData);
 
 #ifdef __cplusplus
 }
