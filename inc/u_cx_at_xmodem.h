@@ -16,6 +16,13 @@
 
 /** @file
  * @brief XMODEM protocol implementation for firmware updates
+ * 
+ * This module provides XMODEM/XMODEM-1K protocol support for binary transfers.
+ * 
+ * Debug Logging:
+ * - By default, only essential messages (errors, warnings, transfer start/end) are logged
+ * - To enable verbose per-block logging, uncomment U_CX_XMODEM_VERBOSE_DEBUG in u_cx_at_xmodem.c
+ * - Verbose mode shows: block headers, CRC values, ACK timing, retry attempts, etc.
  */
 
 #ifndef U_CX_AT_XMODEM_H

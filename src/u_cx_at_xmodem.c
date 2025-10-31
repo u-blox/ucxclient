@@ -30,6 +30,9 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
+// Uncomment the line below to enable verbose XMODEM debug logging
+// #define U_CX_XMODEM_VERBOSE_DEBUG
+
 #define U_CX_XMODEM_SOH             0x01    /**< Start of 128-byte block */
 #define U_CX_XMODEM_STX             0x02    /**< Start of 1K block */
 #define U_CX_XMODEM_EOT             0x04    /**< End of transmission */
@@ -147,37 +150,45 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
     packet[1] = blockNum;
     packet[2] = ~blockNum;  // Block number complement (bitwise NOT = 255 - blockNum)
     
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
                     "XMODEM: Block header: [0]=0x%02X (%s), [1]=0x%02X (num=%u), [2]=0x%02X (~num=%u)",
                     packet[0], (packet[0] == U_CX_XMODEM_STX) ? "STX/1K" : "SOH/128", 
                     packet[1], packet[1], packet[2], packet[2]);
+#endif
     
     // Copy data and pad with 0x1A (EOF/Ctrl-Z) if needed
     memset(&packet[3], 0x1A, blockSize);
     memcpy(&packet[3], pData, dataLen);  // Only copy actual data length
     
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
     if (dataLen < blockSize) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
                         "XMODEM: Padding block %u with %zu bytes of 0x1A (data=%zu, block=%zu)",
                         blockNum, blockSize - dataLen, dataLen, blockSize);
     }
+#endif
     
     // Calculate and append CRC16-CCITT
     uint16_t crc = xmodemCrc16(&packet[3], blockSize);
     packet[3 + blockSize] = (crc >> 8) & 0xFF;      // CRC high byte
     packet[3 + blockSize + 1] = crc & 0xFF;         // CRC low byte
     
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
                     "XMODEM: Block %u: CRC16=0x%04X, packet size=%zu bytes, first 16 bytes: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
                     blockNum, crc, packetSize,
                     packet[3], packet[4], packet[5], packet[6], packet[7], packet[8], packet[9], packet[10],
                     packet[11], packet[12], packet[13], packet[14], packet[15], packet[16], packet[17], packet[18]);
+#endif
     
     // Try sending the block with retries
     for (int32_t retry = 0; retry < maxRetries; retry++) {
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
                         "XMODEM: >>> Sending block %u (try %d/%d, %zu bytes)...", 
                         blockNum, retry + 1, maxRetries, packetSize);
+#endif
         
         // Send packet
         int32_t bytesWritten = pClient->pConfig->write(pClient, pClient->pConfig->pStreamHandle, packet, packetSize);
@@ -188,7 +199,9 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
             continue;
         }
         
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "XMODEM: <<< Waiting for response (timeout=%dms)...", timeoutMs);
+#endif
         
         // Wait for response - read ALL available data to catch multi-byte errors
         bytesRead = 0;
@@ -204,13 +217,17 @@ static int32_t xmodemSendBlock(uCxAtClient_t *pClient, uint8_t blockNum,
                 readAttempts++;
                 int32_t elapsed = uPortGetTickTimeMs() - startTime;
                 
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
                                 "XMODEM: <<< Received byte 0x%02X ('%c') after %dms (attempt %d)", 
                                 response, (response >= 0x20 && response < 0x7F) ? response : '.', elapsed, readAttempts);
+#endif
                 
                 if (response == U_CX_XMODEM_ACK) {
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
                     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
                                     "XMODEM: <<< Block %u ACKed (0x06) after %dms", blockNum, elapsed);
+#endif
                     return 0;  // Success
                 } else if (response == U_CX_XMODEM_NAK) {
                     U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
@@ -367,9 +384,11 @@ int32_t uCxAtClientXmodemSend(uCxAtClient_t *pClient,
         size_t currentBlockSize = (remainingBytes < blockSize) ? remainingBytes : blockSize;
         blocksSent++;
         
+#ifdef U_CX_XMODEM_VERBOSE_DEBUG
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
                         "XMODEM: === Block %u/%zu (num=%u, offset=%zu, data=%zu/%zu, remaining=%zu) ===",
                         blocksSent, totalBlocks, blockNum, offset, currentBlockSize, blockSize, remainingBytes);
+#endif
         
         // Send block - pass actual data size and block size separately
         result = xmodemSendBlock(pClient, blockNum, &pData[offset], currentBlockSize, blockSize,

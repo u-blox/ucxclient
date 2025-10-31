@@ -455,6 +455,7 @@ typedef void (*uUEWLU_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMac
 typedef void (*uUEWLD_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, int32_t reason);
 typedef void (*uUEWSNU_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWSND_t)(struct uCxHandle *puCxHandle);
+typedef void (*uSTARTUP_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWAPNU_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWAPND_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWAPU_t)(struct uCxHandle *puCxHandle);
@@ -503,6 +504,7 @@ typedef struct
     uUEWLD_t UEWLD;
     uUEWSNU_t UEWSNU;
     uUEWSND_t UEWSND;
+    uSTARTUP_t STARTUP;
     uUEWAPNU_t UEWAPNU;
     uUEWAPND_t UEWAPND;
     uUEWAPU_t UEWAPU;

@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>     // For tolower()
 #include <windows.h>  // For Sleep() and CreateFile()
 #include <stdbool.h>
 #include <conio.h>  // For _kbhit() and _getch()
@@ -88,6 +89,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
 #include "u_cx_sps.h"
+#include "u_cx_firmware_update.h"
 
 // Port layer
 #include "port/u_port.h"
@@ -109,6 +111,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_SPS_CONNECTED      (1 << 4)
 #define URC_FLAG_SPS_DISCONNECTED   (1 << 5)
 #define URC_FLAG_SPS_DATA           (1 << 6)
+#define URC_FLAG_STARTUP            (1 << 7)
 
 // Global handles
 static uCxAtClient_t gAtClient;
@@ -140,6 +143,7 @@ typedef enum {
     MENU_WIFI,
     MENU_SOCKET,
     MENU_SPS,
+    MENU_FIRMWARE_UPDATE,
     MENU_API_LIST,
     MENU_EXIT
 } MenuState_t;
@@ -166,6 +170,8 @@ static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortS
                                    char *recommendedDevice, size_t recommendedDeviceSize);
 static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
+static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, 
+                                   int32_t percentComplete, void *pUserData);
 static bool fetchApiCommandsFromGitHub(const char *product, const char *version);
 static void parseYamlCommands(const char *yamlContent);
 static void freeApiCommands(void);
@@ -173,6 +179,7 @@ static char* fetchLatestVersion(const char *product);
 static char* httpGetRequest(const wchar_t *server, const wchar_t *path);
 static void executeAtTest(void);
 static void executeAti9(void);
+static void executeModuleReboot(void);
 static void showBluetoothStatus(void);
 static void showWifiStatus(void);
 static void bluetoothMenu(void);
@@ -586,6 +593,13 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
     (void)puCxHandle;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** SPS Disconnected! Connection handle: %d ***", connection_handle);
     signalEvent(URC_FLAG_SPS_DISCONNECTED);
+}
+
+static void startupUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
+    signalEvent(URC_FLAG_STARTUP);
 }
 
 // ----------------------------------------------------------------
@@ -1093,11 +1107,13 @@ static void printMenu(void)
             printf("  [3] List API commands\n");
             printf("  [4] AT test (basic communication)\n");
             printf("  [5] ATI9 (device info)\n");
-            printf("  [6] Bluetooth menu\n");
-            printf("  [7] WiFi menu\n");
-            printf("  [8] Toggle UCX logging (AT traffic)\n");
-            printf("  [9] Socket menu (TCP/UDP)\n");
-            printf("  [a] SPS menu (Bluetooth Serial)\n");
+            printf("  [6] Module reboot/switch off (AT+CPWROFF)\n");
+            printf("  [7] Bluetooth menu\n");
+            printf("  [8] WiFi menu\n");
+            printf("  [9] Toggle UCX logging (AT traffic)\n");
+            printf("  [a] Socket menu (TCP/UDP)\n");
+            printf("  [b] SPS menu (Bluetooth Serial)\n");
+            printf("  [f] Firmware update (XMODEM)\n");
             printf("  [0] Exit\n");
             break;
             
@@ -1140,6 +1156,25 @@ static void printMenu(void)
             printf("  [0] Back to main menu\n");
             break;
             
+        case MENU_FIRMWARE_UPDATE:
+            printf("--- Firmware Update (XMODEM) ---\n");
+            printf("  This will update the module firmware via XMODEM protocol.\n");
+            printf("  The module will reboot after a successful update.\n");
+            printf("\n");
+            printf("  Current device: %s", gComPort);
+            if (gDeviceModel[0] != '\0') {
+                printf(" (%s", gDeviceModel);
+                if (gDeviceFirmware[0] != '\0') {
+                    printf(" v%s", gDeviceFirmware);
+                }
+                printf(")");
+            }
+            printf("\n\n");
+            printf("  [1] Select firmware file and start update\n");
+            printf("  [2] Download latest firmware from GitHub\n");
+            printf("  [0] Back to main menu\n");
+            break;
+            
         case MENU_API_LIST:
             listAllApiCommands();
             gMenuState = MENU_MAIN;
@@ -1164,6 +1199,15 @@ static void handleUserInput(void)
     
     // Parse choice
     int choice = atoi(input);
+    
+    // Handle letter inputs (convert to numbers)
+    if (choice == 0 && strlen(input) > 0) {
+        char firstChar = tolower(input[0]);
+        if (firstChar >= 'a' && firstChar <= 'z') {
+            // Convert letter to number: a=10, b=11, c=12, ... f=15, etc.
+            choice = 10 + (firstChar - 'a');
+        }
+    }
     
     switch (gMenuState) {
         case MENU_MAIN:
@@ -1192,12 +1236,15 @@ static void handleUserInput(void)
                     executeAti9();
                     break;
                 case 6:
-                    gMenuState = MENU_BLUETOOTH;
+                    executeModuleReboot();
                     break;
                 case 7:
-                    gMenuState = MENU_WIFI;
+                    gMenuState = MENU_BLUETOOTH;
                     break;
                 case 8:
+                    gMenuState = MENU_WIFI;
+                    break;
+                case 9:
                     if (uCxLogIsEnabled()) {
                         uCxLogDisable();
                         printf("UCX logging DISABLED\n");
@@ -1207,11 +1254,14 @@ static void handleUserInput(void)
                         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Logging re-enabled from menu");
                     }
                     break;
-                case 9:
+                case 10:  // Also accept 'a' or 'A'
                     gMenuState = MENU_SOCKET;
                     break;
-                case 10:  // Also accept 'a' or 'A'
+                case 11:  // Also accept 'b' or 'B'
                     gMenuState = MENU_SPS;
+                    break;
+                case 15:  // Also accept 'f' or 'F'
+                    gMenuState = MENU_FIRMWARE_UPDATE;
                     break;
                 case 0:
                     gMenuState = MENU_EXIT;
@@ -1323,8 +1373,161 @@ static void handleUserInput(void)
             }
             break;
             
+        case MENU_FIRMWARE_UPDATE:
+            switch (choice) {
+                case 1: {
+                    // Select firmware file and update
+                    char firmwarePath[256];
+                    printf("Enter firmware file path: ");
+                    if (fgets(firmwarePath, sizeof(firmwarePath), stdin) == NULL) {
+                        printf("ERROR: Failed to read input\n");
+                        break;
+                    }
+                    // Remove newline
+                    firmwarePath[strcspn(firmwarePath, "\r\n")] = '\0';
+                    
+                    // Check if file exists
+                    FILE *testFile = fopen(firmwarePath, "rb");
+                    if (testFile == NULL) {
+                        printf("ERROR: Cannot open file: %s\n", firmwarePath);
+                        break;
+                    }
+                    fclose(testFile);
+                    
+                    // Check if device is connected
+                    if (!gConnected) {
+                        printf("ERROR: Device not connected. Please connect first.\n");
+                        break;
+                    }
+                    
+                    printf("\nStarting firmware update...\n");
+                    printf("This will take several minutes. Please wait...\n\n");
+                    printf("NOTE: The connection will be closed and reopened for XMODEM transfer.\n");
+                    printf("      The device will reboot after successful update.\n\n");
+                    
+                    // Perform firmware update with progress callback
+                    int32_t result = uCxFirmwareUpdate(
+                        &gUcxHandle,
+                        firmwarePath,
+                        gComPort,
+                        115200,
+                        false,  // No flow control
+                        true,   // Use 1K blocks
+                        firmwareUpdateProgress,
+                        NULL
+                    );
+                    
+                    if (result == 0) {
+                        printf("\n\nFirmware update completed successfully!\n");
+                        printf("The module is rebooting...\n");
+                        printf("Waiting for +STARTUP URC");
+                        fflush(stdout);
+                        
+                        // Wait up to 10 seconds for the +STARTUP URC
+                        // The URC will be processed by the RX thread and signal the event
+                        bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                        
+                        if (startupReceived) {
+                            printf(" Received!\n");
+                        } else {
+                            printf(" Timeout! Continuing anyway...\n");
+                        }
+                        fflush(stdout);
+                        
+                        // Now the module has sent +STARTUP and is ready for commands
+                        // Disable echo again (module reboot resets this to default ON)
+                        printf("Disabling AT echo...\n");
+                        result = uCxSystemSetEchoOff(&gUcxHandle);
+                        if (result != 0) {
+                            printf("Warning: Failed to disable echo (error %d), continuing...\n", result);
+                        }
+                        
+                        // Re-query device information to get new firmware version
+                        printf("Querying new firmware version...\n");
+                        
+                        // Clear old device info
+                        gDeviceModel[0] = '\0';
+                        gDeviceFirmware[0] = '\0';
+                        
+                        // AT+GMM - Model identification
+                        const char *model = NULL;
+                        if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+                            strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+                            gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+                            strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+                            gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        // AT+GMR - Firmware version
+                        const char *fwVersion = NULL;
+                        if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+                            strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+                            gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        // Connection is still active
+                        gConnected = true;
+                        
+                        printf("\nFirmware update complete!\n");
+                        if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
+                            printf("Device: %s\n", gDeviceModel);
+                            printf("New firmware version: %s\n", gDeviceFirmware);
+                            printf("\nThe device is ready to use!\n");
+                        } else {
+                            printf("Note: Could not read new firmware version. You may need to reconnect.\n");
+                        }
+                        
+                        saveSettings();
+                    } else {
+                        printf("\n\nERROR: Firmware update failed with code %d\n", result);
+                        printf("The connection may still be active. Try using the device or reconnect if needed.\n");
+                    }
+                    
+                    break;
+                }
+                case 2:
+                    printf("GitHub firmware download not yet implemented.\n");
+                    printf("Please download firmware manually and use option [1].\n");
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
         default:
             break;
+    }
+}
+
+static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, 
+                                   int32_t percentComplete, void *pUserData)
+{
+    (void)pUserData;  // Unused
+    
+    // Show progress bar
+    printf("\rFirmware update: [");
+    int barWidth = 40;
+    int pos = (barWidth * percentComplete) / 100;
+    for (int i = 0; i < barWidth; i++) {
+        if (i < pos) printf("=");
+        else if (i == pos) printf(">");
+        else printf(" ");
+    }
+    printf("] %d%% (%zu/%zu bytes)", percentComplete, bytesTransferred, totalBytes);
+    fflush(stdout);
+    
+    if (percentComplete == 100) {
+        printf("\n");
     }
 }
 
@@ -1368,11 +1571,14 @@ static bool connectDevice(const char *comPort)
     uCxSpsRegisterDisconnect(&gUcxHandle, spsDisconnected);
     uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
+    // Register URC handler for system events
+    uCxSystemRegisterStartup(&gUcxHandle, startupUrc);
+    
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
 
     // Turn off echo to avoid "Unexpected data" warnings
     printf("Disabling AT echo...\n");
-    int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "ATE0");
+    int32_t result = uCxSystemSetEchoOff(&gUcxHandle);
     if (result != 0) {
         printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
     }
@@ -2315,9 +2521,6 @@ static void listAllApiCommands(void)
         
         printf("=========================================================\n");
     }
-    
-    printf("\nPress Enter to continue...");
-    getchar();
 }
 
 static void executeAtTest(void)
@@ -2335,8 +2538,8 @@ static void executeAtTest(void)
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting AT test - logging is enabled");
     }
     
-    // Simple AT command
-    int32_t result = uCxAtClientExecSimpleCmd(&gAtClient, "AT");
+    // Simple AT command using UCX API
+    int32_t result = uCxGeneralAttention(&gUcxHandle);
     
     if (uCxLogIsEnabled()) {
         printf("===================================\n");
@@ -2378,6 +2581,44 @@ static void executeAti9(void)
             printf("===================================\n");
         }
         printf("ERROR: Failed to get device information\n");
+    }
+}
+
+static void executeModuleReboot(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Module Reboot/Switch Off ---\n");
+    printf("Sending AT+CPWROFF...\n");
+    
+    int32_t result = uCxSystemReboot(&gUcxHandle);
+    
+    // Note: AT+CPWROFF may not return OK before the module reboots
+    // The module will send +STARTUP URC when it boots back up
+    if (result == 0 || result == -65536) {  // -65536 is timeout, which is expected
+        printf("Module reboot command sent.\n");
+        printf("Waiting for module to reboot");
+        fflush(stdout);
+        
+        // Wait for +STARTUP URC (up to 10 seconds)
+        if (waitEvent(URC_FLAG_STARTUP, 10)) {
+            printf(" done!\n");
+            printf("Module has rebooted successfully.\n");
+            
+            // Disable echo again after reboot
+            result = uCxSystemSetEchoOff(&gUcxHandle);
+            if (result == 0) {
+                printf("Echo disabled.\n");
+            }
+        } else {
+            printf(" timeout!\n");
+            printf("Module may have shut down completely (no +STARTUP received).\n");
+        }
+    } else {
+        printf("ERROR: Failed to send AT+CPWROFF (error %d)\n", result);
     }
 }
 
@@ -2519,9 +2760,6 @@ static void bluetoothScan(void)
     } else {
         printf("Found %d device(s).\n", deviceCount);
     }
-    
-    printf("\nPress Enter to continue...");
-    getchar();
 }
 
 static void bluetoothConnect(void)
@@ -2561,9 +2799,6 @@ static void bluetoothConnect(void)
             printf("ERROR: Invalid MAC address format\n");
         }
     }
-    
-    printf("\nPress Enter to continue...");
-    getchar();
 }
 
 static void wifiScan(void)
@@ -2616,9 +2851,6 @@ static void wifiScan(void)
     } else {
         printf("Found %d network(s).\n", networkCount);
     }
-    
-    printf("\nPress Enter to continue...");
-    getchar();
 }
 
 static void wifiConnect(void)
@@ -2739,9 +2971,6 @@ static void wifiConnect(void)
             printf("Connection failed - timeout waiting for network up event\n");
         }
     }
-    
-    printf("\nPress Enter to continue...");
-    getchar();
 }
 
 static void wifiDisconnect(void)
@@ -2759,7 +2988,4 @@ static void wifiDisconnect(void)
     } else {
         printf("ERROR: Failed to disconnect\n");
     }
-    
-    printf("\nPress Enter to continue...");
-    getchar();
 }

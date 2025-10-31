@@ -31,6 +31,7 @@
 
 #include "u_cx.h"
 #include "u_cx_at_client.h"
+#include "u_cx_general.h"
 #include "u_cx_firmware_update.h"
 #include "u_port.h"
 
@@ -90,7 +91,7 @@ int main(int argc, char *argv[])
     
     printf("\n");
     printf("============================================\n");
-    printf("  NORA-W36 Firmware Update Test\n");
+    printf("  u-connectXpress Firmware Update\n");
     printf("============================================\n\n");
     
     // Parse command line arguments
@@ -162,14 +163,23 @@ int main(int argc, char *argv[])
     
     // Test device communication
     printf("Testing device communication...\n");
-    printf("Device ready\n");
+    result = uCxGeneralAttention(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Device not responding to AT commands (error %d)\n", result);
+        printf("Please check:\n");
+        printf("  - Device is powered on\n");
+        printf("  - COM port is correct\n");
+        printf("  - No other application is using the port\n");
+        uCxAtClientDeinit(&gAtClient);
+        uPortAtClose(&gAtClient);
+        return 1;
+    }
+    printf("Device ready (AT command responded OK)\n");
     printf("\n");
     
     // Confirm before proceeding
     printf("WARNING: This will update the firmware on the device!\n");
     printf("The device will reboot after the update.\n");
-    printf("\nPress ENTER to continue, or Ctrl+C to cancel...\n");
-    getchar();
     
     // Start firmware update
     printf("\n");

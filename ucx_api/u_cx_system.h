@@ -426,6 +426,15 @@ int32_t uCxSystemSetEscSequenceSettings(uCxHandle_t * puCxHandle, int32_t pre_ti
  */
 int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSystemGetEscSequenceSettings_t * pSystemGetEscSequenceSettingsRsp);
 
+/**
+ * Register callback for +STARTUP URC.
+ * This URC is sent by the module after a reboot.
+ * 
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   Callback function
+ */
+void uCxSystemRegisterStartup(uCxHandle_t * puCxHandle, uSTARTUP_t callback);
+
 
 #ifdef __cplusplus
 }

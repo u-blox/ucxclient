@@ -269,3 +269,8 @@ int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSystemGetEs
     }
     return ret;
 }
+
+void uCxSystemRegisterStartup(uCxHandle_t * puCxHandle, uSTARTUP_t callback)
+{
+    puCxHandle->callbacks.STARTUP = callback;
+}
