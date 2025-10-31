@@ -383,12 +383,16 @@ static void parseYamlCommands(const char *yamlContent)
     
     while ((ptr = strstr(ptr + 1, "\n      AT")) != NULL) {
         // Try to find the chapter name by looking backwards for "  - name:" at indentation level 2
+        // This is the command group name in the YAML structure
         const char *chapterSearch = ptr;
+        bool foundChapter = false;
+        
         while (chapterSearch > cmdGroups && chapterSearch > ptr - 5000) {
             const char *lineStart = chapterSearch;
             while (lineStart > cmdGroups && *(lineStart - 1) != '\n') lineStart--;
             
-            // Check if this line is "  - name:" (chapter marker)
+            // Check if this line is "  - name:" (chapter marker - group name in YAML)
+            // Format is: "  - name: General" or "  - name: WiFi" etc.
             if (strncmp(lineStart, "  - name:", 9) == 0) {
                 const char *nameStart = lineStart + 9;
                 while (*nameStart && (*nameStart == ' ' || *nameStart == '\t')) nameStart++;
@@ -398,10 +402,26 @@ static void parseYamlCommands(const char *yamlContent)
                     currentChapter[i++] = *nameStart++;
                 }
                 currentChapter[i] = '\0';
+                foundChapter = true;
                 break;
             }
             
             chapterSearch--;
+        }
+        
+        // If no chapter found yet, this might be the first command - look forward
+        if (!foundChapter && gApiCommandCount == 0) {
+            const char *forward = cmdGroups;
+            const char *namePos = strstr(forward, "  - name:");
+            if (namePos && namePos < ptr) {
+                const char *nameStart = namePos + 9;
+                while (*nameStart && (*nameStart == ' ' || *nameStart == '\t')) nameStart++;
+                int i = 0;
+                while (*nameStart && *nameStart != '\n' && *nameStart != '\r' && i < 127) {
+                    currentChapter[i++] = *nameStart++;
+                }
+                currentChapter[i] = '\0';
+            }
         }
         
         // Extract AT command (from line start to ':')
