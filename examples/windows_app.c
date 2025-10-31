@@ -155,6 +155,7 @@ typedef struct {
     char atCommand[128];
     char ucxApi[128];
     char description[256];
+    char chapter[128];  // Chapter/category name (e.g., "General", "WiFi", "Bluetooth")
 } ApiCommand_t;
 
 static ApiCommand_t *gApiCommands = NULL;
@@ -378,7 +379,31 @@ static void parseYamlCommands(const char *yamlContent)
     
     // Parse each AT command entry (look for "      AT" with 6 spaces - the indentation level under commands:)
     const char *ptr = cmdGroups;
+    char currentChapter[128] = "";
+    
     while ((ptr = strstr(ptr + 1, "\n      AT")) != NULL) {
+        // Try to find the chapter name by looking backwards for "  - name:" at indentation level 2
+        const char *chapterSearch = ptr;
+        while (chapterSearch > cmdGroups && chapterSearch > ptr - 5000) {
+            const char *lineStart = chapterSearch;
+            while (lineStart > cmdGroups && *(lineStart - 1) != '\n') lineStart--;
+            
+            // Check if this line is "  - name:" (chapter marker)
+            if (strncmp(lineStart, "  - name:", 9) == 0) {
+                const char *nameStart = lineStart + 9;
+                while (*nameStart && (*nameStart == ' ' || *nameStart == '\t')) nameStart++;
+                
+                int i = 0;
+                while (*nameStart && *nameStart != '\n' && *nameStart != '\r' && i < 127) {
+                    currentChapter[i++] = *nameStart++;
+                }
+                currentChapter[i] = '\0';
+                break;
+            }
+            
+            chapterSearch--;
+        }
+        
         // Extract AT command (from line start to ':')
         const char *lineStart = ptr + 1;
         while (*lineStart == ' ') lineStart++;
@@ -448,6 +473,8 @@ static void parseYamlCommands(const char *yamlContent)
             gApiCommands[gApiCommandCount].ucxApi[127] = '\0';
             strncpy(gApiCommands[gApiCommandCount].description, desc, 255);
             gApiCommands[gApiCommandCount].description[255] = '\0';
+            strncpy(gApiCommands[gApiCommandCount].chapter, currentChapter, 127);
+            gApiCommands[gApiCommandCount].chapter[127] = '\0';
             
             gApiCommandCount++;
         }
@@ -2650,19 +2677,51 @@ static void listAllApiCommands(void)
             if (fetchApiCommandsFromGitHub(product, versionToUse)) {
                 printf("\n========== API Commands (%s %s) ==========\n\n", product, versionToUse);
                 
-                // Display commands
+                // Display commands with chapter markers
+                char currentChapter[128] = "";
+                int commandsInSection = 0;
+                
                 for (int i = 0; i < gApiCommandCount; i++) {
-                    printf("[%d]\n", i + 1);
-                    if (gApiCommands[i].atCommand[0] != '\0') {
-                        printf("  AT Command: %s\n", gApiCommands[i].atCommand);
+                    // Check if we've entered a new chapter
+                    if (gApiCommands[i].chapter[0] != '\0' && 
+                        strcmp(currentChapter, gApiCommands[i].chapter) != 0) {
+                        
+                        // Show total for previous chapter
+                        if (currentChapter[0] != '\0' && commandsInSection > 0) {
+                            printf("  (%d commands in this section)\n", commandsInSection);
+                            commandsInSection = 0;
+                        }
+                        
+                        // Print new chapter header
+                        printf("\n");
+                        printf("╔════════════════════════════════════════════════════════════╗\n");
+                        printf("║  %-56s  ║\n", gApiCommands[i].chapter);
+                        printf("╚════════════════════════════════════════════════════════════╝\n");
+                        printf("\n");
+                        
+                        strncpy(currentChapter, gApiCommands[i].chapter, sizeof(currentChapter) - 1);
+                        currentChapter[sizeof(currentChapter) - 1] = '\0';
                     }
+                    
+                    // Display command
+                    printf("  [%d] ", i + 1);
                     if (gApiCommands[i].ucxApi[0] != '\0') {
-                        printf("  UCX API:    %s\n", gApiCommands[i].ucxApi);
+                        printf("%s\n", gApiCommands[i].ucxApi);
+                    } else if (gApiCommands[i].atCommand[0] != '\0') {
+                        printf("%s\n", gApiCommands[i].atCommand);
+                    } else {
+                        printf("(unnamed command)\n");
+                    }
+                    
+                    if (gApiCommands[i].atCommand[0] != '\0') {
+                        printf("      AT: %s\n", gApiCommands[i].atCommand);
                     }
                     if (gApiCommands[i].description[0] != '\0') {
-                        printf("  Description: %s\n", gApiCommands[i].description);
+                        printf("      %s\n", gApiCommands[i].description);
                     }
                     printf("\n");
+                    
+                    commandsInSection++;
                     
                     // Pause every 20 commands
                     if ((i + 1) % 20 == 0 && i + 1 < gApiCommandCount) {
@@ -2671,7 +2730,12 @@ static void listAllApiCommands(void)
                     }
                 }
                 
-                printf("========================================\n");
+                // Show total for last chapter
+                if (commandsInSection > 0) {
+                    printf("  (%d commands in this section)\n", commandsInSection);
+                }
+                
+                printf("\n========================================\n");
                 printf("Total: %d commands\n", gApiCommandCount);
             }
             
@@ -2681,7 +2745,11 @@ static void listAllApiCommands(void)
         }
     } else {
         // Static fallback list
-        printf("\n--- GENERAL API (u_cx_general.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "GENERAL API (u_cx_general.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxGeneralGetManufacturerIdentificationBegin()  - Get manufacturer ID\n");
         printf("  uCxGeneralGetDeviceModelIdentificationBegin()   - Get device model\n");
         printf("  uCxGeneralGetSoftwareVersionBegin()             - Get software version\n");
@@ -2689,14 +2757,22 @@ static void listAllApiCommands(void)
         printf("  uCxGeneralGetSerialNumberBegin()                - Get device serial number\n");
         printf("\n");
         
-        printf("--- SYSTEM API (u_cx_system.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "SYSTEM API (u_cx_system.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxSystemStoreConfiguration()                   - Store current config to flash\n");
         printf("  uCxSystemDefaultSettings()                      - Reset to factory defaults\n");
         printf("  uCxSystemReboot()                               - Reboot the module\n");
         printf("  uCxSystemGetLocalAddressBegin()                 - Get local MAC addresses\n");
         printf("\n");
         
-        printf("--- BLUETOOTH API (u_cx_bluetooth.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "BLUETOOTH API (u_cx_bluetooth.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxBluetoothSetMode()                           - Set BT mode (off/classic/LE)\n");
         printf("  uCxBluetoothGetMode()                           - Get current BT mode\n");
         printf("  uCxBluetoothListConnectionsBegin()              - List active BT connections\n");
@@ -2708,7 +2784,11 @@ static void listAllApiCommands(void)
         printf("  uCxBluetoothSetPin()                            - Set PIN code\n");
         printf("\n");
         
-        printf("--- WIFI API (u_cx_wifi.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "WIFI API (u_cx_wifi.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxWifiStationSetConnectionParamsBegin()        - Set WiFi connection params\n");
         printf("  uCxWifiStationConnectBegin()                    - Connect to WiFi network\n");
         printf("  uCxWifiStationDisconnectBegin()                 - Disconnect from WiFi\n");
@@ -2721,7 +2801,11 @@ static void listAllApiCommands(void)
         printf("  uCxWifiApGetStationListBegin()                  - List connected stations\n");
         printf("\n");
         
-        printf("--- SOCKET API (u_cx_socket.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "SOCKET API (u_cx_socket.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxSocketCreate()                               - Create TCP/UDP socket\n");
         printf("  uCxSocketConnect()                              - Connect socket to remote\n");
         printf("  uCxSocketListen()                               - Listen for connections\n");
@@ -2731,7 +2815,11 @@ static void listAllApiCommands(void)
         printf("  uCxSocketRead()                                 - Read data from socket\n");
         printf("\n");
         
-        printf("--- MQTT API (u_cx_mqtt.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "MQTT API (u_cx_mqtt.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxMqttConnectBegin()                           - Connect to MQTT broker\n");
         printf("  uCxMqttDisconnect()                             - Disconnect from broker\n");
         printf("  uCxMqttPublishBegin()                           - Publish message to topic\n");
@@ -2739,13 +2827,21 @@ static void listAllApiCommands(void)
         printf("  uCxMqttUnsubscribeBegin()                       - Unsubscribe from topic\n");
         printf("\n");
         
-        printf("--- SECURITY API (u_cx_security.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "SECURITY API (u_cx_security.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxSecurityTlsCertificateStoreBegin()           - Store TLS certificate\n");
         printf("  uCxSecurityTlsCertificateRemove()               - Remove certificate\n");
         printf("  uCxSecurityTlsCertificateListBegin()            - List stored certificates\n");
         printf("\n");
         
-        printf("--- GATT CLIENT API (u_cx_gatt_client.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "GATT CLIENT API (u_cx_gatt_client.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxGattClientDiscoverAllPrimaryServicesBegin()  - Discover GATT services\n");
         printf("  uCxGattClientDiscoverCharacteristicsBegin()     - Discover characteristics\n");
         printf("  uCxGattClientWriteCharacteristicBegin()         - Write to characteristic\n");
@@ -2753,13 +2849,21 @@ static void listAllApiCommands(void)
         printf("  uCxGattClientSubscribeBegin()                   - Subscribe to notifications\n");
         printf("\n");
         
-        printf("--- GATT SERVER API (u_cx_gatt_server.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "GATT SERVER API (u_cx_gatt_server.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxGattServerAddServiceBegin()                  - Add GATT service\n");
         printf("  uCxGattServerAddCharacteristicBegin()           - Add characteristic\n");
         printf("  uCxGattServerSetCharacteristicValueBegin()      - Set characteristic value\n");
         printf("\n");
         
-        printf("--- SPS API (u_cx_sps.h) ---\n");
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  %-56s  ║\n", "SPS API (u_cx_sps.h)");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
         printf("  uCxSpsConnect()                                 - Connect SPS channel\n");
         printf("  uCxSpsDisconnect()                              - Disconnect SPS channel\n");
         printf("  uCxSpsWrite()                                   - Write SPS data\n");
