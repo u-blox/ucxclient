@@ -1333,7 +1333,7 @@ static void handleUserInput(void)
     
     // Handle letter inputs (convert to numbers)
     if (choice == 0 && strlen(input) > 0) {
-        char firstChar = tolower(input[0]);
+        char firstChar = (char)tolower(input[0]);
         
         // Handle special commands available in all menus
         if (firstChar == 'q') {
@@ -1382,7 +1382,7 @@ static void handleUserInput(void)
                             if (strncmp(input, "COM", 3) == 0 || strncmp(input, "com", 3) == 0) {
                                 // Convert to uppercase
                                 for (int i = 0; i < 3; i++) {
-                                    input[i] = toupper(input[i]);
+                                    input[i] = (char)toupper(input[i]);
                                 }
                                 strncpy(gComPort, input, sizeof(gComPort) - 1);
                                 if (connectDevice(gComPort)) {
