@@ -34,7 +34,7 @@
 /* Log channels (used as input for U_CX_LOG_BEGIN() and U_CX_LOG_LINE()) */
 #define U_CX_LOG_CH_TX     U_CX_LOG_AT,        ANSI_CYN "[AT TX]"
 #define U_CX_LOG_CH_RX     U_CX_LOG_AT,        ANSI_MAG "[AT RX]"
-#define U_CX_LOG_CH_DBG    U_CX_LOG_DEBUG,     ANSI_RST "[DBG  ]"
+#define U_CX_LOG_CH_DBG    U_CX_LOG_DEBUG,     ANSI_YEL "[DBG  ]"
 #define U_CX_LOG_CH_WARN   U_CX_LOG_WARNING,   ANSI_YEL "[WARN ]"
 #define U_CX_LOG_CH_ERROR  U_CX_LOG_ERROR,     ANSI_RED "[ERROR]"
 
