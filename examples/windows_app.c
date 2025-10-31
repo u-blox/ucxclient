@@ -162,9 +162,12 @@ static int gApiCommandCount = 0;
 
 // Forward declarations
 static void printHeader(void);
+static void printWelcomeGuide(void);
+static void printHelp(void);
 static void printMenu(void);
 static void handleUserInput(void);
 static bool connectDevice(const char *comPort);
+static bool quickConnectToLastDevice(void);
 static void disconnectDevice(void);
 static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize, 
                                    char *recommendedDevice, size_t recommendedDeviceSize);
@@ -687,9 +690,20 @@ static void socketConnect(void)
         }
     }
     
-    printf("Enter port: ");
-    scanf("%d", &port);
+    printf("Enter port (1-65535): ");
+    if (scanf("%d", &port) != 1 || port < 1 || port > 65535) {
+        printf("ERROR: Invalid port number. Must be 1-65535\n");
+        // Clear input buffer
+        while (getchar() != '\n');
+        return;
+    }
     getchar(); // consume newline
+    
+    // Validate hostname/IP not empty
+    if (strlen(hostname) == 0) {
+        printf("ERROR: Hostname/IP address cannot be empty\n");
+        return;
+    }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connecting to %s:%d...", hostname, port);
     
@@ -1045,6 +1059,9 @@ int main(int argc, char *argv[])
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Failed to connect. You can try again from the menu.");
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+        
+        // Show welcome guide for first-time users
+        printWelcomeGuide();
     }
     
     // Main menu loop
@@ -1076,8 +1093,106 @@ static void printHeader(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "NOTE: UCX Logging is %s", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "      AT commands/responses will appear in this console");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "      Use menu option [8] to toggle logging on/off");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "      Use menu option [9] to toggle logging on/off");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+}
+
+static void printWelcomeGuide(void)
+{
+    printf("\n");
+    printf("=========================================================\n");
+    printf("            WELCOME - Getting Started Guide             \n");
+    printf("=========================================================\n");
+    printf("\n");
+    printf("This is a simple example application to help you get\n");
+    printf("started with u-connectXpress modules (NORA-B26/NORA-W36).\n");
+    printf("\n");
+    printf("QUICK START:\n");
+    printf("  1. Connect your module via USB\n");
+    printf("  2. Use menu option [1] to connect to the device\n");
+    printf("  3. Try [4] AT test to verify communication\n");
+    printf("  4. Try [5] ATI9 to see device information\n");
+    printf("\n");
+    printf("COMMON OPERATIONS:\n");
+    printf("  - WiFi: Use [8] WiFi menu to scan and connect\n");
+    printf("  - Bluetooth: Use [7] Bluetooth menu to scan devices\n");
+    printf("  - Sockets: Use [a] Socket menu for TCP/UDP (requires WiFi)\n");
+    printf("  - SPS: Use [b] for Bluetooth Serial Port Service\n");
+    printf("\n");
+    printf("TIPS:\n");
+    printf("  - Type [h] anytime for help\n");
+    printf("  - Type [q] to quit from any menu\n");
+    printf("  - Settings are saved automatically after successful operations\n");
+    printf("  - Use [9] to toggle AT command logging on/off\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void printHelp(void)
+{
+    printf("\n");
+    printf("=========================================================\n");
+    printf("                    HELP & TIPS                          \n");
+    printf("=========================================================\n");
+    printf("\n");
+    printf("CONNECTION:\n");
+    printf("  [1] Connect      - Select and connect to your UCX device\n");
+    printf("  [2] Disconnect   - Close connection to device\n");
+    printf("  [q] Quit         - Exit from any menu\n");
+    printf("\n");
+    printf("BASIC OPERATIONS:\n");
+    printf("  [4] AT test      - Test basic communication with device\n");
+    printf("  [5] ATI9         - Show device model and firmware version\n");
+    printf("  [6] Reboot       - Restart the module\n");
+    printf("\n");
+    printf("BLUETOOTH OPERATIONS:\n");
+    printf("  [7] Bluetooth menu\n");
+    printf("      - Scan for nearby Bluetooth devices\n");
+    printf("      - Connect to Bluetooth devices\n");
+    printf("      - Show connection status\n");
+    printf("  NOTE: NORA-B26 is Bluetooth only, NORA-W36 has BT+WiFi\n");
+    printf("\n");
+    printf("WIFI OPERATIONS:\n");
+    printf("  [8] WiFi menu\n");
+    printf("      - Scan for WiFi networks\n");
+    printf("      - Connect to WiFi (SSID and password saved)\n");
+    printf("      - Show connection status\n");
+    printf("  NOTE: Only available on NORA-W36 modules\n");
+    printf("\n");
+    printf("NETWORK OPERATIONS:\n");
+    printf("  [a] Socket menu - TCP/UDP client operations\n");
+    printf("      - Create TCP or UDP sockets\n");
+    printf("      - Connect to remote servers\n");
+    printf("      - Send and receive data\n");
+    printf("  REQUIRES: Active WiFi connection first!\n");
+    printf("\n");
+    printf("  [b] SPS menu - Bluetooth Serial Port Service\n");
+    printf("      - Enable SPS service\n");
+    printf("      - Connect to SPS over Bluetooth\n");
+    printf("      - Send and receive serial data\n");
+    printf("  REQUIRES: Bluetooth connection first!\n");
+    printf("\n");
+    printf("ADVANCED:\n");
+    printf("  [3] List APIs    - Show all available UCX API commands\n");
+    printf("  [f] Firmware     - Update module firmware via XMODEM\n");
+    printf("  [9] Toggle log   - Show/hide AT command traffic\n");
+    printf("\n");
+    printf("SAVED SETTINGS:\n");
+    printf("  The app remembers:\n");
+    printf("    - Last COM port used\n");
+    printf("    - Last WiFi SSID and password\n");
+    printf("    - Last remote server address\n");
+    printf("  Settings saved in: %s\n", SETTINGS_FILE);
+    printf("\n");
+    printf("TROUBLESHOOTING:\n");
+    printf("  - Can't connect? Check COM port with Device Manager\n");
+    printf("  - WiFi not working? Use [8] -> [1] to check status\n");
+    printf("  - Socket errors? Ensure WiFi is connected first\n");
+    printf("  - Module not responding? Try [6] to reboot it\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
 }
 
 static void printMenu(void)
@@ -1088,7 +1203,7 @@ static void printMenu(void)
         case MENU_MAIN:
             printf("--- Main Menu ---\n");
             if (gConnected) {
-                printf("  Connected: %s", gComPort);
+                printf("  Device:      %s", gComPort);
                 if (gDeviceModel[0] != '\0') {
                     printf(" (%s", gDeviceModel);
                     if (gDeviceFirmware[0] != '\0') {
@@ -1097,24 +1212,38 @@ static void printMenu(void)
                     printf(")");
                 }
                 printf("\n");
+                
+                // Show connection status for WiFi/Bluetooth if available
+                if (gDeviceModel[0] != '\0') {
+                    // Check if this is a WiFi-capable device (NORA-W36)
+                    if (strstr(gDeviceModel, "W3") != NULL) {
+                        printf("  WiFi:        Available (use [8] to connect)\n");
+                    }
+                    // All devices have Bluetooth
+                    printf("  Bluetooth:   Available (use [7] for operations)\n");
+                }
             } else {
-                printf("  Status: Not connected\n");
+                printf("  Status:      Not connected\n");
+                if (gComPort[0] != '\0') {
+                    printf("  Last port:   %s\n", gComPort);
+                }
             }
             printf("  UCX Logging: %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
             printf("\n");
             printf("  [1] Connect to UCX device\n");
             printf("  [2] Disconnect from device\n");
             printf("  [3] List API commands\n");
-            printf("  [4] AT test (basic communication)\n");
-            printf("  [5] ATI9 (device info)\n");
-            printf("  [6] Module reboot/switch off (AT+CPWROFF)\n");
-            printf("  [7] Bluetooth menu\n");
-            printf("  [8] WiFi menu\n");
+            printf("  [4] AT test (basic communication)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [5] ATI9 (device info)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [6] Module reboot/switch off%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [7] Bluetooth menu%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [8] WiFi menu%s\n", gConnected ? "" : " (requires connection)");
             printf("  [9] Toggle UCX logging (AT traffic)\n");
-            printf("  [a] Socket menu (TCP/UDP)\n");
-            printf("  [b] SPS menu (Bluetooth Serial)\n");
-            printf("  [f] Firmware update (XMODEM)\n");
-            printf("  [0] Exit\n");
+            printf("  [a] Socket menu (TCP/UDP)%s\n", gConnected ? " (requires WiFi)" : " (requires connection)");
+            printf("  [b] SPS menu (Bluetooth Serial)%s\n", gConnected ? " (requires BT)" : " (requires connection)");
+            printf("  [f] Firmware update (XMODEM)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [h] Help - Getting started guide\n");
+            printf("  [q] Quit application\n");
             break;
             
         case MENU_BLUETOOTH:
@@ -1123,7 +1252,7 @@ static void printMenu(void)
             printf("  [2] Scan for devices\n");
             printf("  [3] Connect to device\n");
             printf("  [4] List active connections\n");
-            printf("  [0] Back to main menu\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_WIFI:
@@ -1132,11 +1261,12 @@ static void printMenu(void)
             printf("  [2] Scan networks\n");
             printf("  [3] Connect to network\n");
             printf("  [4] Disconnect from network\n");
-            printf("  [0] Back to main menu\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_SOCKET:
             printf("--- Socket Menu (TCP/UDP) ---\n");
+            printf("  NOTE: Requires active WiFi connection!\n");
             printf("  [1] Create TCP socket\n");
             printf("  [2] Create UDP socket\n");
             printf("  [3] Connect socket\n");
@@ -1144,16 +1274,17 @@ static void printMenu(void)
             printf("  [5] Read data\n");
             printf("  [6] Close socket\n");
             printf("  [7] List sockets\n");
-            printf("  [0] Back to main menu\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_SPS:
             printf("--- SPS Menu (Bluetooth Serial Port Service) ---\n");
+            printf("  NOTE: Requires active Bluetooth connection!\n");
             printf("  [1] Enable SPS service\n");
             printf("  [2] Connect SPS on BT connection\n");
             printf("  [3] Send data\n");
             printf("  [4] Read data\n");
-            printf("  [0] Back to main menu\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_FIRMWARE_UPDATE:
@@ -1203,6 +1334,18 @@ static void handleUserInput(void)
     // Handle letter inputs (convert to numbers)
     if (choice == 0 && strlen(input) > 0) {
         char firstChar = tolower(input[0]);
+        
+        // Handle special commands available in all menus
+        if (firstChar == 'q') {
+            gMenuState = MENU_EXIT;
+            return;
+        }
+        
+        if (firstChar == 'h' && gMenuState == MENU_MAIN) {
+            printHelp();
+            return;
+        }
+        
         if (firstChar >= 'a' && firstChar <= 'z') {
             // Convert letter to number: a=10, b=11, c=12, ... f=15, etc.
             choice = 10 + (firstChar - 'a');
@@ -1213,12 +1356,41 @@ static void handleUserInput(void)
         case MENU_MAIN:
             switch (choice) {
                 case 1: {
+                    // If we have saved settings, offer quick connect
+                    if (gComPort[0] != '\0' && !gConnected) {
+                        printf("Quick connect to last device (%s", gComPort);
+                        if (gLastDeviceModel[0] != '\0') {
+                            printf(" - %s", gLastDeviceModel);
+                        }
+                        printf(")? (Y/n): ");
+                        if (fgets(input, sizeof(input), stdin)) {
+                            input[strcspn(input, "\n")] = 0;
+                            // Default to Yes if Enter pressed or 'y' typed
+                            if (strlen(input) == 0 || tolower(input[0]) == 'y') {
+                                quickConnectToLastDevice();
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Manual port entry
                     printf("Enter COM port (e.g., COM31): ");
                     if (fgets(input, sizeof(input), stdin)) {
                         input[strcspn(input, "\n")] = 0;
                         if (strlen(input) > 0) {
-                            strncpy(gComPort, input, sizeof(gComPort) - 1);
-                            connectDevice(gComPort);
+                            // Basic COM port validation
+                            if (strncmp(input, "COM", 3) == 0 || strncmp(input, "com", 3) == 0) {
+                                // Convert to uppercase
+                                for (int i = 0; i < 3; i++) {
+                                    input[i] = toupper(input[i]);
+                                }
+                                strncpy(gComPort, input, sizeof(gComPort) - 1);
+                                if (connectDevice(gComPort)) {
+                                    saveSettings();
+                                }
+                            } else {
+                                printf("ERROR: Invalid COM port format. Use format like 'COM31'\n");
+                            }
                         }
                     }
                     break;
@@ -1230,19 +1402,39 @@ static void handleUserInput(void)
                     gMenuState = MENU_API_LIST;
                     break;
                 case 4:
-                    executeAtTest();
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        executeAtTest();
+                    }
                     break;
                 case 5:
-                    executeAti9();
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        executeAti9();
+                    }
                     break;
                 case 6:
-                    executeModuleReboot();
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        executeModuleReboot();
+                    }
                     break;
                 case 7:
-                    gMenuState = MENU_BLUETOOTH;
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_BLUETOOTH;
+                    }
                     break;
                 case 8:
-                    gMenuState = MENU_WIFI;
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_WIFI;
+                    }
                     break;
                 case 9:
                     if (uCxLogIsEnabled()) {
@@ -1255,13 +1447,30 @@ static void handleUserInput(void)
                     }
                     break;
                 case 10:  // Also accept 'a' or 'A'
-                    gMenuState = MENU_SOCKET;
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                        printf("NOTE: Socket operations also require WiFi connection (use [8]).\n");
+                    } else {
+                        gMenuState = MENU_SOCKET;
+                    }
                     break;
                 case 11:  // Also accept 'b' or 'B'
-                    gMenuState = MENU_SPS;
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                        printf("NOTE: SPS operations also require Bluetooth connection (use [7]).\n");
+                    } else {
+                        gMenuState = MENU_SPS;
+                    }
                     break;
                 case 15:  // Also accept 'f' or 'F'
-                    gMenuState = MENU_FIRMWARE_UPDATE;
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_FIRMWARE_UPDATE;
+                    }
+                    break;
+                case 17:  // Also accept 'h' or 'H' (handled above but keep for consistency)
+                    printHelp();
                     break;
                 case 0:
                     gMenuState = MENU_EXIT;
@@ -1670,6 +1879,44 @@ static void disconnectDevice(void)
     
     gConnected = false;
     printf("Disconnected.\n");
+}
+
+static bool quickConnectToLastDevice(void)
+{
+    if (gComPort[0] == '\0') {
+        printf("No saved connection information.\n");
+        return false;
+    }
+    
+    printf("\n--- Quick Connect ---\n");
+    printf("Attempting to reconnect to last device...\n");
+    printf("Port: %s\n", gComPort);
+    if (gLastDeviceModel[0] != '\0') {
+        printf("Device: %s\n", gLastDeviceModel);
+    }
+    printf("\n");
+    
+    if (connectDevice(gComPort)) {
+        printf("\nQuick connect successful!\n");
+        
+        // If WiFi credentials saved, offer to reconnect
+        if (gWifiSsid[0] != '\0' && gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL) {
+            printf("\nWiFi credentials found for '%s'\n", gWifiSsid);
+            printf("Reconnect to WiFi? (y/n): ");
+            char response[10];
+            if (fgets(response, sizeof(response), stdin)) {
+                if (tolower(response[0]) == 'y') {
+                    // Auto-connect to saved WiFi
+                    wifiConnect();
+                }
+            }
+        }
+        
+        return true;
+    } else {
+        printf("\nQuick connect failed. Please use [1] to connect manually.\n");
+        return false;
+    }
 }
 
 // Load settings from file
