@@ -35,7 +35,7 @@
 #define U_CX_LOG_CH_TX     U_CX_LOG_AT,        ANSI_CYN "[AT TX]"
 #define U_CX_LOG_CH_RX     U_CX_LOG_AT,        ANSI_MAG "[AT RX]"
 #define U_CX_LOG_CH_DBG    U_CX_LOG_DEBUG,     ANSI_YEL "[DBG  ]"
-#define U_CX_LOG_CH_WARN   U_CX_LOG_WARNING,   ANSI_YEL "[WARN ]"
+#define U_CX_LOG_CH_WARN   U_CX_LOG_WARNING,   ANSI_ORG "[WARN ]"
 #define U_CX_LOG_CH_ERROR  U_CX_LOG_ERROR,     ANSI_RED "[ERROR]"
 
 /* Simple line logging printf style (\n will be added automatically) */
@@ -70,6 +70,7 @@
 # define ANSI_RED "\33[0;31m"
 # define ANSI_GRN "\33[0;32m"
 # define ANSI_YEL "\33[0;33m"
+# define ANSI_ORG "\33[0;91m"     // Bright red (orange-ish)
 # define ANSI_BLU "\33[0;34m"
 # define ANSI_MAG "\33[0;35m"
 # define ANSI_CYN "\33[0;36m"
@@ -78,6 +79,7 @@
 # define ANSI_RED
 # define ANSI_GRN
 # define ANSI_YEL
+# define ANSI_ORG
 # define ANSI_BLU
 # define ANSI_MAG
 # define ANSI_CYN
