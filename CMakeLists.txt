@@ -108,6 +108,7 @@ if(WIN32)
   add_executable(ucxtool_win64
     examples/ucxtool_win64.c
     examples/port/u_port_windows.c
+    examples/ucxtool_win64.rc
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
