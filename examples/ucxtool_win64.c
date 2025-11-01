@@ -140,9 +140,13 @@ static volatile uint32_t gUrcEventFlags = 0;
 typedef enum {
     MENU_MAIN,
     MENU_BLUETOOTH,
+    MENU_BLUETOOTH_FUNCTIONS,
     MENU_WIFI,
+    MENU_WIFI_FUNCTIONS,
     MENU_SOCKET,
     MENU_SPS,
+    MENU_GATT_CLIENT,
+    MENU_GATT_SERVER,
     MENU_MQTT,
     MENU_HTTP,
     MENU_SECURITY_TLS,
@@ -215,6 +219,19 @@ static void spsEnableService(void);
 static void spsConnect(void);
 static void spsSendData(void);
 static void spsReadData(void);
+static void gattClientMenu(void);
+static void gattClientDiscoverServices(void);
+static void gattClientReadCharacteristic(void);
+static void gattClientWriteCharacteristic(void);
+static void gattServerMenu(void);
+static void gattServerAddService(void);
+static void gattServerSetCharacteristic(void);
+static void bluetoothFunctionsMenu(void);
+static void wifiFunctionsMenu(void);
+static void socketMenu(void);
+static void mqttMenu(void);
+static void httpMenu(void);
+static void securityTlsMenu(void);
 
 // ----------------------------------------------------------------
 // HTTP Helper Functions
@@ -1063,6 +1080,216 @@ static void spsReadData(void)
 }
 
 // ----------------------------------------------------------------
+// GATT Client Functions
+// ----------------------------------------------------------------
+
+static void gattClientDiscoverServices(void)
+{
+    if (!gConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Discover Services ---");
+    printf("Enter connection handle: ");
+    
+    int connHandle;
+    scanf("%d", &connHandle);
+    getchar(); // consume newline
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting service discovery...");
+    
+    // Call GATT service discovery command
+    int32_t result = uCxGattClientDiscoverAllPrimaryServicesBegin(&gUcxHandle, connHandle);
+    
+    if (result == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service discovery started. Check URCs for results.");
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to start service discovery (code %d)", result);
+    }
+}
+
+static void gattClientReadCharacteristic(void)
+{
+    if (!gConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Read Characteristic ---");
+    printf("Enter connection handle: ");
+    
+    int connHandle;
+    scanf("%d", &connHandle);
+    getchar(); // consume newline
+    
+    printf("Enter characteristic handle: ");
+    int charHandle;
+    scanf("%d", &charHandle);
+    getchar(); // consume newline
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Reading characteristic...");
+    
+    // Call GATT read characteristic command
+    int32_t result = uCxGattClientReadCharacteristicBegin(&gUcxHandle, connHandle, charHandle);
+    
+    if (result == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Read started. Check URCs for result.");
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read characteristic (code %d)", result);
+    }
+}
+
+static void gattClientWriteCharacteristic(void)
+{
+    if (!gConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Write Characteristic ---");
+    printf("Enter connection handle: ");
+    
+    int connHandle;
+    scanf("%d", &connHandle);
+    getchar(); // consume newline
+    
+    printf("Enter characteristic handle: ");
+    int charHandle;
+    scanf("%d", &charHandle);
+    getchar(); // consume newline
+    
+    printf("Enter data to write (hex format, e.g., 01020304): ");
+    char hexInput[MAX_DATA_BUFFER * 2 + 1];
+    if (fgets(hexInput, sizeof(hexInput), stdin) == NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read input");
+        return;
+    }
+    
+    // Remove newline
+    hexInput[strcspn(hexInput, "\n")] = '\0';
+    
+    // Convert hex string to bytes
+    size_t hexLen = strlen(hexInput);
+    if (hexLen % 2 != 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid hex data (must be even number of digits)");
+        return;
+    }
+    
+    uint8_t data[MAX_DATA_BUFFER];
+    size_t dataLen = hexLen / 2;
+    
+    for (size_t i = 0; i < dataLen; i++) {
+        char byteStr[3] = {hexInput[i*2], hexInput[i*2 + 1], '\0'};
+        data[i] = (uint8_t)strtol(byteStr, NULL, 16);
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Writing %zu bytes...", dataLen);
+    
+    // Call GATT write characteristic command
+    uByteArray_t dataArray = {.pData = data, .length = (int32_t)dataLen};
+    int32_t result = uCxGattClientWriteCharacteristicBegin(&gUcxHandle, connHandle, charHandle, dataArray);
+    
+    if (result == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Write started. Check URCs for result.");
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to write characteristic (code %d)", result);
+    }
+}
+
+// ----------------------------------------------------------------
+// GATT Server Functions
+// ----------------------------------------------------------------
+
+static void gattServerAddService(void)
+{
+    if (!gConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Server: Add Service ---");
+    printf("Enter service UUID (16-bit hex, e.g., 180A): ");
+    
+    char uuidStr[5];
+    if (fgets(uuidStr, sizeof(uuidStr), stdin) == NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read input");
+        return;
+    }
+    uuidStr[strcspn(uuidStr, "\n")] = '\0';
+    
+    int uuid = (int)strtol(uuidStr, NULL, 16);
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Adding service with UUID 0x%04X...", uuid);
+    
+    // Call GATT server add service command
+    int32_t result = uCxGattServerAddServiceBegin(&gUcxHandle, uuid);
+    
+    if (result == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service add started. Check URCs for service handle.");
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to add service (code %d)", result);
+    }
+}
+
+static void gattServerSetCharacteristic(void)
+{
+    if (!gConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Server: Set Characteristic Value ---");
+    printf("Enter characteristic handle: ");
+    
+    int charHandle;
+    scanf("%d", &charHandle);
+    getchar(); // consume newline
+    
+    printf("Enter data (hex format, e.g., 01020304): ");
+    char hexInput[MAX_DATA_BUFFER * 2 + 1];
+    if (fgets(hexInput, sizeof(hexInput), stdin) == NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read input");
+        return;
+    }
+    
+    // Remove newline
+    hexInput[strcspn(hexInput, "\n")] = '\0';
+    
+    // Convert hex string to bytes
+    size_t hexLen = strlen(hexInput);
+    if (hexLen % 2 != 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid hex data (must be even number of digits)");
+        return;
+    }
+    
+    uint8_t data[MAX_DATA_BUFFER];
+    size_t dataLen = hexLen / 2;
+    
+    for (size_t i = 0; i < dataLen; i++) {
+        char byteStr[3] = {hexInput[i*2], hexInput[i*2 + 1], '\0'};
+        data[i] = (uint8_t)strtol(byteStr, NULL, 16);
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Setting characteristic value (%zu bytes)...", dataLen);
+    
+    // Call GATT server set characteristic value command
+    uByteArray_t dataArray = {.pData = data, .length = (int32_t)dataLen};
+    int32_t result = uCxGattServerSetCharacteristicValueBegin(&gUcxHandle, charHandle, dataArray);
+    
+    if (result == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Value set successfully.");
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to set value (code %d)", result);
+    }
+}
+
+// ----------------------------------------------------------------
 // Main Function
 // ----------------------------------------------------------------
 
@@ -1345,11 +1572,8 @@ static void printMenu(void)
             printf("  [7] Bluetooth menu%s\n", gConnected ? "" : " (requires connection)");
             printf("  [8] WiFi menu%s\n", gConnected ? "" : " (requires connection)");
             printf("  [9] Toggle UCX logging (AT traffic)\n");
-            printf("  [a] Socket menu (TCP/UDP)%s\n", gConnected ? " (requires WiFi)" : " (requires connection)");
-            printf("  [b] SPS menu (Bluetooth Serial)%s\n", gConnected ? " (requires BT)" : " (requires connection)");
-            printf("  [c] MQTT menu (publish/subscribe)%s [IN PROGRESS]\n", gConnected ? " (requires WiFi)" : " (requires connection)");
-            printf("  [d] HTTP Client menu (GET/POST/PUT)%s [IN PROGRESS]\n", gConnected ? " (requires WiFi)" : " (requires connection)");
-            printf("  [e] Security/TLS menu (certificates)%s [IN PROGRESS]\n", gConnected ? "" : " (requires connection)");
+            printf("  [a] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [b] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [f] Firmware update (XMODEM)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [h] Help - Getting started guide\n");
             printf("  [q] Quit application\n");
@@ -1438,6 +1662,44 @@ static void printMenu(void)
             printf("  - Configure TLS settings\n");
             printf("  - Certificate validation options\n");
             printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_BLUETOOTH_FUNCTIONS:
+            printf("--- Bluetooth Functions ---\n");
+            printf("  [1] SPS (Serial Port Service)\n");
+            printf("  [2] GATT Client\n");
+            printf("  [3] GATT Server\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_WIFI_FUNCTIONS:
+            printf("--- Wi-Fi Functions ---\n");
+            printf("  NOTE: Requires active WiFi connection!\n");
+            printf("  [1] Socket menu (TCP/UDP)\n");
+            printf("  [2] MQTT (publish/subscribe)\n");
+            printf("  [3] HTTP Client (GET/POST/PUT)\n");
+            printf("  [4] Security/TLS (certificates)\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_GATT_CLIENT:
+            printf("--- GATT Client Menu ---\n");
+            printf("  NOTE: Requires active Bluetooth connection!\n");
+            printf("  [1] Discover services\n");
+            printf("  [2] Discover characteristics\n");
+            printf("  [3] Read characteristic\n");
+            printf("  [4] Write characteristic\n");
+            printf("  [5] Subscribe to notifications\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_GATT_SERVER:
+            printf("--- GATT Server Menu ---\n");
+            printf("  [1] Add service\n");
+            printf("  [2] Add characteristic\n");
+            printf("  [3] Set characteristic value\n");
+            printf("  [4] Send notification\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -1600,43 +1862,18 @@ static void handleUserInput(void)
                         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Logging re-enabled from menu");
                     }
                     break;
-                case 10:  // Also accept 'a' or 'A'
+                case 10:  // Also accept 'a' or 'A' - Bluetooth Functions
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
-                        printf("NOTE: Socket operations also require WiFi connection (use [8]).\n");
                     } else {
-                        gMenuState = MENU_SOCKET;
+                        gMenuState = MENU_BLUETOOTH_FUNCTIONS;
                     }
                     break;
-                case 11:  // Also accept 'b' or 'B'
-                    if (!gConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
-                        printf("NOTE: SPS operations also require Bluetooth connection (use [7]).\n");
-                    } else {
-                        gMenuState = MENU_SPS;
-                    }
-                    break;
-                case 12:  // Also accept 'c' or 'C' - MQTT
-                    if (!gConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
-                        printf("NOTE: MQTT operations also require WiFi connection (use [8]).\n");
-                    } else {
-                        gMenuState = MENU_MQTT;
-                    }
-                    break;
-                case 13:  // Also accept 'd' or 'D' - HTTP Client
-                    if (!gConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
-                        printf("NOTE: HTTP operations also require WiFi connection (use [8]).\n");
-                    } else {
-                        gMenuState = MENU_HTTP;
-                    }
-                    break;
-                case 14:  // Also accept 'e' or 'E' - Security/TLS
+                case 11:  // Also accept 'b' or 'B' - Wi-Fi Functions
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
-                        gMenuState = MENU_SECURITY_TLS;
+                        gMenuState = MENU_WIFI_FUNCTIONS;
                     }
                     break;
                 case 15:  // Also accept 'f' or 'F'
@@ -1728,7 +1965,7 @@ static void handleUserInput(void)
                     socketListStatus();
                     break;
                 case 0:
-                    gMenuState = MENU_MAIN;
+                    gMenuState = MENU_WIFI_FUNCTIONS;
                     break;
                 default:
                     printf("Invalid choice!\n");
@@ -1751,7 +1988,7 @@ static void handleUserInput(void)
                     spsReadData();
                     break;
                 case 0:
-                    gMenuState = MENU_MAIN;
+                    gMenuState = MENU_BLUETOOTH_FUNCTIONS;
                     break;
                 default:
                     printf("Invalid choice!\n");
@@ -1762,10 +1999,10 @@ static void handleUserInput(void)
         case MENU_MQTT:
             switch (choice) {
                 case 0:
-                    gMenuState = MENU_MAIN;
+                    gMenuState = MENU_WIFI_FUNCTIONS;
                     break;
                 default:
-                    printf("Feature in progress. Use [0] to return to main menu.\n");
+                    printf("Feature in progress. Use [0] to return to Wi-Fi Functions menu.\n");
                     break;
             }
             break;
@@ -1773,10 +2010,10 @@ static void handleUserInput(void)
         case MENU_HTTP:
             switch (choice) {
                 case 0:
-                    gMenuState = MENU_MAIN;
+                    gMenuState = MENU_WIFI_FUNCTIONS;
                     break;
                 default:
-                    printf("Feature in progress. Use [0] to return to main menu.\n");
+                    printf("Feature in progress. Use [0] to return to Wi-Fi Functions menu.\n");
                     break;
             }
             break;
@@ -1784,10 +2021,102 @@ static void handleUserInput(void)
         case MENU_SECURITY_TLS:
             switch (choice) {
                 case 0:
+                    gMenuState = MENU_WIFI_FUNCTIONS;
+                    break;
+                default:
+                    printf("Feature in progress. Use [0] to return to Wi-Fi Functions menu.\n");
+                    break;
+            }
+            break;
+            
+        case MENU_BLUETOOTH_FUNCTIONS:
+            switch (choice) {
+                case 1:
+                    gMenuState = MENU_SPS;
+                    break;
+                case 2:
+                    gMenuState = MENU_GATT_CLIENT;
+                    break;
+                case 3:
+                    gMenuState = MENU_GATT_SERVER;
+                    break;
+                case 0:
                     gMenuState = MENU_MAIN;
                     break;
                 default:
-                    printf("Feature in progress. Use [0] to return to main menu.\n");
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_WIFI_FUNCTIONS:
+            switch (choice) {
+                case 1:
+                    gMenuState = MENU_SOCKET;
+                    break;
+                case 2:
+                    gMenuState = MENU_MQTT;
+                    break;
+                case 3:
+                    gMenuState = MENU_HTTP;
+                    break;
+                case 4:
+                    gMenuState = MENU_SECURITY_TLS;
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_GATT_CLIENT:
+            switch (choice) {
+                case 1:
+                    gattClientDiscoverServices();
+                    break;
+                case 2:
+                    printf("Discover characteristics - not yet implemented\n");
+                    break;
+                case 3:
+                    gattClientReadCharacteristic();
+                    break;
+                case 4:
+                    gattClientWriteCharacteristic();
+                    break;
+                case 5:
+                    printf("Subscribe to notifications - not yet implemented\n");
+                    break;
+                case 0:
+                    gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_GATT_SERVER:
+            switch (choice) {
+                case 1:
+                    gattServerAddService();
+                    break;
+                case 2:
+                    printf("Add characteristic - not yet implemented\n");
+                    break;
+                case 3:
+                    gattServerSetCharacteristic();
+                    break;
+                case 4:
+                    printf("Send notification - not yet implemented\n");
+                    break;
+                case 0:
+                    gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
                     break;
             }
             break;
