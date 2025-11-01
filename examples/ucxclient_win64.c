@@ -86,6 +86,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_socket.h"
 #include "u_cx_mqtt.h"
 #include "u_cx_security.h"
+#include "u_cx_diagnostics.h"
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
 #include "u_cx_sps.h"
@@ -135,6 +136,11 @@ static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0d
 // URC event handling
 static U_CX_MUTEX_HANDLE gUrcMutex;
 static volatile uint32_t gUrcEventFlags = 0;
+
+// Ping test results
+static volatile int32_t gPingSuccess = 0;
+static volatile int32_t gPingFailed = 0;
+static volatile int32_t gPingAvgTime = 0;
 
 // Menu state
 typedef enum {
@@ -232,6 +238,12 @@ static void socketMenu(void);
 static void mqttMenu(void);
 static void httpMenu(void);
 static void securityTlsMenu(void);
+static void testConnectivity(const char *gateway);
+
+// URC handlers for ping
+static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time);
+static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_packets, 
+                           int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 
 // ----------------------------------------------------------------
 // HTTP Helper Functions
@@ -687,6 +699,31 @@ static void startupUrc(struct uCxHandle *puCxHandle)
     (void)puCxHandle;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
     signalEvent(URC_FLAG_STARTUP);
+}
+
+static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time)
+{
+    (void)puCxHandle;
+    if (ping_response == U_PING_RESPONSE_TRUE) {
+        gPingSuccess++;
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Ping response: %d ms", response_time);
+    } else {
+        gPingFailed++;
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Ping failed");
+    }
+}
+
+static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_packets, 
+                           int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time)
+{
+    (void)puCxHandle;
+    (void)packet_loss_rate;
+    gPingSuccess = received_packets;
+    gPingFailed = transmitted_packets - received_packets;
+    gPingAvgTime = avg_response_time;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "Ping complete: %d/%d packets, avg %d ms", 
+                   received_packets, transmitted_packets, avg_response_time);
 }
 
 // ----------------------------------------------------------------
@@ -2362,6 +2399,10 @@ static bool connectDevice(const char *comPort)
     // Register URC handler for system events
     uCxSystemRegisterStartup(&gUcxHandle, startupUrc);
     
+    // Register URC handlers for ping/diagnostics
+    uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
+    uCxDiagnosticsRegisterPingComplete(&gUcxHandle, pingCompleteUrc);
+    
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
 
     // Turn off echo to avoid "Unexpected data" warnings
@@ -3760,6 +3801,61 @@ static void wifiScan(void)
     }
 }
 
+static void testConnectivity(const char *gateway)
+{
+    printf("\n--- Testing Network Connectivity ---\n");
+    
+    // Reset ping counters
+    gPingSuccess = 0;
+    gPingFailed = 0;
+    gPingAvgTime = 0;
+    
+    // Test 1: Ping gateway (local network)
+    printf("\n1. Testing local network (gateway: %s)...\n", gateway);
+    printf("   Sending 3 pings...\n");
+    
+    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 3) == 0) {
+        // Wait for ping complete (max 10 seconds)
+        Sleep(10000);
+        
+        if (gPingSuccess > 0) {
+            printf("   Local network OK: %d/%d packets received, avg %d ms\n", 
+                   gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
+        } else {
+            printf("   Local network FAILED: No response from gateway\n");
+            printf("   (Check that gateway %s is correct)\n", gateway);
+        }
+    } else {
+        printf("   Failed to start ping test\n");
+    }
+    
+    // Reset counters for second test
+    gPingSuccess = 0;
+    gPingFailed = 0;
+    gPingAvgTime = 0;
+    
+    // Test 2: Ping Google DNS (internet connectivity)
+    printf("\n2. Testing internet connectivity (8.8.8.8)...\n");
+    printf("   Sending 3 pings...\n");
+    
+    if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 3) == 0) {
+        // Wait for ping complete (max 10 seconds)
+        Sleep(10000);
+        
+        if (gPingSuccess > 0) {
+            printf("   Internet access OK: %d/%d packets received, avg %d ms\n", 
+                   gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
+        } else {
+            printf("   Internet access FAILED: No response from 8.8.8.8\n");
+            printf("   (Local network OK but no internet access)\n");
+        }
+    } else {
+        printf("   Failed to start ping test\n");
+    }
+    
+    printf("\nConnectivity test complete.\n");
+}
+
 static void wifiConnect(void)
 {
     if (!gConnected) {
@@ -3849,6 +3945,7 @@ static void wifiConnect(void)
             // Get IP address using WiFi Station Network Status (AT+UWSNST)
             uSockIpAddress_t ipAddr;
             char ipStr[40];  // Allow for IPv6
+            char gatewayStr[40] = "";  // Store gateway for ping test
             
             if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
                 if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
@@ -3863,8 +3960,8 @@ static void wifiConnect(void)
             }
             
             if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
-                if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
-                    printf("Gateway: %s\n", ipStr);
+                if (uCxIpAddressToString(&ipAddr, gatewayStr, sizeof(gatewayStr)) > 0) {
+                    printf("Gateway: %s\n", gatewayStr);
                 }
             }
             
@@ -3874,6 +3971,11 @@ static void wifiConnect(void)
             strncpy(gWifiPassword, password, sizeof(gWifiPassword) - 1);
             gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
             saveSettings();
+            
+            // Test connectivity (ping gateway and internet)
+            if (strlen(gatewayStr) > 0) {
+                testConnectivity(gatewayStr);
+            }
         } else {
             printf("Connection failed - timeout waiting for network up event\n");
         }
