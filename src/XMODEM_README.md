@@ -228,10 +228,8 @@ result = lib.uCxFirmwareUpdate(
 ## Module Support
 
 This implementation is designed for u-connectXpress modules including:
-- NORA-W36 (Wi-Fi 6)
-- NINA-W10 series
-- ODIN-W2
-- Other u-connectXpress based modules
+- NORA-W36 (Wi-Fi + Bluetooth)
+- NORA-B26 (Bluetooth only)
 
 Consult your module's documentation for specific firmware update procedures and any required AT commands before initiating XMODEM transfer.
 

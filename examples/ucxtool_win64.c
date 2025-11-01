@@ -97,8 +97,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Application version
 #define APP_VERSION "1.0.0"
 
-// Settings file
-#define SETTINGS_FILE "windows_app_settings.ini"
+// Settings file (will be placed next to executable)
+#define SETTINGS_FILENAME "ucxtool_win64_settings.ini"
 
 // Buffer size constants
 #define MAX_DATA_BUFFER 1000
@@ -143,6 +143,9 @@ typedef enum {
     MENU_WIFI,
     MENU_SOCKET,
     MENU_SPS,
+    MENU_MQTT,
+    MENU_HTTP,
+    MENU_SECURITY_TLS,
     MENU_FIRMWARE_UPDATE,
     MENU_API_LIST,
     MENU_EXIT
@@ -161,7 +164,11 @@ typedef struct {
 static ApiCommand_t *gApiCommands = NULL;
 static int gApiCommandCount = 0;
 
+// Settings file path (next to executable)
+static char gSettingsFilePath[MAX_PATH] = "";
+
 // Forward declarations
+static void getExecutableDirectory(char *buffer, size_t bufferSize);
 static void printHeader(void);
 static void printWelcomeGuide(void);
 static void printHelp(void);
@@ -382,8 +389,11 @@ static void parseYamlCommands(const char *yamlContent)
     char currentChapter[128] = "";
     
     while ((ptr = strstr(ptr + 1, "\n      AT")) != NULL) {
-        // Try to find the chapter name by looking backwards for "  - name:" at indentation level 2
-        // This is the command group name in the YAML structure
+        // Try to find the chapter name by looking backwards for "  ChapterName:" at indentation level 2
+        // YAML structure is:
+        //   General:
+        //     commands:
+        //       AT:
         const char *chapterSearch = ptr;
         bool foundChapter = false;
         
@@ -391,36 +401,46 @@ static void parseYamlCommands(const char *yamlContent)
             const char *lineStart = chapterSearch;
             while (lineStart > cmdGroups && *(lineStart - 1) != '\n') lineStart--;
             
-            // Check if this line is "  - name:" (chapter marker - group name in YAML)
-            // Format is: "  - name: General" or "  - name: WiFi" etc.
-            if (strncmp(lineStart, "  - name:", 9) == 0) {
-                const char *nameStart = lineStart + 9;
-                while (*nameStart && (*nameStart == ' ' || *nameStart == '\t')) nameStart++;
+            // Check if this line starts with exactly 2 spaces followed by a capital letter
+            // and ends with a colon (e.g., "  General:", "  WiFi:", "  System:")
+            if (lineStart[0] == ' ' && lineStart[1] == ' ' && 
+                lineStart[2] >= 'A' && lineStart[2] <= 'Z') {
                 
-                int i = 0;
-                while (*nameStart && *nameStart != '\n' && *nameStart != '\r' && i < 127) {
-                    currentChapter[i++] = *nameStart++;
+                const char *colonPos = strchr(lineStart + 2, ':');
+                if (colonPos && (colonPos - lineStart) < 60) {
+                    // Extract the chapter name (without the colon)
+                    const char *nameStart = lineStart + 2;
+                    int i = 0;
+                    while (nameStart < colonPos && i < 127) {
+                        currentChapter[i++] = *nameStart++;
+                    }
+                    currentChapter[i] = '\0';
+                    foundChapter = true;
+                    break;
                 }
-                currentChapter[i] = '\0';
-                foundChapter = true;
-                break;
             }
             
             chapterSearch--;
         }
         
-        // If no chapter found yet, this might be the first command - look forward
+        // If no chapter found yet, this might be the first command - look forward from command_groups
         if (!foundChapter && gApiCommandCount == 0) {
             const char *forward = cmdGroups;
-            const char *namePos = strstr(forward, "  - name:");
-            if (namePos && namePos < ptr) {
-                const char *nameStart = namePos + 9;
-                while (*nameStart && (*nameStart == ' ' || *nameStart == '\t')) nameStart++;
-                int i = 0;
-                while (*nameStart && *nameStart != '\n' && *nameStart != '\r' && i < 127) {
-                    currentChapter[i++] = *nameStart++;
+            while (*forward && forward < ptr) {
+                if (forward[0] == ' ' && forward[1] == ' ' && 
+                    forward[2] >= 'A' && forward[2] <= 'Z') {
+                    const char *colonPos = strchr(forward + 2, ':');
+                    if (colonPos && (colonPos - forward) < 60 && colonPos < ptr) {
+                        const char *nameStart = forward + 2;
+                        int i = 0;
+                        while (nameStart < colonPos && i < 127) {
+                            currentChapter[i++] = *nameStart++;
+                        }
+                        currentChapter[i] = '\0';
+                        break;
+                    }
                 }
-                currentChapter[i] = '\0';
+                forward++;
             }
         }
         
@@ -1046,9 +1066,27 @@ static void spsReadData(void)
 // Main Function
 // ----------------------------------------------------------------
 
+// Helper function to get executable directory
+static void getExecutableDirectory(char *buffer, size_t bufferSize)
+{
+    GetModuleFileNameA(NULL, buffer, (DWORD)bufferSize);
+    // Remove the executable filename, keep only the directory
+    char *lastSlash = strrchr(buffer, '\\');
+    if (lastSlash) {
+        *(lastSlash + 1) = '\0';  // Keep the trailing backslash
+    }
+}
+
 // Main function
 int main(int argc, char *argv[])
 {
+    // Set console to UTF-8 to properly display Unicode box drawing characters
+    SetConsoleOutputCP(CP_UTF8);
+    
+    // Initialize settings file path (next to executable)
+    getExecutableDirectory(gSettingsFilePath, sizeof(gSettingsFilePath));
+    strncat(gSettingsFilePath, SETTINGS_FILENAME, sizeof(gSettingsFilePath) - strlen(gSettingsFilePath) - 1);
+    
     // Load settings from file
     loadSettings();
     
@@ -1220,6 +1258,27 @@ static void printHelp(void)
     printf("      - Send and receive serial data\n");
     printf("  REQUIRES: Bluetooth connection first!\n");
     printf("\n");
+    printf("  [c] MQTT menu - Message Queue Telemetry Transport\n");
+    printf("      - Connect to MQTT brokers\n");
+    printf("      - Publish and subscribe to topics\n");
+    printf("      - QoS configuration\n");
+    printf("  REQUIRES: Active WiFi connection first!\n");
+    printf("  STATUS: [IN PROGRESS]\n");
+    printf("\n");
+    printf("  [d] HTTP Client menu - REST API operations\n");
+    printf("      - HTTP GET/POST/PUT/DELETE requests\n");
+    printf("      - Custom headers and data\n");
+    printf("      - HTTPS/TLS support\n");
+    printf("  REQUIRES: Active WiFi connection first!\n");
+    printf("  STATUS: [IN PROGRESS]\n");
+    printf("\n");
+    printf("SECURITY:\n");
+    printf("  [e] Security/TLS menu - Certificate management\n");
+    printf("      - Upload CA and client certificates\n");
+    printf("      - Manage private keys\n");
+    printf("      - Configure TLS settings\n");
+    printf("  STATUS: [IN PROGRESS]\n");
+    printf("\n");
     printf("ADVANCED:\n");
     printf("  [3] List APIs    - Show all available UCX API commands\n");
     printf("  [f] Firmware     - Update module firmware via XMODEM\n");
@@ -1230,7 +1289,7 @@ static void printHelp(void)
     printf("    - Last COM port used\n");
     printf("    - Last WiFi SSID and password\n");
     printf("    - Last remote server address\n");
-    printf("  Settings saved in: %s\n", SETTINGS_FILE);
+    printf("  Settings saved in: %s\n", gSettingsFilePath);
     printf("\n");
     printf("TROUBLESHOOTING:\n");
     printf("  - Can't connect? Check COM port with Device Manager\n");
@@ -1288,6 +1347,9 @@ static void printMenu(void)
             printf("  [9] Toggle UCX logging (AT traffic)\n");
             printf("  [a] Socket menu (TCP/UDP)%s\n", gConnected ? " (requires WiFi)" : " (requires connection)");
             printf("  [b] SPS menu (Bluetooth Serial)%s\n", gConnected ? " (requires BT)" : " (requires connection)");
+            printf("  [c] MQTT menu (publish/subscribe)%s [IN PROGRESS]\n", gConnected ? " (requires WiFi)" : " (requires connection)");
+            printf("  [d] HTTP Client menu (GET/POST/PUT)%s [IN PROGRESS]\n", gConnected ? " (requires WiFi)" : " (requires connection)");
+            printf("  [e] Security/TLS menu (certificates)%s [IN PROGRESS]\n", gConnected ? "" : " (requires connection)");
             printf("  [f] Firmware update (XMODEM)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [h] Help - Getting started guide\n");
             printf("  [q] Quit application\n");
@@ -1331,6 +1393,51 @@ static void printMenu(void)
             printf("  [2] Connect SPS on BT connection\n");
             printf("  [3] Send data\n");
             printf("  [4] Read data\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_MQTT:
+            printf("--- MQTT Menu (Publish/Subscribe) ---\n");
+            printf("  NOTE: Requires active WiFi connection!\n");
+            printf("  [IN PROGRESS] - Feature under development\n");
+            printf("\n");
+            printf("  Planned features:\n");
+            printf("  - Connect to MQTT broker\n");
+            printf("  - Subscribe to topics\n");
+            printf("  - Publish messages\n");
+            printf("  - QoS configuration\n");
+            printf("  - Last Will and Testament\n");
+            printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_HTTP:
+            printf("--- HTTP Client Menu (REST API) ---\n");
+            printf("  NOTE: Requires active WiFi connection!\n");
+            printf("  [IN PROGRESS] - Feature under development\n");
+            printf("\n");
+            printf("  Planned features:\n");
+            printf("  - HTTP GET requests\n");
+            printf("  - HTTP POST with data\n");
+            printf("  - HTTP PUT/DELETE methods\n");
+            printf("  - Custom headers\n");
+            printf("  - Response parsing\n");
+            printf("  - HTTPS/TLS support\n");
+            printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_SECURITY_TLS:
+            printf("--- Security/TLS Menu (Certificates & Encryption) ---\n");
+            printf("  [IN PROGRESS] - Feature under development\n");
+            printf("\n");
+            printf("  Planned features:\n");
+            printf("  - Upload CA certificates\n");
+            printf("  - Upload client certificates\n");
+            printf("  - Manage private keys\n");
+            printf("  - Configure TLS settings\n");
+            printf("  - Certificate validation options\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -1509,6 +1616,29 @@ static void handleUserInput(void)
                         gMenuState = MENU_SPS;
                     }
                     break;
+                case 12:  // Also accept 'c' or 'C' - MQTT
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                        printf("NOTE: MQTT operations also require WiFi connection (use [8]).\n");
+                    } else {
+                        gMenuState = MENU_MQTT;
+                    }
+                    break;
+                case 13:  // Also accept 'd' or 'D' - HTTP Client
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                        printf("NOTE: HTTP operations also require WiFi connection (use [8]).\n");
+                    } else {
+                        gMenuState = MENU_HTTP;
+                    }
+                    break;
+                case 14:  // Also accept 'e' or 'E' - Security/TLS
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_SECURITY_TLS;
+                    }
+                    break;
                 case 15:  // Also accept 'f' or 'F'
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
@@ -1625,6 +1755,39 @@ static void handleUserInput(void)
                     break;
                 default:
                     printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_MQTT:
+            switch (choice) {
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Feature in progress. Use [0] to return to main menu.\n");
+                    break;
+            }
+            break;
+            
+        case MENU_HTTP:
+            switch (choice) {
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Feature in progress. Use [0] to return to main menu.\n");
+                    break;
+            }
+            break;
+            
+        case MENU_SECURITY_TLS:
+            switch (choice) {
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Feature in progress. Use [0] to return to main menu.\n");
                     break;
             }
             break;
@@ -1969,7 +2132,7 @@ static bool quickConnectToLastDevice(void)
 // Load settings from file
 static void loadSettings(void)
 {
-    FILE *f = fopen(SETTINGS_FILE, "r");
+    FILE *f = fopen(gSettingsFilePath, "r");
     if (f) {
         char line[256];
         while (fgets(line, sizeof(line), f)) {
@@ -2014,7 +2177,7 @@ static void loadSettings(void)
 // Save settings to file
 static void saveSettings(void)
 {
-    FILE *f = fopen(SETTINGS_FILE, "w");
+    FILE *f = fopen(gSettingsFilePath, "w");
     if (f) {
         fprintf(f, "last_port=%s\n", gComPort);
         fprintf(f, "last_device=%s\n", gLastDeviceModel);
@@ -2712,11 +2875,15 @@ static void listAllApiCommands(void)
                             commandsInSection = 0;
                         }
                         
-                        // Print new chapter header
+                        // Print new chapter header (using UTF-8 box drawing)
                         printf("\n");
-                        printf("╔════════════════════════════════════════════════════════════╗\n");
-                        printf("║  %-56s  ║\n", gApiCommands[i].chapter);
-                        printf("╚════════════════════════════════════════════════════════════╝\n");
+                        printf("\xE2\x95\x94");  // ╔ (UTF-8: E2 95 94)
+                        for (int j = 0; j < 60; j++) printf("\xE2\x95\x90");  // ═ (UTF-8: E2 95 90)
+                        printf("\xE2\x95\x97\n");  // ╗ (UTF-8: E2 95 97)
+                        printf("\xE2\x95\x91  %-56s  \xE2\x95\x91\n", gApiCommands[i].chapter);  // ║ (UTF-8: E2 95 91)
+                        printf("\xE2\x95\x9A");  // ╚ (UTF-8: E2 95 9A)
+                        for (int j = 0; j < 60; j++) printf("\xE2\x95\x90");  // ═ (UTF-8: E2 95 90)
+                        printf("\xE2\x95\x9D\n");  // ╝ (UTF-8: E2 95 9D)
                         printf("\n");
                         
                         strncpy(currentChapter, gApiCommands[i].chapter, sizeof(currentChapter) - 1);

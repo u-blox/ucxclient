@@ -104,22 +104,22 @@ if(WIN32)
   target_include_directories(windows_basic PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
   target_link_libraries(windows_basic PRIVATE setupapi)
 
-  # Windows Console Application (Simple Menu-based App)
-  add_executable(windows_app
-    examples/windows_app.c
+  # Windows Console Application - ucxtool_win64
+  add_executable(ucxtool_win64
+    examples/ucxtool_win64.c
     examples/port/u_port_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(windows_app PRIVATE /W4 /FS)
-  target_compile_definitions(windows_app PRIVATE
+  target_compile_options(ucxtool_win64 PRIVATE /W4 /FS)
+  target_compile_definitions(ucxtool_win64 PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
-  target_include_directories(windows_app PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(windows_app PRIVATE setupapi)
+  target_include_directories(ucxtool_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+  target_link_libraries(ucxtool_win64 PRIVATE setupapi)
 
   # Firmware Update Standalone Application
   add_executable(firmware_update

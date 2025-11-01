@@ -2,7 +2,7 @@
 
 ## Overview
 
-A **simple, straightforward C application** with text-based menu interface for u-connectXpress devices (NORA-W36).
+A **comprehensive C application** with text-based menu interface for u-connectXpress devices (NORA-B26, NORA-W36).
 
 This is a **clean alternative** to the Python GUI, avoiding complexity and reliability issues:
 - ✅ **No Python** - Direct C code
@@ -10,75 +10,267 @@ This is a **clean alternative** to the Python GUI, avoiding complexity and relia
 - ✅ **No GC crashes** - No garbage collection
 - ✅ **Easy to debug** - Standard C debugging tools
 - ✅ **Simple and maintainable** - Clear, linear code flow
+- ✅ **Auto-build support** - Launch script handles everything
+
+## Prerequisites for a Clean PC
+
+To build and run this application from a fresh clone, you need:
+
+### System Requirements
+- **Windows 10 or Windows 11** (64-bit)
+- Windows 7/8/8.1 may work but are not tested
+- 32-bit Windows is not supported (requires 64-bit FTDI DLL)
+
+### Required Software
+1. **Visual Studio 2022 Build Tools** (or full Visual Studio 2022)
+   - ✅ **Build Tools only** (minimal, ~2-3 GB): Includes MSVC compiler without IDE
+     - Download: https://aka.ms/vs/17/release/vs_BuildTools.exe
+     - During install, select "Desktop development with C++"
+   - ✅ **Full Visual Studio 2022** (complete IDE, ~10-20 GB): If you want the IDE
+     - Download: https://visualstudio.microsoft.com/downloads/
+     - Install the "Desktop development with C++" workload
+   - Both include MSVC compiler and Windows SDK
+   - **Visual Studio 2019 also works** (use Build Tools or full IDE)
+
+2. **CMake 3.15 or later**
+   - CMake generates the Visual Studio project files
+   - Download: https://cmake.org/download/
+   - ✅ During install, select "Add CMake to system PATH"
+
+3. **Git** (for cloning)
+   - Download: https://git-scm.com/download/win
+
+### Hardware
+- **FTDI USB device** (NORA-W36 or NORA-B26 module)
+- FTDI drivers are included (`examples/ftdi/ftd2xx64.dll`)
+
+### Quick Setup Steps
+```powershell
+# 1. Clone the repository
+git clone https://github.com/u-blox/ucxclient.git
+cd ucxclient
+
+# 2. Launch (auto-builds on first run)
+.\launch_ucxtool.cmd
+
+# That's it! The script handles CMake configuration and building.
+```
+
+### What the Launch Script Does
+- Detects if CMake is configured (runs `cmake -S . -B build` if needed)
+- Builds the executable if missing (runs `cmake --build build --config Debug`)
+- Copies FTDI DLL to the output directory
+- Launches the application (ucxtool_win64.exe)
+- Can code-sign executables with certificate thumbprint (creates ucxtool_win64_signed.exe)
+
+### Code Signing (Optional)
+For production releases, you can digitally sign the executable:
+
+```powershell
+# Find your certificate thumbprint
+# 1. Open Certificate Manager: certmgr.msc
+# 2. Personal > Certificates > Your code signing cert > Details > Thumbprint
+# 3. Copy the thumbprint (remove spaces)
+
+# Sign Release build (creates ucxtool_win64_signed.exe)
+.\launch_ucxtool.cmd sign release YOUR_CERT_THUMBPRINT_HERE
+
+# Sign Debug build (for testing)
+.\launch_ucxtool.cmd sign debug YOUR_CERT_THUMBPRINT_HERE
+```
+
+**Requirements for signing:**
+- Windows SDK 10 (for signtool.exe)
+- Code signing certificate (USB token or machine certificate store)
+- SafeNet Authentication Client (if using USB token)
+
+### Automatic Checks
+The launch script automatically verifies:
+- ✅ Windows 10/11 (64-bit)
+- ✅ CMake installed and in PATH
+- ✅ Visual Studio with C++ tools installed
+
+### Troubleshooting
+If you get errors:
+- **"64-bit Windows required"** → This app requires 64-bit Windows (uses 64-bit FTDI DLL)
+- **"Windows 10 or 11 recommended"** → Older Windows versions may have issues
+- **"cmake not found"** → Install CMake and add to PATH, then restart PowerShell
+- **"MSVC not found"** → Install Visual Studio 2022 Build Tools with "Desktop development with C++" workload
+- **"Cannot find COM port"** → Check Device Manager for FTDI device
+
+### Why Build Tools vs Full IDE?
+- **Build Tools** (recommended for CI/servers): Minimal install, command-line only, faster
+- **Full IDE**: If you want Visual Studio's editor, debugger, and GUI features
+- Both work identically with CMake and the launch script!
 
 ## Features
 
-### Current Implementation
-1. **Device Connection**
-   - Connect to COM port
-   - Initialize UCX handle
-   - Disconnect cleanly
+### ✅ Current Implementation
 
-2. **Basic Commands**
-   - List available API commands
+#### 1. **Device Connection**
+   - Auto-detect and list available COM ports
+   - Smart FTDI device detection (shows NORA-W36, NORA-B26, etc.)
+   - Quick connect to last used device
+   - Auto-reconnect with WiFi credentials
+   - Settings saved next to executable
+
+#### 2. **Basic Commands**
+   - Dynamic API command listing (fetch from GitHub)
    - AT test (basic communication)
    - ATI9 (device information)
+   - Module reboot/switch off
+   - Toggle UCX logging on/off
 
-3. **Status Commands**
-   - Bluetooth status (mode + active connections)
-   - WiFi status (connection state, SSID, RSSI)
+#### 3. **Bluetooth Operations**
+   - Show Bluetooth status
+   - Scan for nearby devices
+   - Connect to devices
+   - List active connections
+   - SPS (Serial Port Service) support
 
-4. **Menu System**
-   - Main menu
-   - Bluetooth submenu
-   - WiFi submenu
-   - Simple text-based interface
+#### 4. **WiFi Operations** (NORA-W36)
+   - Show WiFi status with RSSI
+   - Scan WiFi networks
+   - Connect to networks (WPA2/Open)
+   - Disconnect from networks
+   - Credentials saved and reused
 
-### Planned Features
-- Bluetooth scan and connect
-- WiFi network scan and connect
-- Configuration management (store, reset)
-- System commands (reboot, factory reset)
+#### 5. **Socket Operations** (TCP/UDP)
+   - Create TCP/UDP sockets
+   - Connect to remote servers
+   - Send and receive data
+   - List socket status
+   - Close sockets
 
-## Building
+#### 6. **SPS Operations** (Bluetooth Serial)
+   - Enable SPS service
+   - Connect SPS over Bluetooth
+   - Send and receive serial data
 
-### Using CMake
+#### 7. **Firmware Update**
+   - XMODEM protocol support
+   - Progress bar during update
+   - Auto-reconnect after update
+
+#### 8. **User Experience**
+   - Welcome guide for first-time users
+   - Comprehensive help system ([h] key)
+   - Universal quit ([q] key)
+   - Input validation
+   - Auto-save settings
+   - Status indicators (WiFi/BT availability)
+   - Color-coded log messages
+
+### 🚧 In Progress Features
+- **[c] MQTT** - Publish/subscribe messaging
+- **[d] HTTP Client** - REST API operations (GET/POST/PUT/DELETE)
+- **[e] Security/TLS** - Certificate management
+
+## Quick Start
+
+### Easy Launch (Recommended)
+```bash
+# From project root - builds automatically if needed
+launch_ucxtool.cmd
+
+# For Release build
+launch_ucxtool.cmd release
+```
+
+The launch script will:
+- ✅ Auto-build if executable doesn't exist
+- ✅ Copy FTDI DLL to build directory
+- ✅ Launch the application
+- ✅ Handle all dependencies
+
+### Building Manually
+
+#### Using CMake
 ```bash
 cd build
 cmake ..
-cmake --build . --config Debug
+cmake --build . --config Debug --target ucxtool_win64
 ```
 
-The executable will be in `build/Debug/windows_app.exe`
+The executable will be in `build/Debug/ucxtool_win64.exe`
 
-### Manual Build (Visual Studio)
-```bash
-cl /I..\inc /I..\ucx_api windows_app.c ucxclient_windows.lib
+#### Using Visual Studio
+Open `build/ucxtool_win64.sln` and build the `ucxtool_win64` project.
+
+## File Structure
+
 ```
+ucxclient/
+├── launch_ucxtool.cmd               # Launch script (auto-builds)
+├── examples/
+│   ├── ucxtool_win64.c              # Main application
+│   └── ftdi/
+│       └── ftd2xx64.dll             # FTDI driver DLL
+└── build/
+    ├── Debug/                       # Debug build output
+    │   ├── ucxtool_win64.exe        # Executable
+    │   ├── ucxtool_win64_settings.ini # Settings (auto-created)
+    │   └── ftd2xx64.dll             # FTDI DLL (auto-copied)
+    └── Release/                     # Release build output
+        ├── ucxtool_win64.exe        # Unsigned executable
+        ├── ucxtool_win64_signed.exe # Signed executable (after code signing)
+        ├── ucxtool_win64_settings.ini
+        └── ftd2xx64.dll
+```
+
+### Settings File
+The `ucxtool_win64_settings.ini` file is automatically created **next to the executable** and stores:
+- Last COM port used
+- Last device model
+- WiFi SSID and password (obfuscated)
+- Last remote server address
 
 ## Usage
 
-### Basic Usage
+### Launch Methods
 ```bash
-# Auto-connect to default COM port (COM31)
-windows_app.exe
+# Method 1: Use launch script (recommended)
+launch_ucxtool.cmd
 
-# Specify COM port
-windows_app.exe COM4
+# Method 2: Direct execution
+cd build\Debug
+ucxtool_win64.exe
+
+# Method 3: Specify COM port
+ucxtool_win64.exe COM4
 ```
 
-### Menu Navigation
+### Main Menu
 ```
 --- Main Menu ---
-  [1] Connect to device
-  [2] Disconnect  
+  Device:      COM31 (NORA-W36 3.2.0-046)
+  WiFi:        Available (use [8] to connect)
+  Bluetooth:   Available (use [7] for operations)
+  UCX Logging: ENABLED
+
+  [1] Connect to UCX device
+  [2] Disconnect from device
   [3] List API commands
-  [4] AT test
+  [4] AT test (basic communication)
   [5] ATI9 (device info)
-  [6] Bluetooth menu
-  [7] WiFi menu
-  [0] Exit
+  [6] Module reboot/switch off
+  [7] Bluetooth menu
+  [8] WiFi menu
+  [9] Toggle UCX logging (AT traffic)
+  [a] Socket menu (TCP/UDP) (requires WiFi)
+  [b] SPS menu (Bluetooth Serial) (requires BT)
+  [c] MQTT menu (publish/subscribe) [IN PROGRESS]
+  [d] HTTP Client menu (GET/POST/PUT) [IN PROGRESS]
+  [e] Security/TLS menu (certificates) [IN PROGRESS]
+  [f] Firmware update (XMODEM)
+  [h] Help - Getting started guide
+  [q] Quit application
 ```
+
+### Special Keys
+- **[h]** - Show comprehensive help anytime
+- **[q]** - Quit from any menu
+- **[0]** - Return to previous menu
 
 ## Architecture
 
@@ -145,50 +337,90 @@ uCxWifiStationStatusBegin(&gUcxHandle, statusId, &status);
 ## Example Session
 
 ```
-========================================
-  u-connectXpress Console App v1.0.0
-========================================
-Simple C application for NORA-W36
-No Python, no DLL complexity!
+==============================================================
+ Windows UCX Client - NORA-W36/NORA-B26 AT Test Application
+==============================================================
+Auto-detecting COM ports with FTDI devices...
+Found FTDI device on COM31
 
-Attempting to connect to COM31...
-COM port opened successfully
-UCX initialized successfully
+Settings loaded from: build\Debug\windows_app_settings.ini
+Attempting to auto-connect to COM31...
 Connected successfully!
 
---- Main Menu ---
-  Connected to: COM31
+Device info: NORA-W36 (3.2.0-046)
 
-  [1] Connect to device
-  [2] Disconnect
-  [3] List API commands
+╔════════════════════════════════════════════════════════╗
+║                      Main Menu                         ║
+╚════════════════════════════════════════════════════════╝
+  Device:      COM31 (NORA-W36 3.2.0-046)
+  WiFi:        Available
+  Bluetooth:   Available
+  UCX Logging: ENABLED
+
+  [1] Connect to UCX device
+  [2] Disconnect from device
+  [3] List API commands (188 commands)
   [4] AT test (basic communication)
   [5] ATI9 (device info)
-  [6] Bluetooth menu
-  [7] WiFi menu
-  [0] Exit
+  [6] Module reboot/switch off
+  [7] Bluetooth menu
+  [8] WiFi menu
+  [9] Toggle UCX logging (AT traffic)
+  [a] Socket menu (TCP/UDP)
+  [b] SPS menu (Bluetooth Serial)
+  [c] MQTT menu [IN PROGRESS]
+  [d] HTTP Client menu [IN PROGRESS]
+  [e] Security/TLS menu [IN PROGRESS]
+  [f] Firmware update (XMODEM)
+  [h] Help - Getting started guide
+  [q] Quit application
 
-Choice: 5
+Enter choice: 8
 
---- ATI9 Device Information ---
-Application Version: 4.0.0
-Unique Identifier: 3032385247343431
+╔════════════════════════════════════════════════════════╗
+║                      WiFi Menu                         ║
+╚════════════════════════════════════════════════════════╝
+  Current Status: Disconnected
 
-Choice: 6
-
---- Bluetooth Menu ---
-  [1] Show BT status
-  [2] Scan for devices
-  [3] List connections
+  [1] WiFi scan
+  [2] WiFi connect
+  [3] WiFi disconnect
+  [4] WiFi status
   [0] Back to main menu
+  [q] Quit application
 
-Choice: 1
+Enter choice: 1
 
---- Bluetooth Status ---
-Bluetooth Mode: Central + Peripheral
+Scanning for WiFi networks...
 
-Active Connections:
-  No devices connected
+Found 5 WiFi networks:
+  1. MyHomeNetwork     (CH: 6, RSSI: -45 dBm) [WPA2-Personal]
+  2. GuestNetwork      (CH: 11, RSSI: -62 dBm) [WPA2-Personal]
+  3. CoffeeShop        (CH: 1, RSSI: -75 dBm) [Open]
+  4. Neighbor5G        (CH: 36, RSSI: -68 dBm) [WPA3-Personal]
+  5. IoT_Devices       (CH: 6, RSSI: -58 dBm) [WPA2-Personal]
+
+Press any key to continue...
+
+Enter choice: 2
+
+Enter WiFi SSID: MyHomeNetwork
+Enter WiFi password: ********
+Connecting to 'MyHomeNetwork'...
+WiFi connected successfully!
+
+Enter choice: a
+
+╔════════════════════════════════════════════════════════╗
+║                     Socket Menu                        ║
+╚════════════════════════════════════════════════════════╝
+  WiFi Status: Connected to MyHomeNetwork
+
+  [1] TCP connect
+  [2] TCP send data
+  [3] TCP close
+  [4] UDP send/receive
+  [0] Back to main menu
 ```
 
 ## Philosophy
