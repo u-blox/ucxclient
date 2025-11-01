@@ -124,8 +124,8 @@ static int32_t gCurrentSocket = -1;
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
-static char gWifiSsid[64] = "";               // Last WiFi SSID
-static char gWifiPassword[64] = "";           // Last WiFi password
+static char gWifiSsid[64] = "";               // Last Wi-Fi SSID
+static char gWifiPassword[64] = "";           // Last Wi-Fi password
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
 
 // Device information (populated after connection)
@@ -1466,9 +1466,9 @@ static void printWelcomeGuide(void)
     printf("  4. Try [5] ATI9 to see device information\n");
     printf("\n");
     printf("COMMON OPERATIONS:\n");
-    printf("  - WiFi: Use [8] WiFi menu to scan and connect\n");
+    printf("  - Wi-Fi: Use [8] Wi-Fi menu to scan and connect\n");
     printf("  - Bluetooth: Use [7] Bluetooth menu to scan devices\n");
-    printf("  - Sockets: Use [a] Socket menu for TCP/UDP (requires WiFi)\n");
+    printf("  - Sockets: Use [a] Socket menu for TCP/UDP (requires Wi-Fi)\n");
     printf("  - SPS: Use [b] for Bluetooth Serial Port Service\n");
     printf("\n");
     printf("TIPS:\n");
@@ -1503,12 +1503,12 @@ static void printHelp(void)
     printf("      - Scan for nearby Bluetooth devices\n");
     printf("      - Connect to Bluetooth devices\n");
     printf("      - Show connection status\n");
-    printf("  NOTE: NORA-B26 is Bluetooth only, NORA-W36 has BT+WiFi\n");
+    printf("  NOTE: NORA-B26 is Bluetooth only, NORA-W36 has BT+Wi-Fi\n");
     printf("\n");
-    printf("WIFI OPERATIONS:\n");
-    printf("  [8] WiFi menu\n");
-    printf("      - Scan for WiFi networks\n");
-    printf("      - Connect to WiFi (SSID and password saved)\n");
+    printf("WI-FI OPERATIONS:\n");
+    printf("  [8] Wi-Fi menu\n");
+    printf("      - Scan for Wi-Fi networks\n");
+    printf("      - Connect to Wi-Fi (SSID and password saved)\n");
     printf("      - Show connection status\n");
     printf("  NOTE: Only available on NORA-W36 modules\n");
     printf("\n");
@@ -1517,7 +1517,7 @@ static void printHelp(void)
     printf("      - Create TCP or UDP sockets\n");
     printf("      - Connect to remote servers\n");
     printf("      - Send and receive data\n");
-    printf("  REQUIRES: Active WiFi connection first!\n");
+    printf("  REQUIRES: Active Wi-Fi connection first!\n");
     printf("\n");
     printf("  [b] SPS menu - Bluetooth Serial Port Service\n");
     printf("      - Enable SPS service\n");
@@ -1529,14 +1529,14 @@ static void printHelp(void)
     printf("      - Connect to MQTT brokers\n");
     printf("      - Publish and subscribe to topics\n");
     printf("      - QoS configuration\n");
-    printf("  REQUIRES: Active WiFi connection first!\n");
+    printf("  REQUIRES: Active Wi-Fi connection first!\n");
     printf("  STATUS: [IN PROGRESS]\n");
     printf("\n");
     printf("  [d] HTTP Client menu - REST API operations\n");
     printf("      - HTTP GET/POST/PUT/DELETE requests\n");
     printf("      - Custom headers and data\n");
     printf("      - HTTPS/TLS support\n");
-    printf("  REQUIRES: Active WiFi connection first!\n");
+    printf("  REQUIRES: Active Wi-Fi connection first!\n");
     printf("  STATUS: [IN PROGRESS]\n");
     printf("\n");
     printf("SECURITY:\n");
@@ -1554,14 +1554,14 @@ static void printHelp(void)
     printf("SAVED SETTINGS:\n");
     printf("  The app remembers:\n");
     printf("    - Last COM port used\n");
-    printf("    - Last WiFi SSID and password\n");
+    printf("    - Last Wi-Fi SSID and password\n");
     printf("    - Last remote server address\n");
     printf("  Settings saved in: %s\n", gSettingsFilePath);
     printf("\n");
     printf("TROUBLESHOOTING:\n");
     printf("  - Can't connect? Check COM port with Device Manager\n");
-    printf("  - WiFi not working? Use [8] -> [1] to check status\n");
-    printf("  - Socket errors? Ensure WiFi is connected first\n");
+    printf("  - Wi-Fi not working? Use [8] -> [1] to check status\n");
+    printf("  - Socket errors? Ensure Wi-Fi is connected first\n");
     printf("  - Module not responding? Try [6] to reboot it\n");
     printf("\n");
     printf("Press Enter to continue...");
@@ -1588,9 +1588,9 @@ static void printMenu(void)
                 
                 // Show connection status for WiFi/Bluetooth if available
                 if (gDeviceModel[0] != '\0') {
-                    // Check if this is a WiFi-capable device (NORA-W36)
+                    // Check if this is a Wi-Fi-capable device (NORA-W36)
                     if (strstr(gDeviceModel, "W3") != NULL) {
-                        printf("  WiFi:        Available (use [8] to connect)\n");
+                        printf("  Wi-Fi:        Available (use [8] to connect)\n");
                     }
                     // All devices have Bluetooth
                     printf("  Bluetooth:   Available (use [7] for operations)\n");
@@ -1610,7 +1610,7 @@ static void printMenu(void)
             printf("  [5] ATI9 (device info)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [6] Module reboot/switch off%s\n", gConnected ? "" : " (requires connection)");
             printf("  [7] Bluetooth menu%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [8] WiFi menu%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [8] Wi-Fi menu%s\n", gConnected ? "" : " (requires connection)");
             printf("  [9] Toggle UCX logging (AT traffic)\n");
             printf("  [a] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [b] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)%s\n", gConnected ? "" : " (requires connection)");
@@ -1629,8 +1629,8 @@ static void printMenu(void)
             break;
             
         case MENU_WIFI:
-            printf("--- WiFi Menu ---\n");
-            printf("  [1] Show WiFi status\n");
+            printf("--- Wi-Fi Menu ---\n");
+            printf("  [1] Show Wi-Fi status\n");
             printf("  [2] Scan networks\n");
             printf("  [3] Connect to network\n");
             printf("  [4] Disconnect from network\n");
@@ -1639,7 +1639,7 @@ static void printMenu(void)
             
         case MENU_SOCKET:
             printf("--- Socket Menu (TCP/UDP) ---\n");
-            printf("  NOTE: Requires active WiFi connection!\n");
+            printf("  NOTE: Requires Active Wi-Fi connection!\n");
             printf("  [1] Create TCP socket\n");
             printf("  [2] Create UDP socket\n");
             printf("  [3] Connect socket\n");
@@ -1662,7 +1662,7 @@ static void printMenu(void)
             
         case MENU_MQTT:
             printf("--- MQTT Menu (Publish/Subscribe) ---\n");
-            printf("  NOTE: Requires active WiFi connection!\n");
+            printf("  NOTE: Requires Active Wi-Fi connection!\n");
             printf("  [IN PROGRESS] - Feature under development\n");
             printf("\n");
             printf("  Planned features:\n");
@@ -1677,7 +1677,7 @@ static void printMenu(void)
             
         case MENU_HTTP:
             printf("--- HTTP Client Menu (REST API) ---\n");
-            printf("  NOTE: Requires active WiFi connection!\n");
+            printf("  NOTE: Requires Active Wi-Fi connection!\n");
             printf("  [IN PROGRESS] - Feature under development\n");
             printf("\n");
             printf("  Planned features:\n");
@@ -1715,7 +1715,7 @@ static void printMenu(void)
             
         case MENU_WIFI_FUNCTIONS:
             printf("--- Wi-Fi Functions ---\n");
-            printf("  NOTE: Requires active WiFi connection!\n");
+            printf("  NOTE: Requires Active Wi-Fi connection!\n");
             printf("  [1] Socket menu (TCP/UDP)\n");
             printf("  [2] MQTT (publish/subscribe)\n");
             printf("  [3] HTTP Client (GET/POST/PUT)\n");
@@ -2346,7 +2346,7 @@ static bool connectDevice(const char *comPort)
     // Create mutex for URC event handling
     U_CX_MUTEX_CREATE(gUrcMutex);
     
-    // Register URC handlers for WiFi network events
+    // Register URC handlers for Wi-Fi network events
     uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
     uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
     
@@ -2478,14 +2478,14 @@ static bool quickConnectToLastDevice(void)
     if (connectDevice(gComPort)) {
         printf("\nQuick connect successful!\n");
         
-        // If WiFi credentials saved, offer to reconnect
+        // If Wi-Fi credentials saved, offer to reconnect
         if (gWifiSsid[0] != '\0' && gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL) {
-            printf("\nWiFi credentials found for '%s'\n", gWifiSsid);
-            printf("Reconnect to WiFi? (y/n): ");
+            printf("\nWi-Fi credentials found for '%s'\n", gWifiSsid);
+            printf("Reconnect to Wi-Fi? (y/n): ");
             char response[10];
             if (fgets(response, sizeof(response), stdin)) {
                 if (tolower(response[0]) == 'y') {
-                    // Auto-connect to saved WiFi
+                    // Auto-connect to saved Wi-Fi
                     wifiConnect();
                 }
             }
@@ -3342,14 +3342,14 @@ static void listAllApiCommands(void)
         
         printf("\n");
         printf("╔════════════════════════════════════════════════════════════╗\n");
-        printf("║  %-56s  ║\n", "WIFI API (u_cx_wifi.h)");
+        printf("║  %-56s  ║\n", "WI-FI API (u_cx_wifi.h)");
         printf("╚════════════════════════════════════════════════════════════╝\n");
         printf("\n");
-        printf("  uCxWifiStationSetConnectionParamsBegin()        - Set WiFi connection params\n");
-        printf("  uCxWifiStationConnectBegin()                    - Connect to WiFi network\n");
-        printf("  uCxWifiStationDisconnectBegin()                 - Disconnect from WiFi\n");
-        printf("  uCxWifiStationStatusBegin()                     - Get WiFi connection status\n");
-        printf("  uCxWifiStationScanDefaultBegin()                - Scan for WiFi networks\n");
+        printf("  uCxWifiStationSetConnectionParamsBegin()        - Set Wi-Fi connection params\n");
+        printf("  uCxWifiStationConnectBegin()                    - Connect to Wi-Fi network\n");
+        printf("  uCxWifiStationDisconnectBegin()                 - Disconnect from Wi-Fi\n");
+        printf("  uCxWifiStationStatusBegin()                     - Get Wi-Fi connection status\n");
+        printf("  uCxWifiStationScanDefaultBegin()                - Scan for Wi-Fi networks\n");
         printf("  uCxWifiStationScanDefaultGetNext()              - Get next scan result\n");
         printf("  uCxWifiApSetConnectionParamsBegin()             - Set AP mode params\n");
         printf("  uCxWifiApStartBegin()                           - Start AP mode\n");
@@ -3592,7 +3592,7 @@ static void showWifiStatus(void)
         return;
     }
     
-    printf("\n--- WiFi Status ---\n");
+    printf("\n--- Wi-Fi Status ---\n");
     
     // Get connection status
     uCxWifiStationStatus_t status;
@@ -3623,7 +3623,7 @@ static void showWifiStatus(void)
             printf("Status: Not connected\n");
         }
     } else {
-        printf("ERROR: Failed to get WiFi status\n");
+        printf("ERROR: Failed to get Wi-Fi status\n");
     }
 }
 
@@ -3715,7 +3715,7 @@ static void wifiScan(void)
         return;
     }
     
-    printf("\n--- WiFi Network Scan ---\n");
+    printf("\n--- Wi-Fi Network Scan ---\n");
     printf("Scanning for networks... (this may take several seconds)\n\n");
     
     // Start WiFi scan
@@ -3767,7 +3767,7 @@ static void wifiConnect(void)
         return;
     }
     
-    printf("\n--- WiFi Connect ---\n");
+    printf("\n--- Wi-Fi Connect ---\n");
     
     char ssid[64];
     char password[64];
@@ -3868,7 +3868,7 @@ static void wifiConnect(void)
                 }
             }
             
-            // Save WiFi credentials for next time
+            // Save Wi-Fi credentials for next time
             strncpy(gWifiSsid, ssid, sizeof(gWifiSsid) - 1);
             gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
             strncpy(gWifiPassword, password, sizeof(gWifiPassword) - 1);
@@ -3887,8 +3887,8 @@ static void wifiDisconnect(void)
         return;
     }
     
-    printf("\n--- WiFi Disconnect ---\n");
-    printf("Disconnecting from WiFi...\n");
+    printf("\n--- Wi-Fi Disconnect ---\n");
+    printf("Disconnecting from Wi-Fi...\n");
     
     if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
         printf("Disconnected successfully.\n");

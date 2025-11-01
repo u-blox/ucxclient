@@ -6,7 +6,7 @@ This directory contains application examples of how to use ucxclient. The exampl
 | -------------------- | ----------- | ---- |
 | http_example.c       | Example of doing a HTTP GET request using the uCx API. | Linux (POSIX) |
 | http_example_no_os.c | Same example as http_example.c but illustrating how it could be done on a bare-metal system with no OS. | No OS (bare-metal) |
-| windows_app.c        | Interactive Windows console application with menu-driven interface for Bluetooth, WiFi, Socket, and SPS operations. | Windows |
+| windows_app.c        | Interactive Windows console application with menu-driven interface for Bluetooth, Wi-Fi, Socket, and SPS operations. | Windows |
 | windows_basic.c      | Simple Windows test application for basic AT command validation. | Windows |
 
 ## Available Ports
@@ -137,7 +137,7 @@ http_example <device> <SSID> <WPA_PSK>
 Example:
 
 ```sh
-> build/http_example /dev/ttyUSB0 MySSID MyWiFiPasswd
+> build/http_example /dev/ttyUSB0 MySSID MyWi-FiPasswd
 ```
 
 ### Linux: http_example_no_os
@@ -150,7 +150,7 @@ To set these defines using CMake you can either use `cmake-gui`:
 or from command line:
 
 ```sh
-> cmake -S . -B build -D U_EXAMPLE_UART="/dev/ttyUSB0" -D U_EXAMPLE_SSID="MySSID" -D U_EXAMPLE_WPA_PSK="MyWiFiPasswd"
+> cmake -S . -B build -D U_EXAMPLE_UART="/dev/ttyUSB0" -D U_EXAMPLE_SSID="MySSID" -D U_EXAMPLE_WPA_PSK="MyWi-FiPasswd"
 ```
 
 Now you should be able to start the example using:
@@ -191,11 +191,11 @@ The Windows app provides:
    - Connect to Bluetooth devices
    - List active connections
 
-3. **WiFi Operations**
-   - View WiFi status and signal strength
-   - Scan for WiFi networks
-   - Connect to WiFi (credentials saved securely)
-   - Disconnect from WiFi
+3. **Wi-Fi Operations**
+   - View Wi-Fi status and signal strength
+   - Scan for Wi-Fi networks
+   - Connect to Wi-Fi (credentials saved securely)
+   - Disconnect from Wi-Fi
 
 4. **Socket Operations (TCP/UDP)**
    - Create TCP or UDP sockets
@@ -225,7 +225,7 @@ The Windows app provides:
 
 The app automatically saves:
 - Last used COM port
-- WiFi SSID and password (obfuscated)
+- Wi-Fi SSID and password (obfuscated)
 - Last remote address/hostname
 
 Settings are stored in `windows_app_settings.ini` in the same directory as the executable.
@@ -253,7 +253,7 @@ Connected successfully!
   [4] AT test (basic communication)
   [5] ATI9 (device info)
   [6] Bluetooth menu
-  [7] WiFi menu
+  [7] Wi-Fi menu
   [8] Toggle UCX logging (AT traffic)
   [9] Socket menu (TCP/UDP)
   [a] SPS menu (Bluetooth Serial)
@@ -261,8 +261,8 @@ Connected successfully!
 
 Choice: 7
 
---- WiFi Menu ---
-  [1] Show WiFi status
+--- Wi-Fi Menu ---
+  [1] Show Wi-Fi status
   [2] Scan networks
   [3] Connect to network
   [4] Disconnect from network
@@ -289,7 +289,7 @@ This runs a series of automated tests to verify:
 HTTP GET example for Windows:
 
 ```powershell
-.\build\Debug\http_example_windows.exe COM31 MySSID MyWiFiPassword
+.\build\Debug\http_example_windows.exe COM31 MySSID MyWi-FiPassword
 ```
 
 ## Troubleshooting

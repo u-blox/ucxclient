@@ -54,8 +54,8 @@ static void printUsage(const char *pProgName)
 {
     printf("Usage: %s [COM_PORT] [SSID] [WPA_PSK]\n", pProgName);
     printf("  COM_PORT: Windows COM port (e.g., COM3, COM4) - default: %s\n", DEFAULT_COM_PORT);
-    printf("  SSID:     WiFi network name - default: %s\n", DEFAULT_SSID);
-    printf("  WPA_PSK:  WiFi password - default: (empty)\n");
+    printf("  SSID:     Wi-Fi network name - default: %s\n", DEFAULT_SSID);
+    printf("  WPA_PSK:  Wi-Fi password - default: (empty)\n");
     printf("\nExample: %s COM4 MyNetwork MyPassword\n", pProgName);
     printf("\nAvailable COM ports:\n");
     
@@ -202,12 +202,12 @@ int main(int argc, char *argv[])
         printf("   UART settings query failed\n");
     }
 
-    // WiFi test (if credentials provided)
+    // Wi-Fi test (if credentials provided)
     if (strlen(pWpaPsk) > 0) {
-        printf("\n5. WiFi connection test...\n");
-        printf("   Setting up WiFi security...\n");
+        printf("\n5. Wi-Fi connection test...\n");
+        printf("   Setting up Wi-Fi security...\n");
         status = uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WPA_THRESHOLD_WPA2);
-        printf("   WiFi security: %s\n", (status == 0) ? "OK" : "ERROR");
+        printf("   Wi-Fi security: %s\n", (status == 0) ? "OK" : "ERROR");
 
         if (status == 0) {
             printf("   Setting connection parameters...\n");
@@ -215,9 +215,9 @@ int main(int argc, char *argv[])
             printf("   Connection params: %s\n", (status == 0) ? "OK" : "ERROR");
 
             if (status == 0) {
-                printf("   Connecting to WiFi (this may take a moment)...\n");
+                printf("   Connecting to Wi-Fi (this may take a moment)...\n");
                 status = uCxWifiStationConnect(&ucxHandle, 0);
-                printf("   WiFi connect: %s\n", (status == 0) ? "OK" : "ERROR");
+                printf("   Wi-Fi connect: %s\n", (status == 0) ? "OK" : "ERROR");
 
                 if (status == 0) {
                     printf("   Waiting for network up event (10 seconds)...\n");
@@ -226,7 +226,7 @@ int main(int argc, char *argv[])
             }
         }
     } else {
-        printf("\n5. WiFi test skipped (no password provided)\n");
+        printf("\n5. Wi-Fi test skipped (no password provided)\n");
     }
 
     printf("\n=== Test completed ===\n");

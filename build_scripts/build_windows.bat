@@ -168,7 +168,7 @@ echo To run the GUI application:
 echo   launch_gui.cmd
 echo.
 echo To test with a COM port:
-echo   build\Release\windows_basic.exe COM3 MyWiFiSSID MyPassword
+echo   build\Release\windows_basic.exe COM3 MyWi-FiSSID MyPassword
 echo.
 
 pause

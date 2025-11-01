@@ -20,8 +20,8 @@ Enhanced the `windows_app.c` example application with 8 major improvements to ma
 - Covers:
   - Connection instructions
   - Bluetooth operations (NORA-B26 and NORA-W36)
-  - WiFi operations (NORA-W36 only)
-  - Socket operations (requires WiFi)
+  - Wi-Fi operations (NORA-W36 only)
+  - Socket operations (requires Wi-Fi)
   - SPS operations (requires Bluetooth)
   - Saved settings information
   - Troubleshooting tips
@@ -48,7 +48,7 @@ Displays comprehensive guide covering all operations
 ERROR: Not connected to device. Use [1] to connect first.
 
 ERROR: Not connected to device. Use [1] to connect first.
-NOTE: Socket operations also require WiFi connection (use [8]).
+NOTE: Socket operations also require Wi-Fi connection (use [8]).
 
 ERROR: Invalid COM port format. Use format like 'COM31'
 
@@ -60,8 +60,8 @@ ERROR: Invalid port number. Must be 1-65535
 - ATI9 [5] - requires connection
 - Module reboot [6] - requires connection
 - Bluetooth menu [7] - requires connection
-- WiFi menu [8] - requires connection
-- Socket menu [a] - requires connection + WiFi hint
+- Wi-Fi menu [8] - requires connection
+- Socket menu [a] - requires connection + Wi-Fi hint
 - SPS menu [b] - requires connection + BT hint
 - Firmware update [f] - requires connection
 
@@ -111,7 +111,7 @@ if (strlen(hostname) == 0) {
 **Already Implemented** (enhanced):
 - COM port saved after successful connection
 - Device model saved for matching
-- WiFi SSID/password saved after successful connection
+- Wi-Fi SSID/password saved after successful connection
 - Remote server address saved after successful socket connection
 
 **New Enhancement**:
@@ -127,7 +127,7 @@ if (strlen(hostname) == 0) {
 **Features**:
 - `quickConnectToLastDevice()` function
 - Integrated into menu option [1]
-- Offers to reconnect to WiFi if credentials saved
+- Offers to reconnect to Wi-Fi if credentials saved
 - Shows device info before connecting
 
 **User Flow**:
@@ -143,9 +143,9 @@ Attempting to reconnect to last device...
 Port: COM31
 Device: NORA-W36
 
-[If WiFi credentials saved:]
-WiFi credentials found for 'MyNetwork'
-Reconnect to WiFi? (y/n):
+[If Wi-Fi credentials saved:]
+Wi-Fi credentials found for 'MyNetwork'
+Reconnect to Wi-Fi? (y/n):
 ```
 
 ---
@@ -189,7 +189,7 @@ Status: Not connected
 ### After:
 ```
 Device:      COM31 (NORA-W36 3.1.0d)
-WiFi:        Available (use [8] to connect)
+Wi-Fi:        Available (use [8] to connect)
 Bluetooth:   Available (use [7] for operations)
 UCX Logging: ENABLED
 ```
@@ -202,7 +202,7 @@ UCX Logging: ENABLED
 ```
 
 **Smart Device Detection**:
-- Detects NORA-W36 (WiFi capable) vs NORA-B26 (Bluetooth only)
+- Detects NORA-W36 (Wi-Fi capable) vs NORA-B26 (Bluetooth only)
 - Shows appropriate connection options
 - Displays firmware version when available
 
@@ -211,8 +211,8 @@ UCX Logging: ENABLED
 [4] AT test (basic communication) (requires connection)
 [5] ATI9 (device info) (requires connection)
 [7] Bluetooth menu (requires connection)
-[8] WiFi menu (requires connection)
-[a] Socket menu (TCP/UDP) (requires WiFi)
+[8] Wi-Fi menu (requires connection)
+[a] Socket menu (TCP/UDP) (requires Wi-Fi)
 [b] SPS menu (Bluetooth Serial) (requires BT)
 ```
 
@@ -245,9 +245,9 @@ QUICK START:
   4. Try [5] ATI9 to see device information
 
 COMMON OPERATIONS:
-  - WiFi: Use [8] WiFi menu to scan and connect
+  - Wi-Fi: Use [8] Wi-Fi menu to scan and connect
   - Bluetooth: Use [7] Bluetooth menu to scan devices
-  - Sockets: Use [a] Socket menu for TCP/UDP (requires WiFi)
+  - Sockets: Use [a] Socket menu for TCP/UDP (requires Wi-Fi)
   - SPS: Use [b] for Bluetooth Serial Port Service
 
 TIPS:
@@ -268,7 +268,7 @@ Press Enter to continue...
 ## Additional Enhancements
 
 ### Menu Text Improvements:
-- Socket menu now shows: "NOTE: Requires active WiFi connection!"
+- Socket menu now shows: "NOTE: Requires active Wi-Fi connection!"
 - SPS menu now shows: "NOTE: Requires active Bluetooth connection!"
 - All menu options show requirement hints
 - Clearer option descriptions
@@ -293,12 +293,12 @@ Press Enter to continue...
 ### Connection Flow:
 - ✅ Quick connect offered when settings exist
 - ✅ Manual connection saves settings
-- ✅ WiFi auto-reconnect offered after quick connect
+- ✅ Wi-Fi auto-reconnect offered after quick connect
 - ✅ Status display shows device info correctly
 
 ### Error Messages:
 - ✅ Operations blocked when not connected
-- ✅ Socket menu shows WiFi requirement
+- ✅ Socket menu shows Wi-Fi requirement
 - ✅ SPS menu shows Bluetooth requirement
 - ✅ Clear next-step suggestions
 

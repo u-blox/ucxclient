@@ -1,4 +1,4 @@
-# Windows Console Application (windows_app.c)
+# ucxclient_win64 - Windows Console Application
 
 ## Overview
 
@@ -112,7 +112,7 @@ If you get errors:
    - Auto-detect and list available COM ports
    - Smart FTDI device detection (shows NORA-W36, NORA-B26, etc.)
    - Quick connect to last used device
-   - Auto-reconnect with WiFi credentials
+   - Auto-reconnect with Wi-Fi credentials
    - Settings saved next to executable
 
 #### 2. **Basic Commands**
@@ -129,9 +129,9 @@ If you get errors:
    - List active connections
    - SPS (Serial Port Service) support
 
-#### 4. **WiFi Operations** (NORA-W36)
-   - Show WiFi status with RSSI
-   - Scan WiFi networks
+#### 4. **Wi-Fi Operations** (NORA-W36)
+   - Show Wi-Fi status with RSSI
+   - Scan Wi-Fi networks
    - Connect to networks (WPA2/Open)
    - Disconnect from networks
    - Credentials saved and reused
@@ -159,7 +159,7 @@ If you get errors:
    - Universal quit ([q] key)
    - Input validation
    - Auto-save settings
-   - Status indicators (WiFi/BT availability)
+   - Status indicators (Wi-Fi/BT availability)
    - Color-coded log messages
 
 ### 🚧 In Progress Features
@@ -227,7 +227,7 @@ ucxclient/
 The `ucxclient_win64_settings.ini` file is automatically created **next to the executable** and stores:
 - Last COM port used
 - Last device model
-- WiFi SSID and password (obfuscated)
+- Wi-Fi SSID and password (obfuscated)
 - Last remote server address
 
 ## Usage
@@ -249,7 +249,7 @@ ucxclient_win64.exe COM4
 ```
 --- Main Menu ---
   Device:      COM31 (NORA-W36 3.2.0-046)
-  WiFi:        Available (use [8] to connect)
+  Wi-Fi:        Available (use [8] to connect)
   Bluetooth:   Available (use [7] for operations)
   UCX Logging: ENABLED
 
@@ -260,9 +260,9 @@ ucxclient_win64.exe COM4
   [5] ATI9 (device info)
   [6] Module reboot/switch off
   [7] Bluetooth menu
-  [8] WiFi menu
+  [8] Wi-Fi menu
   [9] Toggle UCX logging (AT traffic)
-  [a] Socket menu (TCP/UDP) (requires WiFi)
+  [a] Socket menu (TCP/UDP) (requires Wi-Fi)
   [b] SPS menu (Bluetooth Serial) (requires BT)
   [c] MQTT menu (publish/subscribe) [IN PROGRESS]
   [d] HTTP Client menu (GET/POST/PUT) [IN PROGRESS]
@@ -281,14 +281,19 @@ ucxclient_win64.exe COM4
 
 ### Clean and Simple
 ```
-windows_app.c
+ucxclient_win64.c (3899 lines)
 ├── main()                          // Entry point
 ├── connectDevice()                 // Initialize and connect
 ├── disconnectDevice()              // Clean shutdown
 ├── executeAtTest()                 // AT command
 ├── executeAti9()                   // Device info
 ├── showBluetoothStatus()           // BT status
-├── showWifiStatus()                // WiFi status
+├── showWifiStatus()                // Wi-Fi status
+├── wifiMenu()                      // Wi-Fi operations
+├── bluetoothMenu()                 // Bluetooth operations
+├── socketMenu()                    // TCP/UDP sockets
+├── spsMenu()                       // Bluetooth Serial Port
+├── firmwareUpdate()                // XMODEM update
 └── Menu handling functions
 ```
 
@@ -326,7 +331,7 @@ uCxWifiStationStatusBegin(&gUcxHandle, statusId, &status);
 
 2. **Add missing features**
    - Bluetooth scan/connect
-   - WiFi scan/connect
+   - Wi-Fi scan/connect
    - Configuration commands
 
 3. **Enhance UX**
@@ -358,7 +363,7 @@ Device info: NORA-W36 (3.2.0-046)
 ║                      Main Menu                         ║
 ╚════════════════════════════════════════════════════════╝
   Device:      COM31 (NORA-W36 3.2.0-046)
-  WiFi:        Available
+  Wi-Fi:        Available
   Bluetooth:   Available
   UCX Logging: ENABLED
 
@@ -369,7 +374,7 @@ Device info: NORA-W36 (3.2.0-046)
   [5] ATI9 (device info)
   [6] Module reboot/switch off
   [7] Bluetooth menu
-  [8] WiFi menu
+  [8] Wi-Fi menu
   [9] Toggle UCX logging (AT traffic)
   [a] Socket menu (TCP/UDP)
   [b] SPS menu (Bluetooth Serial)
@@ -383,22 +388,22 @@ Device info: NORA-W36 (3.2.0-046)
 Enter choice: 8
 
 ╔════════════════════════════════════════════════════════╗
-║                      WiFi Menu                         ║
+║                      Wi-Fi Menu                         ║
 ╚════════════════════════════════════════════════════════╝
   Current Status: Disconnected
 
-  [1] WiFi scan
-  [2] WiFi connect
-  [3] WiFi disconnect
-  [4] WiFi status
+  [1] Wi-Fi scan
+  [2] Wi-Fi connect
+  [3] Wi-Fi disconnect
+  [4] Wi-Fi status
   [0] Back to main menu
   [q] Quit application
 
 Enter choice: 1
 
-Scanning for WiFi networks...
+Scanning for Wi-Fi networks...
 
-Found 5 WiFi networks:
+Found 5 Wi-Fi networks:
   1. MyHomeNetwork     (CH: 6, RSSI: -45 dBm) [WPA2-Personal]
   2. GuestNetwork      (CH: 11, RSSI: -62 dBm) [WPA2-Personal]
   3. CoffeeShop        (CH: 1, RSSI: -75 dBm) [Open]
@@ -409,17 +414,17 @@ Press any key to continue...
 
 Enter choice: 2
 
-Enter WiFi SSID: MyHomeNetwork
-Enter WiFi password: ********
+Enter Wi-Fi SSID: MyHomeNetwork
+Enter Wi-Fi password: ********
 Connecting to 'MyHomeNetwork'...
-WiFi connected successfully!
+Wi-Fi connected successfully!
 
 Enter choice: a
 
 ╔════════════════════════════════════════════════════════╗
 ║                     Socket Menu                        ║
 ╚════════════════════════════════════════════════════════╝
-  WiFi Status: Connected to MyHomeNetwork
+  Wi-Fi Status: Connected to MyHomeNetwork
 
   [1] TCP connect
   [2] TCP send data
