@@ -98,7 +98,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define APP_VERSION "1.0.0"
 
 // Settings file (will be placed next to executable)
-#define SETTINGS_FILENAME "ucxtool_win64_settings.ini"
+#define SETTINGS_FILENAME "ucxclient_win64_settings.ini"
 
 // Buffer size constants
 #define MAX_DATA_BUFFER 1000
@@ -1101,12 +1101,26 @@ static void gattClientDiscoverServices(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting service discovery...");
     
     // Call GATT service discovery command
-    int32_t result = uCxGattClientDiscoverAllPrimaryServicesBegin(&gUcxHandle, connHandle);
+    uCxGattClientDiscoverPrimaryServicesBegin(&gUcxHandle, connHandle);
     
+    // Get services
+    uCxGattClientDiscoverPrimaryServices_t service;
+    int serviceCount = 0;
+    while (uCxGattClientDiscoverPrimaryServicesGetNext(&gUcxHandle, &service)) {
+        serviceCount++;
+        printf("  Service %d: start=0x%04X, end=0x%04X, UUID=", 
+               serviceCount, service.start_handle, service.end_handle);
+        for (int i = 0; i < service.uuid.length; i++) {
+            printf("%02X", service.uuid.pData[i]);
+        }
+        printf("\n");
+    }
+    
+    int32_t result = uCxEnd(&gUcxHandle);
     if (result == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service discovery started. Check URCs for results.");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service discovery complete. Found %d services.", serviceCount);
     } else {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to start service discovery (code %d)", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Service discovery failed (code %d)", result);
     }
 }
 
@@ -1133,10 +1147,21 @@ static void gattClientReadCharacteristic(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Reading characteristic...");
     
     // Call GATT read characteristic command
-    int32_t result = uCxGattClientReadCharacteristicBegin(&gUcxHandle, connHandle, charHandle);
+    uByteArray_t data;
+    uint8_t buffer[512];
+    data.pData = buffer;
+    data.length = 0;
     
-    if (result == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Read started. Check URCs for result.");
+    bool success = uCxGattClientReadBegin(&gUcxHandle, connHandle, charHandle, &data);
+    int32_t result = uCxEnd(&gUcxHandle);
+    
+    if (success && result == 0) {
+        printf("  Read %d bytes: ", data.length);
+        for (int i = 0; i < data.length; i++) {
+            printf("%02X", data.pData[i]);
+        }
+        printf("\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Read successful.");
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read characteristic (code %d)", result);
     }
@@ -1190,11 +1215,10 @@ static void gattClientWriteCharacteristic(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Writing %zu bytes...", dataLen);
     
     // Call GATT write characteristic command
-    uByteArray_t dataArray = {.pData = data, .length = (int32_t)dataLen};
-    int32_t result = uCxGattClientWriteCharacteristicBegin(&gUcxHandle, connHandle, charHandle, dataArray);
+    int32_t result = uCxGattClientWrite(&gUcxHandle, connHandle, charHandle, data, (int32_t)dataLen);
     
     if (result == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Write started. Check URCs for result.");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Write successful.");
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to write characteristic (code %d)", result);
     }
@@ -1212,27 +1236,44 @@ static void gattServerAddService(void)
     }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Server: Add Service ---");
-    printf("Enter service UUID (16-bit hex, e.g., 180A): ");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Server: Define Service ---");
+    printf("Enter service UUID (hex, e.g., 180A for 16-bit or full 128-bit): ");
     
-    char uuidStr[5];
+    char uuidStr[33];
     if (fgets(uuidStr, sizeof(uuidStr), stdin) == NULL) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read input");
         return;
     }
     uuidStr[strcspn(uuidStr, "\n")] = '\0';
     
-    int uuid = (int)strtol(uuidStr, NULL, 16);
+    // Convert hex string to bytes
+    size_t hexLen = strlen(uuidStr);
+    if (hexLen % 2 != 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid UUID (must be even number of hex digits)");
+        return;
+    }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Adding service with UUID 0x%04X...", uuid);
+    uint8_t uuid[16];
+    int32_t uuidLen = (int32_t)(hexLen / 2);
+    for (int i = 0; i < uuidLen; i++) {
+        char byteStr[3] = {uuidStr[i*2], uuidStr[i*2 + 1], '\0'};
+        uuid[i] = (uint8_t)strtol(byteStr, NULL, 16);
+    }
     
-    // Call GATT server add service command
-    int32_t result = uCxGattServerAddServiceBegin(&gUcxHandle, uuid);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Defining service...");
+    
+    // Call GATT server define service command
+    int32_t serviceHandle;
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle, uuid, uuidLen, &serviceHandle);
     
     if (result == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service add started. Check URCs for service handle.");
+        printf("  Service defined with handle: %d\n", serviceHandle);
+        printf("  Next steps:\n");
+        printf("    1. Add characteristics to this service\n");
+        printf("    2. Call uCxGattServerServiceActivate() to activate\n");
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service defined successfully.");
     } else {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to add service (code %d)", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to define service (code %d)", result);
     }
 }
 
@@ -1244,11 +1285,11 @@ static void gattServerSetCharacteristic(void)
     }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Server: Set Characteristic Value ---");
-    printf("Enter characteristic handle: ");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Server: Set Attribute Value ---");
+    printf("Enter attribute handle: ");
     
-    int charHandle;
-    scanf("%d", &charHandle);
+    int attrHandle;
+    scanf("%d", &attrHandle);
     getchar(); // consume newline
     
     printf("Enter data (hex format, e.g., 01020304): ");
@@ -1276,11 +1317,10 @@ static void gattServerSetCharacteristic(void)
         data[i] = (uint8_t)strtol(byteStr, NULL, 16);
     }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Setting characteristic value (%zu bytes)...", dataLen);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Setting attribute value (%zu bytes)...", dataLen);
     
-    // Call GATT server set characteristic value command
-    uByteArray_t dataArray = {.pData = data, .length = (int32_t)dataLen};
-    int32_t result = uCxGattServerSetCharacteristicValueBegin(&gUcxHandle, charHandle, dataArray);
+    // Call GATT server set attribute value command
+    int32_t result = uCxGattServerSetAttrValue(&gUcxHandle, attrHandle, data, (int32_t)dataLen);
     
     if (result == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Value set successfully.");

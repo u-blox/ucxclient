@@ -1,10 +1,10 @@
 @echo off
-REM Launch script for ucxtool_win64
+REM Launch script for ucxclient_win64
 
 setlocal enabledelayedexpansion
 
 echo ===================================
-echo ucxtool_win64 Launcher
+echo ucxclient_win64 Launcher
 echo ===================================
 echo.
 
@@ -120,23 +120,59 @@ if errorlevel 1 (
 echo Prerequisites check passed!
 echo.
 
-REM Determine configuration (Debug by default, Release if specified)
+REM Determine configuration
+REM Priority: 1) User specified, 2) Release if exists, 3) Debug (build if needed)
 set CONFIG=Debug
-if /i "%1"=="release" set CONFIG=Release
-if /i "%1"=="Release" set CONFIG=Release
-if /i "%1"=="-r" set CONFIG=Release
+set USER_SPECIFIED_CONFIG=0
+
+REM Check if user specified a configuration
+if /i "%1"=="release" (
+    set CONFIG=Release
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="Release" (
+    set CONFIG=Release
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="-r" (
+    set CONFIG=Release
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="debug" (
+    set CONFIG=Debug
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="Debug" (
+    set CONFIG=Debug
+    set USER_SPECIFIED_CONFIG=1
+)
+
+REM If no config specified, prefer Release if it exists
+if "%USER_SPECIFIED_CONFIG%"=="0" (
+    if exist "build\Release\ucxclient_win64.exe" (
+        set CONFIG=Release
+        echo [Auto-select] Using existing Release build...
+        echo.
+    ) else (
+        echo [Auto-select] Using Debug configuration (will build if needed)...
+        echo.
+    )
+) else (
+    echo Using %CONFIG% configuration (user specified)...
+    echo.
+)
 
 REM Set build directory
 set BUILD_DIR=build\%CONFIG%
 set FTDI_DLL=examples\ftdi\ftd2xx64.dll
 
 REM Check if executable exists, build if not
-if not exist "%BUILD_DIR%\ucxtool_win64.exe" (
-    echo Executable not found. Auto-building...
+if not exist "%BUILD_DIR%\ucxclient_win64.exe" (
+    echo Executable not found. Auto-building %CONFIG%...
     echo.
     
     REM Configure if needed
-    if not exist "build\ucxtool_win64.vcxproj" (
+    if not exist "build\ucxclient_win64.vcxproj" (
         echo Configuring CMake...
         cmake -S . -B build
         if errorlevel 1 (
@@ -146,8 +182,8 @@ if not exist "%BUILD_DIR%\ucxtool_win64.exe" (
     )
     
     REM Build
-    echo Building ucxtool_win64.exe ^(%CONFIG% configuration^)...
-    cmake --build build --config %CONFIG% --target ucxtool_win64
+    echo Building ucxclient_win64.exe ^(%CONFIG% configuration^)...
+    cmake --build build --config %CONFIG% --target ucxclient_win64
     if errorlevel 1 (
         echo ERROR: Build failed!
         exit /b 1
@@ -166,20 +202,20 @@ if not exist "%BUILD_DIR%\ftd2xx64.dll" (
 )
 
 REM Check if executable exists after build
-if not exist "%BUILD_DIR%\ucxtool_win64.exe" (
-    echo ERROR: ucxtool_win64.exe not found in %BUILD_DIR%!
+if not exist "%BUILD_DIR%\ucxclient_win64.exe" (
+    echo ERROR: ucxclient_win64.exe not found in %BUILD_DIR%!
     exit /b 1
 )
 
 REM Launch the application
 echo.
 echo ===================================
-echo Launching ucxtool_win64.exe...
+echo Launching ucxclient_win64.exe...
 echo ===================================
 echo.
 
 cd "%BUILD_DIR%"
-ucxtool_win64.exe %2 %3 %4 %5 %6 %7 %8 %9
+ucxclient_win64.exe %2 %3 %4 %5 %6 %7 %8 %9
 
 REM Store exit code
 set APP_EXIT_CODE=%ERRORLEVEL%
@@ -289,7 +325,7 @@ echo Step 1: Cleaning...
 cmake --build build --config %REBUILD_CONFIG% --target clean 2>nul
 
 REM Configure if needed
-if not exist "build\ucxtool_win64.vcxproj" (
+if not exist "build\ucxclient_win64.vcxproj" (
     echo Step 2: Configuring CMake...
     cmake -S . -B build
     if errorlevel 1 (
@@ -301,7 +337,7 @@ if not exist "build\ucxtool_win64.vcxproj" (
 
 REM Build
 echo Step 3: Building...
-cmake --build build --config %REBUILD_CONFIG% --target ucxtool_win64
+cmake --build build --config %REBUILD_CONFIG% --target ucxclient_win64
 if errorlevel 1 (
     echo ERROR: Build failed!
     exit /b 1
@@ -335,7 +371,7 @@ echo This will build both Debug and Release configurations.
 echo.
 
 REM Configure if needed
-if not exist "build\ucxtool_win64.vcxproj" (
+if not exist "build\ucxclient_win64.vcxproj" (
     echo Configuring CMake...
     cmake -S . -B build
     if errorlevel 1 (
@@ -350,7 +386,7 @@ echo ===================================
 echo [1/2] Building Debug Configuration
 echo ===================================
 echo.
-cmake --build build --config Debug --target ucxtool_win64
+cmake --build build --config Debug --target ucxclient_win64
 if errorlevel 1 (
     echo ERROR: Debug build failed!
     exit /b 1
@@ -370,7 +406,7 @@ echo ===================================
 echo [2/2] Building Release Configuration
 echo ===================================
 echo.
-cmake --build build --config Release --target ucxtool_win64
+cmake --build build --config Release --target ucxclient_win64
 if errorlevel 1 (
     echo ERROR: Release build failed!
     exit /b 1
@@ -389,8 +425,8 @@ echo All Configurations Built Successfully!
 echo ===================================
 echo.
 echo Output files:
-echo   build\Debug\ucxtool_win64.exe
-echo   build\Release\ucxtool_win64.exe
+echo   build\Debug\ucxclient_win64.exe
+echo   build\Release\ucxclient_win64.exe
 echo.
 exit /b 0
 
@@ -399,7 +435,7 @@ REM Sign command
 REM ===================================
 :sign
 echo ===================================
-echo Code Signing ucxtool_win64.exe
+echo Code Signing ucxclient_win64.exe
 echo ===================================
 echo.
 
@@ -408,8 +444,8 @@ set SIGN_CONFIG=Release
 if /i "%2"=="debug" set SIGN_CONFIG=Debug
 if /i "%2"=="Debug" set SIGN_CONFIG=Debug
 
-set SIGN_EXE=build\!SIGN_CONFIG!\ucxtool_win64.exe
-set SIGN_EXE_SIGNED=build\!SIGN_CONFIG!\ucxtool_win64_signed.exe
+set SIGN_EXE=build\!SIGN_CONFIG!\ucxclient_win64.exe
+set SIGN_EXE_SIGNED=build\!SIGN_CONFIG!\ucxclient_win64_signed.exe
 set CERT_THUMBPRINT=%3
 
 REM Check if executable exists
@@ -417,7 +453,7 @@ if not exist "!SIGN_EXE!" (
     echo [ERROR] Executable not found: !SIGN_EXE!
     echo.
     echo Build the Release version first:
-    echo   launch_ucxtool_win64.cmd rebuild release
+    echo   launch_ucxclient_win64.cmd rebuild release
     echo.
     exit /b 1
 )
@@ -427,11 +463,11 @@ if not defined CERT_THUMBPRINT (
     echo [ERROR] Certificate thumbprint required!
     echo.
     echo USAGE:
-    echo   launch_ucxtool_win64.cmd sign [config] [thumbprint]
+    echo   launch_ucxclient_win64.cmd sign [config] [thumbprint]
     echo.
     echo EXAMPLES:
-    echo   launch_ucxtool_win64.cmd sign release 1234567890ABCDEF...
-    echo   launch_ucxtool_win64.cmd sign debug 1234567890ABCDEF...
+    echo   launch_ucxclient_win64.cmd sign release 1234567890ABCDEF...
+    echo   launch_ucxclient_win64.cmd sign debug 1234567890ABCDEF...
     echo.
     echo To find your certificate thumbprint:
     echo   1. Open Certificate Manager: certmgr.msc
@@ -531,7 +567,7 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   launch_ucxtool_win64.cmd [command^|config] [arguments]
+echo   launch_ucxclient_win64.cmd [command^|config] [arguments]
 echo.
 echo COMMANDS:
 echo   clean [config]        Deep clean build artifacts
@@ -557,37 +593,41 @@ echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo CONFIGURATIONS:
-echo   (none)                Launch Debug build (default)
+echo   (none)                Auto-select: Release if exists, else Debug
+echo   debug / Debug         Launch Debug build
 echo   release / Release     Launch Release build
 echo   -r                    Launch Release build (short form)
 echo.
 echo EXAMPLES:
-echo   launch_ucxtool_win64.cmd
+echo   launch_ucxclient_win64.cmd
+echo       Auto-launch: Release if exists, otherwise Debug
+echo.
+echo   launch_ucxclient_win64.cmd debug
 echo       Launch Debug build (auto-builds if needed)
 echo.
-echo   launch_ucxtool_win64.cmd release
+echo   launch_ucxclient_win64.cmd release
 echo       Launch Release build (auto-builds if needed)
 echo.
-echo   launch_ucxtool_win64.cmd Debug COM4
+echo   launch_ucxclient_win64.cmd Debug COM4
 echo       Launch Debug build and pass COM4 to the app
 echo.
-echo   launch_ucxtool_win64.cmd clean
+echo   launch_ucxclient_win64.cmd clean
 echo       Clean all configurations (Debug and Release)
 echo.
-echo   launch_ucxtool_win64.cmd clean debug
+echo   launch_ucxclient_win64.cmd clean debug
 echo       Clean only Debug configuration
 echo.
-echo   launch_ucxtool_win64.cmd rebuild
+echo   launch_ucxclient_win64.cmd rebuild
 echo       Clean and rebuild Debug configuration
 echo.
-echo   launch_ucxtool_win64.cmd rebuild release
+echo   launch_ucxclient_win64.cmd rebuild release
 echo       Clean and rebuild Release configuration
 echo.
-echo   launch_ucxtool_win64.cmd all
+echo   launch_ucxclient_win64.cmd all
 echo       Build both Debug and Release configurations
 echo.
-echo   launch_ucxtool_win64.cmd sign release 1234567890ABCDEF...
-echo       Sign Release build and rename to ucxtool_win64_signed.exe
+echo   launch_ucxclient_win64.cmd sign release 1234567890ABCDEF...
+echo       Sign Release build and rename to ucxclient_win64_signed.exe
 echo.
 echo NOTES:
 echo   - First launch auto-configures CMake if needed

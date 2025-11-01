@@ -51,7 +51,7 @@ git clone https://github.com/u-blox/ucxclient.git
 cd ucxclient
 
 # 2. Launch (auto-builds on first run)
-.\launch_ucxtool_win64.cmd
+.\launch_ucxclient_win64.cmd
 
 # That's it! The script handles CMake configuration and building.
 ```
@@ -60,8 +60,8 @@ cd ucxclient
 - Detects if CMake is configured (runs `cmake -S . -B build` if needed)
 - Builds the executable if missing (runs `cmake --build build --config Debug`)
 - Copies FTDI DLL to the output directory
-- Launches the application (ucxtool_win64.exe)
-- Can code-sign executables with certificate thumbprint (creates ucxtool_win64_signed.exe)
+- Launches the application (ucxclient_win64.exe)
+- Can code-sign executables with certificate thumbprint (creates ucxclient_win64_signed.exe)
 - Can build all configurations at once with the `all` command
 
 ### Code Signing (Optional)
@@ -73,11 +73,11 @@ For production releases, you can digitally sign the executable:
 # 2. Personal > Certificates > Your code signing cert > Details > Thumbprint
 # 3. Copy the thumbprint (remove spaces)
 
-# Sign Release build (creates ucxtool_win64_signed.exe)
-.\launch_ucxtool_win64.cmd sign release YOUR_CERT_THUMBPRINT_HERE
+# Sign Release build (creates ucxclient_win64_signed.exe)
+.\launch_ucxclient_win64.cmd sign release YOUR_CERT_THUMBPRINT_HERE
 
 # Sign Debug build (for testing)
-.\launch_ucxtool_win64.cmd sign debug YOUR_CERT_THUMBPRINT_HERE
+.\launch_ucxclient_win64.cmd sign debug YOUR_CERT_THUMBPRINT_HERE
 ```
 
 **Requirements for signing:**
@@ -172,13 +172,13 @@ If you get errors:
 ### Easy Launch (Recommended)
 ```bash
 # From project root - builds automatically if needed
-launch_ucxtool_win64.cmd
+launch_ucxclient_win64.cmd
 
 # For Release build
-launch_ucxtool_win64.cmd release
+launch_ucxclient_win64.cmd release
 
 # Build all configurations (Debug + Release)
-launch_ucxtool_win64.cmd all
+launch_ucxclient_win64.cmd all
 ```
 
 The launch script will:
@@ -194,37 +194,37 @@ The launch script will:
 ```bash
 cd build
 cmake ..
-cmake --build . --config Debug --target ucxtool_win64
+cmake --build . --config Debug --target ucxclient_win64
 ```
 
-The executable will be in `build/Debug/ucxtool_win64.exe`
+The executable will be in `build/Debug/ucxclient_win64.exe`
 
 #### Using Visual Studio
-Open `build/ucxtool_win64.sln` and build the `ucxtool_win64` project.
+Open `build/ucxclient_win64.sln` and build the `ucxclient_win64` project.
 
 ## File Structure
 
 ```
 ucxclient/
-├── launch_ucxtool_win64.cmd         # Launch script (auto-builds)
+├── launch_ucxclient_win64.cmd         # Launch script (auto-builds)
 ├── examples/
-│   ├── ucxtool_win64.c              # Main application
+│   ├── ucxclient_win64.c              # Main application
 │   └── ftdi/
 │       └── ftd2xx64.dll             # FTDI driver DLL
 └── build/
     ├── Debug/                       # Debug build output
-    │   ├── ucxtool_win64.exe        # Executable
-    │   ├── ucxtool_win64_settings.ini # Settings (auto-created)
+    │   ├── ucxclient_win64.exe        # Executable
+    │   ├── ucxclient_win64_settings.ini # Settings (auto-created)
     │   └── ftd2xx64.dll             # FTDI DLL (auto-copied)
     └── Release/                     # Release build output
-        ├── ucxtool_win64.exe        # Unsigned executable
-        ├── ucxtool_win64_signed.exe # Signed executable (after code signing)
-        ├── ucxtool_win64_settings.ini
+        ├── ucxclient_win64.exe        # Unsigned executable
+        ├── ucxclient_win64_signed.exe # Signed executable (after code signing)
+        ├── ucxclient_win64_settings.ini
         └── ftd2xx64.dll
 ```
 
 ### Settings File
-The `ucxtool_win64_settings.ini` file is automatically created **next to the executable** and stores:
+The `ucxclient_win64_settings.ini` file is automatically created **next to the executable** and stores:
 - Last COM port used
 - Last device model
 - WiFi SSID and password (obfuscated)
@@ -235,14 +235,14 @@ The `ucxtool_win64_settings.ini` file is automatically created **next to the exe
 ### Launch Methods
 ```bash
 # Method 1: Use launch script (recommended)
-launch_ucxtool_win64.cmd
+launch_ucxclient_win64.cmd
 
 # Method 2: Direct execution
 cd build\Debug
-ucxtool_win64.exe
+ucxclient_win64.exe
 
 # Method 3: Specify COM port
-ucxtool_win64.exe COM4
+ucxclient_win64.exe COM4
 ```
 
 ### Main Menu
@@ -438,3 +438,4 @@ Enter choice: a
 - No over-engineering
 
 This is what we should have built from the start! 🎯
+
