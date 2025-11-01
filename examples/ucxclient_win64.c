@@ -113,6 +113,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_SPS_DISCONNECTED   (1 << 5)
 #define URC_FLAG_SPS_DATA           (1 << 6)
 #define URC_FLAG_STARTUP            (1 << 7)
+#define URC_FLAG_PING_COMPLETE      (1 << 8)
 
 // Global handles
 static uCxAtClient_t gAtClient;
@@ -131,7 +132,7 @@ static char gRemoteAddress[128] = "";         // Last remote address/hostname
 
 // Device information (populated after connection)
 static char gDeviceModel[64] = "";            // Device model (e.g., "NORA-W36")
-static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0d-xxx")
+static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0")
 
 // URC event handling
 static U_CX_MUTEX_HANDLE gUrcMutex;
@@ -724,6 +725,7 @@ static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_pa
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "Ping complete: %d/%d packets, avg %d ms", 
                    received_packets, transmitted_packets, avg_response_time);
+    signalEvent(URC_FLAG_PING_COMPLETE);
 }
 
 // ----------------------------------------------------------------
@@ -3815,18 +3817,20 @@ static void testConnectivity(const char *gateway)
     printf("   Sending 3 pings...\n");
     
     if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 3) == 0) {
-        // Wait for ping complete (max 10 seconds)
-        Sleep(10000);
-        
-        if (gPingSuccess > 0) {
-            printf("   Local network OK: %d/%d packets received, avg %d ms\n", 
-                   gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
+        // Wait for ping complete URC event (max 10 seconds)
+        if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
+            if (gPingSuccess > 0) {
+                printf("   ✓ Local network OK: %d/%d packets received, avg %d ms\n", 
+                       gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
+            } else {
+                printf("   ✗ Local network FAILED: No response from gateway\n");
+                printf("   (Check that gateway %s is correct)\n", gateway);
+            }
         } else {
-            printf("   Local network FAILED: No response from gateway\n");
-            printf("   (Check that gateway %s is correct)\n", gateway);
+            printf("   ✗ Local network test TIMEOUT (no ping complete event)\n");
         }
     } else {
-        printf("   Failed to start ping test\n");
+        printf("   ✗ Failed to start ping test\n");
     }
     
     // Reset counters for second test
@@ -3839,18 +3843,20 @@ static void testConnectivity(const char *gateway)
     printf("   Sending 3 pings...\n");
     
     if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 3) == 0) {
-        // Wait for ping complete (max 10 seconds)
-        Sleep(10000);
-        
-        if (gPingSuccess > 0) {
-            printf("   Internet access OK: %d/%d packets received, avg %d ms\n", 
-                   gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
+        // Wait for ping complete URC event (max 10 seconds)
+        if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
+            if (gPingSuccess > 0) {
+                printf("   ✓ Internet access OK: %d/%d packets received, avg %d ms\n", 
+                       gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
+            } else {
+                printf("   ✗ Internet access FAILED: No response from 8.8.8.8\n");
+                printf("   (Local network OK but no internet access)\n");
+            }
         } else {
-            printf("   Internet access FAILED: No response from 8.8.8.8\n");
-            printf("   (Local network OK but no internet access)\n");
+            printf("   ✗ Internet test TIMEOUT (no ping complete event)\n");
         }
     } else {
-        printf("   Failed to start ping test\n");
+        printf("   ✗ Failed to start ping test\n");
     }
     
     printf("\nConnectivity test complete.\n");
