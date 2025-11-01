@@ -51,7 +51,7 @@ git clone https://github.com/u-blox/ucxclient.git
 cd ucxclient
 
 # 2. Launch (auto-builds on first run)
-.\launch_ucxtool.cmd
+.\launch_ucxtool_win64.cmd
 
 # That's it! The script handles CMake configuration and building.
 ```
@@ -62,6 +62,7 @@ cd ucxclient
 - Copies FTDI DLL to the output directory
 - Launches the application (ucxtool_win64.exe)
 - Can code-sign executables with certificate thumbprint (creates ucxtool_win64_signed.exe)
+- Can build all configurations at once with the `all` command
 
 ### Code Signing (Optional)
 For production releases, you can digitally sign the executable:
@@ -73,10 +74,10 @@ For production releases, you can digitally sign the executable:
 # 3. Copy the thumbprint (remove spaces)
 
 # Sign Release build (creates ucxtool_win64_signed.exe)
-.\launch_ucxtool.cmd sign release YOUR_CERT_THUMBPRINT_HERE
+.\launch_ucxtool_win64.cmd sign release YOUR_CERT_THUMBPRINT_HERE
 
 # Sign Debug build (for testing)
-.\launch_ucxtool.cmd sign debug YOUR_CERT_THUMBPRINT_HERE
+.\launch_ucxtool_win64.cmd sign debug YOUR_CERT_THUMBPRINT_HERE
 ```
 
 **Requirements for signing:**
@@ -171,10 +172,13 @@ If you get errors:
 ### Easy Launch (Recommended)
 ```bash
 # From project root - builds automatically if needed
-launch_ucxtool.cmd
+launch_ucxtool_win64.cmd
 
 # For Release build
-launch_ucxtool.cmd release
+launch_ucxtool_win64.cmd release
+
+# Build all configurations (Debug + Release)
+launch_ucxtool_win64.cmd all
 ```
 
 The launch script will:
@@ -182,6 +186,7 @@ The launch script will:
 - ✅ Copy FTDI DLL to build directory
 - ✅ Launch the application
 - ✅ Handle all dependencies
+- ✅ Build both configurations with `all` command
 
 ### Building Manually
 
@@ -201,7 +206,7 @@ Open `build/ucxtool_win64.sln` and build the `ucxtool_win64` project.
 
 ```
 ucxclient/
-├── launch_ucxtool.cmd               # Launch script (auto-builds)
+├── launch_ucxtool_win64.cmd         # Launch script (auto-builds)
 ├── examples/
 │   ├── ucxtool_win64.c              # Main application
 │   └── ftdi/
@@ -230,7 +235,7 @@ The `ucxtool_win64_settings.ini` file is automatically created **next to the exe
 ### Launch Methods
 ```bash
 # Method 1: Use launch script (recommended)
-launch_ucxtool.cmd
+launch_ucxtool_win64.cmd
 
 # Method 2: Direct execution
 cd build\Debug

@@ -21,6 +21,7 @@ if /i "%1"=="sign" goto :sign
 REM Commands that need prerequisites
 if /i "%1"=="clean" goto :clean_with_checks
 if /i "%1"=="rebuild" goto :rebuild_with_checks
+if /i "%1"=="all" goto :all_with_checks
 
 REM Check prerequisites for normal launch
 echo Checking prerequisites...
@@ -321,6 +322,79 @@ echo ===================================
 exit /b 0
 
 REM ===================================
+REM Build All command (with checks)
+REM ===================================
+:all_with_checks
+REM Just continue to all, prerequisites already checked
+:all
+echo ===================================
+echo Building ALL Configurations
+echo ===================================
+echo.
+echo This will build both Debug and Release configurations.
+echo.
+
+REM Configure if needed
+if not exist "build\ucxtool_win64.vcxproj" (
+    echo Configuring CMake...
+    cmake -S . -B build
+    if errorlevel 1 (
+        echo ERROR: CMake configuration failed!
+        exit /b 1
+    )
+    echo.
+)
+
+REM Build Debug
+echo ===================================
+echo [1/2] Building Debug Configuration
+echo ===================================
+echo.
+cmake --build build --config Debug --target ucxtool_win64
+if errorlevel 1 (
+    echo ERROR: Debug build failed!
+    exit /b 1
+)
+
+REM Copy FTDI DLL for Debug
+set FTDI_DLL=examples\ftdi\ftd2xx64.dll
+if exist "%FTDI_DLL%" (
+    echo Copying FTDI DLL to Debug...
+    copy /Y "%FTDI_DLL%" "build\Debug\" >nul
+)
+echo Debug build complete!
+echo.
+
+REM Build Release
+echo ===================================
+echo [2/2] Building Release Configuration
+echo ===================================
+echo.
+cmake --build build --config Release --target ucxtool_win64
+if errorlevel 1 (
+    echo ERROR: Release build failed!
+    exit /b 1
+)
+
+REM Copy FTDI DLL for Release
+if exist "%FTDI_DLL%" (
+    echo Copying FTDI DLL to Release...
+    copy /Y "%FTDI_DLL%" "build\Release\" >nul
+)
+echo Release build complete!
+echo.
+
+echo ===================================
+echo All Configurations Built Successfully!
+echo ===================================
+echo.
+echo Output files:
+echo   build\Debug\ucxtool_win64.exe
+echo   build\Release\ucxtool_win64.exe
+echo.
+exit /b 0
+
+REM ===================================
 REM Sign command
 REM ===================================
 :sign
@@ -343,7 +417,7 @@ if not exist "!SIGN_EXE!" (
     echo [ERROR] Executable not found: !SIGN_EXE!
     echo.
     echo Build the Release version first:
-    echo   launch_ucxtool.cmd rebuild release
+    echo   launch_ucxtool_win64.cmd rebuild release
     echo.
     exit /b 1
 )
@@ -353,11 +427,11 @@ if not defined CERT_THUMBPRINT (
     echo [ERROR] Certificate thumbprint required!
     echo.
     echo USAGE:
-    echo   launch_ucxtool.cmd sign [config] [thumbprint]
+    echo   launch_ucxtool_win64.cmd sign [config] [thumbprint]
     echo.
     echo EXAMPLES:
-    echo   launch_ucxtool.cmd sign release 1234567890ABCDEF...
-    echo   launch_ucxtool.cmd sign debug 1234567890ABCDEF...
+    echo   launch_ucxtool_win64.cmd sign release 1234567890ABCDEF...
+    echo   launch_ucxtool_win64.cmd sign debug 1234567890ABCDEF...
     echo.
     echo To find your certificate thumbprint:
     echo   1. Open Certificate Manager: certmgr.msc
@@ -457,7 +531,7 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   launch_ucxtool.cmd [command^|config] [arguments]
+echo   launch_ucxtool_win64.cmd [command^|config] [arguments]
 echo.
 echo COMMANDS:
 echo   clean [config]        Deep clean build artifacts
@@ -469,6 +543,10 @@ echo   rebuild [config]      Deep clean and rebuild from scratch
 echo                         Forces recompilation of ALL source files
 echo                         - No config = rebuild Debug
 echo                         - 'release' = rebuild Release
+echo.
+echo   all                   Build both Debug and Release configurations
+echo                         Builds all configurations from current state
+echo                         (use 'clean' first for a fresh build)
 echo.
 echo   sign [config] [thumbprint]
 echo                         Code sign the executable with certificate
@@ -484,28 +562,31 @@ echo   release / Release     Launch Release build
 echo   -r                    Launch Release build (short form)
 echo.
 echo EXAMPLES:
-echo   launch_ucxtool.cmd
+echo   launch_ucxtool_win64.cmd
 echo       Launch Debug build (auto-builds if needed)
 echo.
-echo   launch_ucxtool.cmd release
+echo   launch_ucxtool_win64.cmd release
 echo       Launch Release build (auto-builds if needed)
 echo.
-echo   launch_ucxtool.cmd Debug COM4
+echo   launch_ucxtool_win64.cmd Debug COM4
 echo       Launch Debug build and pass COM4 to the app
 echo.
-echo   launch_ucxtool.cmd clean
+echo   launch_ucxtool_win64.cmd clean
 echo       Clean all configurations (Debug and Release)
 echo.
-echo   launch_ucxtool.cmd clean debug
+echo   launch_ucxtool_win64.cmd clean debug
 echo       Clean only Debug configuration
 echo.
-echo   launch_ucxtool.cmd rebuild
+echo   launch_ucxtool_win64.cmd rebuild
 echo       Clean and rebuild Debug configuration
 echo.
-echo   launch_ucxtool.cmd rebuild release
+echo   launch_ucxtool_win64.cmd rebuild release
 echo       Clean and rebuild Release configuration
 echo.
-echo   launch_ucxtool.cmd sign release 1234567890ABCDEF...
+echo   launch_ucxtool_win64.cmd all
+echo       Build both Debug and Release configurations
+echo.
+echo   launch_ucxtool_win64.cmd sign release 1234567890ABCDEF...
 echo       Sign Release build and rename to ucxtool_win64_signed.exe
 echo.
 echo NOTES:
