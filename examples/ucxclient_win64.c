@@ -660,16 +660,19 @@ static void networkDownUrc(struct uCxHandle *puCxHandle)
     signalEvent(URC_FLAG_NETWORK_DOWN);
 }
 
-static void linkUpUrc(struct uCxHandle *puCxHandle)
+static void linkUpUrc(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMacAddress_t *bssid, int32_t channel)
 {
-    (void)puCxHandle;
+    (void)wlan_handle;
+    (void)bssid;
+    (void)channel;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi Link UP");
     signalEvent(URC_FLAG_WIFI_LINK_UP);
 }
 
-static void linkDownUrc(struct uCxHandle *puCxHandle)
+static void linkDownUrc(struct uCxHandle *puCxHandle, int32_t wlan_handle, int32_t reason)
 {
-    (void)puCxHandle;
+    (void)wlan_handle;
+    (void)reason;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi Link DOWN");
     signalEvent(URC_FLAG_WIFI_LINK_DOWN);
 }
@@ -1219,7 +1222,7 @@ static void gattClientReadCharacteristic(void)
     int32_t result = uCxEnd(&gUcxHandle);
     
     if (success && result == 0) {
-        printf("  Read %d bytes: ", data.length);
+        printf("  Read %zu bytes: ", data.length);
         for (int i = 0; i < data.length; i++) {
             printf("%02X", data.pData[i]);
         }
@@ -4161,9 +4164,9 @@ static void wifiConnect(void)
     printf("\n--- Wi-Fi Connect ---\n");
     
     // Check if already connected
-    uCxWifiStationStatus_t status;
-    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
-        int32_t connState = status.rspWifiStatusIdInt.int_val;
+    uCxWifiStationStatus_t connStatus;
+    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &connStatus)) {
+        int32_t connState = connStatus.rspWifiStatusIdInt.int_val;
         uCxEnd(&gUcxHandle);
         
         if (connState == 2) {
@@ -4274,9 +4277,9 @@ static void wifiConnect(void)
             
             // Get RSSI
             int32_t rssi = -100;  // Default value
-            uCxWifiStationStatus_t status;
-            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
-                rssi = status.rspWifiStatusIdInt.int_val;
+            uCxWifiStationStatus_t rssiStatus;
+            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &rssiStatus)) {
+                rssi = rssiStatus.rspWifiStatusIdInt.int_val;
                 if (rssi != -32768) {
                     printf("Signal strength: %d dBm\n", rssi);
                 }
