@@ -105,8 +105,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define MAX_DATA_BUFFER 1000
 
 // URC Event flags
-#define URC_FLAG_NETWORK_UP         (1 << 0)
-#define URC_FLAG_NETWORK_DOWN       (1 << 1)
+#define URC_FLAG_NETWORK_UP         (1 << 0)  // Wi-Fi Station Network UP (IP assigned)
+#define URC_FLAG_NETWORK_DOWN       (1 << 1)  // Wi-Fi Station Network DOWN (IP lost)
 #define URC_FLAG_SOCK_CONNECTED     (1 << 2)
 #define URC_FLAG_SOCK_DATA          (1 << 3)
 #define URC_FLAG_SPS_CONNECTED      (1 << 4)
@@ -114,6 +114,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_SPS_DATA           (1 << 6)
 #define URC_FLAG_STARTUP            (1 << 7)
 #define URC_FLAG_PING_COMPLETE      (1 << 8)
+#define URC_FLAG_WIFI_LINK_UP       (1 << 9)  // Wi-Fi Link UP (connected to AP)
+#define URC_FLAG_WIFI_LINK_DOWN     (1 << 10) // Wi-Fi Link DOWN (disconnected from AP)
 
 // Global handles
 static uCxAtClient_t gAtClient;
@@ -142,6 +144,9 @@ static volatile uint32_t gUrcEventFlags = 0;
 static volatile int32_t gPingSuccess = 0;
 static volatile int32_t gPingFailed = 0;
 static volatile int32_t gPingAvgTime = 0;
+#define MAX_PING_TIMES 10
+static volatile int32_t gPingTimes[MAX_PING_TIMES];
+static volatile int32_t gPingCount = 0;
 
 // Menu state
 typedef enum {
@@ -239,7 +244,7 @@ static void socketMenu(void);
 static void mqttMenu(void);
 static void httpMenu(void);
 static void securityTlsMenu(void);
-static void testConnectivity(const char *gateway);
+static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi, int32_t channel);
 
 // URC handlers for ping
 static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time);
@@ -655,6 +660,20 @@ static void networkDownUrc(struct uCxHandle *puCxHandle)
     signalEvent(URC_FLAG_NETWORK_DOWN);
 }
 
+static void linkUpUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi Link UP");
+    signalEvent(URC_FLAG_WIFI_LINK_UP);
+}
+
+static void linkDownUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi Link DOWN");
+    signalEvent(URC_FLAG_WIFI_LINK_DOWN);
+}
+
 static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
 {
     (void)puCxHandle;
@@ -707,6 +726,11 @@ static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_r
     (void)puCxHandle;
     if (ping_response == U_PING_RESPONSE_TRUE) {
         gPingSuccess++;
+        // Store individual ping time
+        if (gPingCount < MAX_PING_TIMES) {
+            gPingTimes[gPingCount] = response_time;
+            gPingCount++;
+        }
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Ping response: %d ms", response_time);
     } else {
         gPingFailed++;
@@ -2385,7 +2409,9 @@ static bool connectDevice(const char *comPort)
     // Create mutex for URC event handling
     U_CX_MUTEX_CREATE(gUrcMutex);
     
-    // Register URC handlers for Wi-Fi network events
+    // Register URC handlers for Wi-Fi link and network events
+    uCxWifiRegisterLinkUp(&gUcxHandle, linkUpUrc);
+    uCxWifiRegisterLinkDown(&gUcxHandle, linkDownUrc);
     uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
     uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
     
@@ -2485,6 +2511,33 @@ static void disconnectDevice(void)
     }
     
     printf("Disconnecting...\n");
+    
+    // Unregister all URC handlers (set callbacks to NULL)
+    // This is important for proper cleanup and prevents memory leaks
+    
+    // Unregister Wi-Fi link and network event handlers
+    uCxWifiRegisterLinkUp(&gUcxHandle, NULL);
+    uCxWifiRegisterLinkDown(&gUcxHandle, NULL);
+    uCxWifiRegisterStationNetworkUp(&gUcxHandle, NULL);
+    uCxWifiRegisterStationNetworkDown(&gUcxHandle, NULL);
+    
+    // Unregister socket event handlers
+    uCxSocketRegisterConnect(&gUcxHandle, NULL);
+    uCxSocketRegisterDataAvailable(&gUcxHandle, NULL);
+    
+    // Unregister SPS event handlers
+    uCxSpsRegisterConnect(&gUcxHandle, NULL);
+    uCxSpsRegisterDisconnect(&gUcxHandle, NULL);
+    uCxSpsRegisterDataAvailable(&gUcxHandle, NULL);
+    
+    // Unregister system event handlers
+    uCxSystemRegisterStartup(&gUcxHandle, NULL);
+    
+    // Unregister diagnostics/ping event handlers
+    uCxDiagnosticsRegisterPingResponse(&gUcxHandle, NULL);
+    uCxDiagnosticsRegisterPingComplete(&gUcxHandle, NULL);
+    
+    printf("All URC handlers unregistered.\n");
     
     // Delete mutex
     U_CX_MUTEX_DELETE(gUrcMutex);
@@ -3544,6 +3597,9 @@ static void executeModuleReboot(void)
     printf("\n--- Module Reboot/Switch Off ---\n");
     printf("Sending AT+CPWROFF...\n");
     
+    // Record start time
+    ULONGLONG startTime = GetTickCount64();
+    
     int32_t result = uCxSystemReboot(&gUcxHandle);
     
     // Note: AT+CPWROFF may not return OK before the module reboots
@@ -3555,8 +3611,13 @@ static void executeModuleReboot(void)
         
         // Wait for +STARTUP URC (up to 10 seconds)
         if (waitEvent(URC_FLAG_STARTUP, 10)) {
+            // Calculate elapsed time
+            ULONGLONG endTime = GetTickCount64();
+            ULONGLONG elapsedMs = endTime - startTime;
+            
             printf(" done!\n");
             printf("Module has rebooted successfully.\n");
+            printf("Reboot time: %llu ms (%.2f seconds)\n", elapsedMs, elapsedMs / 1000.0);
             
             // Disable echo again after reboot
             result = uCxSystemSetEchoOff(&gUcxHandle);
@@ -3765,6 +3826,9 @@ static void wifiScan(void)
     uCxWifiStationScanDefaultBegin(&gUcxHandle);
     
     int networkCount = 0;
+    // Track both 2.4 GHz (channels 1-14) and 5 GHz channels (up to 165)
+    int channelCount2_4[15] = {0}; // 2.4 GHz: channels 1-14
+    int channelCount5[166] = {0};   // 5 GHz: channels up to 165
     uCxWifiStationScanDefault_t network;
     
     // Get scan results
@@ -3776,8 +3840,23 @@ static void wifiScan(void)
                network.bssid.address[0], network.bssid.address[1],
                network.bssid.address[2], network.bssid.address[3],
                network.bssid.address[4], network.bssid.address[5]);
-        printf("  Channel: %d\n", network.channel);
+        printf("  Channel: %d", network.channel);
+        // Indicate band
+        if (network.channel >= 1 && network.channel <= 14) {
+            printf(" (2.4 GHz)\n");
+        } else if (network.channel >= 36) {
+            printf(" (5 GHz)\n");
+        } else {
+            printf("\n");
+        }
         printf("  RSSI: %d dBm\n", network.rssi);
+        
+        // Track channel usage
+        if (network.channel >= 1 && network.channel <= 14) {
+            channelCount2_4[network.channel]++;
+        } else if (network.channel >= 36 && network.channel <= 165) {
+            channelCount5[network.channel]++;
+        }
         
         // Print security type based on authentication suites
         printf("  Security: ");
@@ -3800,34 +3879,183 @@ static void wifiScan(void)
         printf("No networks found.\n");
     } else {
         printf("Found %d network(s).\n", networkCount);
+        
+        // Display channel usage summary
+        printf("\n==============================================================\n");
+        printf("                   CHANNEL USAGE SUMMARY\n");
+        printf("==============================================================\n");
+        
+        // 2.4 GHz Band
+        printf("\n2.4 GHz Band (Channels 1-14):\n");
+        int maxNetworks2_4 = 0;
+        int hasAny2_4 = 0;
+        for (int i = 1; i <= 14; i++) {
+            if (channelCount2_4[i] > 0) {
+                hasAny2_4 = 1;
+                if (channelCount2_4[i] > maxNetworks2_4) {
+                    maxNetworks2_4 = channelCount2_4[i];
+                }
+            }
+        }
+        
+        if (hasAny2_4) {
+            for (int i = 1; i <= 14; i++) {
+                if (channelCount2_4[i] > 0) {
+                    printf("Channel %2d: %2d network(s) ", i, channelCount2_4[i]);
+                    
+                    // Visual bar graph
+                    printf("[");
+                    int barLen = (channelCount2_4[i] * 30) / (maxNetworks2_4 > 0 ? maxNetworks2_4 : 1);
+                    for (int j = 0; j < barLen; j++) {
+                        printf("=");
+                    }
+                    for (int j = barLen; j < 30; j++) {
+                        printf(" ");
+                    }
+                    printf("]");
+                    
+                    // Congestion indicator
+                    if (channelCount2_4[i] >= 5) {
+                        printf(" - CONGESTED");
+                    } else if (channelCount2_4[i] >= 3) {
+                        printf(" - Busy");
+                    } else if (channelCount2_4[i] == 1) {
+                        printf(" - Clear");
+                    }
+                    printf("\n");
+                }
+            }
+            
+            // Recommend best 2.4 GHz channels (1, 6, 11 are non-overlapping)
+            printf("\nRecommended 2.4 GHz channels (non-overlapping): 1, 6, 11\n");
+            int bestChannel = 0;
+            int minCount = 999;
+            int recommendedChannels[] = {1, 6, 11};
+            for (int i = 0; i < 3; i++) {
+                int ch = recommendedChannels[i];
+                if (channelCount2_4[ch] < minCount) {
+                    minCount = channelCount2_4[ch];
+                    bestChannel = ch;
+                }
+            }
+            if (bestChannel > 0) {
+                printf("Suggested 2.4 GHz channel: %d (%d network(s))\n", bestChannel, minCount);
+            }
+        } else {
+            printf("No 2.4 GHz networks detected\n");
+        }
+        
+        // 5 GHz Band
+        printf("\n5 GHz Band:\n");
+        int maxNetworks5 = 0;
+        int hasAny5 = 0;
+        for (int i = 36; i <= 165; i++) {
+            if (channelCount5[i] > 0) {
+                hasAny5 = 1;
+                if (channelCount5[i] > maxNetworks5) {
+                    maxNetworks5 = channelCount5[i];
+                }
+            }
+        }
+        
+        if (hasAny5) {
+            for (int i = 36; i <= 165; i++) {
+                if (channelCount5[i] > 0) {
+                    printf("Channel %3d: %2d network(s) ", i, channelCount5[i]);
+                    
+                    // Visual bar graph
+                    printf("[");
+                    int barLen = (channelCount5[i] * 30) / (maxNetworks5 > 0 ? maxNetworks5 : 1);
+                    for (int j = 0; j < barLen; j++) {
+                        printf("=");
+                    }
+                    for (int j = barLen; j < 30; j++) {
+                        printf(" ");
+                    }
+                    printf("]");
+                    
+                    // Congestion indicator
+                    if (channelCount5[i] >= 5) {
+                        printf(" - CONGESTED");
+                    } else if (channelCount5[i] >= 3) {
+                        printf(" - Busy");
+                    } else if (channelCount5[i] == 1) {
+                        printf(" - Clear");
+                    }
+                    printf("\n");
+                }
+            }
+            
+            // Find best 5 GHz channel (only from valid channels that were detected)
+            printf("\nNote: 5 GHz channels have less interference and more bandwidth\n");
+            int best5GHz = 0;
+            int min5Count = 999;
+            
+            // Valid 5 GHz channels (most common)
+            int valid5GHzChannels[] = {36, 40, 44, 48, 52, 56, 60, 64, 
+                                       100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
+                                       149, 153, 157, 161, 165};
+            int numValid5GHz = sizeof(valid5GHzChannels) / sizeof(valid5GHzChannels[0]);
+            
+            for (int i = 0; i < numValid5GHz; i++) {
+                int ch = valid5GHzChannels[i];
+                if (channelCount5[ch] < min5Count) {
+                    min5Count = channelCount5[ch];
+                    best5GHz = ch;
+                }
+            }
+            
+            if (best5GHz > 0 && min5Count < 999) {
+                printf("Suggested 5 GHz channel: %d (%d network(s))\n", best5GHz, min5Count);
+            }
+        } else {
+            printf("No 5 GHz networks detected\n");
+        }
+        
+        printf("==============================================================\n");
     }
 }
 
-static void testConnectivity(const char *gateway)
+static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi, int32_t channel)
 {
     printf("\n--- Testing Network Connectivity ---\n");
     
-    // Reset ping counters
+    // Variables to store results for summary
+    int32_t localPingAvg = 0;
+    int32_t internetPingAvg = 0;
+    bool localSuccess = false;
+    bool internetSuccess = false;
+    
+    // Warm-up: Single ping to gateway (helps wake up Wi-Fi from power save mode)
+    printf("\nPerforming warm-up ping to gateway...\n");
+    gPingSuccess = 0;
+    gPingFailed = 0;
+    gPingAvgTime = 0;
+    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 1) == 0) {
+        waitEvent(URC_FLAG_PING_COMPLETE, 10);
+        printf("   Warm-up complete (%d ms)\n", gPingAvgTime);
+    }
+    
+    // Test 1: Ping gateway (local network) - 4 pings
+    printf("\n1. Testing local network (gateway: %s)...\n", gateway);
+    printf("   Sending 4 pings...\n");
     gPingSuccess = 0;
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    // Test 1: Ping gateway (local network)
-    printf("\n1. Testing local network (gateway: %s)...\n", gateway);
-    printf("   Sending 3 pings...\n");
-    
-    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 3) == 0) {
-        // Wait for ping complete URC event (max 10 seconds)
-        if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
+    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 4) == 0) {
+        // Wait for ping complete URC event (max 15 seconds for 4 pings)
+        if (waitEvent(URC_FLAG_PING_COMPLETE, 15)) {
             if (gPingSuccess > 0) {
-                printf("   ✓ Local network OK: %d/%d packets received, avg %d ms\n", 
+                localPingAvg = gPingAvgTime;
+                localSuccess = true;
+                printf("   ✓ Local network OK: %d/%d packets, avg %d ms\n", 
                        gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
             } else {
                 printf("   ✗ Local network FAILED: No response from gateway\n");
-                printf("   (Check that gateway %s is correct)\n", gateway);
             }
         } else {
-            printf("   ✗ Local network test TIMEOUT (no ping complete event)\n");
+            printf("   ✗ Local network test TIMEOUT\n");
         }
     } else {
         printf("   ✗ Failed to start ping test\n");
@@ -3838,28 +4066,89 @@ static void testConnectivity(const char *gateway)
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    // Test 2: Ping Google DNS (internet connectivity)
+    // Test 2: Ping Google DNS (internet connectivity) - 4 pings
     printf("\n2. Testing internet connectivity (8.8.8.8)...\n");
-    printf("   Sending 3 pings...\n");
+    printf("   Sending 4 pings...\n");
+    gPingSuccess = 0;
+    gPingFailed = 0;
+    gPingAvgTime = 0;
     
-    if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 3) == 0) {
-        // Wait for ping complete URC event (max 10 seconds)
-        if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
+    if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 4) == 0) {
+        // Wait for ping complete URC event (max 15 seconds for 4 pings)
+        if (waitEvent(URC_FLAG_PING_COMPLETE, 15)) {
             if (gPingSuccess > 0) {
-                printf("   ✓ Internet access OK: %d/%d packets received, avg %d ms\n", 
+                internetPingAvg = gPingAvgTime;
+                internetSuccess = true;
+                printf("   ✓ Internet access OK: %d/%d packets, avg %d ms\n", 
                        gPingSuccess, gPingSuccess + gPingFailed, gPingAvgTime);
             } else {
-                printf("   ✗ Internet access FAILED: No response from 8.8.8.8\n");
-                printf("   (Local network OK but no internet access)\n");
+                printf("   ✗ Internet access FAILED: No response\n");
             }
         } else {
-            printf("   ✗ Internet test TIMEOUT (no ping complete event)\n");
+            printf("   ✗ Internet test TIMEOUT\n");
         }
     } else {
         printf("   ✗ Failed to start ping test\n");
     }
     
-    printf("\nConnectivity test complete.\n");
+    // Display connection summary
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                   CONNECTION SUMMARY\n");
+    printf("==============================================================\n");
+    printf("Network:           %s\n", ssid);
+    printf("Channel:           %d\n", channel);
+    
+    // Signal strength assessment
+    const char *signalQuality;
+    if (rssi >= -50) {
+        signalQuality = "Excellent";
+    } else if (rssi >= -60) {
+        signalQuality = "Very Good";
+    } else if (rssi >= -70) {
+        signalQuality = "Good";
+    } else if (rssi >= -80) {
+        signalQuality = "Fair";
+    } else {
+        signalQuality = "Poor";
+    }
+    printf("Signal Strength:   %d dBm (%s)\n", rssi, signalQuality);
+    
+    // Local network ping
+    if (localSuccess) {
+        const char *localQuality = localPingAvg < 10 ? "Excellent" : 
+                                   localPingAvg < 50 ? "Good" : "Fair";
+        printf("Local Ping:        %d ms (%s)\n", localPingAvg, localQuality);
+    } else {
+        printf("Local Ping:        FAILED\n");
+    }
+    
+    // Internet ping
+    if (internetSuccess) {
+        const char *internetQuality = internetPingAvg < 20 ? "Excellent" : 
+                                      internetPingAvg < 50 ? "Very Good" :
+                                      internetPingAvg < 100 ? "Good" : "Fair";
+        printf("Internet Ping:     %d ms (%s)\n", internetPingAvg, internetQuality);
+    } else {
+        printf("Internet Ping:     FAILED\n");
+    }
+    
+    // Overall assessment
+    printf("==============================================================\n");
+    const char *overall;
+    if (localSuccess && internetSuccess && rssi >= -70 && localPingAvg < 50 && internetPingAvg < 100) {
+        overall = "EXCELLENT - Ready for all applications";
+    } else if (localSuccess && internetSuccess && rssi >= -80) {
+        overall = "GOOD - Suitable for most applications";
+    } else if (localSuccess && rssi >= -80) {
+        overall = "FAIR - Local network OK, check internet";
+    } else if (localSuccess) {
+        overall = "MARGINAL - Weak signal or connectivity issues";
+    } else {
+        overall = "POOR - Connection not stable";
+    }
+    printf("Overall:           %s\n", overall);
+    printf("==============================================================\n");
 }
 
 static void wifiConnect(void)
@@ -3870,6 +4159,20 @@ static void wifiConnect(void)
     }
     
     printf("\n--- Wi-Fi Connect ---\n");
+    
+    // Check if already connected
+    uCxWifiStationStatus_t status;
+    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
+        int32_t connState = status.rspWifiStatusIdInt.int_val;
+        uCxEnd(&gUcxHandle);
+        
+        if (connState == 2) {
+            // Already connected - disconnect first
+            printf("Already connected to Wi-Fi. Disconnecting first...\n");
+            uCxWifiStationDisconnect(&gUcxHandle);
+            uPortDelayMs(1000);  // Wait for disconnect to complete
+        }
+    }
     
     char ssid[64];
     char password[64];
@@ -3903,34 +4206,65 @@ static void wifiConnect(void)
         
         printf("Connecting to '%s'...\n", ssid);
         
-        // Set connection parameters (wlan_handle = 0, default)
-        if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
-            printf("ERROR: Failed to set connection parameters\n");
-            return;
-        }
-        
-        // Set security based on password
-        if (strlen(password) > 0) {
-            // WPA2/WPA3 with password (threshold = WPA2 or higher)
-            printf("Setting WPA2/WPA3 security...\n");
-            if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
-                printf("ERROR: Failed to set WPA security\n");
-                return;
+        // Retry loop: try twice (initial attempt + one retry after disconnect)
+        bool connected = false;
+        for (int attempt = 1; attempt <= 2 && !connected; attempt++) {
+            if (attempt == 2) {
+                printf("\nRetry attempt %d: Disconnecting first to clear any stale state...\n", attempt);
+                uCxWifiStationDisconnect(&gUcxHandle);
+                // Small delay to let disconnect complete
+                uPortDelayMs(500);
+                printf("Retrying connection...\n");
             }
-        } else {
-            // Open network (no password)
-            printf("Setting open security (no password)...\n");
-            if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
-                printf("ERROR: Failed to set open security\n");
-                return;
+            
+            // Set connection parameters (wlan_handle = 0, default)
+            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
+                printf("ERROR: Failed to set connection parameters (attempt %d)\n", attempt);
+                if (attempt == 2) {
+                    printf("Both attempts failed. Returning to menu.\n");
+                    return;
+                }
+                continue;  // Try again
             }
-        }
-        
-        // Try to connect
-        printf("Initiating connection...\n");
-        if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
-            printf("ERROR: Failed to initiate connection\n");
-            return;
+            
+            // Set security based on password
+            if (strlen(password) > 0) {
+                // WPA2/WPA3 with password (threshold = WPA2 or higher)
+                printf("Setting WPA2/WPA3 security...\n");
+                if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
+                    printf("ERROR: Failed to set WPA security (attempt %d)\n", attempt);
+                    if (attempt == 2) {
+                        printf("Both attempts failed. Returning to menu.\n");
+                        return;
+                    }
+                    continue;  // Try again
+                }
+            } else {
+                // Open network (no password)
+                printf("Setting open security (no password)...\n");
+                if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+                    printf("ERROR: Failed to set open security (attempt %d)\n", attempt);
+                    if (attempt == 2) {
+                        printf("Both attempts failed. Returning to menu.\n");
+                        return;
+                    }
+                    continue;  // Try again
+                }
+            }
+            
+            // Try to connect
+            printf("Initiating connection...\n");
+            if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
+                printf("ERROR: Failed to initiate connection (attempt %d)\n", attempt);
+                if (attempt == 2) {
+                    printf("Both attempts failed. Returning to menu.\n");
+                    return;
+                }
+                continue;  // Try again
+            }
+            
+            // If we got here, connection was initiated successfully
+            connected = true;
         }
         
         // Wait for network up event (using URC handler)
@@ -3939,9 +4273,10 @@ static void wifiConnect(void)
             printf("Successfully connected to '%s'\n", ssid);
             
             // Get RSSI
+            int32_t rssi = -100;  // Default value
             uCxWifiStationStatus_t status;
             if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
-                int32_t rssi = status.rspWifiStatusIdInt.int_val;
+                rssi = status.rspWifiStatusIdInt.int_val;
                 if (rssi != -32768) {
                     printf("Signal strength: %d dBm\n", rssi);
                 }
@@ -3971,6 +4306,14 @@ static void wifiConnect(void)
                 }
             }
             
+            // Get channel number
+            int32_t channel = 0;
+            uCxWifiStationStatus_t channelStatus;
+            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CHANNEL, &channelStatus)) {
+                channel = channelStatus.rspWifiStatusIdInt.int_val;
+                uCxEnd(&gUcxHandle);
+            }
+            
             // Save Wi-Fi credentials for next time
             strncpy(gWifiSsid, ssid, sizeof(gWifiSsid) - 1);
             gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
@@ -3978,9 +4321,9 @@ static void wifiConnect(void)
             gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
             saveSettings();
             
-            // Test connectivity (ping gateway and internet)
+            // Test connectivity (ping gateway and internet) with connection summary
             if (strlen(gatewayStr) > 0) {
-                testConnectivity(gatewayStr);
+                testConnectivity(gatewayStr, ssid, rssi, channel);
             }
         } else {
             printf("Connection failed - timeout waiting for network up event\n");
@@ -3999,7 +4342,12 @@ static void wifiDisconnect(void)
     printf("Disconnecting from Wi-Fi...\n");
     
     if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
-        printf("Disconnected successfully.\n");
+        // Wait for Wi-Fi link down URC event (max 3 seconds)
+        if (waitEvent(URC_FLAG_WIFI_LINK_DOWN, 3)) {
+            printf("Disconnected successfully.\n");
+        } else {
+            printf("Disconnect command sent (waiting for confirmation timed out).\n");
+        }
     } else {
         printf("ERROR: Failed to disconnect\n");
     }

@@ -84,11 +84,11 @@ if errorlevel 1 (
         echo.
         echo You need Visual Studio 2022 Build Tools or full Visual Studio 2022.
         echo.
-        echo Option 1 - Build Tools only (minimal, ~2-3 GB^):
+        echo Option 1 - Build Tools only ^(minimal, ~2-3 GB^):
         echo   Download: https://aka.ms/vs/17/release/vs_BuildTools.exe
         echo   Select: Desktop development with C++
         echo.
-        echo Option 2 - Full Visual Studio 2022 (complete IDE^):
+        echo Option 2 - Full Visual Studio 2022 ^(complete IDE^):
         echo   Download: https://visualstudio.microsoft.com/downloads/
         echo   Install: Desktop development with C++ workload
         echo.
@@ -154,21 +154,21 @@ if "%USER_SPECIFIED_CONFIG%"=="0" (
         echo [Auto-select] Using existing Release build...
         echo.
     ) else (
-        echo [Auto-select] Using Debug configuration (will build if needed)...
+        echo [Auto-select] Using Debug configuration ^(will build if needed^)...
         echo.
     )
 ) else (
-    echo Using %CONFIG% configuration (user specified)...
+    echo Using !CONFIG! configuration ^(user specified^)...
     echo.
 )
 
 REM Set build directory
-set BUILD_DIR=build\%CONFIG%
+set BUILD_DIR=build\!CONFIG!
 set FTDI_DLL=examples\ftdi\ftd2xx64.dll
 
 REM Check if executable exists, build if not
-if not exist "%BUILD_DIR%\ucxclient_win64.exe" (
-    echo Executable not found. Auto-building %CONFIG%...
+if not exist "!BUILD_DIR!\ucxclient_win64.exe" (
+    echo Executable not found. Auto-building !CONFIG!...
     echo.
     
     REM Configure if needed
@@ -182,8 +182,8 @@ if not exist "%BUILD_DIR%\ucxclient_win64.exe" (
     )
     
     REM Build
-    echo Building ucxclient_win64.exe ^(%CONFIG% configuration^)...
-    cmake --build build --config %CONFIG% --target ucxclient_win64
+    echo Building ucxclient_win64.exe in !CONFIG! configuration...
+    cmake --build build --config !CONFIG! --target ucxclient_win64
     if errorlevel 1 (
         echo ERROR: Build failed!
         exit /b 1
@@ -194,16 +194,16 @@ if not exist "%BUILD_DIR%\ucxclient_win64.exe" (
 )
 
 REM Copy FTDI DLL if needed
-if not exist "%BUILD_DIR%\ftd2xx64.dll" (
-    if exist "%FTDI_DLL%" (
+if not exist "!BUILD_DIR!\ftd2xx64.dll" (
+    if exist "!FTDI_DLL!" (
         echo Copying FTDI DLL...
-        copy /Y "%FTDI_DLL%" "%BUILD_DIR%\" >nul
+        copy /Y "!FTDI_DLL!" "!BUILD_DIR!\" >nul
     )
 )
 
 REM Check if executable exists after build
-if not exist "%BUILD_DIR%\ucxclient_win64.exe" (
-    echo ERROR: ucxclient_win64.exe not found in %BUILD_DIR%!
+if not exist "!BUILD_DIR!\ucxclient_win64.exe" (
+    echo ERROR: ucxclient_win64.exe not found in !BUILD_DIR!
     exit /b 1
 )
 
@@ -214,7 +214,7 @@ echo Launching ucxclient_win64.exe...
 echo ===================================
 echo.
 
-cd "%BUILD_DIR%"
+cd "!BUILD_DIR!"
 ucxclient_win64.exe %2 %3 %4 %5 %6 %7 %8 %9
 
 REM Store exit code
@@ -344,11 +344,11 @@ if errorlevel 1 (
 )
 
 REM Copy FTDI DLL
-set BUILD_DIR=build\%REBUILD_CONFIG%
+set BUILD_DIR=build\!REBUILD_CONFIG!
 set FTDI_DLL=examples\ftdi\ftd2xx64.dll
-if exist "%FTDI_DLL%" (
+if exist "!FTDI_DLL!" (
     echo Step 4: Copying FTDI DLL...
-    copy /Y "%FTDI_DLL%" "%BUILD_DIR%\" >nul
+    copy /Y "!FTDI_DLL!" "!BUILD_DIR!\" >nul
 )
 
 echo.

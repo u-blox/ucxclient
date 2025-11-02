@@ -76,4 +76,11 @@
 
 int32_t uCxMutexTryLock(bool *pMutex, int32_t timeoutMs);
 
+/**
+  * @brief Delay execution for specified milliseconds
+  *
+  * @param delayMs  Number of milliseconds to delay
+  */
+void uPortDelayMs(uint32_t delayMs);
+
 #endif

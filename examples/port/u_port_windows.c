@@ -297,6 +297,11 @@ int32_t uPortGetTickTimeMs(void)
     return currentTick - bootTick;
 }
 
+void uPortDelayMs(uint32_t delayMs)
+{
+    Sleep(delayMs);
+}
+
 int32_t uPortEnumerateComPorts(char pPortList[][16], int32_t maxPorts)
 {
     HKEY hKey;

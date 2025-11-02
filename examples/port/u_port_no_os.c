@@ -158,6 +158,14 @@ int32_t uPortGetTickTimeMs(void)
     return getTickTimeMs() - gBootTime;
 }
 
+void uPortDelayMs(uint32_t delayMs)
+{
+    struct timespec ts;
+    ts.tv_sec = delayMs / 1000;
+    ts.tv_nsec = (delayMs % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+}
+
 void uPortAtInit(uCxAtClient_t *pClient)
 {
     static uPortContext_t context;

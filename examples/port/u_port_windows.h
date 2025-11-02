@@ -94,6 +94,13 @@ int32_t uPortMutexTryLock(HANDLE mutex, uint32_t timeoutMs);
 int32_t uPortGetTickTimeMs(void);
 
 /**
+  * @brief Delay execution for specified milliseconds
+  *
+  * @param delayMs  Number of milliseconds to delay
+  */
+void uPortDelayMs(uint32_t delayMs);
+
+/**
   * @brief Enumerate available COM ports on the system
   *
   * @param pPortList    Array to store port names (e.g., "COM1", "COM2")
