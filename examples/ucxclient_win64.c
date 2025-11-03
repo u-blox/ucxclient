@@ -148,6 +148,9 @@ static volatile int32_t gPingAvgTime = 0;
 static volatile int32_t gPingTimes[MAX_PING_TIMES];
 static volatile int32_t gPingCount = 0;
 
+// Reboot timing
+static volatile ULONGLONG gStartupTimestamp = 0;
+
 // Menu state
 typedef enum {
     MENU_MAIN,
@@ -720,6 +723,8 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
 static void startupUrc(struct uCxHandle *puCxHandle)
 {
     (void)puCxHandle;
+    // Record timestamp when STARTUP is received
+    gStartupTimestamp = GetTickCount64();
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
     signalEvent(URC_FLAG_STARTUP);
 }
@@ -3598,25 +3603,32 @@ static void executeModuleReboot(void)
     }
     
     printf("\n--- Module Reboot/Switch Off ---\n");
+    
+    // Clear any pending STARTUP flag and timestamp from previous operations
+    U_CX_MUTEX_LOCK(gUrcMutex);
+    gUrcEventFlags &= ~URC_FLAG_STARTUP;
+    gStartupTimestamp = 0;
+    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    
     printf("Sending AT+CPWROFF...\n");
     
-    // Record start time
+    // Start timing immediately before sending the command
     ULONGLONG startTime = GetTickCount64();
     
     int32_t result = uCxSystemReboot(&gUcxHandle);
     
-    // Note: AT+CPWROFF may not return OK before the module reboots
-    // The module will send +STARTUP URC when it boots back up
-    if (result == 0 || result == -65536) {  // -65536 is timeout, which is expected
-        printf("Module reboot command sent.\n");
+    // Note: AT+CPWROFF causes immediate reboot, so no OK is received (timeout expected)
+    // The +STARTUP URC will arrive during the command timeout or shortly after
+    if (result == 0 || result == -65536) {  // -65536 is timeout, which is expected for reboot
+        printf("Module reboot initiated (timeout expected - module reboots immediately).\n");
         printf("Waiting for module to reboot");
         fflush(stdout);
         
-        // Wait for +STARTUP URC (up to 10 seconds)
-        if (waitEvent(URC_FLAG_STARTUP, 10)) {
-            // Calculate elapsed time
-            ULONGLONG endTime = GetTickCount64();
-            ULONGLONG elapsedMs = endTime - startTime;
+        // Wait for +STARTUP URC (should already be received during the timeout above)
+        // Allow up to 5 additional seconds in case reboot is slower than expected
+        if (waitEvent(URC_FLAG_STARTUP, 5)) {
+            // Use the timestamp from when STARTUP URC was actually received
+            ULONGLONG elapsedMs = gStartupTimestamp - startTime;
             
             printf(" done!\n");
             printf("Module has rebooted successfully.\n");
