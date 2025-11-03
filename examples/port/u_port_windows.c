@@ -157,7 +157,8 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
         snprintf(fullPortName, sizeof(fullPortName), "%s", pPortName);
     }
 
-    // Open COM port with FILE_FLAG_OVERLAPPED for event-driven I/O
+    // Open COM port - use overlapped I/O only for event-driven mode
+#if defined(USE_UART_EVENT_DRIVEN)
     hComPort = CreateFileA(
         fullPortName,
         GENERIC_READ | GENERIC_WRITE,
@@ -167,6 +168,18 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
         FILE_FLAG_OVERLAPPED, // Use overlapped I/O for event notifications
         NULL                  // No template
     );
+#else
+    // Polled/FTDI mode: Use synchronous I/O (no FILE_FLAG_OVERLAPPED)
+    hComPort = CreateFileA(
+        fullPortName,
+        GENERIC_READ | GENERIC_WRITE,
+        0,                    // No sharing
+        NULL,                 // Default security
+        OPEN_EXISTING,        // Open existing port
+        0,                    // Synchronous I/O
+        NULL                  // No template
+    );
+#endif
 
     if (hComPort == INVALID_HANDLE_VALUE) {
         DWORD dwError = GetLastError();
