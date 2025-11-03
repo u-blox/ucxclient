@@ -69,8 +69,8 @@
 
 // UART RX Implementation Selection
 // Uncomment ONE of the following to select UART implementation:
-// #define USE_UART_POLLED        // Simple polled mode (good for debugging)
-#define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
+#define USE_UART_POLLED        // Simple polled mode (good for debugging)
+//#define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
 // #define USE_UART_FTDI          // FTDI D2XX API (future implementation)
 
 #if defined(USE_UART_POLLED) + defined(USE_UART_EVENT_DRIVEN) + defined(USE_UART_FTDI) != 1
@@ -473,16 +473,15 @@ static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void
         return -1;
     }
 
-    // Reset event and prepare overlapped structure
+#if defined(USE_UART_EVENT_DRIVEN)
+    // Event-driven mode: Use overlapped I/O
     ResetEvent(pCtx->hWriteEvent);
     memset(&pCtx->ovWrite, 0, sizeof(OVERLAPPED));
     pCtx->ovWrite.hEvent = pCtx->hWriteEvent;
 
-    // Perform overlapped write
     if (!WriteFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesWritten, &pCtx->ovWrite)) {
         DWORD dwError = GetLastError();
         if (dwError == ERROR_IO_PENDING) {
-            // Wait for write to complete
             if (WaitForSingleObject(pCtx->hWriteEvent, 1000) == WAIT_OBJECT_0) {
                 if (!GetOverlappedResult(pCtx->hComPort, &pCtx->ovWrite, &dwBytesWritten, FALSE)) {
                     dwError = GetLastError();
@@ -498,6 +497,14 @@ static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void
             return -1;
         }
     }
+#else
+    // Polled/FTDI mode: Use synchronous I/O
+    if (!WriteFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesWritten, NULL)) {
+        DWORD dwError = GetLastError();
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "WriteFile failed, error: %lu", dwError);
+        return -1;
+    }
+#endif
 
     return (int32_t)dwBytesWritten;
 }
@@ -511,21 +518,19 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
         return -1;
     }
 
-    // Reset event and prepare overlapped structure
+#if defined(USE_UART_EVENT_DRIVEN)
+    // Event-driven mode: Use overlapped I/O
     ResetEvent(pCtx->hReadEvent);
     memset(&pCtx->ovRead, 0, sizeof(OVERLAPPED));
     pCtx->ovRead.hEvent = pCtx->hReadEvent;
 
-    // Perform overlapped read
     if (!ReadFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesRead, &pCtx->ovRead)) {
         DWORD dwError = GetLastError();
         if (dwError == ERROR_IO_PENDING) {
-            // Wait for read to complete with timeout
             DWORD dwTimeout = (timeoutMs == 0) ? 0 : (DWORD)timeoutMs;
             DWORD dwWaitResult = WaitForSingleObject(pCtx->hReadEvent, dwTimeout);
             
             if (dwWaitResult == WAIT_OBJECT_0) {
-                // Read completed
                 if (!GetOverlappedResult(pCtx->hComPort, &pCtx->ovRead, &dwBytesRead, FALSE)) {
                     dwError = GetLastError();
                     if (dwError != ERROR_TIMEOUT) {
@@ -534,11 +539,9 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
                     return -1;
                 }
             } else if (dwWaitResult == WAIT_TIMEOUT) {
-                // Timeout - cancel the read operation
                 CancelIo(pCtx->hComPort);
-                return 0; // Return 0 bytes read on timeout
+                return 0;
             } else {
-                // Error
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Read wait failed");
                 CancelIo(pCtx->hComPort);
                 return -1;
@@ -548,6 +551,17 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
             return -1;
         }
     }
+#else
+    // Polled/FTDI mode: Use synchronous I/O
+    // Windows COM timeouts are already configured in openComPort()
+    if (!ReadFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesRead, NULL)) {
+        DWORD dwError = GetLastError();
+        if (dwError != ERROR_TIMEOUT) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "ReadFile failed, error: %lu", dwError);
+        }
+        return -1;
+    }
+#endif
 
     return (int32_t)dwBytesRead;
 }
