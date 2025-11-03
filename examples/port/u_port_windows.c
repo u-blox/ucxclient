@@ -69,8 +69,8 @@
 
 // UART RX Implementation Selection
 // Uncomment ONE of the following to select UART implementation:
-#define USE_UART_POLLED        // Simple polled mode (good for debugging)
-//#define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
+// #define USE_UART_POLLED        // Simple polled mode (good for debugging)
+#define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
 // #define USE_UART_FTDI          // FTDI D2XX API (future implementation)
 
 #if defined(USE_UART_POLLED) + defined(USE_UART_EVENT_DRIVEN) + defined(USE_UART_FTDI) != 1
