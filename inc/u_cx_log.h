@@ -89,12 +89,12 @@
 /* Internal defines - do not use! */
 #define __U_CX_LOG_BEGIN_FMT(enabled, chText, format, ...)  \
     if (enabled && uCxLogIsEnabled()) {                     \
-        uCxLogPrintTime();                                  \
+        if (uCxLogTimestampIsEnabled()) { uCxLogPrintTime(); } \
         U_CX_PORT_PRINTF(chText " " format, ##__VA_ARGS__); \
     }
 #define __U_CX_LOG_BEGIN_I_FMT(enabled, chText, instance, format, ...)  \
     if (enabled && uCxLogIsEnabled()) {                     \
-        uCxLogPrintTime();                                  \
+        if (uCxLogTimestampIsEnabled()) { uCxLogPrintTime(); } \
         U_CX_PORT_PRINTF(chText "[%d] " format, instance, ##__VA_ARGS__); \
     }
 #define __U_CX_LOG(enabled, chText, format, ...) \
@@ -148,5 +148,28 @@ void uCxLogEnable(void);
   * @retval true if logging is enabled
   */
 bool uCxLogIsEnabled(void);
+
+/**
+  * @brief Turn off timestamp display in logs (default)
+  *
+  * Timestamps show elapsed time since boot in [HH:MM:SS.mmm] format.
+  * Disabled by default for cleaner output.
+  */
+void uCxLogTimestampDisable(void);
+
+/**
+  * @brief Turn on timestamp display in logs
+  *
+  * Timestamps show elapsed time since boot in [HH:MM:SS.mmm] format.
+  * Useful for debugging timing-sensitive operations like reboot sequences.
+  */
+void uCxLogTimestampEnable(void);
+
+/**
+  * @brief Check if timestamp display is enabled
+  *
+  * @retval true if timestamps are enabled
+  */
+bool uCxLogTimestampIsEnabled(void);
 
 #endif // U_CX_LOG_H

@@ -1683,6 +1683,7 @@ static void printMenu(void)
             printf("  [7] Bluetooth menu%s\n", gConnected ? "" : " (requires connection)");
             printf("  [8] Wi-Fi menu%s\n", gConnected ? "" : " (requires connection)");
             printf("  [9] Toggle UCX logging (AT traffic)\n");
+            printf("  [t] Toggle timestamps in logs\n");
             printf("  [a] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [b] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [f] Firmware update (XMODEM)%s\n", gConnected ? "" : " (requires connection)");
@@ -1870,6 +1871,19 @@ static void handleUserInput(void)
         
         if (firstChar == 'h' && gMenuState == MENU_MAIN) {
             printHelp();
+            return;
+        }
+        
+        // Handle 't' for timestamp toggle (main menu only)
+        if (firstChar == 't' && gMenuState == MENU_MAIN) {
+            if (uCxLogTimestampIsEnabled()) {
+                uCxLogTimestampDisable();
+                printf("Log timestamps DISABLED (cleaner output)\n");
+            } else {
+                uCxLogTimestampEnable();
+                printf("Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
+                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Timestamps enabled from menu");
+            }
             return;
         }
         
