@@ -19,6 +19,30 @@
  *
  * This implementation provides Windows COM port support for the ucxclient.
  * It uses Win32 API for serial communication, threading, and synchronization.
+ * 
+ * UART IMPLEMENTATION MODES:
+ * ==========================
+ * This file supports three different UART RX implementations:
+ * 
+ * 1. USE_UART_EVENT_DRIVEN (default, recommended for production)
+ *    - Uses WaitCommEvent() for efficient event-driven processing
+ *    - Minimal CPU usage, fast response time
+ *    - Loops until RX buffer is completely drained
+ *    - Good for production use
+ * 
+ * 2. USE_UART_POLLED (for debugging)
+ *    - Simple polling loop checking for data
+ *    - Easy to understand and debug
+ *    - Predictable timing (10ms polling interval)
+ *    - Good for troubleshooting timing issues
+ * 
+ * 3. USE_UART_FTDI (future implementation)
+ *    - Uses FTDI D2XX API directly
+ *    - Bypasses Windows COM driver
+ *    - See D2XX Programmer's Guide for API details
+ * 
+ * To switch modes, uncomment the desired #define below in the
+ * "COMPILE-TIME MACROS" section.
  */
 
 #ifdef _WIN32
@@ -43,6 +67,16 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
+// UART RX Implementation Selection
+// Uncomment ONE of the following to select UART implementation:
+// #define USE_UART_POLLED        // Simple polled mode (good for debugging)
+#define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
+// #define USE_UART_FTDI          // FTDI D2XX API (future implementation)
+
+#if defined(USE_UART_POLLED) + defined(USE_UART_EVENT_DRIVEN) + defined(USE_UART_FTDI) != 1
+#error "Exactly ONE UART implementation must be defined"
+#endif
+
 #define MAX_COM_PORTS 256
 
 /* ----------------------------------------------------------------
@@ -54,14 +88,29 @@ typedef struct {
     uCxAtClient_t *pClient;
     HANDLE hRxThread;
     HANDLE hStopEvent;
-    HANDLE hCommEvent;  // Event for WaitCommEvent (data arrival notification)
-    HANDLE hReadEvent;  // Event for read operations
-    HANDLE hWriteEvent; // Event for write operations
+    volatile bool bTerminateRxTask;
+    
+#if defined(USE_UART_EVENT_DRIVEN)
+    // Event-driven mode specific fields
+    HANDLE hCommEvent;      // Event for WaitCommEvent (data arrival notification)
+    HANDLE hReadEvent;      // Event for read operations
+    HANDLE hWriteEvent;     // Event for write operations
     OVERLAPPED overlapped;  // For WaitCommEvent
     OVERLAPPED ovRead;      // For read operations
     OVERLAPPED ovWrite;     // For write operations
+#endif
+    
+#if defined(USE_UART_POLLED)
+    // Polled mode specific fields
+    int32_t pollIntervalMs; // Polling interval in milliseconds
+#endif
+    
+#if defined(USE_UART_FTDI)
+    // FTDI D2XX specific fields (future)
+    void *pFtdiHandle;      // FT_HANDLE
+#endif
+    
     DWORD dwThreadId;
-    volatile bool bTerminateRxTask;
 } uPortContext_t;
 
 /* ----------------------------------------------------------------
@@ -195,6 +244,70 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
     return hComPort;
 }
 
+#if defined(USE_UART_POLLED)
+/* ----------------------------------------------------------------
+ * RX THREAD - POLLED MODE
+ * Simple polling implementation for debugging
+ * -------------------------------------------------------------- */
+static DWORD WINAPI rxThread(LPVOID lpParam)
+{
+    uPortContext_t *pCtx = (uPortContext_t *)lpParam;
+    COMSTAT comStat;
+    DWORD dwErrors;
+
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread started (polled mode, %dms interval)", pCtx->pollIntervalMs);
+
+    while (!pCtx->bTerminateRxTask) {
+        // Check if stop event is signaled
+        if (WaitForSingleObject(pCtx->hStopEvent, 0) == WAIT_OBJECT_0) {
+            break;
+        }
+
+        // Check for available data
+        ClearCommError(pCtx->hComPort, &dwErrors, &comStat);
+        
+        // Check for UART errors
+        if (dwErrors != 0) {
+            if (dwErrors & CE_RXOVER) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                               "[POLLED] UART RX buffer overrun! Data lost.");
+            }
+            if (dwErrors & CE_OVERRUN) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                               "[POLLED] UART hardware overrun! Data corrupted.");
+            }
+            if (dwErrors & CE_FRAME) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                               "[POLLED] UART framing error! Data corrupted.");
+            }
+            if (dwErrors & CE_BREAK) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                               "[POLLED] UART break condition detected.");
+            }
+            if (dwErrors & CE_RXPARITY) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                               "[POLLED] UART parity error! Data corrupted.");
+            }
+        }
+        
+        // Process data if available
+        if (comStat.cbInQue > 0) {
+            uCxAtClientHandleRx(pCtx->pClient);
+        }
+        
+        // Sleep for polling interval
+        Sleep(pCtx->pollIntervalMs);
+    }
+
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated (polled mode)");
+    return 0;
+}
+
+#elif defined(USE_UART_EVENT_DRIVEN)
+/* ----------------------------------------------------------------
+ * RX THREAD - EVENT-DRIVEN MODE
+ * Uses WaitCommEvent for efficient event-driven RX processing
+ * -------------------------------------------------------------- */
 static DWORD WINAPI rxThread(LPVOID lpParam)
 {
     uPortContext_t *pCtx = (uPortContext_t *)lpParam;
@@ -311,9 +424,45 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
         }
     }
 
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated (event-driven)");
     return 0;
 }
+
+#elif defined(USE_UART_FTDI)
+/* ----------------------------------------------------------------
+ * RX THREAD - FTDI D2XX MODE
+ * Uses FTDI D2XX API directly (future implementation)
+ * See: D2XX Programmer's Guide
+ * -------------------------------------------------------------- */
+static DWORD WINAPI rxThread(LPVOID lpParam)
+{
+    uPortContext_t *pCtx = (uPortContext_t *)lpParam;
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread started (FTDI D2XX mode)");
+    
+    // TODO: Implement FTDI D2XX RX thread
+    // - Use FT_SetEventNotification() or FT_GetQueueStatus()
+    // - Process data with FT_Read()
+    // - Call uCxAtClientHandleRx() when data available
+    
+    while (!pCtx->bTerminateRxTask) {
+        if (WaitForSingleObject(pCtx->hStopEvent, 100) == WAIT_OBJECT_0) {
+            break;
+        }
+        // TODO: FTDI D2XX implementation
+    }
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated (FTDI D2XX mode)");
+    return 0;
+}
+
+#else
+#error "No UART implementation selected"
+#endif
+
+/* ----------------------------------------------------------------
+ * UART READ/WRITE FUNCTIONS
+ * -------------------------------------------------------------- */
 
 static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void *pData, size_t length)
 {
@@ -515,9 +664,16 @@ void uPortAtInit(uCxAtClient_t *pClient)
     context.pClient = pClient;
     context.hComPort = INVALID_HANDLE_VALUE;
     context.hStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    
+#if defined(USE_UART_EVENT_DRIVEN)
     context.hCommEvent = CreateEvent(NULL, FALSE, FALSE, NULL);  // Auto-reset event for WaitCommEvent
     context.hReadEvent = CreateEvent(NULL, TRUE, FALSE, NULL);   // Manual-reset for read operations
     context.hWriteEvent = CreateEvent(NULL, TRUE, FALSE, NULL);  // Manual-reset for write operations
+#elif defined(USE_UART_POLLED)
+    context.pollIntervalMs = 10;  // Poll every 10ms (adjustable for debugging)
+#elif defined(USE_UART_FTDI)
+    context.pFtdiHandle = NULL;   // Will be initialized when FTDI support is added
+#endif
 
     // Current implementation only supports one instance
     assert(gPConfig == NULL);
@@ -633,6 +789,7 @@ void uPortAtClose(uCxAtClient_t *pClient)
         pCtx->hStopEvent = NULL;
     }
 
+#if defined(USE_UART_EVENT_DRIVEN)
     if (pCtx->hCommEvent != NULL) {
         CloseHandle(pCtx->hCommEvent);
         pCtx->hCommEvent = NULL;
@@ -647,6 +804,13 @@ void uPortAtClose(uCxAtClient_t *pClient)
         CloseHandle(pCtx->hWriteEvent);
         pCtx->hWriteEvent = NULL;
     }
+#elif defined(USE_UART_FTDI)
+    // TODO: Close FTDI handle if open
+    if (pCtx->pFtdiHandle != NULL) {
+        // FT_Close(pCtx->pFtdiHandle);
+        pCtx->pFtdiHandle = NULL;
+    }
+#endif
 
     gPConfig = NULL;
 }
