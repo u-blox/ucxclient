@@ -2681,25 +2681,74 @@ static void saveSettings(void)
 }
 
 // Initialize FTD2XX library (dynamic loading)
+// Resource ID for embedded FTDI DLL (must match ucxclient_win64.rc)
+#define IDR_FTD2XX_DLL 101
+
 static bool initFtd2xxLibrary(void)
 {
     if (gFtd2xxModule != NULL) {
         return true;  // Already loaded
     }
     
-    // Try to load ftd2xx64.dll from examples/ftdi directory
     char dllPath[MAX_PATH];
-    GetModuleFileName(NULL, dllPath, sizeof(dllPath));
-    char *lastSlash = strrchr(dllPath, '\\');
-    if (lastSlash) {
-        *(lastSlash + 1) = '\0';
-        strcat(dllPath, "ftd2xx64.dll");
+    bool dllExtracted = false;
+    
+    // Step 1: Try to extract embedded DLL from resources
+    HRSRC hResource = FindResource(NULL, MAKEINTRESOURCE(IDR_FTD2XX_DLL), RT_RCDATA);
+    if (hResource) {
+        HGLOBAL hLoadedResource = LoadResource(NULL, hResource);
+        if (hLoadedResource) {
+            LPVOID pResourceData = LockResource(hLoadedResource);
+            DWORD dwResourceSize = SizeofResource(NULL, hResource);
+            
+            if (pResourceData && dwResourceSize > 0) {
+                // Extract to temp directory
+                GetTempPath(MAX_PATH, dllPath);
+                strcat(dllPath, "ftd2xx64_embedded.dll");
+                
+                // Write DLL to temp file
+                HANDLE hFile = CreateFile(dllPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (hFile != INVALID_HANDLE_VALUE) {
+                    DWORD dwBytesWritten;
+                    if (WriteFile(hFile, pResourceData, dwResourceSize, &dwBytesWritten, NULL)) {
+                        if (dwBytesWritten == dwResourceSize) {
+                            dllExtracted = true;
+                            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Extracted embedded FTDI DLL to: %s", dllPath);
+                        }
+                    }
+                    CloseHandle(hFile);
+                }
+            }
+        }
     }
     
-    gFtd2xxModule = LoadLibrary(dllPath);
+    // Step 2: Try to load the extracted DLL
+    if (dllExtracted) {
+        gFtd2xxModule = LoadLibrary(dllPath);
+        if (gFtd2xxModule != NULL) {
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded embedded FTDI DLL successfully");
+        }
+    }
+    
+    // Step 3: Fallback - try external DLL file
     if (gFtd2xxModule == NULL) {
-        // Try current directory
-        gFtd2xxModule = LoadLibrary("ftd2xx64.dll");
+        // Try to load ftd2xx64.dll from executable directory
+        GetModuleFileName(NULL, dllPath, sizeof(dllPath));
+        char *lastSlash = strrchr(dllPath, '\\');
+        if (lastSlash) {
+            *(lastSlash + 1) = '\0';
+            strcat(dllPath, "ftd2xx64.dll");
+        }
+        
+        gFtd2xxModule = LoadLibrary(dllPath);
+        if (gFtd2xxModule == NULL) {
+            // Try current directory
+            gFtd2xxModule = LoadLibrary("ftd2xx64.dll");
+        }
+        
+        if (gFtd2xxModule != NULL) {
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded external FTDI DLL");
+        }
     }
     
     if (gFtd2xxModule == NULL) {
@@ -3983,13 +4032,19 @@ static void wifiScan(void)
     
     // Get scan results
     // Process responses until GetNext() returns false (no more responses or timeout/OK)
+    // Note: Some firmware versions may send malformed URCs, so we continue even after errors
     bool gotResponse;
     do {
         gotResponse = uCxWifiStationScanDefaultGetNext(&gUcxHandle, &network);
         if (gotResponse) {
             networkCount++;
             printf("Network %d:\n", networkCount);
-            printf("  SSID: %s\n", network.ssid);
+            // Display SSID (or "Hidden Network" if empty)
+            if (network.ssid && network.ssid[0] != '\0') {
+                printf("  SSID: %s\n", network.ssid);
+            } else {
+                printf("  SSID: <Hidden Network>\n");
+            }
         printf("  BSSID: %02X:%02X:%02X:%02X:%02X:%02X\n",
                network.bssid.address[0], network.bssid.address[1],
                network.bssid.address[2], network.bssid.address[3],

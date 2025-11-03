@@ -234,8 +234,37 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                     // Communication event signaled - data received
                     DWORD dwBytesTransferred;
                     if (GetOverlappedResult(pCtx->hComPort, &pCtx->overlapped, &dwBytesTransferred, FALSE)) {
-                        // Data is available - process it
-                        uCxAtClientHandleRx(pCtx->pClient);
+                        // Process all available data (multiple URCs may have arrived)
+                        COMSTAT comStat;
+                        DWORD dwErrors;
+                        do {
+                            uCxAtClientHandleRx(pCtx->pClient);
+                            ClearCommError(pCtx->hComPort, &dwErrors, &comStat);
+                            
+                            // Check for UART errors
+                            if (dwErrors != 0) {
+                                if (dwErrors & CE_RXOVER) {
+                                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                                   "UART RX buffer overrun! Data lost.");
+                                }
+                                if (dwErrors & CE_OVERRUN) {
+                                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                                   "UART hardware overrun! Data corrupted.");
+                                }
+                                if (dwErrors & CE_FRAME) {
+                                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                                   "UART framing error! Data corrupted.");
+                                }
+                                if (dwErrors & CE_BREAK) {
+                                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                                   "UART break condition detected.");
+                                }
+                                if (dwErrors & CE_RXPARITY) {
+                                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                                   "UART parity error! Data corrupted.");
+                                }
+                            }
+                        } while (comStat.cbInQue > 0);
                     }
                 }
             } else {
@@ -247,8 +276,37 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
         } else {
             // WaitCommEvent completed immediately (data already available)
             if (dwEvtMask & EV_RXCHAR) {
-                // Data is available - process it
-                uCxAtClientHandleRx(pCtx->pClient);
+                // Process all available data (multiple URCs may have arrived)
+                COMSTAT comStat;
+                DWORD dwErrors;
+                do {
+                    uCxAtClientHandleRx(pCtx->pClient);
+                    ClearCommError(pCtx->hComPort, &dwErrors, &comStat);
+                    
+                    // Check for UART errors
+                    if (dwErrors != 0) {
+                        if (dwErrors & CE_RXOVER) {
+                            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                           "UART RX buffer overrun! Data lost.");
+                        }
+                        if (dwErrors & CE_OVERRUN) {
+                            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                           "UART hardware overrun! Data corrupted.");
+                        }
+                        if (dwErrors & CE_FRAME) {
+                            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                           "UART framing error! Data corrupted.");
+                        }
+                        if (dwErrors & CE_BREAK) {
+                            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                           "UART break condition detected.");
+                        }
+                        if (dwErrors & CE_RXPARITY) {
+                            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                                           "UART parity error! Data corrupted.");
+                        }
+                    }
+                } while (comStat.cbInQue > 0);
             }
         }
     }

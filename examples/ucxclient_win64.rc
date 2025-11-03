@@ -8,6 +8,15 @@ IDI_ICON1               ICON                    "../images/ShortRange.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
+// Binary Resources - Embedded FTDI DLL
+//
+
+#define IDR_FTD2XX_DLL          101
+
+IDR_FTD2XX_DLL          RCDATA                  "ftdi/ftd2xx64.dll"
+
+/////////////////////////////////////////////////////////////////////////////
+//
 // Version
 //
 
