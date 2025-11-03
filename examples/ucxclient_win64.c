@@ -3624,17 +3624,52 @@ static void executeModuleReboot(void)
     gStartupTimestamp = 0;
     U_CX_MUTEX_UNLOCK(gUrcMutex);
     
+    // WORKAROUND for NORA-W36 firmware bug: Enable echo before AT+CPWROFF
+    // Bug: When echo is OFF, module doesn't send OK before rebooting
+    printf("Enabling echo (workaround for firmware bug)...\n");
+    int32_t result = uCxSystemSetEchoOn(&gUcxHandle);
+    if (result != 0) {
+        printf("Warning: Failed to enable echo (error %d)\n", result);
+    }
+    
     printf("Sending AT+CPWROFF...\n");
     
     // Start timing immediately before sending the command
     ULONGLONG startTime = GetTickCount64();
     
-    int32_t result = uCxSystemReboot(&gUcxHandle);
+    // Note: AT+CPWROFF sends OK response then immediately reboots
+    result = uCxSystemReboot(&gUcxHandle);
     
-    // Note: AT+CPWROFF causes immediate reboot, so no OK is received (timeout expected)
-    // The +STARTUP URC will arrive during the command timeout or shortly after
-    if (result == 0 || result == -65536) {  // -65536 is timeout, which is expected for reboot
-        printf("Module reboot initiated (timeout expected - module reboots immediately).\n");
+    // AT+CPWROFF sends OK then immediately reboots
+    // NOTE: NORA-W36 firmware bug - when echo is OFF, no OK is sent before reboot!
+    if (result == 0) {
+        printf("Module reboot initiated (OK received).\n");
+        printf("Waiting for module to reboot");
+        fflush(stdout);
+        
+        // Wait for +STARTUP URC
+        if (waitEvent(URC_FLAG_STARTUP, 5)) {
+            // Use the timestamp from when STARTUP URC was actually received
+            ULONGLONG elapsedMs = gStartupTimestamp - startTime;
+            
+            printf(" done!\n");
+            printf("Module has rebooted successfully.\n");
+            printf("Reboot time: %llu ms (%.2f seconds)\n", elapsedMs, elapsedMs / 1000.0);
+            
+            // Disable echo again after reboot
+            printf("Disabling echo...\n");
+            result = uCxSystemSetEchoOff(&gUcxHandle);
+            if (result == 0) {
+                printf("Echo disabled.\n");
+            } else {
+                printf("Warning: Failed to disable echo (error %d)\n", result);
+            }
+        } else {
+            printf(" timeout!\n");
+            printf("Module may have shut down completely (no +STARTUP received).\n");
+        }
+    } else if (result == -65536) {  // -65536 is timeout (shouldn't happen with echo ON)
+        printf("Module reboot initiated (timeout - echo workaround may have failed).\n");
         printf("Waiting for module to reboot");
         fflush(stdout);
         
@@ -3648,10 +3683,13 @@ static void executeModuleReboot(void)
             printf("Module has rebooted successfully.\n");
             printf("Reboot time: %llu ms (%.2f seconds)\n", elapsedMs, elapsedMs / 1000.0);
             
-            // Disable echo again after reboot
+            // Try to disable echo again after reboot
+            printf("Disabling echo...\n");
             result = uCxSystemSetEchoOff(&gUcxHandle);
             if (result == 0) {
                 printf("Echo disabled.\n");
+            } else {
+                printf("Warning: Failed to disable echo (error %d)\n", result);
             }
         } else {
             printf(" timeout!\n");
@@ -3770,35 +3808,115 @@ static void bluetoothScan(void)
     printf("\n--- Bluetooth Device Scan ---\n");
     printf("Scanning for devices... (this may take 10-15 seconds)\n\n");
     
+    // Set 30 second timeout for scan command (scan can take time)
+    uCxAtClientSetCommandTimeout(gUcxHandle.pAtClient, 30000, false);
+    
     // Start discovery (type 0 = general discovery, timeout in milliseconds 10000 = 10 sec)
     uCxBluetoothDiscovery3Begin(&gUcxHandle, 0, 0, 10000);
     
+    // Store unique devices (deduplicate by MAC address)
+    #define MAX_BT_DEVICES 100
+    typedef struct {
+        uBtLeAddress_t addr;
+        char name[64];
+        int8_t rssi;
+    } BtDevice_t;
+    
+    BtDevice_t devices[MAX_BT_DEVICES];
+    memset(devices, 0, sizeof(devices));  // Clear array before use
     int deviceCount = 0;
     uCxBluetoothDiscovery_t device;
     
-    // Get discovered devices
-    while (uCxBluetoothDiscovery3GetNext(&gUcxHandle, &device)) {
-        deviceCount++;
-        printf("Device %d:\n", deviceCount);
-        printf("  Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
-               device.bd_addr.address[0], device.bd_addr.address[1],
-               device.bd_addr.address[2], device.bd_addr.address[3],
-               device.bd_addr.address[4], device.bd_addr.address[5]);
-        
-        if (device.device_name && device.device_name[0] != '\0') {
-            printf("  Name: %s\n", device.device_name);
+    // Get discovered devices and deduplicate
+    bool gotResponse;
+    do {
+        gotResponse = uCxBluetoothDiscovery3GetNext(&gUcxHandle, &device);
+        if (gotResponse) {
+            // Check if device already exists (compare MAC address)
+            bool found = false;
+            for (int i = 0; i < deviceCount; i++) {
+                if (memcmp(devices[i].addr.address, device.bd_addr.address, 6) == 0 &&
+                    devices[i].addr.type == device.bd_addr.type) {
+                    // Device already exists - update RSSI if higher
+                    if (device.rssi > devices[i].rssi) {
+                        devices[i].rssi = (int8_t)device.rssi;
+                    }
+                    // Update name if we have a new name and stored name is empty, OR new name is longer
+                    if (device.device_name && device.device_name[0] != '\0') {
+                        if (devices[i].name[0] == '\0' || strlen(device.device_name) > strlen(devices[i].name)) {
+                            strncpy(devices[i].name, device.device_name, sizeof(devices[i].name) - 1);
+                            devices[i].name[sizeof(devices[i].name) - 1] = '\0';
+                        }
+                    }
+                    found = true;
+                    break;
+                }
+            }
+            
+            // New device - add to list
+            if (!found && deviceCount < MAX_BT_DEVICES) {
+                memcpy(devices[deviceCount].addr.address, device.bd_addr.address, 6);
+                devices[deviceCount].addr.type = device.bd_addr.type;
+                devices[deviceCount].rssi = (int8_t)device.rssi;
+                if (device.device_name && device.device_name[0] != '\0') {
+                    strncpy(devices[deviceCount].name, device.device_name, sizeof(devices[deviceCount].name) - 1);
+                    devices[deviceCount].name[sizeof(devices[deviceCount].name) - 1] = '\0';
+                } else {
+                    devices[deviceCount].name[0] = '\0';
+                }
+                deviceCount++;
+            }
         }
-        
-        printf("  RSSI: %d dBm\n", device.rssi);
-        printf("\n");
-    }
+    } while (gotResponse);
     
     uCxEnd(&gUcxHandle);
     
+    // Sort devices: named devices first, then by RSSI (strongest first)
+    for (int i = 0; i < deviceCount - 1; i++) {
+        for (int j = i + 1; j < deviceCount; j++) {
+            bool shouldSwap = false;
+            
+            // Prioritize devices with names
+            bool iHasName = (devices[i].name[0] != '\0');
+            bool jHasName = (devices[j].name[0] != '\0');
+            
+            if (!iHasName && jHasName) {
+                // j has name, i doesn't - swap
+                shouldSwap = true;
+            } else if (iHasName == jHasName) {
+                // Both have names or both don't - sort by RSSI (higher is better)
+                if (devices[j].rssi > devices[i].rssi) {
+                    shouldSwap = true;
+                }
+            }
+            
+            if (shouldSwap) {
+                BtDevice_t temp = devices[i];
+                devices[i] = devices[j];
+                devices[j] = temp;
+            }
+        }
+    }
+    
+    // Display unique devices
     if (deviceCount == 0) {
         printf("No devices found.\n");
     } else {
-        printf("Found %d device(s).\n", deviceCount);
+        printf("Found %d unique device(s):\n\n", deviceCount);
+        for (int i = 0; i < deviceCount; i++) {
+            printf("Device %d:\n", i + 1);
+            printf("  Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   devices[i].addr.address[0], devices[i].addr.address[1],
+                   devices[i].addr.address[2], devices[i].addr.address[3],
+                   devices[i].addr.address[4], devices[i].addr.address[5]);
+            
+            if (devices[i].name[0] != '\0') {
+                printf("  Name: %s\n", devices[i].name);
+            }
+            
+            printf("  RSSI: %d dBm\n", devices[i].rssi);
+            printf("\n");
+        }
     }
 }
 
@@ -3851,6 +3969,9 @@ static void wifiScan(void)
     printf("\n--- Wi-Fi Network Scan ---\n");
     printf("Scanning for networks... (this may take several seconds)\n\n");
     
+    // Set 30 second timeout for scan command (scan can take time)
+    uCxAtClientSetCommandTimeout(gUcxHandle.pAtClient, 30000, false);
+    
     // Start WiFi scan
     uCxWifiStationScanDefaultBegin(&gUcxHandle);
     
@@ -3861,10 +3982,14 @@ static void wifiScan(void)
     uCxWifiStationScanDefault_t network;
     
     // Get scan results
-    while (uCxWifiStationScanDefaultGetNext(&gUcxHandle, &network)) {
-        networkCount++;
-        printf("Network %d:\n", networkCount);
-        printf("  SSID: %s\n", network.ssid);
+    // Process responses until GetNext() returns false (no more responses or timeout/OK)
+    bool gotResponse;
+    do {
+        gotResponse = uCxWifiStationScanDefaultGetNext(&gUcxHandle, &network);
+        if (gotResponse) {
+            networkCount++;
+            printf("Network %d:\n", networkCount);
+            printf("  SSID: %s\n", network.ssid);
         printf("  BSSID: %02X:%02X:%02X:%02X:%02X:%02X\n",
                network.bssid.address[0], network.bssid.address[1],
                network.bssid.address[2], network.bssid.address[3],
@@ -3896,11 +4021,10 @@ static void wifiScan(void)
             if (network.authentication_suites & (1 << 4)) printf("WPA2 ");
             if (network.authentication_suites & (1 << 3)) printf("WPA ");
             if (network.authentication_suites & (1 << 1)) printf("PSK ");
-            if (network.authentication_suites & (1 << 2)) printf("EAP ");
-            printf("(0x%X)\n", network.authentication_suites);
         }
         printf("\n");
-    }
+        }
+    } while (gotResponse);
     
     uCxEnd(&gUcxHandle);
     

@@ -54,7 +54,6 @@ static bool gUCxLogTimestampEnabled = false;  // Timestamps disabled by default 
 
 void uCxLogPrintTime(void)
 {
-#if U_CX_PORT_PRINTF
     int32_t timestamp_ms = U_CX_PORT_GET_TIME_MS();
     int32_t ms      = (int32_t) (timestamp_ms % 1000);
     int32_t seconds = (int32_t) (timestamp_ms / 1000) % 60 ;
@@ -62,7 +61,6 @@ void uCxLogPrintTime(void)
     int32_t hours   = (int32_t) ((timestamp_ms / (1000 * 60 * 60)));
     U_CX_PORT_PRINTF("[%02" PRId32 ":%02" PRId32 ":%02" PRId32 ".%03" PRId32 "]",
                      hours, minutes, seconds, ms);
-#endif
 }
 
 void uCxLogDisable(void)

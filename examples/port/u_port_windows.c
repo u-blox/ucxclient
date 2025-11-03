@@ -54,6 +54,12 @@ typedef struct {
     uCxAtClient_t *pClient;
     HANDLE hRxThread;
     HANDLE hStopEvent;
+    HANDLE hCommEvent;  // Event for WaitCommEvent (data arrival notification)
+    HANDLE hReadEvent;  // Event for read operations
+    HANDLE hWriteEvent; // Event for write operations
+    OVERLAPPED overlapped;  // For WaitCommEvent
+    OVERLAPPED ovRead;      // For read operations
+    OVERLAPPED ovWrite;     // For write operations
     DWORD dwThreadId;
     volatile bool bTerminateRxTask;
 } uPortContext_t;
@@ -102,14 +108,14 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
         snprintf(fullPortName, sizeof(fullPortName), "%s", pPortName);
     }
 
-    // Open COM port
+    // Open COM port with FILE_FLAG_OVERLAPPED for event-driven I/O
     hComPort = CreateFileA(
         fullPortName,
         GENERIC_READ | GENERIC_WRITE,
         0,                    // No sharing
         NULL,                 // Default security
         OPEN_EXISTING,        // Open existing port
-        0,                    // Non-overlapped I/O
+        FILE_FLAG_OVERLAPPED, // Use overlapped I/O for event notifications
         NULL                  // No template
     );
 
@@ -192,20 +198,59 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
 static DWORD WINAPI rxThread(LPVOID lpParam)
 {
     uPortContext_t *pCtx = (uPortContext_t *)lpParam;
+    DWORD dwEvtMask;
     DWORD dwWaitResult;
+    HANDLE waitHandles[2];
 
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread started");
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread started (event-driven)");
+
+    // Setup events to wait for
+    waitHandles[0] = pCtx->hStopEvent;    // Stop event (index 0)
+    waitHandles[1] = pCtx->hCommEvent;    // Communication event (index 1)
+
+    // Set the COM port event mask (notify on data received)
+    if (!SetCommMask(pCtx->hComPort, EV_RXCHAR)) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, "SetCommMask failed");
+        return 1;
+    }
 
     while (!pCtx->bTerminateRxTask) {
-        // Wait for data or stop event
-        dwWaitResult = WaitForSingleObject(pCtx->hStopEvent, 100);
-        
-        if (dwWaitResult == WAIT_OBJECT_0) {
-            break; // Stop event signaled
-        }
+        // Start asynchronous wait for COM port events
+        dwEvtMask = 0;
+        memset(&pCtx->overlapped, 0, sizeof(OVERLAPPED));
+        pCtx->overlapped.hEvent = pCtx->hCommEvent;
 
-        // Check for received data
-        uCxAtClientHandleRx(pCtx->pClient);
+        if (!WaitCommEvent(pCtx->hComPort, &dwEvtMask, &pCtx->overlapped)) {
+            DWORD dwError = GetLastError();
+            if (dwError == ERROR_IO_PENDING) {
+                // Operation is pending - wait for completion or stop event
+                dwWaitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+                
+                if (dwWaitResult == WAIT_OBJECT_0) {
+                    // Stop event signaled - cancel pending operation and exit
+                    CancelIo(pCtx->hComPort);
+                    break;
+                } else if (dwWaitResult == WAIT_OBJECT_0 + 1) {
+                    // Communication event signaled - data received
+                    DWORD dwBytesTransferred;
+                    if (GetOverlappedResult(pCtx->hComPort, &pCtx->overlapped, &dwBytesTransferred, FALSE)) {
+                        // Data is available - process it
+                        uCxAtClientHandleRx(pCtx->pClient);
+                    }
+                }
+            } else {
+                // WaitCommEvent failed with error other than IO_PENDING
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                               "WaitCommEvent failed, error: %lu", dwError);
+                break;
+            }
+        } else {
+            // WaitCommEvent completed immediately (data already available)
+            if (dwEvtMask & EV_RXCHAR) {
+                // Data is available - process it
+                uCxAtClientHandleRx(pCtx->pClient);
+            }
+        }
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated");
@@ -214,19 +259,37 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
 
 static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void *pData, size_t length)
 {
-    (void)pClient;
-    HANDLE hComPort = *((HANDLE *)pStreamHandle);
+    uPortContext_t *pCtx = (uPortContext_t *)pStreamHandle;
     DWORD dwBytesWritten = 0;
 
-    if (hComPort == INVALID_HANDLE_VALUE) {
+    if (pCtx->hComPort == INVALID_HANDLE_VALUE) {
         return -1;
     }
 
-    if (!WriteFile(hComPort, pData, (DWORD)length, &dwBytesWritten, NULL)) {
+    // Reset event and prepare overlapped structure
+    ResetEvent(pCtx->hWriteEvent);
+    memset(&pCtx->ovWrite, 0, sizeof(OVERLAPPED));
+    pCtx->ovWrite.hEvent = pCtx->hWriteEvent;
+
+    // Perform overlapped write
+    if (!WriteFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesWritten, &pCtx->ovWrite)) {
         DWORD dwError = GetLastError();
-        (void)dwError;  // Mark as intentionally unused when logging is disabled
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "WriteFile failed, error: %lu", dwError);
-        return -1;
+        if (dwError == ERROR_IO_PENDING) {
+            // Wait for write to complete
+            if (WaitForSingleObject(pCtx->hWriteEvent, 1000) == WAIT_OBJECT_0) {
+                if (!GetOverlappedResult(pCtx->hComPort, &pCtx->ovWrite, &dwBytesWritten, FALSE)) {
+                    dwError = GetLastError();
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "WriteFile failed, error: %lu", dwError);
+                    return -1;
+                }
+            } else {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Write timeout");
+                return -1;
+            }
+        } else {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "WriteFile failed, error: %lu", dwError);
+            return -1;
+        }
     }
 
     return (int32_t)dwBytesWritten;
@@ -234,36 +297,47 @@ static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void
 
 static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData, size_t length, int32_t timeoutMs)
 {
-    (void)pClient;
-    HANDLE hComPort = *((HANDLE *)pStreamHandle);
+    uPortContext_t *pCtx = (uPortContext_t *)pStreamHandle;
     DWORD dwBytesRead = 0;
-    COMMTIMEOUTS timeouts = {0};
 
-    if (hComPort == INVALID_HANDLE_VALUE) {
+    if (pCtx->hComPort == INVALID_HANDLE_VALUE) {
         return -1;
     }
 
-    // Set timeout for this read operation
-    if (timeoutMs == 0) {
-        // Non-blocking read
-        timeouts.ReadIntervalTimeout = MAXDWORD;
-        timeouts.ReadTotalTimeoutMultiplier = 0;
-        timeouts.ReadTotalTimeoutConstant = 0;
-    } else {
-        // Blocking read with timeout
-        timeouts.ReadIntervalTimeout = 0;
-        timeouts.ReadTotalTimeoutMultiplier = 0;
-        timeouts.ReadTotalTimeoutConstant = timeoutMs;
-    }
-    timeouts.WriteTotalTimeoutMultiplier = 10;
-    timeouts.WriteTotalTimeoutConstant = 100;
+    // Reset event and prepare overlapped structure
+    ResetEvent(pCtx->hReadEvent);
+    memset(&pCtx->ovRead, 0, sizeof(OVERLAPPED));
+    pCtx->ovRead.hEvent = pCtx->hReadEvent;
 
-    SetCommTimeouts(hComPort, &timeouts);
-
-    if (!ReadFile(hComPort, pData, (DWORD)length, &dwBytesRead, NULL)) {
+    // Perform overlapped read
+    if (!ReadFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesRead, &pCtx->ovRead)) {
         DWORD dwError = GetLastError();
-        if (dwError != ERROR_TIMEOUT) {
-            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "ReadFile failed, error: %lu", dwError);
+        if (dwError == ERROR_IO_PENDING) {
+            // Wait for read to complete with timeout
+            DWORD dwTimeout = (timeoutMs == 0) ? 0 : (DWORD)timeoutMs;
+            DWORD dwWaitResult = WaitForSingleObject(pCtx->hReadEvent, dwTimeout);
+            
+            if (dwWaitResult == WAIT_OBJECT_0) {
+                // Read completed
+                if (!GetOverlappedResult(pCtx->hComPort, &pCtx->ovRead, &dwBytesRead, FALSE)) {
+                    dwError = GetLastError();
+                    if (dwError != ERROR_TIMEOUT) {
+                        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "ReadFile failed, error: %lu", dwError);
+                    }
+                    return -1;
+                }
+            } else if (dwWaitResult == WAIT_TIMEOUT) {
+                // Timeout - cancel the read operation
+                CancelIo(pCtx->hComPort);
+                return 0; // Return 0 bytes read on timeout
+            } else {
+                // Error
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Read wait failed");
+                CancelIo(pCtx->hComPort);
+                return -1;
+            }
+        } else {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "ReadFile failed, error: %lu", dwError);
             return -1;
         }
     }
@@ -383,6 +457,9 @@ void uPortAtInit(uCxAtClient_t *pClient)
     context.pClient = pClient;
     context.hComPort = INVALID_HANDLE_VALUE;
     context.hStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    context.hCommEvent = CreateEvent(NULL, FALSE, FALSE, NULL);  // Auto-reset event for WaitCommEvent
+    context.hReadEvent = CreateEvent(NULL, TRUE, FALSE, NULL);   // Manual-reset for read operations
+    context.hWriteEvent = CreateEvent(NULL, TRUE, FALSE, NULL);  // Manual-reset for write operations
 
     // Current implementation only supports one instance
     assert(gPConfig == NULL);
@@ -496,6 +573,21 @@ void uPortAtClose(uCxAtClient_t *pClient)
     if (pCtx->hStopEvent != NULL) {
         CloseHandle(pCtx->hStopEvent);
         pCtx->hStopEvent = NULL;
+    }
+
+    if (pCtx->hCommEvent != NULL) {
+        CloseHandle(pCtx->hCommEvent);
+        pCtx->hCommEvent = NULL;
+    }
+
+    if (pCtx->hReadEvent != NULL) {
+        CloseHandle(pCtx->hReadEvent);
+        pCtx->hReadEvent = NULL;
+    }
+
+    if (pCtx->hWriteEvent != NULL) {
+        CloseHandle(pCtx->hWriteEvent);
+        pCtx->hWriteEvent = NULL;
     }
 
     gPConfig = NULL;
