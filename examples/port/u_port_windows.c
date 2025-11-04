@@ -24,23 +24,24 @@
  * ==========================
  * This file supports three different UART RX implementations:
  * 
- * 1. USE_UART_EVENT_DRIVEN (default, recommended for production)
- *    - Uses WaitCommEvent() for efficient event-driven processing
- *    - Minimal CPU usage, fast response time
- *    - Loops until RX buffer is completely drained
- *    - Good for production use
- * 
- * 2. USE_UART_POLLED (for debugging)
+ * 1. USE_UART_POLLED (default, RECOMMENDED)
  *    - Simple polling loop checking for data
- *    - Easy to understand and debug
+ *    - Most reliable URC handling
  *    - Predictable timing (10ms polling interval)
- *    - Good for troubleshooting timing issues
+ *    - Easy to understand and debug
+ *    - Best for production use
  * 
- * 3. USE_UART_FTDI (FTDI D2XX direct mode)
+ * 2. USE_UART_EVENT_DRIVEN (experimental)
+ *    - Uses WaitCommEvent() for efficient event-driven processing
+ *    - Minimal CPU usage
+ *    - May have URC timing issues
+ *    - Use for testing/comparison
+ * 
+ * 3. USE_UART_FTDI (experimental)
  *    - Uses FTDI D2XX API directly (bypasses Windows COM driver)
  *    - Event-driven with FT_SetEventNotification and circular buffer
- *    - Optimized with 4KB USB transfers and 2ms latency
- *    - Good for FTDI devices like NORA-W36 EVK
+ *    - May have URC timing issues
+ *    - Good for FTDI devices like NORA-W36 EVK (when working)
  * 
  * To switch modes, uncomment the desired #define below in the
  * "COMPILE-TIME MACROS" section.
@@ -71,9 +72,9 @@
 
 // UART RX Implementation Selection
 // Uncomment ONE of the following to select UART implementation:
-// #define USE_UART_POLLED        // Simple polled mode (good for debugging)
-// #define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
-#define USE_UART_FTDI          // FTDI D2XX API with event-driven circular buffer
+#define USE_UART_POLLED        // Simple polled mode (RECOMMENDED - most reliable)
+//#define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (experimental)
+//#define USE_UART_FTDI          // FTDI D2XX API with event-driven circular buffer (experimental)
 
 #if defined(USE_UART_POLLED) + defined(USE_UART_EVENT_DRIVEN) + defined(USE_UART_FTDI) != 1
 #error "Exactly ONE UART implementation must be defined"
@@ -601,18 +602,37 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
     }
     
     while (!pCtx->bTerminateRxTask) {
-        // Wait for either data event or stop event
+        // Wait for either data event or stop event (with 50ms timeout for polling fallback)
         HANDLE waitHandles[2] = { pCtx->hFtdiEvent, pCtx->hStopEvent };
-        DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+        DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, 50);
         
-        if (waitResult == WAIT_OBJECT_0) {
-            // Data event signaled - drain ALL available data in a continuous loop
+        // Check queue status regardless of wait result to work around FTDI event notification issues
+        DWORD dwQueueBytes = 0;
+        ftStatus = FT_GetQueueStatus((FT_HANDLE)pCtx->pFtdiHandle, &dwQueueBytes);
+        
+        // --- PATCH BEGIN: Force FTDI USB poll for pending URCs ---
+        // FTDI latency bug workaround:
+        // Even if FT_EVENT_RXCHAR or FT_GetQueueStatus() doesn't trigger,
+        // performing a zero-length or 1-byte FT_Read() forces a USB IN transfer,
+        // flushing any data buffered in the FTDI chip immediately.
+        {
+            DWORD dummyRead = 0;
+            uint8_t dummyBuf[1];
+            FT_STATUS ftPoll = FT_Read((FT_HANDLE)pCtx->pFtdiHandle, dummyBuf, 0, &dummyRead);
+            if (ftPoll != FT_OK) {
+                // Some drivers ignore 0-length reads; fall back to 1-byte poll
+                FT_Read((FT_HANDLE)pCtx->pFtdiHandle, dummyBuf, 1, &dummyRead);
+            }
+        }
+        // --- PATCH END ---
+        
+        if (waitResult == WAIT_OBJECT_0 || (waitResult == WAIT_TIMEOUT && dwQueueBytes > 0)) {
+            // Data event signaled OR timeout with data available - drain ALL available data
             // Keep reading until queue is empty to handle complete multi-line responses
-            DWORD dwQueueBytes = 0;
             int loopCount = 0;
             
             do {
-                // Check queue status
+                // Re-check queue status in loop
                 ftStatus = FT_GetQueueStatus((FT_HANDLE)pCtx->pFtdiHandle, &dwQueueBytes);
                 
                 if (ftStatus == FT_OK && dwQueueBytes > 0) {
@@ -643,9 +663,14 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                         SetEvent(pCtx->hDataAvailEvent);
                     }
                     
-                    // Give FTDI device a moment to accumulate more data if it's streaming
-                    // This is critical for Wi-Fi scans where results arrive over several seconds
-                    Sleep(20);  // 20ms to allow device to send more data
+                    // Only sleep if we read less than buffer size (more data likely coming)
+                    if (bytesRead >= sizeof(tempBuf)) {
+                        // Full buffer read - immediately check for more data
+                        Sleep(0);  // Yield CPU but check again immediately
+                    } else if (bytesRead > 0) {
+                        // Partial read - give device a moment to send more
+                        Sleep(2);  // 2ms delay for partial reads
+                    }
                 }
                 
                 loopCount++;
@@ -660,10 +685,13 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
         } else if (waitResult == WAIT_OBJECT_0 + 1) {
             // Stop event signaled
             break;
+        } else if (waitResult == WAIT_TIMEOUT) {
+            // Timeout with no data - just loop again (this is the polling mechanism)
+            continue;
         } else {
-            // Error or unexpected result
+            // WAIT_FAILED or unexpected result
             U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
-                           "WaitForMultipleObjects failed: %lu", GetLastError());
+                           "WaitForMultipleObjects failed: %lu", waitResult);
             break;
         }
     }
@@ -759,8 +787,99 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
     }
 #endif
 
-#if defined(USE_UART_EVENT_DRIVEN) || defined(USE_UART_FTDI)
-    // Event-driven and FTDI modes: Read from circular buffer filled by RX thread
+#if defined(USE_UART_FTDI)
+    // FTDI mode: Check if RX thread is paused (for XMODEM transfer)
+    if (pCtx->bTerminateRxTask) {
+        // RX thread is paused - read directly from FTDI
+        FT_STATUS ftStatus;
+        DWORD dwBytesToRead = (DWORD)length;
+        int32_t startTime = (int32_t)GetTickCount();
+        
+        // Poll for data with timeout
+        while (dwBytesRead < dwBytesToRead) {
+            DWORD dwAvailable = 0;
+            ftStatus = FT_GetQueueStatus((FT_HANDLE)pCtx->pFtdiHandle, &dwAvailable);
+            if (ftStatus != FT_OK) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "FT_GetQueueStatus failed, status: %d", ftStatus);
+                return -1;
+            }
+            
+            if (dwAvailable > 0) {
+                // Read available data
+                DWORD dwToRead = dwAvailable;
+                if (dwToRead > (dwBytesToRead - dwBytesRead)) {
+                    dwToRead = dwBytesToRead - dwBytesRead;
+                }
+                
+                DWORD dwRead = 0;
+                ftStatus = FT_Read((FT_HANDLE)pCtx->pFtdiHandle, (uint8_t *)pData + dwBytesRead, dwToRead, &dwRead);
+                if (ftStatus != FT_OK) {
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "FT_Read failed, status: %d", ftStatus);
+                    return -1;
+                }
+                dwBytesRead += dwRead;
+                
+                // If we got some data, return immediately (XMODEM needs byte-by-byte)
+                if (dwBytesRead > 0) {
+                    break;
+                }
+            }
+            
+            // Check timeout
+            if (timeoutMs > 0) {
+                int32_t elapsed = (int32_t)GetTickCount() - startTime;
+                if (elapsed >= timeoutMs) {
+                    break;  // Timeout expired
+                }
+                // Small delay to avoid busy-waiting
+                Sleep(1);
+            } else {
+                // No timeout, return immediately
+                break;
+            }
+        }
+    } else {
+        // RX thread is running - read from circular buffer
+        uint8_t *pBuf = (uint8_t *)pData;
+        int32_t startTime = (int32_t)GetTickCount();
+        
+        while (dwBytesRead < length) {
+            EnterCriticalSection(&pCtx->rxCircLock);
+            
+            // Check if data available in circular buffer
+            while (pCtx->rxCircTail != pCtx->rxCircHead && dwBytesRead < length) {
+                pBuf[dwBytesRead++] = pCtx->rxCircBuf[pCtx->rxCircTail];
+                pCtx->rxCircTail = (pCtx->rxCircTail + 1) % sizeof(pCtx->rxCircBuf);
+            }
+            
+            LeaveCriticalSection(&pCtx->rxCircLock);
+            
+            // If we got some data, return immediately
+            if (dwBytesRead > 0) {
+                break;
+            }
+            
+            // No data available - wait for data or timeout
+            if (timeoutMs > 0) {
+                int32_t elapsed = (int32_t)GetTickCount() - startTime;
+                int32_t remaining = timeoutMs - elapsed;
+                if (remaining <= 0) {
+                    break;  // Timeout expired
+                }
+                // Wait for data to arrive (or timeout)
+                DWORD waitResult = WaitForSingleObject(pCtx->hDataAvailEvent, (DWORD)remaining);
+                if (waitResult == WAIT_TIMEOUT) {
+                    break;
+                }
+                // Loop again to read the data that arrived
+            } else {
+                // No timeout, return immediately
+                break;
+            }
+        }
+    }
+#elif defined(USE_UART_EVENT_DRIVEN)
+    // Event-driven mode: Read from circular buffer filled by RX thread
     uint8_t *pBuf = (uint8_t *)pData;
     int32_t startTime = (int32_t)GetTickCount();
     
@@ -1069,6 +1188,17 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     uPortLogPrintf("FTDI device opened successfully\n");
     
     // Configure FTDI device
+    uPortLogPrintf("Configuring FTDI device:\n");
+    uPortLogPrintf("  Baud rate:      %d\n", baudRate);
+    uPortLogPrintf("  Data bits:      8\n");
+    uPortLogPrintf("  Stop bits:      1\n");
+    uPortLogPrintf("  Parity:         None\n");
+    uPortLogPrintf("  Flow control:   %s\n", useFlowControl ? "RTS/CTS" : "None");
+    uPortLogPrintf("  USB buffer:     128 bytes IN/OUT\n");
+    uPortLogPrintf("  Latency timer:  1 ms\n");
+    uPortLogPrintf("  Read timeout:   100 ms\n");
+    uPortLogPrintf("  Write timeout:  1000 ms\n");
+    
     FT_SetBaudRate(ftHandle, baudRate);
     FT_SetDataCharacteristics(ftHandle, FT_BITS_8, FT_STOP_BITS_1, FT_PARITY_NONE);
     if (useFlowControl) {
@@ -1080,14 +1210,32 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     // Set timeouts (similar to COM port configuration)
     FT_SetTimeouts(ftHandle, 100, 1000);  // Read timeout 100ms, write timeout 1000ms
     
-    // Optimize USB transfer parameters for better performance
-    FT_SetUSBParameters(ftHandle, 4096, 4096);  // 4KB IN/OUT transfer size
-    FT_SetLatencyTimer(ftHandle, 2);            // 2ms latency (default is 16ms)
+    // Optimize USB transfer parameters for IMMEDIATE URC delivery
+    // Smaller buffer = more frequent USB transfers = lower latency for URCs
+    FT_SetUSBParameters(ftHandle, 128, 128);  // 128 bytes IN/OUT (sweet spot for low latency)
+    FT_SetLatencyTimer(ftHandle, 2);          // 1ms latency (was 2ms, even more aggressive)
     
     // Purge any stale data
     FT_Purge(ftHandle, FT_PURGE_RX | FT_PURGE_TX);
     
     pCtx->pFtdiHandle = ftHandle;
+    
+    // Recreate events if they were closed (happens when port is closed and reopened)
+    if (pCtx->hFtdiEvent == NULL) {
+        pCtx->hFtdiEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    }
+    if (pCtx->hStopEvent == NULL) {
+        pCtx->hStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    }
+    if (pCtx->hDataAvailEvent == NULL) {
+        pCtx->hDataAvailEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    }
+    
+    // Reinitialize critical section if needed (it gets deleted when port is closed)
+    // We need to check if it's been deleted by trying to enter it - but that's unsafe.
+    // Instead, we'll just always reinitialize it here since it's safe to do so.
+    // Note: DeleteCriticalSection is called in uPortAtClose, so we must reinitialize here.
+    InitializeCriticalSection(&pCtx->rxCircLock);
     
 #else
     // COM port mode (event-driven or polled)
@@ -1103,6 +1251,28 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     }
     
     pCtx->hComPort = gHComPort;
+    
+    // Recreate events if they were closed (happens when port is closed and reopened)
+    if (pCtx->hStopEvent == NULL) {
+        pCtx->hStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    }
+#if defined(USE_UART_EVENT_DRIVEN)
+    if (pCtx->hCommEvent == NULL) {
+        pCtx->hCommEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    }
+    if (pCtx->hReadEvent == NULL) {
+        pCtx->hReadEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    }
+    if (pCtx->hWriteEvent == NULL) {
+        pCtx->hWriteEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    }
+    if (pCtx->hDataAvailEvent == NULL) {
+        pCtx->hDataAvailEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+    }
+    
+    // Reinitialize critical section (it gets deleted when port is closed)
+    InitializeCriticalSection(&pCtx->rxCircLock);
+#endif
 #endif
 
     pCtx->bTerminateRxTask = false;
@@ -1137,18 +1307,30 @@ void uPortAtPauseRx(uCxAtClient_t *pClient)
     // timeouts and retries. We must stop the RX thread during XMODEM.
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtPauseRx: Entry (pCtx=%p, hRxThread=%p)", pCtx, pCtx ? pCtx->hRxThread : NULL);
+    
     if (pCtx != NULL && pCtx->hRxThread != NULL) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Pausing RX thread for raw serial access...");
         
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtPauseRx: Setting bTerminateRxTask=true...");
         pCtx->bTerminateRxTask = true;
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtPauseRx: Calling SetEvent(hStopEvent=%p)...", pCtx->hStopEvent);
         SetEvent(pCtx->hStopEvent);
 
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtPauseRx: Waiting for RX thread to terminate...");
         // Wait for RX thread to terminate
-        WaitForSingleObject(pCtx->hRxThread, 5000); // Wait up to 5 seconds
+        DWORD waitResult = WaitForSingleObject(pCtx->hRxThread, 5000); // Wait up to 5 seconds
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtPauseRx: WaitForSingleObject returned %lu", waitResult);
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtPauseRx: Closing thread handle...");
         CloseHandle(pCtx->hRxThread);
         pCtx->hRxThread = NULL;
         
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "RX thread paused - raw serial access enabled");
+    } else {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtPauseRx: Nothing to pause (pCtx=%p, hRxThread=%p)", 
+                        pCtx, pCtx ? pCtx->hRxThread : NULL);
     }
 }
 
@@ -1246,6 +1428,33 @@ void uPortAtFlush(uCxAtClient_t *pClient)
 {
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtFlush: Entry (pCtx=%p)", pCtx);
+    
+#if defined(USE_UART_FTDI)
+    // FTDI mode: use FT_Purge
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtFlush: FTDI mode, pFtdiHandle=%p", pCtx->pFtdiHandle);
+    if (pCtx->pFtdiHandle != NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtFlush: Calling FT_Purge...");
+        FT_STATUS ftStatus = FT_Purge((FT_HANDLE)pCtx->pFtdiHandle, FT_PURGE_RX | FT_PURGE_TX);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtFlush: FT_Purge returned status=%d", ftStatus);
+        
+        // Also clear the AT client's internal RX buffer
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtFlush: Clearing AT client RX buffer...");
+        if (pClient->pConfig->pRxBuffer != NULL) {
+            memset(pClient->pConfig->pRxBuffer, 0, pClient->pConfig->rxBufferLen);
+        }
+        
+        // Clear circular buffer
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uPortAtFlush: Clearing circular buffer...");
+        EnterCriticalSection(&pCtx->rxCircLock);
+        pCtx->rxCircHead = 0;
+        pCtx->rxCircTail = 0;
+        LeaveCriticalSection(&pCtx->rxCircLock);
+        
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Serial buffers flushed (FTDI)");
+    }
+#else
+    // COM port mode: use PurgeComm
     if (pCtx->hComPort != INVALID_HANDLE_VALUE) {
         // Flush both input and output buffers
         PurgeComm(pCtx->hComPort, PURGE_RXCLEAR | PURGE_TXCLEAR);
@@ -1255,8 +1464,8 @@ void uPortAtFlush(uCxAtClient_t *pClient)
             memset(pClient->pConfig->pRxBuffer, 0, pClient->pConfig->rxBufferLen);
         }
         
-#if defined(USE_UART_EVENT_DRIVEN) || defined(USE_UART_FTDI)
-        // Clear circular buffer (used by event-driven and FTDI modes)
+#if defined(USE_UART_EVENT_DRIVEN)
+        // Clear circular buffer (used by event-driven mode)
         EnterCriticalSection(&pCtx->rxCircLock);
         pCtx->rxCircHead = 0;
         pCtx->rxCircTail = 0;
@@ -1265,6 +1474,7 @@ void uPortAtFlush(uCxAtClient_t *pClient)
         
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Serial buffers flushed");
     }
+#endif
 }
 
 void uPortRegisterLogCallback(uPortLogCallback_t callback, void *pUserData)

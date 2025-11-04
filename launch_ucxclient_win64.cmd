@@ -121,7 +121,8 @@ echo Prerequisites check passed!
 echo.
 
 REM Determine configuration
-REM Priority: 1) User specified, 2) Release if exists, 3) Debug (build if needed)
+REM Auto-select priority: 1) Signed Release, 2) Signed Debug, 3) Release, 4) Debug, 5) Build Debug
+REM User can override with: release, debug, release_signed, debug_signed, -r, -d, -rs, -ds
 set CONFIG=Debug
 set USER_SPECIFIED_CONFIG=0
 
@@ -146,15 +147,61 @@ if /i "%1"=="Debug" (
     set CONFIG=Debug
     set USER_SPECIFIED_CONFIG=1
 )
+if /i "%1"=="-d" (
+    set CONFIG=Debug
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="release_signed" (
+    set CONFIG=Release_Signed
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="Release_Signed" (
+    set CONFIG=Release_Signed
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="-rs" (
+    set CONFIG=Release_Signed
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="debug_signed" (
+    set CONFIG=Debug_Signed
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="Debug_Signed" (
+    set CONFIG=Debug_Signed
+    set USER_SPECIFIED_CONFIG=1
+)
+if /i "%1"=="-ds" (
+    set CONFIG=Debug_Signed
+    set USER_SPECIFIED_CONFIG=1
+)
 
-REM If no config specified, prefer Release if it exists
+REM If no config specified, use priority order:
+REM 1. Signed Release (production)
+REM 2. Signed Debug (testing with symbols)
+REM 3. Release (unsigned development)
+REM 4. Debug (unsigned development with symbols)
+REM 5. Build Debug if none exist
 if "%USER_SPECIFIED_CONFIG%"=="0" (
-    if exist "build\Release\ucxclient_win64.exe" (
+    if exist "build\Release_Signed\ucxclient_win64.exe" (
+        set CONFIG=Release_Signed
+        echo [Auto-select] Using existing signed Release build ^(priority 1^)...
+        echo.
+    ) else if exist "build\Debug_Signed\ucxclient_win64.exe" (
+        set CONFIG=Debug_Signed
+        echo [Auto-select] Using existing signed Debug build ^(priority 2^)...
+        echo.
+    ) else if exist "build\Release\ucxclient_win64.exe" (
         set CONFIG=Release
-        echo [Auto-select] Using existing Release build...
+        echo [Auto-select] Using existing Release build ^(priority 3^)...
+        echo.
+    ) else if exist "build\Debug\ucxclient_win64.exe" (
+        set CONFIG=Debug
+        echo [Auto-select] Using existing Debug build ^(priority 4^)...
         echo.
     ) else (
-        echo [Auto-select] Using Debug configuration ^(will build if needed^)...
+        set CONFIG=Debug
+        echo [Auto-select] No existing build found. Will build Debug configuration...
         echo.
     )
 ) else (
@@ -593,14 +640,23 @@ echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo CONFIGURATIONS:
-echo   (none)                Auto-select: Release if exists, else Debug
-echo   debug / Debug         Launch Debug build
-echo   release / Release     Launch Release build
-echo   -r                    Launch Release build (short form)
+echo   (none)                Auto-select by priority:
+echo                           1. Release_Signed  (signed production)
+echo                           2. Debug_Signed    (signed with symbols)
+echo                           3. Release         (unsigned)
+echo                           4. Debug           (unsigned)
+echo                           5. Build Debug if none exist
+echo   debug / Debug / -d    Launch Debug build
+echo   release / Release / -r
+echo                         Launch Release build
+echo   debug_signed / Debug_Signed / -ds
+echo                         Launch signed Debug build
+echo   release_signed / Release_Signed / -rs
+echo                         Launch signed Release build
 echo.
 echo EXAMPLES:
 echo   launch_ucxclient_win64.cmd
-echo       Auto-launch: Release if exists, otherwise Debug
+echo       Auto-select best available build (signed release preferred)
 echo.
 echo   launch_ucxclient_win64.cmd debug
 echo       Launch Debug build (auto-builds if needed)

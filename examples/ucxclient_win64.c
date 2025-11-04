@@ -118,7 +118,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_WIFI_LINK_DOWN     (1 << 10) // Wi-Fi Link DOWN (disconnected from AP)
 
 // Global handles
-static uCxAtClient_t gAtClient;
+static uCxAtClient_t gUcxAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gConnected = false;
 
@@ -131,6 +131,16 @@ static char gLastDeviceModel[64] = "";        // Last connected device model
 static char gWifiSsid[64] = "";               // Last Wi-Fi SSID
 static char gWifiPassword[64] = "";           // Last Wi-Fi password
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
+
+// Dynamic firmware path storage per product
+typedef struct {
+    char productName[64];      // e.g., "NORA-W36", "NORA-B26"
+    char lastFirmwarePath[256]; // Last used firmware path for this product
+} ProductFirmwarePath_t;
+
+#define MAX_PRODUCT_PATHS 10
+static ProductFirmwarePath_t gProductFirmwarePaths[MAX_PRODUCT_PATHS];
+static int gProductFirmwarePathCount = 0;
 
 // Device information (populated after connection)
 static char gDeviceModel[64] = "";            // Device model (e.g., "NORA-W36")
@@ -207,6 +217,14 @@ static void parseYamlCommands(const char *yamlContent);
 static void freeApiCommands(void);
 static char* fetchLatestVersion(const char *product);
 static char* httpGetRequest(const wchar_t *server, const wchar_t *path);
+static char* httpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize);
+static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath, size_t pathSize);
+static const char* getProductFirmwarePath(const char *productName);
+static void setProductFirmwarePath(const char *productName, const char *firmwarePath);
+static char* extractProductFromFilename(const char *filename);
+static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t pathSize);
+static bool extractZipFile(const char *zipPath, const char *destFolder);
+static bool saveBinaryFile(const char *filepath, const char *data, size_t size);
 static void executeAtTest(void);
 static void executeAti9(void);
 static void executeModuleReboot(void);
@@ -337,6 +355,98 @@ cleanup:
     return result;
 }
 
+static char* httpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize)
+{
+    HINTERNET hSession = NULL;
+    HINTERNET hConnect = NULL;
+    HINTERNET hRequest = NULL;
+    char *result = NULL;
+    DWORD dwSize = 0;
+    DWORD dwDownloaded = 0;
+    size_t totalSize = 0;
+    char *buffer = NULL;
+    
+    if (outSize) *outSize = 0;
+    
+    // Initialize WinHTTP
+    hSession = WinHttpOpen(L"ucxclient/1.0",
+                          WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                          WINHTTP_NO_PROXY_NAME,
+                          WINHTTP_NO_PROXY_BYPASS, 0);
+    
+    if (!hSession) goto cleanup;
+    
+    // Connect to server
+    hConnect = WinHttpConnect(hSession, server, INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!hConnect) goto cleanup;
+    
+    // Create request
+    hRequest = WinHttpOpenRequest(hConnect, L"GET", path,
+                                 NULL, WINHTTP_NO_REFERER,
+                                 WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                 WINHTTP_FLAG_SECURE);
+    
+    if (!hRequest) goto cleanup;
+    
+    // Enable automatic redirect handling for GitHub CDN redirects
+    DWORD dwRedirectPolicy = WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS;
+    WinHttpSetOption(hRequest, WINHTTP_OPTION_REDIRECT_POLICY, &dwRedirectPolicy, sizeof(dwRedirectPolicy));
+    
+    // Send request
+    if (!WinHttpSendRequest(hRequest,
+                           WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                           WINHTTP_NO_REQUEST_DATA, 0,
+                           0, 0)) goto cleanup;
+    
+    // Receive response
+    if (!WinHttpReceiveResponse(hRequest, NULL)) goto cleanup;
+    
+    // Allocate initial buffer
+    buffer = (char*)malloc(4096);
+    if (!buffer) goto cleanup;
+    
+    // Read data (binary-safe)
+    do {
+        dwSize = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
+        
+        if (dwSize == 0) break;
+        
+        // Reallocate buffer if needed (no +1 for null terminator for binary data)
+        char *newBuffer = (char*)realloc(buffer, totalSize + dwSize);
+        if (!newBuffer) {
+            free(buffer);
+            goto cleanup;
+        }
+        buffer = newBuffer;
+        
+        if (!WinHttpReadData(hRequest, buffer + totalSize, dwSize, &dwDownloaded)) break;
+        
+        totalSize += dwDownloaded;
+        
+        // Show progress
+        if (totalSize % 10240 == 0 || dwSize == 0) {
+            printf("\rDownloaded: %zu KB", totalSize / 1024);
+            fflush(stdout);
+        }
+    } while (dwSize > 0);
+    
+    if (totalSize > 0) {
+        result = buffer;
+        buffer = NULL;  // Don't free it in cleanup
+        if (outSize) *outSize = totalSize;
+        printf("\rDownloaded: %zu KB - Complete!\n", totalSize / 1024);
+    }
+    
+cleanup:
+    if (buffer) free(buffer);
+    if (hRequest) WinHttpCloseHandle(hRequest);
+    if (hConnect) WinHttpCloseHandle(hConnect);
+    if (hSession) WinHttpCloseHandle(hSession);
+    
+    return result;
+}
+
 static char* fetchLatestVersion(const char *product)
 {
     wchar_t path[512];
@@ -376,11 +486,516 @@ static char* fetchLatestVersion(const char *product)
         latestVersion = (char*)malloc(32);
         if (latestVersion) {
             sprintf(latestVersion, "%d.%d.%d", maxMajor, maxMinor, maxPatch);
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for version string");
         }
     }
     
     free(response);
     return latestVersion;
+}
+
+static bool saveBinaryFile(const char *filepath, const char *data, size_t size)
+{
+    FILE *fp = fopen(filepath, "wb");
+    if (!fp) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create file: %s", filepath);
+        return false;
+    }
+    
+    size_t written = fwrite(data, 1, size, fp);
+    fclose(fp);
+    
+    if (written != size) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to write all data. Expected %zu, wrote %zu", size, written);
+        return false;
+    }
+    
+    return true;
+}
+
+static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath, size_t pathSize)
+{
+    printf("\nFetching latest firmware release from GitHub...\n");
+    
+    // Get latest release info from GitHub API
+    wchar_t apiPath[512];
+    swprintf(apiPath, 512, L"/repos/u-blox/u-connectXpress/releases/latest");
+    
+    char *releaseInfo = httpGetRequest(L"api.github.com", apiPath);
+    if (!releaseInfo) {
+        printf("ERROR: Failed to fetch release information from GitHub\n");
+        return false;
+    }
+    
+    // Parse release info to find firmware asset
+    // Look for asset name containing the product name and ending with .bin
+    char assetName[256] = {0};
+    char downloadUrl[512] = {0};
+    bool foundAsset = false;
+    
+    // Search for browser_download_url containing the product name
+    char searchPattern[128];
+    snprintf(searchPattern, sizeof(searchPattern), "\"browser_download_url\":\"");
+    
+    char *ptr = releaseInfo;
+    while ((ptr = strstr(ptr, searchPattern)) != NULL) {
+        ptr += strlen(searchPattern);
+        
+        // Extract URL
+        char url[512];
+        int i = 0;
+        while (*ptr != '"' && i < 511) {
+            url[i++] = *ptr++;
+        }
+        url[i] = '\0';
+        
+        // Check if this URL contains the product name and ends with .bin
+        if (strstr(url, product) && strstr(url, ".bin")) {
+            strncpy(downloadUrl, url, sizeof(downloadUrl) - 1);
+            
+            // Extract filename from URL
+            char *lastSlash = strrchr(url, '/');
+            if (lastSlash) {
+                strncpy(assetName, lastSlash + 1, sizeof(assetName) - 1);
+            }
+            
+            foundAsset = true;
+            break;
+        }
+    }
+    
+    free(releaseInfo);
+    
+    if (!foundAsset) {
+        printf("ERROR: Could not find firmware binary for %s in latest release\n", product);
+        printf("Please visit https://github.com/u-blox/u-connectXpress/releases\n");
+        printf("to download the firmware manually.\n");
+        return false;
+    }
+    
+    printf("Found firmware: %s\n", assetName);
+    printf("Downloading from GitHub...\n");
+    
+    // Parse the download URL to extract server and path
+    // URL format: https://github.com/u-blox/u-connectXpress/releases/download/v1.0.0/file.bin
+    char *pathStart = strstr(downloadUrl, "github.com");
+    if (!pathStart) {
+        printf("ERROR: Invalid download URL format\n");
+        return false;
+    }
+    
+    pathStart = strchr(pathStart, '/');
+    if (!pathStart) {
+        printf("ERROR: Invalid download URL format\n");
+        return false;
+    }
+    
+    // Convert path to wide string
+    wchar_t wPath[512];
+    mbstowcs(wPath, pathStart, 512);
+    
+    // Download the firmware binary
+    size_t firmwareSize = 0;
+    char *firmwareData = httpGetBinaryRequest(L"github.com", wPath, &firmwareSize);
+    if (!firmwareData || firmwareSize == 0) {
+        printf("ERROR: Failed to download firmware file\n");
+        if (firmwareData) free(firmwareData);
+        return false;
+    }
+    
+    printf("Downloaded %zu bytes\n", firmwareSize);
+    
+    // Save to local file
+    snprintf(downloadedPath, pathSize, "%s_downloaded.bin", product);
+    
+    if (!saveBinaryFile(downloadedPath, firmwareData, firmwareSize)) {
+        printf("ERROR: Failed to save firmware file\n");
+        free(firmwareData);
+        return false;
+    }
+    
+    free(firmwareData);
+    
+    printf("Firmware saved to: %s\n", downloadedPath);
+    return true;
+}
+
+static bool extractZipFile(const char *zipPath, const char *destFolder)
+{
+    printf("Extracting ZIP file...\n");
+    
+    // Use PowerShell to extract ZIP (works on Windows 10+)
+    char command[1024];
+    snprintf(command, sizeof(command),
+             "powershell -Command \"Expand-Archive -Path '%s' -DestinationPath '%s' -Force\"",
+             zipPath, destFolder);
+    
+    int result = system(command);
+    if (result != 0) {
+        printf("ERROR: Failed to extract ZIP file (exit code %d)\n", result);
+        return false;
+    }
+    
+    printf("ZIP file extracted successfully\n");
+    return true;
+}
+
+static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t pathSize)
+{
+    printf("\n==============================================================\n");
+    printf("           Download Firmware from GitHub\n");
+    printf("==============================================================\n\n");
+    
+    // Fetch available products from GitHub repository
+    printf("Fetching available products from GitHub...\n");
+    
+    wchar_t productApiPath[512];
+    swprintf(productApiPath, 512, L"/repos/u-blox/u-connectXpress/contents");
+    
+    char *repoContents = httpGetRequest(L"api.github.com", productApiPath);
+    if (!repoContents) {
+        printf("ERROR: Failed to fetch repository contents from GitHub\n");
+        printf("Please check your internet connection and try again.\n");
+        return false;
+    }
+    
+    // Parse directory listing to find product folders
+    // Look for directories that contain product names (uppercase with hyphens)
+    typedef struct {
+        char name[64];
+    } ProductInfo;
+    
+    ProductInfo products[20];
+    int productCount = 0;
+    
+    // Parse JSON array looking for "name" fields that match product naming pattern
+    // Product names are like NORA-W36, NORA-B27, etc. (uppercase, contains hyphen)
+    char *ptr = repoContents;
+    while (productCount < 20 && (ptr = strstr(ptr, "\"name\":\"")) != NULL) {
+        ptr += 8; // skip "name":"
+        
+        char name[64];
+        int i = 0;
+        while (*ptr != '"' && i < 63) {
+            name[i++] = *ptr++;
+        }
+        name[i] = '\0';
+        
+        // Check if this looks like a product name:
+        // - Contains at least one hyphen
+        // - First character is uppercase letter
+        // - Contains uppercase letters and hyphens
+        if (strlen(name) > 3 && isupper(name[0]) && strchr(name, '-') != NULL) {
+            // Additional validation: should be mostly uppercase/digits/hyphens
+            bool validProduct = true;
+            for (size_t j = 0; j < strlen(name); j++) {
+                if (!isupper(name[j]) && !isdigit(name[j]) && name[j] != '-') {
+                    validProduct = false;
+                    break;
+                }
+            }
+            
+            if (validProduct) {
+                strncpy(products[productCount].name, name, sizeof(products[productCount].name) - 1);
+                products[productCount].name[sizeof(products[productCount].name) - 1] = '\0';
+                productCount++;
+            }
+        }
+    }
+    
+    free(repoContents);
+    
+    if (productCount == 0) {
+        printf("ERROR: No products found in repository\n");
+        return false;
+    }
+    
+    // Display available products
+    printf("\nAvailable products:\n");
+    for (int i = 0; i < productCount; i++) {
+        printf("  [%d] %s\n", i + 1, products[i].name);
+    }
+    printf("  [0] Cancel\n");
+    printf("\nSelect product: ");
+    
+    int productChoice;
+    if (scanf("%d", &productChoice) != 1) {
+        printf("ERROR: Invalid input\n");
+        getchar(); // consume newline
+        return false;
+    }
+    getchar(); // consume newline
+    
+    if (productChoice == 0) return false;
+    if (productChoice < 1 || productChoice > productCount) {
+        printf("ERROR: Invalid choice\n");
+        return false;
+    }
+    
+    const char *productName = products[productChoice - 1].name;
+    
+    printf("\nFetching available releases for %s from GitHub...\n", productName);
+    
+    // Fetch release list from GitHub API
+    wchar_t apiPath[512];
+    swprintf(apiPath, 512, L"/repos/u-blox/u-connectXpress/releases");
+    
+    char *releaseList = httpGetRequest(L"api.github.com", apiPath);
+    if (!releaseList) {
+        printf("ERROR: Failed to fetch release list from GitHub\n");
+        printf("Please check your internet connection and try again.\n");
+        return false;
+    }
+    
+    // Parse and display available versions (filter by product)
+    printf("\nAvailable versions:\n");
+    typedef struct {
+        char tag[64];
+        char name[128];
+    } ReleaseInfo;
+    
+    ReleaseInfo releases[20];
+    int releaseCount = 0;
+    
+    // Parse JSON to extract tag_name and name, filtering by product
+    char *releasePtr = releaseList;
+    while (releaseCount < 20 && (releasePtr = strstr(releasePtr, "\"tag_name\":")) != NULL) {
+        releasePtr += 12; // skip "tag_name":"
+        
+        // Extract tag
+        char tag[64];
+        int i = 0;
+        while (*releasePtr != '"' && i < 63) {
+            tag[i++] = *releasePtr++;
+        }
+        tag[i] = '\0';
+        
+        // Check if this release is for the selected product
+        // Tags are like "NORA-W36X-3.1.0" or "NORA-B26X-3.0.1"
+        // We want to match the product part (e.g., "NORA-W36" matches "NORA-W36X-...")
+        bool matchesProduct = false;
+        if (strncmp(tag, productName, strlen(productName)) == 0) {
+            // Check that the next character is either 'X', '-', or end of string
+            char nextChar = tag[strlen(productName)];
+            if (nextChar == 'X' || nextChar == '-' || nextChar == '\0') {
+                matchesProduct = true;
+            }
+        }
+        
+        if (matchesProduct) {
+            // This release matches our product - add it to the list
+            strncpy(releases[releaseCount].tag, tag, sizeof(releases[releaseCount].tag) - 1);
+            releases[releaseCount].tag[sizeof(releases[releaseCount].tag) - 1] = '\0';
+            
+            // Find corresponding name
+            char *namePtr = strstr(releasePtr, "\"name\":");
+            if (namePtr) {
+                namePtr += 8; // skip "name":"
+                i = 0;
+                while (*namePtr != '"' && i < 127) {
+                    releases[releaseCount].name[i++] = *namePtr++;
+                }
+                releases[releaseCount].name[i] = '\0';
+            } else {
+                strcpy(releases[releaseCount].name, releases[releaseCount].tag);
+            }
+            
+            printf("  [%d] %s - %s\n", releaseCount + 1, releases[releaseCount].tag, releases[releaseCount].name);
+            releaseCount++;
+        }
+        
+        releasePtr++;
+    }
+    
+    free(releaseList);
+    
+    if (releaseCount == 0) {
+        printf("ERROR: No releases found\n");
+        return false;
+    }
+    
+    printf("  [0] Cancel\n");
+    printf("\nSelect version: ");
+    
+    int versionChoice;
+    if (scanf("%d", &versionChoice) != 1) {
+        printf("ERROR: Invalid input\n");
+        getchar();
+        return false;
+    }
+    getchar();
+    
+    if (versionChoice == 0) return false;
+    if (versionChoice < 1 || versionChoice > releaseCount) {
+        printf("ERROR: Invalid choice\n");
+        return false;
+    }
+    
+    const char *selectedTag = releases[versionChoice - 1].tag;
+    printf("\nSelected: %s (%s)\n", selectedTag, releases[versionChoice - 1].name);
+    
+    // Fetch the specific release to get asset URLs
+    printf("\nFetching release assets...\n");
+    
+    wchar_t releaseApiPath[512];
+    swprintf(releaseApiPath, 512, L"/repos/u-blox/u-connectXpress/releases/tags/%S", selectedTag);
+    
+    char *releaseData = httpGetRequest(L"api.github.com", releaseApiPath);
+    if (!releaseData) {
+        printf("ERROR: Failed to fetch release information\n");
+        return false;
+    }
+    
+    // Find ZIP assets in the release (should be firmware files)
+    char assetUrl[512] = {0};
+    char assetName[128] = {0};
+    bool foundAsset = false;
+    
+    char *assetPtr = releaseData;
+    while ((assetPtr = strstr(assetPtr, "\"browser_download_url\":\"")) != NULL) {
+        assetPtr += 24; // skip "browser_download_url":"
+        
+        char url[512];
+        int i = 0;
+        while (*assetPtr != '"' && i < 511) {
+            url[i++] = *assetPtr++;
+        }
+        url[i] = '\0';
+        
+        // Check if URL ends with .zip (firmware files are typically in ZIP format)
+        if (strstr(url, ".zip")) {
+            strncpy(assetUrl, url, sizeof(assetUrl) - 1);
+            
+            // Extract filename
+            char *lastSlash = strrchr(url, '/');
+            if (lastSlash) {
+                strncpy(assetName, lastSlash + 1, sizeof(assetName) - 1);
+            }
+            
+            foundAsset = true;
+            break;
+        }
+    }
+    
+    free(releaseData);
+    
+    if (!foundAsset) {
+        printf("ERROR: No ZIP file found in release %s\n", selectedTag);
+        printf("Please visit https://github.com/u-blox/u-connectXpress/releases/%s\n", selectedTag);
+        return false;
+    }
+    
+    printf("Found asset: %s\n", assetName);
+    printf("\nDownloading %s from GitHub...\n", assetName);
+    
+    // Parse URL to extract server and path
+    char *serverStart = strstr(assetUrl, "://");
+    if (!serverStart) {
+        printf("ERROR: Invalid asset URL\n");
+        return false;
+    }
+    serverStart += 3;
+    
+    char *pathStart = strchr(serverStart, '/');
+    if (!pathStart) {
+        printf("ERROR: Invalid asset URL\n");
+        return false;
+    }
+    
+    // Extract server
+    char server[256];
+    size_t serverLen = pathStart - serverStart;
+    if (serverLen >= sizeof(server)) {
+        printf("ERROR: Server name too long\n");
+        return false;
+    }
+    strncpy(server, serverStart, serverLen);
+    server[serverLen] = '\0';
+    
+    // Prepare ZIP file path (will overwrite if exists)
+    char zipPath[256];
+    strncpy(zipPath, assetName, sizeof(zipPath) - 1);
+    zipPath[sizeof(zipPath) - 1] = '\0';
+    
+    FILE *existingFile = fopen(zipPath, "rb");
+    if (existingFile) {
+        fclose(existingFile);
+        printf("\nFile '%s' already exists - will overwrite.\n", zipPath);
+    }
+    
+    // Convert to wide strings
+    wchar_t wServer[256];
+    wchar_t wPath[512];
+    mbstowcs(wServer, server, 256);
+    mbstowcs(wPath, pathStart, 512);
+    
+    // Download ZIP file
+    size_t zipSize = 0;
+    char *zipData = httpGetBinaryRequest(wServer, wPath, &zipSize);
+    if (!zipData || zipSize == 0) {
+        printf("ERROR: Failed to download firmware ZIP file\n");
+        printf("The file may not exist for this product/version combination.\n");
+        printf("Please visit https://github.com/u-blox/u-connectXpress/releases\n");
+        if (zipData) free(zipData);
+        return false;
+    }
+    
+    printf("Downloaded %zu bytes\n", zipSize);
+    
+    // Save ZIP file (zipPath already declared and set earlier)
+    if (!saveBinaryFile(zipPath, zipData, zipSize)) {
+        printf("ERROR: Failed to save ZIP file\n");
+        free(zipData);
+        return false;
+    }
+    
+    free(zipData);
+    printf("ZIP file saved: %s\n", zipPath);
+    
+    // Extract ZIP file (use asset name without .zip extension as folder name)
+    char extractFolder[256];
+    strncpy(extractFolder, assetName, sizeof(extractFolder) - 1);
+    extractFolder[sizeof(extractFolder) - 1] = '\0';
+    char *zipExt = strstr(extractFolder, ".zip");
+    if (zipExt) *zipExt = '\0'; // Remove .zip extension
+    
+    if (!extractZipFile(zipPath, extractFolder)) {
+        printf("ERROR: Failed to extract ZIP file\n");
+        return false;
+    }
+    
+    // Find .bin file in extracted folder
+    char findCommand[512];
+    snprintf(findCommand, sizeof(findCommand),
+             "dir /s /b \"%s\\*.bin\" > temp_bin_list.txt", extractFolder);
+    system(findCommand);
+    
+    FILE *binList = fopen("temp_bin_list.txt", "r");
+    if (!binList) {
+        printf("ERROR: Could not find firmware .bin file in extracted ZIP\n");
+        return false;
+    }
+    
+    char binPath[512];
+    if (fgets(binPath, sizeof(binPath), binList) == NULL) {
+        printf("ERROR: No .bin file found in extracted ZIP\n");
+        fclose(binList);
+        DeleteFileA("temp_bin_list.txt");
+        return false;
+    }
+    
+    fclose(binList);
+    DeleteFileA("temp_bin_list.txt");
+    
+    // Remove newline
+    binPath[strcspn(binPath, "\r\n")] = '\0';
+    
+    printf("Found firmware file: %s\n", binPath);
+    strncpy(downloadedPath, binPath, pathSize - 1);
+    downloadedPath[pathSize - 1] = '\0';
+    
+    return true;
 }
 
 static bool fetchApiCommandsFromGitHub(const char *product, const char *version)
@@ -411,7 +1026,10 @@ static void parseYamlCommands(const char *yamlContent)
     // Allocate initial array
     int capacity = 300;
     gApiCommands = (ApiCommand_t*)malloc(sizeof(ApiCommand_t) * capacity);
-    if (!gApiCommands) return;
+    if (!gApiCommands) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for API commands array");
+        return;
+    }
     
     gApiCommandCount = 0;
     
@@ -541,7 +1159,10 @@ static void parseYamlCommands(const char *yamlContent)
             if (gApiCommandCount >= capacity) {
                 capacity *= 2;
                 ApiCommand_t *newCommands = (ApiCommand_t*)realloc(gApiCommands, sizeof(ApiCommand_t) * capacity);
-                if (!newCommands) break;
+                if (!newCommands) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to reallocate API commands array");
+                    break;
+                }
                 gApiCommands = newCommands;
             }
             
@@ -636,6 +1257,9 @@ static bool waitEvent(uint32_t evtFlag, uint32_t timeoutS)
             return true;
         }
         U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        // Sleep to allow RX thread and AT client to process URCs
+        Sleep(50);  // Check every 50ms instead of spinning
     } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
 
     U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
@@ -2372,10 +2996,108 @@ static void handleUserInput(void)
                     
                     break;
                 }
-                case 2:
-                    printf("GitHub firmware download not yet implemented.\n");
-                    printf("Please download firmware manually and use option [1].\n");
+                case 2: {
+                    // Download firmware from GitHub and update
+                    
+                    // Check if device is connected
+                    if (!gConnected) {
+                        printf("ERROR: Device not connected. Please connect first.\n");
+                        break;
+                    }
+                    
+                    char firmwarePath[512];
+                    if (!downloadFirmwareFromGitHubInteractive(firmwarePath, sizeof(firmwarePath))) {
+                        printf("\nFirmware download cancelled or failed.\n");
+                        break;
+                    }
+                    
+                    printf("\nFirmware downloaded successfully!\n");
+                    printf("Path: %s\n", firmwarePath);
+                    printf("\nStarting firmware update...\n");
+                    printf("This will take several minutes. Please wait...\n\n");
+                    printf("NOTE: The connection will be closed and reopened for XMODEM transfer.\n");
+                    printf("      The device will reboot after successful update.\n\n");
+                    
+                    // Perform firmware update with progress callback
+                    int32_t result = uCxFirmwareUpdate(
+                        &gUcxHandle,
+                        firmwarePath,
+                        gComPort,
+                        115200,
+                        false,  // No flow control
+                        true,   // Use 1K blocks
+                        firmwareUpdateProgress,
+                        NULL
+                    );
+                    
+                    if (result == 0) {
+                        printf("\n\nFirmware update completed successfully!\n");
+                        printf("The module is rebooting...\n");
+                        printf("Waiting for +STARTUP URC");
+                        fflush(stdout);
+                        
+                        // Wait up to 10 seconds for the +STARTUP URC
+                        bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                        
+                        if (startupReceived) {
+                            printf(" Received!\n");
+                        } else {
+                            printf(" Timeout! Continuing anyway...\n");
+                        }
+                        fflush(stdout);
+                        
+                        // Disable echo again
+                        printf("Disabling AT echo...\n");
+                        result = uCxSystemSetEchoOff(&gUcxHandle);
+                        if (result != 0) {
+                            printf("Warning: Failed to disable echo (error %d), continuing...\n", result);
+                        }
+                        
+                        // Re-query device information
+                        printf("Querying new firmware version...\n");
+                        
+                        gDeviceModel[0] = '\0';
+                        gDeviceFirmware[0] = '\0';
+                        
+                        const char *model = NULL;
+                        if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+                            strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+                            gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+                            strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+                            gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        const char *fwVersion = NULL;
+                        if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+                            strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+                            gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        gConnected = true;
+                        
+                        printf("\nFirmware update complete!\n");
+                        if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
+                            printf("Device: %s\n", gDeviceModel);
+                            printf("New firmware version: %s\n", gDeviceFirmware);
+                            printf("\nThe device is ready to use!\n");
+                        } else {
+                            printf("Note: Could not read new firmware version.\n");
+                        }
+                        
+                        saveSettings();
+                    } else {
+                        printf("\n\nERROR: Firmware update failed with code %d\n", result);
+                        printf("The connection may still be active. Try using the device or reconnect if needed.\n");
+                    }
+                    
                     break;
+                }
                 case 0:
                     gMenuState = MENU_MAIN;
                     break;
@@ -2422,10 +3144,10 @@ static bool connectDevice(const char *comPort)
     printf("Connecting to %s...\n", comPort);
     
     // Initialize AT client (like windows_basic.c)
-    uPortAtInit(&gAtClient);
+    uPortAtInit(&gUcxAtClient);
     
     // Open COM port
-    if (!uPortAtOpen(&gAtClient, comPort, 115200, false)) {
+    if (!uPortAtOpen(&gUcxAtClient, comPort, 115200, false)) {
         printf("ERROR: Failed to open %s\n", comPort);
         return false;
     }
@@ -2434,7 +3156,7 @@ static bool connectDevice(const char *comPort)
     
     
     // Initialize UCX handle
-    uCxInit(&gAtClient, &gUcxHandle);
+    uCxInit(&gUcxAtClient, &gUcxHandle);
     
     // Create mutex for URC event handling
     U_CX_MUTEX_CREATE(gUrcMutex);
@@ -2468,6 +3190,13 @@ static bool connectDevice(const char *comPort)
     int32_t result = uCxSystemSetEchoOff(&gUcxHandle);
     if (result != 0) {
         printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
+    }
+    
+    // Enable extended error codes for better error diagnostics
+    printf("Enabling extended error codes...\n");
+    result = uCxSystemSetExtendedError(&gUcxHandle, U_EXTENDED_ERRORS_ON);
+    if (result != 0) {
+        printf("Warning: Failed to enable extended error codes (error %d), continuing anyway...\n", result);
     }
     
     // Read device information
@@ -2573,10 +3302,10 @@ static void disconnectDevice(void)
     U_CX_MUTEX_DELETE(gUrcMutex);
 
     // Deinitialize UCX handle
-    uCxAtClientDeinit(&gAtClient);
+    uCxAtClientDeinit(&gUcxAtClient);
     
     // Close COM port
-    uPortAtClose(&gAtClient);
+    uPortAtClose(&gUcxAtClient);
     
     // Clear device info
     gDeviceModel[0] = '\0';
@@ -2624,6 +3353,141 @@ static bool quickConnectToLastDevice(void)
     }
 }
 
+// ----------------------------------------------------------------
+// Dynamic Product Firmware Path Functions
+// ----------------------------------------------------------------
+
+// Extract product name from firmware filename
+// Examples:
+//   "NORA-W36-3.1.0.zip" -> "NORA-W36"
+//   "NORA-B26X-SW-3.0.1.bin" -> "NORA-B26"
+//   "C:\path\to\NORA-W36-something.bin" -> "NORA-W36"
+static char* extractProductFromFilename(const char *filename)
+{
+    static char product[64];
+    product[0] = '\0';
+    
+    // Extract just the filename (remove path)
+    const char *filenameOnly = strrchr(filename, '\\');
+    if (!filenameOnly) filenameOnly = strrchr(filename, '/');
+    if (filenameOnly) {
+        filenameOnly++; // Skip the slash
+    } else {
+        filenameOnly = filename;
+    }
+    
+    // Look for product name pattern: uppercase letters and hyphens followed by hyphen or 'X'
+    // Examples: "NORA-W36", "NORA-B26", etc.
+    // The pattern is typically: <NAME>-<MODEL><number>[-<more>]
+    // We want to extract up to and including the first number sequence
+    
+    int i = 0;
+    int lastHyphen = -1;
+    bool foundDigit = false;
+    
+    while (filenameOnly[i] && i < 63) {
+        char c = filenameOnly[i];
+        
+        // Stop at common delimiters
+        if (c == '.' || c == '_') {
+            // If we've found at least one digit, this might be a good stopping point
+            if (foundDigit && lastHyphen > 0 && lastHyphen < 64) {
+                // Include up to the last hyphen before the digit section
+                size_t copyLen = (lastHyphen < 63) ? lastHyphen : 63;
+                strncpy(product, filenameOnly, copyLen);
+                product[copyLen] = '\0';
+                return product;
+            }
+            break;
+        }
+        
+        // Track hyphens (but skip 'X' suffix like in NORA-W36X)
+        if (c == '-') {
+            lastHyphen = i;
+        }
+        
+        // Track if we've seen digits
+        if (isdigit(c)) {
+            foundDigit = true;
+        }
+        
+        // If we hit a hyphen after finding digits, and it's followed by more content,
+        // we've likely found the product name (e.g., "NORA-W36-")
+        if (c == '-' && foundDigit && filenameOnly[i+1]) {
+            char next = filenameOnly[i+1];
+            // If next char is digit or lowercase letter, this is likely version info
+            if (isdigit(next) || (next >= 'a' && next <= 'z') || next == 'S') {
+                // Product name ends before this hyphen - ensure we don't overflow
+                if (i < 64) {
+                    size_t copyLen = (i < 63) ? i : 63;
+                    strncpy(product, filenameOnly, copyLen);
+                    product[copyLen] = '\0';
+                    
+                    // Trim trailing 'X' if present (NORA-W36X -> NORA-W36)
+                    size_t len = strlen(product);
+                    if (len > 0 && product[len-1] == 'X') {
+                        product[len-1] = '\0';
+                    }
+                    
+                    return product;
+                }
+            }
+        }
+        
+        product[i] = c;
+        i++;
+    }
+    
+    product[i] = '\0';
+    
+    // Trim trailing 'X' if present
+    size_t len = strlen(product);
+    if (len > 0 && product[len-1] == 'X') {
+        product[len-1] = '\0';
+    }
+    
+    return product;
+}
+
+// Get the last used firmware path for a product
+static const char* getProductFirmwarePath(const char *productName)
+{
+    for (int i = 0; i < gProductFirmwarePathCount; i++) {
+        if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
+            return gProductFirmwarePaths[i].lastFirmwarePath;
+        }
+    }
+    return ""; // Not found
+}
+
+// Set/update the firmware path for a product
+static void setProductFirmwarePath(const char *productName, const char *firmwarePath)
+{
+    // Check if product already exists
+    for (int i = 0; i < gProductFirmwarePathCount; i++) {
+        if (strcmp(gProductFirmwarePaths[i].productName, productName) == 0) {
+            // Update existing entry
+            strncpy(gProductFirmwarePaths[i].lastFirmwarePath, firmwarePath, 
+                    sizeof(gProductFirmwarePaths[i].lastFirmwarePath) - 1);
+            gProductFirmwarePaths[i].lastFirmwarePath[sizeof(gProductFirmwarePaths[i].lastFirmwarePath) - 1] = '\0';
+            return;
+        }
+    }
+    
+    // Add new entry if we have space
+    if (gProductFirmwarePathCount < MAX_PRODUCT_PATHS) {
+        strncpy(gProductFirmwarePaths[gProductFirmwarePathCount].productName, productName,
+                sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].productName) - 1);
+        gProductFirmwarePaths[gProductFirmwarePathCount].productName[sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].productName) - 1] = '\0';
+        
+        strncpy(gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath, firmwarePath,
+                sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath) - 1);
+        gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath[sizeof(gProductFirmwarePaths[gProductFirmwarePathCount].lastFirmwarePath) - 1] = '\0';
+        
+        gProductFirmwarePathCount++;
+    }
+}
+
 // Load settings from file
 static void loadSettings(void)
 {
@@ -2664,6 +3528,28 @@ static void loadSettings(void)
                 strncpy(gRemoteAddress, line + 15, sizeof(gRemoteAddress) - 1);
                 gRemoteAddress[sizeof(gRemoteAddress) - 1] = '\0';
             }
+            else if (strncmp(line, "firmware_path_", 14) == 0) {
+                // Dynamic firmware path: firmware_path_<PRODUCT>=<path>
+                // e.g., "firmware_path_NORA-W36=/path/to/firmware.bin"
+                char *equals = strchr(line + 14, '=');
+                if (equals) {
+                    // Extract product name (between "firmware_path_" and "=")
+                    size_t productNameLen = equals - (line + 14);
+                    if (productNameLen > 0 && productNameLen < 64) {
+                        char productName[64];
+                        strncpy(productName, line + 14, productNameLen);
+                        productName[productNameLen] = '\0';
+                        
+                        // Convert underscores back to hyphens (NORA_W36 -> NORA-W36)
+                        for (size_t i = 0; i < productNameLen; i++) {
+                            if (productName[i] == '_') productName[i] = '-';
+                        }
+                        
+                        // Store the firmware path for this product
+                        setProductFirmwarePath(productName, equals + 1);
+                    }
+                }
+            }
         }
         fclose(f);
     }
@@ -2684,6 +3570,23 @@ static void saveSettings(void)
         fprintf(f, "wifi_password=%s\n", obfuscatedPassword);
         
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
+        
+        // Save dynamic per-product firmware paths
+        for (int i = 0; i < gProductFirmwarePathCount; i++) {
+            if (gProductFirmwarePaths[i].productName[0] != '\0' && 
+                gProductFirmwarePaths[i].lastFirmwarePath[0] != '\0') {
+                // Convert hyphens to underscores for INI file compatibility
+                // (NORA-W36 -> NORA_W36)
+                char productKey[64];
+                strncpy(productKey, gProductFirmwarePaths[i].productName, sizeof(productKey) - 1);
+                productKey[sizeof(productKey) - 1] = '\0';
+                for (size_t j = 0; j < strlen(productKey); j++) {
+                    if (productKey[j] == '-') productKey[j] = '_';
+                }
+                fprintf(f, "firmware_path_%s=%s\n", productKey, gProductFirmwarePaths[i].lastFirmwarePath);
+            }
+        }
+        
         fclose(f);
     }
 }
@@ -3327,6 +4230,8 @@ static char* selectComPortFromList(const char *recommendedPort)
             if (result) {
                 strcpy(result, input);
                 return result;
+            } else {
+                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for COM port string");
             }
         }
         
@@ -3336,6 +4241,8 @@ static char* selectComPortFromList(const char *recommendedPort)
             if (result) {
                 strcpy(result, recommendedPort);
                 return result;
+            } else {
+                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for COM port string");
             }
         }
     }
@@ -4378,17 +5285,21 @@ static void wifiConnect(void)
     
     printf("\n--- Wi-Fi Connect ---\n");
     
-    // Check if already connected
+    // Check if already connected and disconnect if necessary
     uCxWifiStationStatus_t connStatus;
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &connStatus)) {
         int32_t connState = connStatus.rspWifiStatusIdInt.int_val;
         uCxEnd(&gUcxHandle);
         
-        if (connState == 2) {
-            // Already connected - disconnect first
+        if (connState == 2) {  // 2 = Connected
             printf("Already connected to Wi-Fi. Disconnecting first...\n");
-            uCxWifiStationDisconnect(&gUcxHandle);
-            uPortDelayMs(1000);  // Wait for disconnect to complete
+            
+            if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
+                printf("Disconnect command sent successfully.\n");
+                Sleep(1000);  // Give module time to disconnect (like original version)
+            } else {
+                printf("Warning: Disconnect command failed, attempting to connect anyway...\n");
+            }
         }
     }
     
@@ -4424,65 +5335,39 @@ static void wifiConnect(void)
         
         printf("Connecting to '%s'...\n", ssid);
         
-        // Retry loop: try twice (initial attempt + one retry after disconnect)
-        bool connected = false;
-        for (int attempt = 1; attempt <= 2 && !connected; attempt++) {
-            if (attempt == 2) {
-                printf("\nRetry attempt %d: Disconnecting first to clear any stale state...\n", attempt);
-                uCxWifiStationDisconnect(&gUcxHandle);
-                // Small delay to let disconnect complete
-                uPortDelayMs(500);
-                printf("Retrying connection...\n");
+        // Set connection parameters (wlan_handle = 0, default)
+        if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
+            printf("ERROR: Failed to set connection parameters\n");
+            return;
+        }
+        
+        // Set security based on password
+        if (strlen(password) > 0) {
+            // WPA2/WPA3 with password (threshold = WPA2 or higher)
+            printf("Setting WPA2/WPA3 security...\n");
+            if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
+                printf("ERROR: Failed to set WPA security\n");
+                return;
             }
-            
-            // Set connection parameters (wlan_handle = 0, default)
-            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
-                printf("ERROR: Failed to set connection parameters (attempt %d)\n", attempt);
-                if (attempt == 2) {
-                    printf("Both attempts failed. Returning to menu.\n");
-                    return;
-                }
-                continue;  // Try again
+        } else {
+            // Open network (no password)
+            printf("Setting open security (no password)...\n");
+            if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+                printf("ERROR: Failed to set open security\n");
+                return;
             }
-            
-            // Set security based on password
-            if (strlen(password) > 0) {
-                // WPA2/WPA3 with password (threshold = WPA2 or higher)
-                printf("Setting WPA2/WPA3 security...\n");
-                if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
-                    printf("ERROR: Failed to set WPA security (attempt %d)\n", attempt);
-                    if (attempt == 2) {
-                        printf("Both attempts failed. Returning to menu.\n");
-                        return;
-                    }
-                    continue;  // Try again
-                }
-            } else {
-                // Open network (no password)
-                printf("Setting open security (no password)...\n");
-                if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
-                    printf("ERROR: Failed to set open security (attempt %d)\n", attempt);
-                    if (attempt == 2) {
-                        printf("Both attempts failed. Returning to menu.\n");
-                        return;
-                    }
-                    continue;  // Try again
-                }
-            }
-            
-            // Try to connect
-            printf("Initiating connection...\n");
-            if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
-                printf("ERROR: Failed to initiate connection (attempt %d)\n", attempt);
-                if (attempt == 2) {
-                    printf("Both attempts failed. Returning to menu.\n");
-                    return;
-                }
-                continue;  // Try again
-            }
-            
-            // If we got here, connection was initiated successfully
-            connected = true;
+        }
+        
+        // Clear any pending network event flags before connecting
+        U_CX_MUTEX_LOCK(gUrcMutex);
+        gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        // Initiate connection
+        printf("Initiating connection...\n");
+        if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
+            printf("ERROR: Failed to initiate connection\n");
+            return;
         }
         
         // Wait for network up event (using URC handler)
@@ -4544,7 +5429,8 @@ static void wifiConnect(void)
                 testConnectivity(gatewayStr, ssid, rssi, channel);
             }
         } else {
-            printf("Connection failed - timeout waiting for network up event\n");
+            printf("Connection failed - timeout waiting for network up event (IP configuration)\n");
+            printf("Wi-Fi link is established but network layer failed to initialize.\n");
         }
     }
 }
@@ -4558,6 +5444,11 @@ static void wifiDisconnect(void)
     
     printf("\n--- Wi-Fi Disconnect ---\n");
     printf("Disconnecting from Wi-Fi...\n");
+    
+    // Clear any pending disconnect event flags
+    U_CX_MUTEX_LOCK(gUrcMutex);
+    gUrcEventFlags &= ~(URC_FLAG_NETWORK_DOWN | URC_FLAG_WIFI_LINK_DOWN);
+    U_CX_MUTEX_UNLOCK(gUrcMutex);
     
     if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
         // Wait for Wi-Fi link down URC event (max 3 seconds)
