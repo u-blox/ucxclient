@@ -146,4 +146,15 @@ uUrcEntry_t *uCxAtUrcQueueDequeueBegin(uCxAtUrcQueue_t *pUrcQueue);
   */
 void uCxAtUrcQueueDequeueEnd(uCxAtUrcQueue_t *pUrcQueue, uUrcEntry_t *pEntry);
 
+/**
+  * @brief  Get URC queue usage statistics
+  *
+  * Returns the current buffer usage for debugging/monitoring.
+  *
+  * @param[in]   pUrcQueue: the URC queue initialized with uCxAtUrcQueueInit().
+  * @param[out]  pUsedBytes: pointer to receive used bytes count
+  * @param[out]  pTotalBytes: pointer to receive total buffer size
+  */
+void uCxAtUrcQueueGetStats(uCxAtUrcQueue_t *pUrcQueue, size_t *pUsedBytes, size_t *pTotalBytes);
+
 #endif // U_CX_AT_URC_QUEUE_H

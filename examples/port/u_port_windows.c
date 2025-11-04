@@ -36,10 +36,11 @@
  *    - Predictable timing (10ms polling interval)
  *    - Good for troubleshooting timing issues
  * 
- * 3. USE_UART_FTDI (future implementation)
- *    - Uses FTDI D2XX API directly
- *    - Bypasses Windows COM driver
- *    - See D2XX Programmer's Guide for API details
+ * 3. USE_UART_FTDI (FTDI D2XX direct mode)
+ *    - Uses FTDI D2XX API directly (bypasses Windows COM driver)
+ *    - Event-driven with FT_SetEventNotification and circular buffer
+ *    - Optimized with 4KB USB transfers and 2ms latency
+ *    - Good for FTDI devices like NORA-W36 EVK
  * 
  * To switch modes, uncomment the desired #define below in the
  * "COMPILE-TIME MACROS" section.
@@ -56,6 +57,7 @@
 #include <regstr.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 
@@ -70,8 +72,8 @@
 // UART RX Implementation Selection
 // Uncomment ONE of the following to select UART implementation:
 // #define USE_UART_POLLED        // Simple polled mode (good for debugging)
-#define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
-// #define USE_UART_FTDI          // FTDI D2XX API (future implementation)
+// #define USE_UART_EVENT_DRIVEN     // Event-driven with WaitCommEvent (default)
+#define USE_UART_FTDI          // FTDI D2XX API with event-driven circular buffer
 
 #if defined(USE_UART_POLLED) + defined(USE_UART_EVENT_DRIVEN) + defined(USE_UART_FTDI) != 1
 #error "Exactly ONE UART implementation must be defined"
@@ -95,9 +97,15 @@ typedef struct {
     HANDLE hCommEvent;      // Event for WaitCommEvent (data arrival notification)
     HANDLE hReadEvent;      // Event for read operations
     HANDLE hWriteEvent;     // Event for write operations
+    HANDLE hDataAvailEvent; // Event signaled when data added to circular buffer
     OVERLAPPED overlapped;  // For WaitCommEvent
     OVERLAPPED ovRead;      // For read operations
     OVERLAPPED ovWrite;     // For write operations
+    // Internal RX circular buffer to avoid character-by-character overlapped I/O
+    uint8_t rxCircBuf[8192];
+    volatile size_t rxCircHead;  // Write position (updated by RX thread)
+    volatile size_t rxCircTail;  // Read position (updated by AT client)
+    CRITICAL_SECTION rxCircLock;
 #endif
     
 #if defined(USE_UART_POLLED)
@@ -106,8 +114,15 @@ typedef struct {
 #endif
     
 #if defined(USE_UART_FTDI)
-    // FTDI D2XX specific fields (future)
-    void *pFtdiHandle;      // FT_HANDLE
+    // FTDI D2XX specific fields
+    void *pFtdiHandle;      // FT_HANDLE (opaque FTDI handle)
+    HANDLE hFtdiEvent;      // Event for FT_SetEventNotification()
+    // Internal RX circular buffer (same as event-driven mode)
+    uint8_t rxCircBuf[8192];
+    volatile size_t rxCircHead;  // Write position (updated by RX thread)
+    volatile size_t rxCircTail;  // Read position (updated by AT client)
+    CRITICAL_SECTION rxCircLock;
+    HANDLE hDataAvailEvent; // Event signaled when data added to circular buffer
 #endif
     
     DWORD dwThreadId;
@@ -169,7 +184,8 @@ static HANDLE openComPort(const char *pPortName, int baudRate, bool useFlowContr
         NULL                  // No template
     );
 #else
-    // Polled/FTDI mode: Use synchronous I/O (no FILE_FLAG_OVERLAPPED)
+    // Polled mode: Use synchronous I/O (no FILE_FLAG_OVERLAPPED)
+    // Note: FTDI mode doesn't use COM port at all - it uses FTDI D2XX API directly
     hComPort = CreateFileA(
         fullPortName,
         GENERIC_READ | GENERIC_WRITE,
@@ -340,7 +356,72 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
         return 1;
     }
 
+    // Do an initial check for any data already in the buffer
+    COMSTAT comStat;
+    DWORD dwErrors;
+    ClearCommError(pCtx->hComPort, &dwErrors, &comStat);
+    if (comStat.cbInQue > 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, 
+                       "RX thread: %lu bytes already in queue on startup", comStat.cbInQue);
+    }
+
     while (!pCtx->bTerminateRxTask) {
+        // Check for data BEFORE waiting (WaitCommEvent only fires on NEW data)
+        COMSTAT comStatPre;
+        DWORD dwErrorsPre;
+        ClearCommError(pCtx->hComPort, &dwErrorsPre, &comStatPre);
+        
+        if (comStatPre.cbInQue > 0) {
+            // Data already available - read it immediately using overlapped I/O
+            uint8_t tempBuf[1024];
+            DWORD toRead = (comStatPre.cbInQue > sizeof(tempBuf)) ? sizeof(tempBuf) : comStatPre.cbInQue;
+            DWORD bytesRead = 0;
+            
+            // Must use overlapped I/O since port opened with FILE_FLAG_OVERLAPPED
+            OVERLAPPED readOverlapped;
+            memset(&readOverlapped, 0, sizeof(OVERLAPPED));
+            readOverlapped.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);  // Manual-reset for GetOverlappedResult
+            
+            BOOL readResult = ReadFile(pCtx->hComPort, tempBuf, toRead, &bytesRead, &readOverlapped);
+            if (!readResult) {
+                DWORD dwError = GetLastError();
+                if (dwError == ERROR_IO_PENDING) {
+                    // Wait for the read to complete
+                    if (GetOverlappedResult(pCtx->hComPort, &readOverlapped, &bytesRead, TRUE)) {
+                        readResult = TRUE;  // Read completed successfully
+                    } else {
+                        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance,
+                                       "RX thread: GetOverlappedResult FAILED with error %lu", GetLastError());
+                    }
+                } else {
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance,
+                                   "RX thread: ReadFile FAILED with error %lu", dwError);
+                }
+            }
+            
+            CloseHandle(readOverlapped.hEvent);
+            
+            if (readResult && bytesRead > 0) {
+                EnterCriticalSection(&pCtx->rxCircLock);
+                for (DWORD i = 0; i < bytesRead; i++) {
+                    size_t nextHead = (pCtx->rxCircHead + 1) % sizeof(pCtx->rxCircBuf);
+                    if (nextHead != pCtx->rxCircTail) {
+                        pCtx->rxCircBuf[pCtx->rxCircHead] = tempBuf[i];
+                        pCtx->rxCircHead = nextHead;
+                    } else {
+                        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pCtx->pClient->instance,
+                                       "RX circular buffer full! Dropping data.");
+                        break;
+                    }
+                }
+                LeaveCriticalSection(&pCtx->rxCircLock);
+                SetEvent(pCtx->hDataAvailEvent);
+            }
+            // Continue loop to check for more data before waiting
+            continue;
+        }
+        
+        // No data available - set up async wait for new data
         // Prepare overlapped structure and reset the event before each wait
         dwEvtMask = 0;
         ResetEvent(pCtx->hCommEvent);
@@ -362,7 +443,7 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                     // Communication event signaled - data received
                     DWORD dwBytesTransferred;
                     if (GetOverlappedResult(pCtx->hComPort, &pCtx->overlapped, &dwBytesTransferred, FALSE)) {
-                        // Drain all available data before rearming WaitCommEvent
+                        // Drain all available data into circular buffer
                         COMSTAT comStat;
                         DWORD dwErrors;
                         int drainCount = 0;
@@ -373,7 +454,7 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                                 Sleep(2); // ensure first byte fully available
                                 firstRead = false;
                             }
-                            uCxAtClientHandleRx(pCtx->pClient);
+                            
                             ClearCommError(pCtx->hComPort, &dwErrors, &comStat);
                             
                             // Check for UART errors
@@ -397,6 +478,32 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                                 if (dwErrors & CE_RXPARITY) {
                                     U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
                                                    "UART parity error! Data corrupted.");
+                                }
+                            }
+                            
+                            // Read available data into circular buffer
+                            if (comStat.cbInQue > 0) {
+                                uint8_t tempBuf[1024];
+                                DWORD toRead = (comStat.cbInQue > sizeof(tempBuf)) ? sizeof(tempBuf) : comStat.cbInQue;
+                                DWORD bytesRead = 0;
+                                
+                                if (ReadFile(pCtx->hComPort, tempBuf, toRead, &bytesRead, NULL) && bytesRead > 0) {
+                                    EnterCriticalSection(&pCtx->rxCircLock);
+                                    for (DWORD i = 0; i < bytesRead; i++) {
+                                        size_t nextHead = (pCtx->rxCircHead + 1) % sizeof(pCtx->rxCircBuf);
+                                        if (nextHead != pCtx->rxCircTail) {
+                                            pCtx->rxCircBuf[pCtx->rxCircHead] = tempBuf[i];
+                                            pCtx->rxCircHead = nextHead;
+                                        } else {
+                                            // Buffer full - data lost
+                                            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pCtx->pClient->instance,
+                                                           "RX circular buffer full! Dropping data.");
+                                            break;
+                                        }
+                                    }
+                                    LeaveCriticalSection(&pCtx->rxCircLock);
+                                    // Signal that data is available
+                                    SetEvent(pCtx->hDataAvailEvent);
                                 }
                             }
                             
@@ -470,25 +577,95 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
 #elif defined(USE_UART_FTDI)
 /* ----------------------------------------------------------------
  * RX THREAD - FTDI D2XX MODE
- * Uses FTDI D2XX API directly (future implementation)
- * See: D2XX Programmer's Guide
+ * Event-driven with circular buffer (same pattern as COM port mode)
+ * See: D2XX Programmer's Guide - FT_SetEventNotification()
  * -------------------------------------------------------------- */
+
+// Include minimal FTDI D2XX declarations (ftd2xx.lib is in examples/ftdi/ - linked via CMakeLists.txt)
+#include "../ftdi/ftd2xx_minimal.h"
+
 static DWORD WINAPI rxThread(LPVOID lpParam)
 {
     uPortContext_t *pCtx = (uPortContext_t *)lpParam;
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread started (FTDI D2XX mode)");
     
-    // TODO: Implement FTDI D2XX RX thread
-    // - Use FT_SetEventNotification() or FT_GetQueueStatus()
-    // - Process data with FT_Read()
-    // - Call uCxAtClientHandleRx() when data available
+    // Set event notification for RXCHAR
+    FT_STATUS ftStatus = FT_SetEventNotification((FT_HANDLE)pCtx->pFtdiHandle, 
+                                                  FT_EVENT_RXCHAR, 
+                                                  pCtx->hFtdiEvent);
+    if (ftStatus != FT_OK) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                       "FT_SetEventNotification failed: %d", ftStatus);
+        return 1;
+    }
     
     while (!pCtx->bTerminateRxTask) {
-        if (WaitForSingleObject(pCtx->hStopEvent, 100) == WAIT_OBJECT_0) {
+        // Wait for either data event or stop event
+        HANDLE waitHandles[2] = { pCtx->hFtdiEvent, pCtx->hStopEvent };
+        DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
+        
+        if (waitResult == WAIT_OBJECT_0) {
+            // Data event signaled - drain ALL available data in a continuous loop
+            // Keep reading until queue is empty to handle complete multi-line responses
+            DWORD dwQueueBytes = 0;
+            int loopCount = 0;
+            
+            do {
+                // Check queue status
+                ftStatus = FT_GetQueueStatus((FT_HANDLE)pCtx->pFtdiHandle, &dwQueueBytes);
+                
+                if (ftStatus == FT_OK && dwQueueBytes > 0) {
+                    // Read available data (bulk read up to 1024 bytes)
+                    uint8_t tempBuf[1024];
+                    DWORD toRead = (dwQueueBytes > sizeof(tempBuf)) ? sizeof(tempBuf) : dwQueueBytes;
+                    DWORD bytesRead = 0;
+                    
+                    ftStatus = FT_Read((FT_HANDLE)pCtx->pFtdiHandle, tempBuf, toRead, &bytesRead);
+                    
+                    if (ftStatus == FT_OK && bytesRead > 0) {
+                        // Copy to circular buffer
+                        EnterCriticalSection(&pCtx->rxCircLock);
+                        
+                        for (DWORD i = 0; i < bytesRead; i++) {
+                            size_t nextHead = (pCtx->rxCircHead + 1) % sizeof(pCtx->rxCircBuf);
+                            if (nextHead != pCtx->rxCircTail) {
+                                pCtx->rxCircBuf[pCtx->rxCircHead] = tempBuf[i];
+                                pCtx->rxCircHead = nextHead;
+                            } else {
+                                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pCtx->pClient->instance, 
+                                               "RX circular buffer full!");
+                                break;
+                            }
+                        }
+                        
+                        LeaveCriticalSection(&pCtx->rxCircLock);
+                        SetEvent(pCtx->hDataAvailEvent);
+                    }
+                    
+                    // Give FTDI device a moment to accumulate more data if it's streaming
+                    // This is critical for Wi-Fi scans where results arrive over several seconds
+                    Sleep(20);  // 20ms to allow device to send more data
+                }
+                
+                loopCount++;
+                if (loopCount > 100) {
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pCtx->pClient->instance, 
+                                   "RX drain loop exceeded 100 iterations");
+                    break;
+                }
+                
+            } while (dwQueueBytes > 0);
+            
+        } else if (waitResult == WAIT_OBJECT_0 + 1) {
+            // Stop event signaled
+            break;
+        } else {
+            // Error or unexpected result
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pCtx->pClient->instance, 
+                           "WaitForMultipleObjects failed: %lu", GetLastError());
             break;
         }
-        // TODO: FTDI D2XX implementation
     }
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated (FTDI D2XX mode)");
@@ -508,9 +685,17 @@ static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void
     uPortContext_t *pCtx = (uPortContext_t *)pStreamHandle;
     DWORD dwBytesWritten = 0;
 
+#if defined(USE_UART_FTDI)
+    // FTDI mode: Check FTDI handle
+    if (pCtx->pFtdiHandle == NULL) {
+        return -1;
+    }
+#else
+    // COM port mode: Check COM handle
     if (pCtx->hComPort == INVALID_HANDLE_VALUE) {
         return -1;
     }
+#endif
 
 #if defined(USE_UART_EVENT_DRIVEN)
     // Event-driven mode: Use overlapped I/O
@@ -536,8 +721,15 @@ static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void
             return -1;
         }
     }
+#elif defined(USE_UART_FTDI)
+    // FTDI mode: Use FTDI D2XX write function
+    FT_STATUS ftStatus = FT_Write((FT_HANDLE)pCtx->pFtdiHandle, (LPVOID)pData, (DWORD)length, &dwBytesWritten);
+    if (ftStatus != FT_OK) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "FT_Write failed, status: %d", ftStatus);
+        return -1;
+    }
 #else
-    // Polled/FTDI mode: Use synchronous I/O
+    // Polled mode: Use synchronous I/O
     if (!WriteFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesWritten, NULL)) {
         DWORD dwError = GetLastError();
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "WriteFile failed, error: %lu", dwError);
@@ -553,54 +745,61 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
     uPortContext_t *pCtx = (uPortContext_t *)pStreamHandle;
     DWORD dwBytesRead = 0;
 
-    if (pCtx->hComPort == INVALID_HANDLE_VALUE) {
+#if defined(USE_UART_FTDI)
+    // FTDI mode: Check FTDI handle
+    if (pCtx->pFtdiHandle == NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "uartRead: FTDI handle is NULL");
         return -1;
     }
+#else
+    // COM port mode: Check COM handle
+    if (pCtx->hComPort == INVALID_HANDLE_VALUE) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "uartRead: COM handle is INVALID");
+        return -1;
+    }
+#endif
 
-#if defined(USE_UART_EVENT_DRIVEN)
-    // Event-driven mode: Use overlapped I/O
-    ResetEvent(pCtx->hReadEvent);
-    memset(&pCtx->ovRead, 0, sizeof(OVERLAPPED));
-    pCtx->ovRead.hEvent = pCtx->hReadEvent;
-
-    if (!ReadFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesRead, &pCtx->ovRead)) {
-        DWORD dwError = GetLastError();
-        if (dwError == ERROR_IO_PENDING) {
-            DWORD dwTimeout = (timeoutMs == 0) ? 0 : (DWORD)timeoutMs;
-            DWORD dwWaitResult = WaitForSingleObject(pCtx->hReadEvent, dwTimeout);
-            
-            if (dwWaitResult == WAIT_OBJECT_0) {
-                if (!GetOverlappedResult(pCtx->hComPort, &pCtx->ovRead, &dwBytesRead, FALSE)) {
-                    dwError = GetLastError();
-                    if (dwError != ERROR_TIMEOUT) {
-                        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "ReadFile failed, error: %lu", dwError);
-                    }
-                    return -1;
-                }
-                
-                // Retry once if zero bytes read (premature completion)
-                if (dwBytesRead == 0 && timeoutMs > 0) {
-                    Sleep(1);
-                    DWORD tmp = 0;
-                    if (ReadFile(pCtx->hComPort, pData, (DWORD)length, &tmp, NULL)) {
-                        dwBytesRead = tmp;
-                    }
-                }
-            } else if (dwWaitResult == WAIT_TIMEOUT) {
-                CancelIo(pCtx->hComPort);
-                return 0;
-            } else {
-                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Read wait failed");
-                CancelIo(pCtx->hComPort);
-                return -1;
+#if defined(USE_UART_EVENT_DRIVEN) || defined(USE_UART_FTDI)
+    // Event-driven and FTDI modes: Read from circular buffer filled by RX thread
+    uint8_t *pBuf = (uint8_t *)pData;
+    int32_t startTime = (int32_t)GetTickCount();
+    
+    while (dwBytesRead < length) {
+        EnterCriticalSection(&pCtx->rxCircLock);
+        
+        // Check if data available in circular buffer
+        while (pCtx->rxCircTail != pCtx->rxCircHead && dwBytesRead < length) {
+            pBuf[dwBytesRead++] = pCtx->rxCircBuf[pCtx->rxCircTail];
+            pCtx->rxCircTail = (pCtx->rxCircTail + 1) % sizeof(pCtx->rxCircBuf);
+        }
+        
+        LeaveCriticalSection(&pCtx->rxCircLock);
+        
+        // If we got some data, return immediately
+        if (dwBytesRead > 0) {
+            break;
+        }
+        
+        // No data available - wait for data or timeout
+        if (timeoutMs > 0) {
+            int32_t elapsed = (int32_t)GetTickCount() - startTime;
+            int32_t remaining = timeoutMs - elapsed;
+            if (remaining <= 0) {
+                break;  // Timeout expired
             }
+            // Wait for data to arrive (or timeout)
+            DWORD waitResult = WaitForSingleObject(pCtx->hDataAvailEvent, (DWORD)remaining);
+            if (waitResult == WAIT_TIMEOUT) {
+                break;
+            }
+            // Loop again to read the data that arrived
         } else {
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "ReadFile failed, error: %lu", dwError);
-            return -1;
+            // No timeout, return immediately
+            break;
         }
     }
 #else
-    // Polled/FTDI mode: Use synchronous I/O
+    // Polled mode: Use synchronous I/O
     // Windows COM timeouts are already configured in openComPort()
     if (!ReadFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesRead, NULL)) {
         DWORD dwError = GetLastError();
@@ -731,10 +930,23 @@ void uPortAtInit(uCxAtClient_t *pClient)
     context.hCommEvent = CreateEvent(NULL, FALSE, FALSE, NULL);  // Auto-reset event for WaitCommEvent
     context.hReadEvent = CreateEvent(NULL, TRUE, FALSE, NULL);   // Manual-reset for read operations
     context.hWriteEvent = CreateEvent(NULL, TRUE, FALSE, NULL);  // Manual-reset for write operations
+    context.hDataAvailEvent = CreateEvent(NULL, FALSE, FALSE, NULL);  // Auto-reset for data availability
+    // Initialize circular buffer
+    memset(context.rxCircBuf, 0, sizeof(context.rxCircBuf));
+    context.rxCircHead = 0;
+    context.rxCircTail = 0;
+    InitializeCriticalSection(&context.rxCircLock);
 #elif defined(USE_UART_POLLED)
     context.pollIntervalMs = 10;  // Poll every 10ms (adjustable for debugging)
 #elif defined(USE_UART_FTDI)
-    context.pFtdiHandle = NULL;   // Will be initialized when FTDI support is added
+    context.pFtdiHandle = NULL;   // Will be initialized in uPortAtOpen
+    context.hFtdiEvent = CreateEvent(NULL, FALSE, FALSE, NULL);  // Auto-reset event for FTDI notifications
+    context.hDataAvailEvent = CreateEvent(NULL, FALSE, FALSE, NULL);  // Auto-reset for data availability
+    // Initialize circular buffer (same as event-driven mode)
+    memset(context.rxCircBuf, 0, sizeof(context.rxCircBuf));
+    context.rxCircHead = 0;
+    context.rxCircTail = 0;
+    InitializeCriticalSection(&context.rxCircLock);
 #endif
 
     // Current implementation only supports one instance
@@ -753,8 +965,134 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     assert(pClient->pConfig != NULL);
     assert(pCtx != NULL);
-    assert(pCtx->hComPort == INVALID_HANDLE_VALUE);
 
+#if defined(USE_UART_FTDI)
+    // FTDI D2XX mode: Open FTDI device by description or index
+    assert(pCtx->pFtdiHandle == NULL);
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Opening FTDI device: %s at %d baud",
+                    pDevName, baudRate);
+    
+    // FTDI D2XX API device open and configuration
+    FT_HANDLE ftHandle = NULL;
+    FT_STATUS ftStatus;
+    int deviceIndex = -1;
+    
+    // If user passed "COMxx", enumerate FTDI devices to find matching one
+    if (strncmp(pDevName, "COM", 3) == 0) {
+        // Extract COM port number from "COMxx" string
+        int comPortNum = atoi(pDevName + 3);  // Skip "COM" prefix
+        
+        uPortLogPrintf("FTDI mode: Looking for FTDI device on %s (port %d)...\n", pDevName, comPortNum);
+        
+        // Get number of FTDI devices
+        DWORD numDevs = 0;
+        ftStatus = FT_CreateDeviceInfoList(&numDevs);
+        if (ftStatus != FT_OK || numDevs == 0) {
+            uPortLogPrintf("No FTDI devices found, status: %d\n", ftStatus);
+            return false;
+        }
+        
+        uPortLogPrintf("Found %lu FTDI device(s), checking each...\n", numDevs);
+        
+        // Allocate device info list
+        FT_DEVICE_LIST_INFO_NODE *devInfo = (FT_DEVICE_LIST_INFO_NODE *)malloc(sizeof(FT_DEVICE_LIST_INFO_NODE) * numDevs);
+        if (devInfo == NULL) {
+            uPortLogPrintf("Failed to allocate device info list\n");
+            return false;
+        }
+        
+        // Get device info list
+        ftStatus = FT_GetDeviceInfoList(devInfo, &numDevs);
+        if (ftStatus != FT_OK) {
+            uPortLogPrintf("FT_GetDeviceInfoList failed, status: %d\n", ftStatus);
+            free(devInfo);
+            return false;
+        }
+        
+        // Iterate through devices to find the one on the specified COM port
+        for (DWORD i = 0; i < numDevs; i++) {
+            // Try to open this device temporarily to check its COM port
+            FT_HANDLE tempHandle;
+            ftStatus = FT_Open(i, &tempHandle);
+            if (ftStatus == FT_OK) {
+                // Get the COM port number for this device
+                LONG comPort = -1;
+                ftStatus = FT_GetComPortNumber(tempHandle, &comPort);
+                
+                uPortLogPrintf("  Device %lu: %s (SN: %s) - ", i, 
+                              devInfo[i].Description, devInfo[i].SerialNumber);
+                
+                if (ftStatus == FT_OK && comPort > 0) {
+                    uPortLogPrintf("COM%ld\n", comPort);
+                    
+                    // Check if this matches our target COM port
+                    if (comPort == comPortNum) {
+                        uPortLogPrintf("  -> Match! This is the device we want.\n");
+                        deviceIndex = (int)i;
+                        ftHandle = tempHandle;  // Keep this handle open
+                        break;
+                    }
+                } else {
+                    uPortLogPrintf("(no COM port assigned)\n");
+                }
+                
+                // Close if not a match
+                if (ftHandle == NULL) {
+                    FT_Close(tempHandle);
+                }
+            }
+        }
+        
+        free(devInfo);
+        
+        if (deviceIndex < 0) {
+            uPortLogPrintf("No FTDI device found on %s\n", pDevName);
+            return false;
+        }
+        
+    } else {
+        // User passed device description (e.g., "NORA-W36") or index (e.g., "0")
+        // Try to open by description first
+        ftStatus = FT_OpenEx((PVOID)pDevName, FT_OPEN_BY_DESCRIPTION, &ftHandle);
+        if (ftStatus != FT_OK) {
+            // Try as device index
+            deviceIndex = atoi(pDevName);
+            ftStatus = FT_Open(deviceIndex, &ftHandle);
+            if (ftStatus != FT_OK) {
+                uPortLogPrintf("Failed to open FTDI device '%s', status: %d\n", pDevName, ftStatus);
+                return false;
+            }
+        }
+    }
+    
+    uPortLogPrintf("FTDI device opened successfully\n");
+    
+    // Configure FTDI device
+    FT_SetBaudRate(ftHandle, baudRate);
+    FT_SetDataCharacteristics(ftHandle, FT_BITS_8, FT_STOP_BITS_1, FT_PARITY_NONE);
+    if (useFlowControl) {
+        FT_SetFlowControl(ftHandle, FT_FLOW_RTS_CTS, 0, 0);
+    } else {
+        FT_SetFlowControl(ftHandle, FT_FLOW_NONE, 0, 0);
+    }
+    
+    // Set timeouts (similar to COM port configuration)
+    FT_SetTimeouts(ftHandle, 100, 1000);  // Read timeout 100ms, write timeout 1000ms
+    
+    // Optimize USB transfer parameters for better performance
+    FT_SetUSBParameters(ftHandle, 4096, 4096);  // 4KB IN/OUT transfer size
+    FT_SetLatencyTimer(ftHandle, 2);            // 2ms latency (default is 16ms)
+    
+    // Purge any stale data
+    FT_Purge(ftHandle, FT_PURGE_RX | FT_PURGE_TX);
+    
+    pCtx->pFtdiHandle = ftHandle;
+    
+#else
+    // COM port mode (event-driven or polled)
+    assert(pCtx->hComPort == INVALID_HANDLE_VALUE);
+    
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Opening %s at %d with %s flow control",
                     pDevName, baudRate, useFlowControl ? "CTS/RTS" : "no");
 
@@ -765,6 +1103,8 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     }
     
     pCtx->hComPort = gHComPort;
+#endif
+
     pCtx->bTerminateRxTask = false;
 
     // Reset stop event
@@ -774,9 +1114,14 @@ bool uPortAtOpen(uCxAtClient_t *pClient, const char *pDevName, int baudRate, boo
     pCtx->hRxThread = CreateThread(NULL, 0, rxThread, pCtx, 0, &pCtx->dwThreadId);
     if (pCtx->hRxThread == NULL) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to create RX thread");
+#if defined(USE_UART_FTDI)
+        FT_Close((FT_HANDLE)pCtx->pFtdiHandle);
+        pCtx->pFtdiHandle = NULL;
+#else
         CloseHandle(gHComPort);
         gHComPort = INVALID_HANDLE_VALUE;
         pCtx->hComPort = INVALID_HANDLE_VALUE;
+#endif
         return false;
     }
 
@@ -866,12 +1211,32 @@ void uPortAtClose(uCxAtClient_t *pClient)
         CloseHandle(pCtx->hWriteEvent);
         pCtx->hWriteEvent = NULL;
     }
+    
+    if (pCtx->hDataAvailEvent != NULL) {
+        CloseHandle(pCtx->hDataAvailEvent);
+        pCtx->hDataAvailEvent = NULL;
+    }
+    
+    DeleteCriticalSection(&pCtx->rxCircLock);
 #elif defined(USE_UART_FTDI)
-    // TODO: Close FTDI handle if open
+    // Close FTDI handle if open
     if (pCtx->pFtdiHandle != NULL) {
-        // FT_Close(pCtx->pFtdiHandle);
+        FT_Close((FT_HANDLE)pCtx->pFtdiHandle);
         pCtx->pFtdiHandle = NULL;
     }
+    
+    // Close FTDI-specific events
+    if (pCtx->hFtdiEvent != NULL) {
+        CloseHandle(pCtx->hFtdiEvent);
+        pCtx->hFtdiEvent = NULL;
+    }
+    
+    if (pCtx->hDataAvailEvent != NULL) {
+        CloseHandle(pCtx->hDataAvailEvent);
+        pCtx->hDataAvailEvent = NULL;
+    }
+    
+    DeleteCriticalSection(&pCtx->rxCircLock);
 #endif
 
     gPConfig = NULL;
@@ -889,6 +1254,14 @@ void uPortAtFlush(uCxAtClient_t *pClient)
         if (pClient->pConfig->pRxBuffer != NULL) {
             memset(pClient->pConfig->pRxBuffer, 0, pClient->pConfig->rxBufferLen);
         }
+        
+#if defined(USE_UART_EVENT_DRIVEN) || defined(USE_UART_FTDI)
+        // Clear circular buffer (used by event-driven and FTDI modes)
+        EnterCriticalSection(&pCtx->rxCircLock);
+        pCtx->rxCircHead = 0;
+        pCtx->rxCircTail = 0;
+        LeaveCriticalSection(&pCtx->rxCircLock);
+#endif
         
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Serial buffers flushed");
     }

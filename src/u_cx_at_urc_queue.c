@@ -82,18 +82,24 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
     U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry == NULL);
 
-    int32_t availableDataSpace = (int32_t)getUnusedBuf(pUrcQueue) - sizeof(uUrcEntry_t);
-    if (availableDataSpace >= (int32_t)urcLineLen + 1) {
+    // Calculate total space needed: entry header + string data + null terminator
+    size_t totalSpaceNeeded = sizeof(uUrcEntry_t) + urcLineLen + 1;
+    size_t availableSpace = getUnusedBuf(pUrcQueue);
+    
+    if (availableSpace >= totalSpaceNeeded) {
         uUrcEntry_t *pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[pUrcQueue->bufferPos];
         memcpy(&pEntry->data[0], pUrcLine, urcLineLen);
         pEntry->data[urcLineLen] = 0; // Add null term
         pEntry->strLineLen = (uint16_t)urcLineLen;
         pEntry->payloadSize = 0;
-        pUrcQueue->bufferPos += sizeof(uUrcEntry_t) + urcLineLen + 1;
+        pUrcQueue->bufferPos += totalSpaceNeeded;
         pUrcQueue->pEnqueueEntry = pEntry;
         ret = true;
     } else {
-        // Not enough space available
+        // Not enough space available - log detailed buffer status
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "URC queue full! Need %u bytes, have %u bytes (used: %u/%u)",
+                      (unsigned)totalSpaceNeeded, (unsigned)availableSpace,
+                      (unsigned)pUrcQueue->bufferPos, (unsigned)pUrcQueue->bufferLen);
         U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
         ret = false;
     }
@@ -178,6 +184,18 @@ void uCxAtUrcQueueDequeueEnd(uCxAtUrcQueue_t *pUrcQueue, uUrcEntry_t *pEntry)
     pUrcQueue->pDequeueEntry = NULL;
 
     U_CX_MUTEX_UNLOCK(pUrcQueue->dequeueMutex);
+}
+
+void uCxAtUrcQueueGetStats(uCxAtUrcQueue_t *pUrcQueue, size_t *pUsedBytes, size_t *pTotalBytes)
+{
+    U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
+    if (pUsedBytes) {
+        *pUsedBytes = pUrcQueue->bufferPos;
+    }
+    if (pTotalBytes) {
+        *pTotalBytes = pUrcQueue->bufferLen;
+    }
+    U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
 }
 
 #endif // U_CX_USE_URC_QUEUE == 1

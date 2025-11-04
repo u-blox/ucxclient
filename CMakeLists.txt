@@ -66,6 +66,10 @@ if(WIN32)
   # Add /FS flag globally for Windows to fix PDB file locking issues with parallel builds
   add_compile_options(/FS)
   
+  # FTDI D2XX library support (optional - uncomment USE_UART_FTDI in u_port_windows.c to enable)
+  set(FTDI_INCLUDE_DIR "${CMAKE_SOURCE_DIR}/examples/ftdi")
+  set(FTDI_LIBRARY "${CMAKE_SOURCE_DIR}/examples/ftdi/ftd2xx.lib")
+  
   # HTTP Example for Windows
   add_executable(http_example_windows
     examples/http_example.c
@@ -82,8 +86,8 @@ if(WIN32)
     U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
     U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
   )
-  target_include_directories(http_example_windows PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(http_example_windows PRIVATE setupapi)
+  target_include_directories(http_example_windows PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(http_example_windows PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Windows Basic Application
   add_executable(windows_basic
@@ -101,8 +105,8 @@ if(WIN32)
     U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
     U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
   )
-  target_include_directories(windows_basic PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(windows_basic PRIVATE setupapi)
+  target_include_directories(windows_basic PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(windows_basic PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Windows Console Application - ucxclient_win64
   add_executable(ucxclient_win64
@@ -119,8 +123,8 @@ if(WIN32)
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
-  target_include_directories(ucxclient_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(ucxclient_win64 PRIVATE setupapi)
+  target_include_directories(ucxclient_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(ucxclient_win64 PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Firmware Update Standalone Application
   add_executable(firmware_update
@@ -136,8 +140,8 @@ if(WIN32)
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
-  target_include_directories(firmware_update PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(firmware_update PRIVATE setupapi)
+  target_include_directories(firmware_update PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(firmware_update PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Windows shared library for Python integration
   add_library(ucxclient_windows SHARED
@@ -151,8 +155,8 @@ if(WIN32)
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
   )
-  target_include_directories(ucxclient_windows PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
-  target_link_libraries(ucxclient_windows PRIVATE setupapi)
+  target_include_directories(ucxclient_windows PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(ucxclient_windows PRIVATE setupapi ${FTDI_LIBRARY})
   
   # Export all symbols for Python ctypes
   set_target_properties(ucxclient_windows PROPERTIES

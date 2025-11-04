@@ -1703,9 +1703,10 @@ static void printMenu(void)
         case MENU_WIFI:
             printf("--- Wi-Fi Menu ---\n");
             printf("  [1] Show Wi-Fi status\n");
-            printf("  [2] Scan networks\n");
-            printf("  [3] Connect to network\n");
-            printf("  [4] Disconnect from network\n");
+            printf("  [2] Regulatory Domain (World)\n");
+            printf("  [3] Scan networks\n");
+            printf("  [4] Connect to network\n");
+            printf("  [5] Disconnect from network\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -2049,12 +2050,19 @@ static void handleUserInput(void)
                     showWifiStatus();
                     break;
                 case 2:
-                    wifiScan();
+                    printf("\n--- Regulatory Domain Configuration ---\n");
+                    printf("This feature will be available in the next release.\n");
+                    printf("It will allow setting the country/region for compliance\n");
+                    printf("with local regulations (affects available channels).\n");
+                    printf("Current setting: World (all channels enabled)\n");
                     break;
                 case 3:
-                    wifiConnect();
+                    wifiScan();
                     break;
                 case 4:
+                    wifiConnect();
+                    break;
+                case 5:
                     wifiDisconnect();
                     break;
                 case 0:
@@ -4018,8 +4026,8 @@ static void wifiScan(void)
     printf("\n--- Wi-Fi Network Scan ---\n");
     printf("Scanning for networks... (this may take several seconds)\n\n");
     
-    // Set 30 second timeout for scan command (scan can take time)
-    uCxAtClientSetCommandTimeout(gUcxHandle.pAtClient, 30000, false);
+    // Set 60 second timeout for scan command (scan can take 30-40 seconds for many networks)
+    uCxAtClientSetCommandTimeout(gUcxHandle.pAtClient, 60000, false);
     
     // Start WiFi scan
     uCxWifiStationScanDefaultBegin(&gUcxHandle);
@@ -4135,7 +4143,8 @@ static void wifiScan(void)
             }
             
             // Recommend best 2.4 GHz channels (1, 6, 11 are non-overlapping)
-            printf("\nRecommended 2.4 GHz channels (non-overlapping): 1, 6, 11\n");
+            printf("\n** Best channel for creating a new 2.4 GHz access point **\n");
+            printf("(Non-overlapping channels: 1, 6, 11)\n");
             int bestChannel = 0;
             int minCount = 999;
             int recommendedChannels[] = {1, 6, 11};
@@ -4147,7 +4156,7 @@ static void wifiScan(void)
                 }
             }
             if (bestChannel > 0) {
-                printf("Suggested 2.4 GHz channel: %d (%d network(s))\n", bestChannel, minCount);
+                printf("Least congested: Channel %d (%d existing network(s))\n", bestChannel, minCount);
             }
         } else {
             printf("No 2.4 GHz networks detected\n");
@@ -4195,7 +4204,8 @@ static void wifiScan(void)
             }
             
             // Find best 5 GHz channel (only from valid channels that were detected)
-            printf("\nNote: 5 GHz channels have less interference and more bandwidth\n");
+            printf("\n** Best channel for creating a new 5 GHz access point **\n");
+            printf("(5 GHz offers less interference and more bandwidth)\n");
             int best5GHz = 0;
             int min5Count = 999;
             
@@ -4214,7 +4224,7 @@ static void wifiScan(void)
             }
             
             if (best5GHz > 0 && min5Count < 999) {
-                printf("Suggested 5 GHz channel: %d (%d network(s))\n", best5GHz, min5Count);
+                printf("Least congested: Channel %d (%d existing network(s))\n", best5GHz, min5Count);
             }
         } else {
             printf("No 5 GHz networks detected\n");
