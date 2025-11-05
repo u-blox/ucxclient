@@ -5412,6 +5412,19 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
                 printf("\n");
                 break;
                 
+            case 0x04: // Incomplete List of 32-bit Service UUIDs
+            case 0x05: // Complete List of 32-bit Service UUIDs
+                printf("    %s32-bit Service UUIDs: ", type == 0x05 ? "Complete " : "Incomplete ");
+                for (size_t i = 0; i < adDataLen; i += 4) {
+                    if (i + 3 < adDataLen) {
+                        uint32_t uuid = adData[i] | (adData[i + 1] << 8) | 
+                                       (adData[i + 2] << 16) | (adData[i + 3] << 24);
+                        printf("0x%08X ", uuid);
+                    }
+                }
+                printf("\n");
+                break;
+                
             case 0x06: // Incomplete List of 128-bit Service UUIDs
             case 0x07: // Complete List of 128-bit Service UUIDs
                 printf("    %s128-bit Service UUIDs:\n", type == 0x07 ? "Complete " : "Incomplete ");
@@ -5438,6 +5451,44 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
                 printf("    TX Power: %d dBm\n", (int8_t)adData[0]);
                 break;
                 
+            case 0x14: // List of 16-bit Service Solicitation UUIDs
+            case 0x15: // List of 16-bit Service Solicitation UUIDs (complete)
+                printf("    Service Solicitation UUIDs (16-bit): ");
+                for (size_t i = 0; i < adDataLen; i += 2) {
+                    if (i + 1 < adDataLen) {
+                        uint16_t uuid = adData[i] | (adData[i + 1] << 8);
+                        printf("0x%04X ", uuid);
+                    }
+                }
+                printf("\n");
+                break;
+                
+            case 0x1F: // List of 32-bit Service Solicitation UUIDs
+                printf("    Service Solicitation UUIDs (32-bit): ");
+                for (size_t i = 0; i < adDataLen; i += 4) {
+                    if (i + 3 < adDataLen) {
+                        uint32_t uuid = adData[i] | (adData[i + 1] << 8) | 
+                                       (adData[i + 2] << 16) | (adData[i + 3] << 24);
+                        printf("0x%08X ", uuid);
+                    }
+                }
+                printf("\n");
+                break;
+                
+            case 0x1C: // List of 128-bit Service Solicitation UUIDs
+                printf("    Service Solicitation UUIDs (128-bit):\n");
+                for (size_t i = 0; i < adDataLen; i += 16) {
+                    if (i + 15 < adDataLen) {
+                        printf("      ");
+                        for (int j = 15; j >= 0; j--) {
+                            printf("%02X", adData[i + j]);
+                            if (j == 12 || j == 10 || j == 8 || j == 6) printf("-");
+                        }
+                        printf("\n");
+                    }
+                }
+                break;
+                
             case 0x16: // Service Data - 16-bit UUID
                 if (adDataLen >= 2) {
                     uint16_t uuid = adData[0] | (adData[1] << 8);
@@ -5447,6 +5498,138 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
                     }
                     printf("\n");
                 }
+                break;
+                
+            case 0x20: // Service Data - 32-bit UUID
+                if (adDataLen >= 4) {
+                    uint32_t uuid = adData[0] | (adData[1] << 8) | 
+                                   (adData[2] << 16) | (adData[3] << 24);
+                    printf("    Service Data (UUID 0x%08X): ", uuid);
+                    for (size_t i = 4; i < adDataLen; i++) {
+                        printf("%02X ", adData[i]);
+                    }
+                    printf("\n");
+                }
+                break;
+                
+            case 0x21: // Service Data - 128-bit UUID
+                if (adDataLen >= 16) {
+                    printf("    Service Data (UUID: ");
+                    for (int j = 15; j >= 0; j--) {
+                        printf("%02X", adData[j]);
+                        if (j == 12 || j == 10 || j == 8 || j == 6) printf("-");
+                    }
+                    printf("): ");
+                    for (size_t i = 16; i < adDataLen && i < 32; i++) {
+                        printf("%02X ", adData[i]);
+                    }
+                    if (adDataLen > 32) printf("...");
+                    printf("\n");
+                }
+                break;
+                
+            case 0x24: // URI (Eddystone, Physical Web, etc.)
+                printf("    URI: ");
+                if (adDataLen > 0) {
+                    // First byte is URI scheme prefix
+                    const char *scheme = "";
+                    switch (adData[0]) {
+                        case 0x00: scheme = "aaa:"; break;
+                        case 0x01: scheme = "aaas:"; break;
+                        case 0x02: scheme = "about:"; break;
+                        case 0x03: scheme = "acap:"; break;
+                        case 0x04: scheme = "acct:"; break;
+                        case 0x05: scheme = "cap:"; break;
+                        case 0x06: scheme = "cid:"; break;
+                        case 0x07: scheme = "coap:"; break;
+                        case 0x08: scheme = "coaps:"; break;
+                        case 0x09: scheme = "crid:"; break;
+                        case 0x0A: scheme = "data:"; break;
+                        case 0x0B: scheme = "dav:"; break;
+                        case 0x0C: scheme = "dict:"; break;
+                        case 0x0D: scheme = "dns:"; break;
+                        case 0x0E: scheme = "file:"; break;
+                        case 0x0F: scheme = "ftp:"; break;
+                        case 0x10: scheme = "geo:"; break;
+                        case 0x11: scheme = "go:"; break;
+                        case 0x12: scheme = "gopher:"; break;
+                        case 0x13: scheme = "h323:"; break;
+                        case 0x14: scheme = "http:"; break;
+                        case 0x15: scheme = "https:"; break;
+                        case 0x16: scheme = "iax:"; break;
+                        case 0x17: scheme = "icap:"; break;
+                        case 0x18: scheme = "im:"; break;
+                        case 0x19: scheme = "imap:"; break;
+                        case 0x1A: scheme = "info:"; break;
+                        case 0x1B: scheme = "ipp:"; break;
+                        case 0x1C: scheme = "ipps:"; break;
+                        case 0x1D: scheme = "iris:"; break;
+                        case 0x1E: scheme = "iris.beep:"; break;
+                        case 0x1F: scheme = "iris.xpc:"; break;
+                        case 0x20: scheme = "iris.xpcs:"; break;
+                        case 0x21: scheme = "iris.lwz:"; break;
+                        case 0x22: scheme = "jabber:"; break;
+                        case 0x23: scheme = "ldap:"; break;
+                        case 0x24: scheme = "mailto:"; break;
+                        case 0x25: scheme = "mid:"; break;
+                        case 0x26: scheme = "msrp:"; break;
+                        case 0x27: scheme = "msrps:"; break;
+                        case 0x28: scheme = "mtqp:"; break;
+                        case 0x29: scheme = "mupdate:"; break;
+                        case 0x2A: scheme = "news:"; break;
+                        case 0x2B: scheme = "nfs:"; break;
+                        case 0x2C: scheme = "ni:"; break;
+                        case 0x2D: scheme = "nih:"; break;
+                        case 0x2E: scheme = "nntp:"; break;
+                        case 0x2F: scheme = "opaquelocktoken:"; break;
+                        case 0x30: scheme = "pop:"; break;
+                        case 0x31: scheme = "pres:"; break;
+                        case 0x32: scheme = "reload:"; break;
+                        case 0x33: scheme = "rtsp:"; break;
+                        case 0x34: scheme = "rtsps:"; break;
+                        case 0x35: scheme = "rtspu:"; break;
+                        case 0x36: scheme = "service:"; break;
+                        case 0x37: scheme = "session:"; break;
+                        case 0x38: scheme = "shttp:"; break;
+                        case 0x39: scheme = "sieve:"; break;
+                        case 0x3A: scheme = "sip:"; break;
+                        case 0x3B: scheme = "sips:"; break;
+                        case 0x3C: scheme = "sms:"; break;
+                        case 0x3D: scheme = "snmp:"; break;
+                        case 0x3E: scheme = "soap.beep:"; break;
+                        case 0x3F: scheme = "soap.beeps:"; break;
+                        case 0x40: scheme = "stun:"; break;
+                        case 0x41: scheme = "stuns:"; break;
+                        case 0x42: scheme = "tag:"; break;
+                        case 0x43: scheme = "tel:"; break;
+                        case 0x44: scheme = "telnet:"; break;
+                        case 0x45: scheme = "tftp:"; break;
+                        case 0x46: scheme = "thismessage:"; break;
+                        case 0x47: scheme = "tn3270:"; break;
+                        case 0x48: scheme = "tip:"; break;
+                        case 0x49: scheme = "turn:"; break;
+                        case 0x4A: scheme = "turns:"; break;
+                        case 0x4B: scheme = "tv:"; break;
+                        case 0x4C: scheme = "urn:"; break;
+                        case 0x4D: scheme = "vemmi:"; break;
+                        case 0x4E: scheme = "ws:"; break;
+                        case 0x4F: scheme = "wss:"; break;
+                        case 0x50: scheme = "xcon:"; break;
+                        case 0x51: scheme = "xcon-userid:"; break;
+                        case 0x52: scheme = "xmlrpc.beep:"; break;
+                        case 0x53: scheme = "xmlrpc.beeps:"; break;
+                        case 0x54: scheme = "xmpp:"; break;
+                        case 0x55: scheme = "z39.50r:"; break;
+                        case 0x56: scheme = "z39.50s:"; break;
+                        default: scheme = "[Unknown scheme]"; break;
+                    }
+                    printf("%s", scheme);
+                    // Rest is the URI body
+                    for (size_t i = 1; i < adDataLen; i++) {
+                        printf("%c", adData[i]);
+                    }
+                }
+                printf("\n");
                 break;
                 
             case 0x19: // Appearance
