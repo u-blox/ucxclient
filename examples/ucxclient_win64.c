@@ -127,6 +127,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_WIFI_LINK_DOWN     (1 << 10) // Wi-Fi Link DOWN (disconnected from AP)
 #define URC_FLAG_MQTT_CONNECTED     (1 << 11) // MQTT connected (+UEMQC)
 #define URC_FLAG_MQTT_DATA          (1 << 12) // MQTT data received (+UEMQDA)
+#define URC_FLAG_BT_CONNECTED       (1 << 13) // Bluetooth connected (+UEBTC)
+#define URC_FLAG_BT_DISCONNECTED    (1 << 14) // Bluetooth disconnected (+UEBTDC)
 
 // Global handles
 static uCxAtClient_t gUcxAtClient;
@@ -135,6 +137,17 @@ static bool gConnected = false;
 
 // Socket tracking
 static int32_t gCurrentSocket = -1;
+
+// Bluetooth connection tracking
+#define MAX_BT_CONNECTIONS 7  // u-connectXpress supports up to 7 concurrent BT connections
+typedef struct {
+    int32_t handle;
+    uBtLeAddress_t address;
+    bool active;
+} BtConnection_t;
+
+static BtConnection_t gBtConnections[MAX_BT_CONNECTIONS];
+static int gBtConnectionCount = 0;
 
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
@@ -375,6 +388,7 @@ static void showWifiStatus(void);
 static void bluetoothMenu(void);
 static void bluetoothScan(void);
 static void bluetoothConnect(void);
+static void bluetoothDisconnect(void);
 static void decodeAdvertisingData(const uint8_t *data, size_t dataLen);
 static void wifiMenu(void);
 static void wifiScan(void);
@@ -1626,6 +1640,59 @@ static void mqttDataAvailableUrc(struct uCxHandle *puCxHandle, int32_t mqtt_clie
     signalEvent(URC_FLAG_MQTT_DATA);
 }
 
+static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLeAddress_t *bd_addr)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "Bluetooth connected: handle %d", conn_handle);
+    
+    printf("\n*** Bluetooth Connection Established ***\n");
+    printf("Connection handle: %d\n", conn_handle);
+    if (bd_addr) {
+        printf("Device address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+               bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
+               bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
+    }
+    
+    // Track the connection
+    if (gBtConnectionCount < MAX_BT_CONNECTIONS) {
+        gBtConnections[gBtConnectionCount].handle = conn_handle;
+        if (bd_addr) {
+            memcpy(&gBtConnections[gBtConnectionCount].address, bd_addr, sizeof(uBtLeAddress_t));
+        }
+        gBtConnections[gBtConnectionCount].active = true;
+        gBtConnectionCount++;
+    }
+    
+    printf("****************************************\n\n");
+    
+    signalEvent(URC_FLAG_BT_CONNECTED);
+}
+
+static void btDisconnected(struct uCxHandle *puCxHandle, int32_t conn_handle)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "Bluetooth disconnected: handle %d", conn_handle);
+    
+    printf("\n*** Bluetooth Disconnected ***\n");
+    printf("Connection handle: %d\n", conn_handle);
+    
+    // Remove from tracked connections
+    for (int i = 0; i < gBtConnectionCount; i++) {
+        if (gBtConnections[i].handle == conn_handle) {
+            // Shift remaining connections down
+            for (int j = i; j < gBtConnectionCount - 1; j++) {
+                gBtConnections[j] = gBtConnections[j + 1];
+            }
+            gBtConnectionCount--;
+            break;
+        }
+    }
+    
+    printf("******************************\n\n");
+    
+    signalEvent(URC_FLAG_BT_DISCONNECTED);
+}
+
 // ----------------------------------------------------------------
 // ============================================================================
 // SOCKET OPERATIONS (TCP/UDP)
@@ -2836,7 +2903,12 @@ static void printMenu(void)
             printf("  [1] Show BT status\n");
             printf("  [2] Scan for devices\n");
             printf("  [3] Connect to device\n");
-            printf("  [4] List active connections\n");
+            printf("  [4] Disconnect from device");
+            if (gBtConnectionCount > 0) {
+                printf(" (%d active)", gBtConnectionCount);
+            }
+            printf("\n");
+            printf("  [5] List active connections\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -3176,6 +3248,9 @@ static void handleUserInput(void)
                     bluetoothConnect();
                     break;
                 case 4:
+                    bluetoothDisconnect();
+                    break;
+                case 5:
                     showBluetoothStatus();  // Shows connections
                     break;
                 case 0:
@@ -3728,6 +3803,10 @@ static bool connectDevice(const char *comPort)
     uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
     uCxMqttRegisterDataAvailable(&gUcxHandle, mqttDataAvailableUrc);
     
+    // Register URC handlers for Bluetooth events
+    uCxBluetoothRegisterConnect(&gUcxHandle, btConnected);
+    uCxBluetoothRegisterDisconnect(&gUcxHandle, btDisconnected);
+    
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
 
     // Turn off echo to avoid "Unexpected data" warnings
@@ -3841,6 +3920,14 @@ static void disconnectDevice(void)
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, NULL);
     uCxDiagnosticsRegisterPingComplete(&gUcxHandle, NULL);
     
+    // Unregister MQTT event handlers
+    uCxMqttRegisterConnect(&gUcxHandle, NULL);
+    uCxMqttRegisterDataAvailable(&gUcxHandle, NULL);
+    
+    // Unregister Bluetooth event handlers
+    uCxBluetoothRegisterConnect(&gUcxHandle, NULL);
+    uCxBluetoothRegisterDisconnect(&gUcxHandle, NULL);
+    
     printf("All URC handlers unregistered.\n");
     
     // Delete mutex
@@ -3855,6 +3942,10 @@ static void disconnectDevice(void)
     // Clear device info
     gDeviceModel[0] = '\0';
     gDeviceFirmware[0] = '\0';
+    
+    // Clear Bluetooth connection tracking
+    gBtConnectionCount = 0;
+    memset(gBtConnections, 0, sizeof(gBtConnections));
     
     gConnected = false;
     printf("Disconnected.\n");
@@ -5864,11 +5955,74 @@ static void bluetoothConnect(void)
             int32_t connHandle = uCxBluetoothConnect(&gUcxHandle, &addr);
             if (connHandle >= 0) {
                 printf("Connected successfully! Connection handle: %d\n", connHandle);
+                printf("Wait for +UEBTC URC to confirm connection...\n");
             } else {
                 printf("ERROR: Failed to connect to device (error: %d)\n", connHandle);
             }
         } else {
             printf("ERROR: Invalid MAC address format\n");
+        }
+    }
+}
+
+static void bluetoothDisconnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gBtConnectionCount == 0) {
+        printf("\n--- Bluetooth Disconnect ---\n");
+        printf("No active Bluetooth connections.\n");
+        return;
+    }
+    
+    printf("\n--- Bluetooth Disconnect ---\n");
+    printf("Active connections:\n");
+    
+    // List active connections
+    for (int i = 0; i < gBtConnectionCount; i++) {
+        printf("  [%d] Handle: %d, Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+               i + 1,
+               gBtConnections[i].handle,
+               gBtConnections[i].address.address[0],
+               gBtConnections[i].address.address[1],
+               gBtConnections[i].address.address[2],
+               gBtConnections[i].address.address[3],
+               gBtConnections[i].address.address[4],
+               gBtConnections[i].address.address[5]);
+    }
+    
+    printf("\nEnter connection handle to disconnect: ");
+    
+    char input[64];
+    if (fgets(input, sizeof(input), stdin)) {
+        int32_t handle = atoi(input);
+        
+        // Verify the handle exists in our tracking
+        bool found = false;
+        for (int i = 0; i < gBtConnectionCount; i++) {
+            if (gBtConnections[i].handle == handle) {
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            printf("ERROR: Invalid connection handle %d\n", handle);
+            return;
+        }
+        
+        printf("Disconnecting handle %d...\n", handle);
+        
+        // uCxBluetoothDisconnect returns 0 on success
+        int32_t result = uCxBluetoothDisconnect(&gUcxHandle, handle);
+        if (result == 0) {
+            printf("Disconnect command sent successfully.\n");
+            printf("Wait for +UEBTDC URC to confirm disconnection...\n");
+        } else {
+            printf("ERROR: Failed to disconnect (error: %d)\n", result);
         }
     }
 }
