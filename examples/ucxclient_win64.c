@@ -6015,9 +6015,13 @@ static void wifiConnect(void)
             uCxEnd(&gUcxHandle);
         }
         
-        // Save Wi-Fi credentials
+        // Test connectivity (ping gateway and internet) with connection summary
+        if (strlen(gatewayStr) > 0) {
+            testConnectivity(gatewayStr, ssid, rssi, channel);
+        }
+        
+        // After connection summary, offer to save as profile
         if (!useProfile && gWifiProfileCount < MAX_WIFI_PROFILES) {
-            // Offer to save as profile
             printf("\nSave this network as a profile? (y/N): ");
             char saveInput[16];
             if (fgets(saveInput, sizeof(saveInput), stdin)) {
@@ -6027,27 +6031,22 @@ static void wifiConnect(void)
                     if (fgets(profileName, sizeof(profileName), stdin)) {
                         profileName[strcspn(profileName, "\n")] = '\0';
                         if (strlen(profileName) > 0) {
-                            // Extract subnet from connected IP
-                            char subnet[16] = "";
+                            // Extract IP prefix from connected IP (first 3 octets)
+                            char ipPrefix[16] = "";
                             char *lastDot = strrchr(ipStr, '.');
                             if (lastDot) {
-                                size_t subnetLen = lastDot - ipStr;
-                                if (subnetLen < sizeof(subnet)) {
-                                    strncpy(subnet, ipStr, subnetLen);
-                                    subnet[subnetLen] = '\0';
+                                size_t prefixLen = lastDot - ipStr;
+                                if (prefixLen < sizeof(ipPrefix)) {
+                                    strncpy(ipPrefix, ipStr, prefixLen);
+                                    ipPrefix[prefixLen] = '\0';
                                 }
                             }
                             
-                            wifiSaveProfile(profileName, ssid, password, subnet);
+                            wifiSaveProfile(profileName, ssid, password, ipPrefix);
                         }
                     }
                 }
             }
-        }
-        
-        // Test connectivity (ping gateway and internet) with connection summary
-        if (strlen(gatewayStr) > 0) {
-            testConnectivity(gatewayStr, ssid, rssi, channel);
         }
     } else {
         printf("Connection failed - timeout waiting for network up event (IP configuration)\n");
