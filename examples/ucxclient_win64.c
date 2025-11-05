@@ -99,6 +99,10 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Port layer
 #include "port/u_port.h"
 
+// Bluetooth SIG name databases
+#include "bluetooth-sig/bt_company_identifiers.h"
+#include "bluetooth-sig/bt_service_uuids.h"
+
 // Application version
 #define APP_VERSION "1.0.0"
 
@@ -5402,14 +5406,18 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
                 
             case 0x02: // Incomplete List of 16-bit Service UUIDs
             case 0x03: // Complete List of 16-bit Service UUIDs
-                printf("    %s16-bit Service UUIDs: ", type == 0x03 ? "Complete " : "Incomplete ");
+                printf("    %s16-bit Service UUIDs:\n", type == 0x03 ? "Complete " : "Incomplete ");
                 for (size_t i = 0; i < adDataLen; i += 2) {
                     if (i + 1 < adDataLen) {
                         uint16_t uuid = adData[i] | (adData[i + 1] << 8);
-                        printf("0x%04X ", uuid);
+                        const char *serviceName = btGetServiceName(uuid);
+                        printf("      0x%04X", uuid);
+                        if (serviceName) {
+                            printf(" (%s)", serviceName);
+                        }
+                        printf("\n");
                     }
                 }
-                printf("\n");
                 break;
                 
             case 0x04: // Incomplete List of 32-bit Service UUIDs
@@ -5492,7 +5500,12 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
             case 0x16: // Service Data - 16-bit UUID
                 if (adDataLen >= 2) {
                     uint16_t uuid = adData[0] | (adData[1] << 8);
-                    printf("    Service Data (UUID 0x%04X): ", uuid);
+                    const char *serviceName = btGetServiceName(uuid);
+                    printf("    Service Data (UUID 0x%04X", uuid);
+                    if (serviceName) {
+                        printf(" - %s", serviceName);
+                    }
+                    printf("): ");
                     for (size_t i = 2; i < adDataLen; i++) {
                         printf("%02X ", adData[i]);
                     }
@@ -5667,19 +5680,10 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
             case 0xFF: // Manufacturer Specific Data
                 if (adDataLen >= 2) {
                     uint16_t companyId = adData[0] | (adData[1] << 8);
+                    const char *companyName = btGetCompanyName(companyId);
                     printf("    Manufacturer Data (Company ID: 0x%04X", companyId);
-                    // Common manufacturers
-                    switch (companyId) {
-                        case 0x004C: printf(" - Apple"); break;
-                        case 0x0006: printf(" - Microsoft"); break;
-                        case 0x00E0: printf(" - Google"); break;
-                        case 0x0075: printf(" - Samsung"); break;
-                        case 0x0157: printf(" - u-blox"); break;
-                        case 0x0059: printf(" - Nordic Semiconductor"); break;
-                        case 0x000D: printf(" - Texas Instruments"); break;
-                        case 0x000F: printf(" - Broadcom"); break;
-                        case 0x0087: printf(" - Garmin"); break;
-                        case 0x004B: printf(" - Qualcomm"); break;
+                    if (companyName) {
+                        printf(" - %s", companyName);
                     }
                     printf("): ");
                     for (size_t i = 2; i < adDataLen && i < 22; i++) { // Limit output
