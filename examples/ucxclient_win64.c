@@ -196,6 +196,126 @@ static int gApiCommandCount = 0;
 // Settings file path (next to executable)
 static char gSettingsFilePath[MAX_PATH] = "";
 
+// ============================================================================
+// FUNCTION INDEX
+// ============================================================================
+// 
+// UTILITY & INITIALIZATION
+//   - main()                           Application entry point
+//   - getExecutableDirectory()         Get path to executable
+//
+// UI & MENU SYSTEM
+//   - printHeader()                    Display welcome banner
+//   - printWelcomeGuide()              First-time user guide
+//   - printHelp()                      Comprehensive help system
+//   - printMenu()                      Display menu for current state
+//   - handleUserInput()                Main input dispatcher
+//   - bluetoothMenu()                  Bluetooth operations menu
+//   - wifiMenu()                       WiFi operations menu
+//   - socketMenu()                     Socket operations menu
+//   - mqttMenu()                       MQTT menu (placeholder)
+//   - httpMenu()                       HTTP menu (placeholder)
+//   - securityTlsMenu()                Security/TLS menu
+//   - bluetoothFunctionsMenu()         BT functions submenu
+//   - wifiFunctionsMenu()              WiFi functions submenu
+//   - gattClientMenu()                 GATT client submenu
+//   - gattServerMenu()                 GATT server submenu
+//
+// DEVICE CONNECTION & MANAGEMENT
+//   - connectDevice()                  Connect to UCX device via COM port
+//   - quickConnectToLastDevice()       Auto-connect to last device
+//   - disconnectDevice()               Disconnect and cleanup
+//   - listAvailableComPorts()          Enumerate COM ports with device info
+//   - selectComPortFromList()          Interactive COM port selection
+//   - initFtd2xxLibrary()              Load FTDI D2XX DLL
+//   - getFtdiDeviceInfo()              Get device info via FTDI library
+//   - getDeviceInfoFromSetupAPI()      Get device info via Windows API
+//   - getComPortFriendlyName()         Get friendly name for COM port
+//
+// AT COMMANDS & DIAGNOSTICS
+//   - executeAtTest()                  Basic AT command test
+//   - executeAti9()                    Query device information
+//   - executeModuleReboot()            Reboot module with timing
+//
+// BLUETOOTH OPERATIONS
+//   - showBluetoothStatus()            Display BT connection status
+//   - bluetoothScan()                  Scan for BT devices
+//   - bluetoothConnect()               Connect to BT device
+//
+// WIFI OPERATIONS
+//   - showWifiStatus()                 Display WiFi status
+//   - wifiScan()                       Scan WiFi networks with analysis
+//   - wifiConnect()                    Connect to WiFi network
+//   - wifiDisconnect()                 Disconnect from WiFi
+//   - testConnectivity()               Test gateway/internet connectivity
+//
+// SOCKET OPERATIONS (TCP/UDP)
+//   - socketCreateTcp()                Create TCP socket
+//   - socketCreateUdp()                Create UDP socket
+//   - socketConnect()                  Connect socket
+//   - socketSendData()                 Send data on socket
+//   - socketReadData()                 Read data from socket
+//   - socketClose()                    Close socket
+//   - socketListStatus()               List all sockets
+//
+// SPS (SERIAL PORT SERVICE)
+//   - spsEnableService()               Enable SPS service
+//   - spsConnect()                     Connect SPS on BT connection
+//   - spsSendData()                    Send data via SPS
+//   - spsReadData()                    Read data from SPS
+//
+// GATT CLIENT
+//   - gattClientDiscoverServices()     Discover GATT services
+//   - gattClientReadCharacteristic()   Read characteristic
+//   - gattClientWriteCharacteristic()  Write characteristic
+//
+// GATT SERVER
+//   - gattServerAddService()           Add GATT service
+//   - gattServerSetCharacteristic()    Set characteristic value
+//
+// FIRMWARE UPDATE
+//   - downloadFirmwareFromGitHub()     Download firmware from GitHub
+//   - downloadFirmwareFromGitHubInteractive()  Interactive download
+//   - extractProductFromFilename()     Parse product from filename
+//   - extractZipFile()                 Extract ZIP archive
+//   - saveBinaryFile()                 Save binary to disk
+//   - firmwareUpdateProgress()         Progress callback
+//   - getProductFirmwarePath()         Get saved firmware path
+//   - setProductFirmwarePath()         Save firmware path
+//
+// API COMMANDS (GITHUB INTEGRATION)
+//   - listAllApiCommands()             Display API command list
+//   - fetchApiCommandsFromGitHub()     Download command list from GitHub
+//   - fetchLatestVersion()             Get latest firmware version
+//   - parseYamlCommands()              Parse YAML API definitions
+//   - freeApiCommands()                Free API command memory
+//
+// HTTP CLIENT HELPERS
+//   - httpGetRequest()                 HTTP GET (text)
+//   - httpGetBinaryRequest()           HTTP GET (binary)
+//
+// SETTINGS MANAGEMENT
+//   - loadSettings()                   Load settings from INI file
+//   - saveSettings()                   Save settings to INI file
+//   - obfuscatePassword()              Simple password obfuscation
+//   - deobfuscatePassword()            Decode obfuscated password
+//
+// URC (UNSOLICITED RESULT CODE) HANDLERS
+//   - wifiStationNetworkUpUrc()        WiFi network up (IP assigned)
+//   - wifiStationNetworkDownUrc()      WiFi network down (IP lost)
+//   - wifiLinkConnectedUrc()           WiFi link connected (AP)
+//   - wifiLinkDisconnectedUrc()        WiFi link disconnected (AP)
+//   - socketDataAvailableUrc()         Socket data received
+//   - socketConnectUrc()               Socket connected
+//   - spsConnectUrc()                  SPS connected
+//   - spsDisconnectUrc()               SPS disconnected
+//   - spsDataAvailableUrc()            SPS data available
+//   - systemStartupUrc()               System startup notification
+//   - pingResponseUrc()                Ping response received
+//   - pingCompleteUrc()                Ping test complete
+//
+// ============================================================================
+
 // Forward declarations
 static void getExecutableDirectory(char *buffer, size_t bufferSize);
 static void printHeader(void);
@@ -272,9 +392,9 @@ static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_r
 static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_packets, 
                            int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 
-// ----------------------------------------------------------------
-// HTTP Helper Functions
-// ----------------------------------------------------------------
+// ============================================================================
+// HTTP CLIENT HELPER FUNCTIONS
+// ============================================================================
 
 static char* httpGetRequest(const wchar_t *server, const wchar_t *path)
 {
@@ -513,6 +633,10 @@ static bool saveBinaryFile(const char *filepath, const char *data, size_t size)
     
     return true;
 }
+
+// ============================================================================
+// FIRMWARE UPDATE (GitHub Download, XMODEM Transfer)
+// ============================================================================
 
 static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath, size_t pathSize)
 {
@@ -1191,9 +1315,9 @@ static void freeApiCommands(void)
     gApiCommandCount = 0;
 }
 
-// ----------------------------------------------------------------
-// Password Obfuscation Helper Functions
-// ----------------------------------------------------------------
+// ============================================================================
+// SETTINGS MANAGEMENT (Load/Save/Obfuscation)
+// ============================================================================
 
 // Simple XOR-based obfuscation (not cryptographically secure, but better than plaintext)
 #define OBFUSCATION_KEY "uBloxUcxClient"
@@ -1272,6 +1396,10 @@ static void signalEvent(uint32_t evtFlag)
     gUrcEventFlags |= evtFlag;
     U_CX_MUTEX_UNLOCK(gUrcMutex);
 }
+
+// ============================================================================
+// URC (UNSOLICITED RESULT CODE) HANDLERS
+// ============================================================================
 
 static void networkUpUrc(struct uCxHandle *puCxHandle)
 {
@@ -1385,8 +1513,9 @@ static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_pa
 }
 
 // ----------------------------------------------------------------
-// Socket Functions
-// ----------------------------------------------------------------
+// ============================================================================
+// SOCKET OPERATIONS (TCP/UDP)
+// ============================================================================
 
 static void socketCreateTcp(void)
 {
@@ -1644,8 +1773,9 @@ static void socketListStatus(void)
 }
 
 // ----------------------------------------------------------------
-// SPS Functions
-// ----------------------------------------------------------------
+// ============================================================================
+// SPS (SERIAL PORT SERVICE)
+// ============================================================================
 
 static void spsEnableService(void)
 {
@@ -1775,8 +1905,9 @@ static void spsReadData(void)
 }
 
 // ----------------------------------------------------------------
-// GATT Client Functions
-// ----------------------------------------------------------------
+// ============================================================================
+// GATT CLIENT OPERATIONS
+// ============================================================================
 
 static void gattClientDiscoverServices(void)
 {
@@ -1920,8 +2051,9 @@ static void gattClientWriteCharacteristic(void)
 }
 
 // ----------------------------------------------------------------
-// GATT Server Functions
-// ----------------------------------------------------------------
+// ============================================================================
+// GATT SERVER OPERATIONS
+// ============================================================================
 
 static void gattServerAddService(void)
 {
@@ -2039,7 +2171,10 @@ static void getExecutableDirectory(char *buffer, size_t bufferSize)
     }
 }
 
-// Main function
+// ============================================================================
+// MAIN APPLICATION ENTRY POINT
+// ============================================================================
+
 int main(int argc, char *argv[])
 {
     // Set console to UTF-8 to properly display Unicode box drawing characters
@@ -2129,6 +2264,10 @@ int main(int argc, char *argv[])
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Goodbye!");
     return 0;
 }
+
+// ============================================================================
+// UI & MENU SYSTEM
+// ============================================================================
 
 static void printHeader(void)
 {
@@ -3133,6 +3272,10 @@ static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred,
         printf("\n");
     }
 }
+
+// ============================================================================
+// DEVICE CONNECTION & MANAGEMENT
+// ============================================================================
 
 static bool connectDevice(const char *comPort)
 {
@@ -4250,6 +4393,10 @@ static char* selectComPortFromList(const char *recommendedPort)
     return NULL;  // No recommendation and user pressed Enter without input
 }
 
+// ============================================================================
+// API COMMANDS (GITHUB INTEGRATION)
+// ============================================================================
+
 static void listAllApiCommands(void)
 {
     printf("\n=============== UCX API Command Reference ===============\n\n");
@@ -4512,6 +4659,10 @@ static void listAllApiCommands(void)
     }
 }
 
+// ============================================================================
+// AT COMMANDS & DIAGNOSTICS
+// ============================================================================
+
 static void executeAtTest(void)
 {
     if (!gConnected) {
@@ -4664,6 +4815,10 @@ static void executeModuleReboot(void)
     }
 }
 
+// ============================================================================
+// BLUETOOTH OPERATIONS
+// ============================================================================
+
 static void showBluetoothStatus(void)
 {
     if (!gConnected) {
@@ -4719,6 +4874,10 @@ static void showBluetoothStatus(void)
         printf("ERROR: Failed to get Bluetooth mode (code %d)\n", result);
     }
 }
+
+// ============================================================================
+// WIFI OPERATIONS
+// ============================================================================
 
 static void showWifiStatus(void)
 {
@@ -5296,7 +5455,7 @@ static void wifiConnect(void)
             
             if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
                 printf("Disconnect command sent successfully.\n");
-                Sleep(1000);  // Give module time to disconnect (like original version)
+                Sleep(1000);  // Give module time to disconnect
             } else {
                 printf("Warning: Disconnect command failed, attempting to connect anyway...\n");
             }
