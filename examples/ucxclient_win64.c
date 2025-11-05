@@ -132,8 +132,6 @@ static int32_t gCurrentSocket = -1;
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
-static char gWifiSsid[64] = "";               // Last Wi-Fi SSID (legacy, kept for backward compatibility)
-static char gWifiPassword[64] = "";           // Last Wi-Fi password (legacy)
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
 
 // WiFi Profile Management (up to 10 saved networks)
@@ -3763,14 +3761,13 @@ static bool quickConnectToLastDevice(void)
     if (connectDevice(gComPort)) {
         printf("\nQuick connect successful!\n");
         
-        // If Wi-Fi credentials saved, offer to reconnect
-        if (gWifiSsid[0] != '\0' && gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL) {
-            printf("\nWi-Fi credentials found for '%s'\n", gWifiSsid);
-            printf("Reconnect to Wi-Fi? (y/n): ");
+        // If Wi-Fi profiles saved and this is a W3x device, offer to connect
+        if (gWifiProfileCount > 0 && gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL) {
+            printf("\n%d Wi-Fi profile(s) available\n", gWifiProfileCount);
+            printf("Connect to Wi-Fi? (y/n): ");
             char response[10];
             if (fgets(response, sizeof(response), stdin)) {
                 if (tolower(response[0]) == 'y') {
-                    // Auto-connect to saved Wi-Fi
                     wifiConnect();
                 }
             }
@@ -3949,17 +3946,6 @@ static void loadSettings(void)
                     printf("Loaded last device from settings: %s\n", gLastDeviceModel);
                 }
             }
-            else if (strncmp(line, "wifi_ssid=", 10) == 0) {
-                strncpy(gWifiSsid, line + 10, sizeof(gWifiSsid) - 1);
-                gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
-            }
-            else if (strncmp(line, "wifi_password=", 14) == 0) {
-                // Deobfuscate password from hex
-                char obfuscated[128];
-                strncpy(obfuscated, line + 14, sizeof(obfuscated) - 1);
-                obfuscated[sizeof(obfuscated) - 1] = '\0';
-                deobfuscatePassword(obfuscated, gWifiPassword, sizeof(gWifiPassword));
-            }
             else if (strncmp(line, "wifi_profile_count=", 19) == 0) {
                 tempProfileCount = atoi(line + 19);
                 if (tempProfileCount > MAX_WIFI_PROFILES) {
@@ -4044,13 +4030,6 @@ static void saveSettings(void)
     if (f) {
         fprintf(f, "last_port=%s\n", gComPort);
         fprintf(f, "last_device=%s\n", gLastDeviceModel);
-        fprintf(f, "wifi_ssid=%s\n", gWifiSsid);
-        
-        // Obfuscate password before saving
-        char obfuscatedPassword[128];
-        obfuscatePassword(gWifiPassword, obfuscatedPassword, sizeof(obfuscatedPassword));
-        fprintf(f, "wifi_password=%s\n", obfuscatedPassword);
-        
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
         
         // Save WiFi profiles (up to 10)
@@ -5904,35 +5883,26 @@ static void wifiConnect(void)
     
     // Manual entry if no profile used
     if (!useProfile) {
-        // Show legacy saved SSID if available and no profiles exist
-        if (strlen(gWifiSsid) > 0 && gWifiProfileCount == 0) {
-            printf("Last SSID: %s\n", gWifiSsid);
-        }
-        
-        printf("Enter SSID (or press Enter to use saved): ");
+        printf("Enter SSID: ");
         if (fgets(ssid, sizeof(ssid), stdin)) {
             // Remove trailing newline
             char *end = strchr(ssid, '\n');
             if (end) *end = '\0';
             
-            // If empty and we have saved SSID, use it
-            if (strlen(ssid) == 0 && strlen(gWifiSsid) > 0 && gWifiProfileCount == 0) {
-                strncpy(ssid, gWifiSsid, sizeof(ssid) - 1);
-                ssid[sizeof(ssid) - 1] = '\0';
-                strncpy(password, gWifiPassword, sizeof(password) - 1);
-                password[sizeof(password) - 1] = '\0';
-                printf("Using saved credentials for '%s'\n", ssid);
-            } else if (strlen(ssid) > 0) {
-                printf("Enter password (or press Enter for open network): ");
-                if (fgets(password, sizeof(password), stdin)) {
-                    // Remove trailing newline
-                    end = strchr(password, '\n');
-                    if (end) *end = '\0';
-                }
-            } else {
+            if (strlen(ssid) == 0) {
                 printf("ERROR: SSID cannot be empty.\n");
                 return;
             }
+            
+            printf("Enter password (or press Enter for open network): ");
+            if (fgets(password, sizeof(password), stdin)) {
+                // Remove trailing newline
+                end = strchr(password, '\n');
+                if (end) *end = '\0';
+            }
+        } else {
+            printf("ERROR: Failed to read SSID.\n");
+            return;
         }
     }
     
@@ -6055,13 +6025,6 @@ static void wifiConnect(void)
                 }
             }
         }
-        
-        // Also save to legacy fields for backward compatibility
-        strncpy(gWifiSsid, ssid, sizeof(gWifiSsid) - 1);
-        gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
-        strncpy(gWifiPassword, password, sizeof(gWifiPassword) - 1);
-        gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
-        saveSettings();
         
         // Test connectivity (ping gateway and internet) with connection summary
         if (strlen(gatewayStr) > 0) {
