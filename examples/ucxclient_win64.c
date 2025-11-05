@@ -195,6 +195,7 @@ static volatile int32_t gPingCount = 0;
 
 // Reboot timing
 static volatile ULONGLONG gStartupTimestamp = 0;
+static volatile ULONGLONG gLastStartupConfigTime = 0;
 
 // Menu state
 typedef enum {
@@ -1558,11 +1559,23 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
 static void startupUrc(struct uCxHandle *puCxHandle)
 {
     // Record timestamp when STARTUP is received
-    gStartupTimestamp = GetTickCount64();
+    ULONGLONG currentTime = GetTickCount64();
+    gStartupTimestamp = currentTime;
+    
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
+    
+    // Prevent rapid reconfiguration (debounce within 2 seconds)
+    if (gLastStartupConfigTime > 0 && (currentTime - gLastStartupConfigTime) < 2000) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, 
+                       "Skipping reconfiguration - too soon after last STARTUP (%.1f seconds ago)",
+                       (currentTime - gLastStartupConfigTime) / 1000.0);
+        signalEvent(URC_FLAG_STARTUP);
+        return;
+    }
     
     // Module has restarted - need to reconfigure echo and error codes
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Reconfiguring module after restart...");
+    gLastStartupConfigTime = currentTime;
     
     // Turn off echo
     int32_t result = uCxSystemSetEchoOff(puCxHandle);
@@ -2927,7 +2940,7 @@ static void printMenu(void)
                 if (gDeviceModel[0] != '\0') {
                     // Check if this is a Wi-Fi-capable device (NORA-W36)
                     if (strstr(gDeviceModel, "W3") != NULL) {
-                        printf("  Wi-Fi:        Available (use [8] to connect)\n");
+                        printf("  Wi-Fi:       Available (use [8] to connect)\n");
                     }
                     // All devices have Bluetooth
                     printf("  Bluetooth:   Available (use [6] for operations)\n");
