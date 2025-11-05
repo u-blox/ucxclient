@@ -389,6 +389,7 @@ static void bluetoothMenu(void);
 static void bluetoothScan(void);
 static void bluetoothConnect(void);
 static void bluetoothDisconnect(void);
+static void bluetoothSyncConnections(void);
 static void decodeAdvertisingData(const uint8_t *data, size_t dataLen);
 static void wifiMenu(void);
 static void wifiScan(void);
@@ -3237,6 +3238,11 @@ static void handleUserInput(void)
             break;
             
         case MENU_BLUETOOTH:
+            // Sync connection list from module before processing menu choice
+            if (choice >= 1 && choice <= 5) {
+                bluetoothSyncConnections();
+            }
+            
             switch (choice) {
                 case 1:
                     showBluetoothStatus();
@@ -6025,6 +6031,40 @@ static void bluetoothDisconnect(void)
             printf("ERROR: Failed to disconnect (error: %d)\n", result);
         }
     }
+}
+
+static void bluetoothSyncConnections(void)
+{
+    if (!gConnected) {
+        return;
+    }
+    
+    // Clear existing tracking
+    gBtConnectionCount = 0;
+    memset(gBtConnections, 0, sizeof(gBtConnections));
+    
+    // Query active connections from module
+    uCxBluetoothListConnectionsBegin(&gUcxHandle);
+    
+    uCxBluetoothListConnections_t conn;
+    while (uCxBluetoothListConnectionsGetNext(&gUcxHandle, &conn)) {
+        if (gBtConnectionCount < MAX_BT_CONNECTIONS) {
+            gBtConnections[gBtConnectionCount].handle = conn.conn_handle;
+            memcpy(&gBtConnections[gBtConnectionCount].address, &conn.bd_addr, sizeof(uBtLeAddress_t));
+            gBtConnections[gBtConnectionCount].active = true;
+            
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Synced BT connection: handle=%d, addr=%02X:%02X:%02X:%02X:%02X:%02X",
+                         conn.conn_handle,
+                         conn.bd_addr.address[0], conn.bd_addr.address[1], conn.bd_addr.address[2],
+                         conn.bd_addr.address[3], conn.bd_addr.address[4], conn.bd_addr.address[5]);
+            
+            gBtConnectionCount++;
+        }
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Bluetooth sync complete: %d connection(s) tracked", gBtConnectionCount);
 }
 
 static void wifiScan(void)
