@@ -2444,8 +2444,27 @@ int main(int argc, char *argv[])
     // Set console to UTF-8 to properly display Unicode box drawing characters
     SetConsoleOutputCP(CP_UTF8);
     
-    // Initialize settings file path (next to executable)
+    // Initialize settings file path (in project root directory)
+    // Get executable directory (e.g., build\Release\ or build\Debug\)
     getExecutableDirectory(gSettingsFilePath, sizeof(gSettingsFilePath));
+    
+    // Navigate up to project root (from build\Release\ to root)
+    // Remove "Release\" or "Debug\"
+    char *lastSlash = strrchr(gSettingsFilePath, '\\');
+    if (lastSlash && lastSlash > gSettingsFilePath) {
+        *lastSlash = '\0';  // Remove trailing slash and config dir
+        lastSlash = strrchr(gSettingsFilePath, '\\');
+        if (lastSlash) {
+            *(lastSlash + 1) = '\0';  // Keep trailing slash, now at build\
+            // Remove "build\"
+            *lastSlash = '\0';
+            lastSlash = strrchr(gSettingsFilePath, '\\');
+            if (lastSlash) {
+                *(lastSlash + 1) = '\0';  // Keep trailing slash, now at root
+            }
+        }
+    }
+    
     strncat(gSettingsFilePath, SETTINGS_FILENAME, sizeof(gSettingsFilePath) - strlen(gSettingsFilePath) - 1);
     
     // Load settings from file
