@@ -139,7 +139,7 @@ typedef struct {
     char name[32];              // Profile name (e.g., "Office", "Home", "Lab")
     char ssid[64];              // Network SSID
     char password[64];          // Network password
-    char ipSubnet[16];          // Expected IP subnet (e.g., "10.12.4", "192.168.0")
+    char ipPrefix[16];          // Expected IP prefix (first 3 octets, e.g., "10.12.4", "192.168.0")
 } WiFiProfile_t;
 
 #define MAX_WIFI_PROFILES 10
@@ -373,7 +373,7 @@ static void wifiScan(void);
 static void wifiConnect(void);
 static void wifiDisconnect(void);
 static void wifiManageProfiles(void);
-static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipSubnet);
+static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipPrefix);
 static int wifiSuggestProfile(void);
 static void wifiListProfiles(void);
 static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize);
@@ -3996,9 +3996,9 @@ static void loadSettings(void)
                                 // Deobfuscate password
                                 deobfuscatePassword(value, gWifiProfiles[profileIdx].password, sizeof(gWifiProfiles[profileIdx].password));
                             }
-                            else if (strcmp(field, "subnet") == 0) {
-                                strncpy(gWifiProfiles[profileIdx].ipSubnet, value, sizeof(gWifiProfiles[profileIdx].ipSubnet) - 1);
-                                gWifiProfiles[profileIdx].ipSubnet[sizeof(gWifiProfiles[profileIdx].ipSubnet) - 1] = '\0';
+                            else if (strcmp(field, "ip_prefix") == 0) {
+                                strncpy(gWifiProfiles[profileIdx].ipPrefix, value, sizeof(gWifiProfiles[profileIdx].ipPrefix) - 1);
+                                gWifiProfiles[profileIdx].ipPrefix[sizeof(gWifiProfiles[profileIdx].ipPrefix) - 1] = '\0';
                             }
                         }
                     }
@@ -4063,7 +4063,7 @@ static void saveSettings(void)
             obfuscatePassword(gWifiProfiles[i].password, obfuscatedProfilePassword, sizeof(obfuscatedProfilePassword));
             fprintf(f, "wifi_profile_%d_password=%s\n", i, obfuscatedProfilePassword);
             
-            fprintf(f, "wifi_profile_%d_subnet=%s\n", i, gWifiProfiles[i].ipSubnet);
+            fprintf(f, "wifi_profile_%d_ip_prefix=%s\n", i, gWifiProfiles[i].ipPrefix);
         }
         
         // Save dynamic per-product firmware paths
@@ -6145,8 +6145,8 @@ static int wifiSuggestProfile(void)
     
     // Find matching profile
     for (int i = 0; i < gWifiProfileCount; i++) {
-        if (gWifiProfiles[i].ipSubnet[0] != '\0') {
-            if (strcmp(gWifiProfiles[i].ipSubnet, subnet) == 0) {
+        if (gWifiProfiles[i].ipPrefix[0] != '\0') {
+            if (strcmp(gWifiProfiles[i].ipPrefix, subnet) == 0) {
                 return i;  // Found matching profile
             }
         }
@@ -6168,8 +6168,8 @@ static void wifiListProfiles(void)
     for (int i = 0; i < gWifiProfileCount; i++) {
         printf("[%d] %s\n", i + 1, gWifiProfiles[i].name);
         printf("    SSID: %s\n", gWifiProfiles[i].ssid);
-        if (gWifiProfiles[i].ipSubnet[0] != '\0') {
-            printf("    Expected subnet: %s.x\n", gWifiProfiles[i].ipSubnet);
+        if (gWifiProfiles[i].ipPrefix[0] != '\0') {
+            printf("    Expected IP prefix: %s.x\n", gWifiProfiles[i].ipPrefix);
         }
         if (i == gActiveProfileIndex) {
             printf("    [ACTIVE]\n");
@@ -6179,7 +6179,7 @@ static void wifiListProfiles(void)
 }
 
 // Save a WiFi profile
-static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipSubnet)
+static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipPrefix)
 {
     if (gWifiProfileCount >= MAX_WIFI_PROFILES) {
         printf("ERROR: Maximum number of profiles (%d) reached.\n", MAX_WIFI_PROFILES);
@@ -6197,8 +6197,8 @@ static void wifiSaveProfile(const char *name, const char *ssid, const char *pass
             strncpy(gWifiProfiles[i].password, password, sizeof(gWifiProfiles[i].password) - 1);
             gWifiProfiles[i].password[sizeof(gWifiProfiles[i].password) - 1] = '\0';
             
-            strncpy(gWifiProfiles[i].ipSubnet, ipSubnet, sizeof(gWifiProfiles[i].ipSubnet) - 1);
-            gWifiProfiles[i].ipSubnet[sizeof(gWifiProfiles[i].ipSubnet) - 1] = '\0';
+            strncpy(gWifiProfiles[i].ipPrefix, ipPrefix, sizeof(gWifiProfiles[i].ipPrefix) - 1);
+            gWifiProfiles[i].ipPrefix[sizeof(gWifiProfiles[i].ipPrefix) - 1] = '\0';
             
             saveSettings();
             printf("Profile '%s' updated successfully.\n", name);
@@ -6218,8 +6218,8 @@ static void wifiSaveProfile(const char *name, const char *ssid, const char *pass
     strncpy(profile->password, password, sizeof(profile->password) - 1);
     profile->password[sizeof(profile->password) - 1] = '\0';
     
-    strncpy(profile->ipSubnet, ipSubnet, sizeof(profile->ipSubnet) - 1);
-    profile->ipSubnet[sizeof(profile->ipSubnet) - 1] = '\0';
+    strncpy(profile->ipPrefix, ipPrefix, sizeof(profile->ipPrefix) - 1);
+    profile->ipPrefix[sizeof(profile->ipPrefix) - 1] = '\0';
     
     gWifiProfileCount++;
     saveSettings();
@@ -6263,7 +6263,7 @@ static void wifiManageProfiles(void)
                 break;
                 
             case 2: {  // Add new profile
-                char name[32], ssid[64], password[64], ipSubnet[16];
+                char name[32], ssid[64], password[64], ipPrefix[16];
                 
                 printf("\nAdd New Wi-Fi Profile\n");
                 printf("Profile name (e.g., Office, Home, Lab): ");
@@ -6286,11 +6286,11 @@ static void wifiManageProfiles(void)
                 if (!fgets(password, sizeof(password), stdin)) break;
                 password[strcspn(password, "\n")] = '\0';
                 
-                printf("Expected IP subnet (e.g., 10.12.4 or 192.168.1) [optional]: ");
-                if (!fgets(ipSubnet, sizeof(ipSubnet), stdin)) break;
-                ipSubnet[strcspn(ipSubnet, "\n")] = '\0';
+                printf("Expected IP prefix - first 3 octets (e.g., 10.12.4 or 192.168.1) [optional]: ");
+                if (!fgets(ipPrefix, sizeof(ipPrefix), stdin)) break;
+                ipPrefix[strcspn(ipPrefix, "\n")] = '\0';
                 
-                wifiSaveProfile(name, ssid, password, ipSubnet);
+                wifiSaveProfile(name, ssid, password, ipPrefix);
                 break;
             }
                 
@@ -6331,13 +6331,13 @@ static void wifiManageProfiles(void)
                     }
                 }
                 
-                printf("Current subnet: %s\n", profile->ipSubnet[0] != '\0' ? profile->ipSubnet : "(none)");
-                printf("New subnet (or press Enter to keep): ");
+                printf("Current IP prefix: %s\n", profile->ipPrefix[0] != '\0' ? profile->ipPrefix : "(none)");
+                printf("New IP prefix (or press Enter to keep): ");
                 if (fgets(newValue, sizeof(newValue), stdin)) {
                     newValue[strcspn(newValue, "\n")] = '\0';
                     if (strlen(newValue) > 0) {
-                        strncpy(profile->ipSubnet, newValue, sizeof(profile->ipSubnet) - 1);
-                        profile->ipSubnet[sizeof(profile->ipSubnet) - 1] = '\0';
+                        strncpy(profile->ipPrefix, newValue, sizeof(profile->ipPrefix) - 1);
+                        profile->ipPrefix[sizeof(profile->ipPrefix) - 1] = '\0';
                     }
                 }
                 
@@ -6416,7 +6416,7 @@ static void wifiManageProfiles(void)
                 if (suggestedIdx >= 0) {
                     printf("Suggested profile: [%d] %s\n", suggestedIdx + 1, gWifiProfiles[suggestedIdx].name);
                     printf("SSID: %s\n", gWifiProfiles[suggestedIdx].ssid);
-                    printf("Subnet: %s.x\n", gWifiProfiles[suggestedIdx].ipSubnet);
+                    printf("IP prefix: %s.x\n", gWifiProfiles[suggestedIdx].ipPrefix);
                     printf("\nUse this profile? (Y/n): ");
                     
                     if (fgets(input, sizeof(input), stdin)) {
