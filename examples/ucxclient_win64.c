@@ -436,6 +436,46 @@ static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_pa
                            int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 
 // ============================================================================
+// BLUETOOTH HELPER FUNCTIONS
+// ============================================================================
+
+// Parse Bluetooth address from settings format: "XX:XX:XX:XX:XX:XX,type" or "XX:XX:XX:XX:XX:XX"
+// Returns true if parsed successfully
+static bool parseBluetoothAddress(const char *addrStr, uBtLeAddress_t *addr)
+{
+    if (!addrStr || !addr || strlen(addrStr) < 17) {
+        return false;
+    }
+    
+    // Parse MAC address (first 17 characters: XX:XX:XX:XX:XX:XX)
+    int values[6];
+    if (sscanf(addrStr, "%02x:%02x:%02x:%02x:%02x:%02x",
+               &values[0], &values[1], &values[2], &values[3], &values[4], &values[5]) != 6) {
+        return false;
+    }
+    
+    for (int i = 0; i < 6; i++) {
+        addr->address[i] = (uint8_t)values[i];
+    }
+    
+    // Check if type is specified after comma
+    const char *comma = strchr(addrStr, ',');
+    if (comma && strlen(comma) > 1) {
+        // Type specified: "XX:XX:XX:XX:XX:XX,random" or "XX:XX:XX:XX:XX:XX,public"
+        if (strstr(comma + 1, "random") != NULL) {
+            addr->type = U_BD_ADDRESS_TYPE_RANDOM;
+        } else {
+            addr->type = U_BD_ADDRESS_TYPE_PUBLIC;
+        }
+    } else {
+        // No type specified - default to public for backward compatibility
+        addr->type = U_BD_ADDRESS_TYPE_PUBLIC;
+    }
+    
+    return true;
+}
+
+// ============================================================================
 // HTTP CLIENT HELPER FUNCTIONS
 // ============================================================================
 
@@ -1652,6 +1692,15 @@ static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLe
         printf("Device address: %02X:%02X:%02X:%02X:%02X:%02X\n",
                bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
                bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
+        
+        // Save to settings for quick reconnect (format: XX:XX:XX:XX:XX:XX,type)
+        const char *addrType = (bd_addr->type == U_BD_ADDRESS_TYPE_PUBLIC) ? "public" : "random";
+        snprintf(gRemoteAddress, sizeof(gRemoteAddress),
+                 "%02X:%02X:%02X:%02X:%02X:%02X,%s",
+                 bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
+                 bd_addr->address[3], bd_addr->address[4], bd_addr->address[5],
+                 addrType);
+        saveSettings();
     }
     
     // Track the connection
@@ -5939,22 +5988,37 @@ static void bluetoothConnect(void)
     }
     
     printf("\n--- Bluetooth Connect ---\n");
-    printf("Enter Bluetooth address (format: XX:XX:XX:XX:XX:XX): ");
     
-    char addrStr[20];
-    if (fgets(addrStr, sizeof(addrStr), stdin)) {
-        // Parse MAC address
-        uBtLeAddress_t addr;
-        addr.type = U_BD_ADDRESS_TYPE_PUBLIC;
+    // Show last connected device if available
+    if (gRemoteAddress[0] != '\0') {
+        // Extract just the MAC address for display (before comma if present)
+        char displayAddr[32];
+        strncpy(displayAddr, gRemoteAddress, sizeof(displayAddr) - 1);
+        displayAddr[sizeof(displayAddr) - 1] = '\0';
+        char *comma = strchr(displayAddr, ',');
+        if (comma) *comma = '\0';
         
-        int values[6];
-        if (sscanf(addrStr, "%02x:%02x:%02x:%02x:%02x:%02x",
-                   &values[0], &values[1], &values[2], &values[3], &values[4], &values[5]) == 6) {
-            
-            for (int i = 0; i < 6; i++) {
-                addr.address[i] = (uint8_t)values[i];
-            }
-            
+        printf("Last connected: %s\n", displayAddr);
+        printf("Enter Bluetooth address (or press Enter to use last): ");
+    } else {
+        printf("Enter Bluetooth address (format: XX:XX:XX:XX:XX:XX): ");
+    }
+    
+    char addrStr[64];
+    if (fgets(addrStr, sizeof(addrStr), stdin)) {
+        // Remove trailing newline
+        char *end = strchr(addrStr, '\n');
+        if (end) *end = '\0';
+        
+        // If user pressed Enter without input, use last address
+        if (strlen(addrStr) == 0 && gRemoteAddress[0] != '\0') {
+            strncpy(addrStr, gRemoteAddress, sizeof(addrStr) - 1);
+            addrStr[sizeof(addrStr) - 1] = '\0';
+        }
+        
+        // Parse the address
+        uBtLeAddress_t addr;
+        if (parseBluetoothAddress(addrStr, &addr)) {
             printf("Connecting to device...\n");
             
             // uCxBluetoothConnect returns conn handle on success, negative on error
@@ -5967,6 +6031,7 @@ static void bluetoothConnect(void)
             }
         } else {
             printf("ERROR: Invalid MAC address format\n");
+            printf("Expected format: XX:XX:XX:XX:XX:XX or XX:XX:XX:XX:XX:XX,type\n");
         }
     }
 }
