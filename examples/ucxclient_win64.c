@@ -1496,10 +1496,29 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
 
 static void startupUrc(struct uCxHandle *puCxHandle)
 {
-    (void)puCxHandle;
     // Record timestamp when STARTUP is received
     gStartupTimestamp = GetTickCount64();
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
+    
+    // Module has restarted - need to reconfigure echo and error codes
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Reconfiguring module after restart...");
+    
+    // Turn off echo
+    int32_t result = uCxSystemSetEchoOff(puCxHandle);
+    if (result != 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, 
+                       "Warning: Failed to disable echo after restart (error %d)", result);
+    }
+    
+    // Enable extended error codes
+    result = uCxSystemSetExtendedError(puCxHandle, U_EXTENDED_ERRORS_ON);
+    if (result != 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, 
+                       "Warning: Failed to enable extended errors after restart (error %d)", result);
+    }
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Module reconfiguration complete");
+    
     signalEvent(URC_FLAG_STARTUP);
 }
 
