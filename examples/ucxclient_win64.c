@@ -2790,20 +2790,20 @@ static void printWelcomeGuide(void)
     printf("QUICK START:\n");
     printf("  1. Connect your module via USB\n");
     printf("  2. Use menu option [1] to connect to the device\n");
-    printf("  3. Try [4] AT test to verify communication\n");
-    printf("  4. Try [5] ATI9 to see device information\n");
+    printf("  3. Try [3] AT test to verify communication\n");
+    printf("  4. Try [4] ATI9 to see device information\n");
     printf("\n");
     printf("COMMON OPERATIONS:\n");
     printf("  - Wi-Fi: Use [8] Wi-Fi (scan, connect, disconnect, status)\n");
-    printf("  - Bluetooth: Use [7] Bluetooth (scan, connect, disconnect, status)\n");
-    printf("  - Sockets: Use [a] Socket menu for TCP/UDP (requires Wi-Fi)\n");
-    printf("  - SPS: Use [b] for Bluetooth Serial Port Service\n");
+    printf("  - Bluetooth: Use [6] Bluetooth (scan, connect, disconnect, status)\n");
+    printf("  - Sockets: Use [9] Wi-Fi functions for TCP/UDP (requires Wi-Fi)\n");
+    printf("  - SPS: Use [7] Bluetooth functions for Serial Port Service\n");
     printf("\n");
     printf("TIPS:\n");
     printf("  - Type [h] anytime for help\n");
     printf("  - Type [q] to quit from any menu\n");
     printf("  - Settings are saved automatically after successful operations\n");
-    printf("  - Use [9] to toggle AT command logging on/off\n");
+    printf("  - Use [l] to toggle AT command logging on/off\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -2822,16 +2822,19 @@ static void printHelp(void)
     printf("  [q] Quit         - Exit from any menu\n");
     printf("\n");
     printf("BASIC OPERATIONS:\n");
-    printf("  [4] AT test      - Test basic communication with device\n");
-    printf("  [5] ATI9         - Show device model and firmware version\n");
-    printf("  [6] Reboot       - Restart the module\n");
+    printf("  [3] AT test      - Test basic communication with device\n");
+    printf("  [4] ATI9         - Show device model and firmware version\n");
+    printf("  [5] Reboot       - Restart the module\n");
     printf("\n");
     printf("BLUETOOTH OPERATIONS:\n");
-    printf("  [7] Bluetooth (scan, connect, disconnect, status)\n");
+    printf("  [6] Bluetooth (scan, connect, disconnect, status)\n");
     printf("      - Scan for nearby Bluetooth devices\n");
     printf("      - Connect to Bluetooth devices\n");
     printf("      - Disconnect active connections\n");
     printf("      - Show connection status\n");
+    printf("  [7] Bluetooth functions (SPS, GATT)\n");
+    printf("      - Serial Port Service for data transfer\n");
+    printf("      - GATT Client/Server operations\n");
     printf("  NOTE: NORA-B26 is Bluetooth only, NORA-W36 has BT+Wi-Fi\n");
     printf("\n");
     printf("WI-FI OPERATIONS:\n");
@@ -2840,14 +2843,18 @@ static void printHelp(void)
     printf("      - Connect to Wi-Fi (SSID and password saved)\n");
     printf("      - Disconnect from networks\n");
     printf("      - Show connection status\n");
+    printf("  [9] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)\n");
+    printf("      - TCP/UDP sockets\n");
+    printf("      - MQTT publish/subscribe\n");
+    printf("      - HTTP client operations\n");
+    printf("      - Security and TLS certificates\n");
     printf("  NOTE: Only available on NORA-W36 modules\n");
     printf("\n");
-    printf("NETWORK OPERATIONS:\n");
-    printf("  [a] Socket menu - TCP/UDP client operations\n");
-    printf("      - Create TCP or UDP sockets\n");
-    printf("      - Connect to remote servers\n");
-    printf("      - Send and receive data\n");
-    printf("  REQUIRES: Active Wi-Fi connection first!\n");
+    printf("OTHER OPTIONS:\n");
+    printf("  [l] Toggle logging - Show/hide AT command traffic\n");
+    printf("  [t] Toggle timestamps - Add timing info to logs\n");
+    printf("  [c] List API commands - Show all available UCX APIs\n");
+    printf("  [f] Firmware update - Update module firmware via XMODEM\n");
     printf("\n");
     printf("  [b] SPS menu - Bluetooth Serial Port Service\n");
     printf("      - Enable SPS service\n");
@@ -2923,7 +2930,7 @@ static void printMenu(void)
                         printf("  Wi-Fi:        Available (use [8] to connect)\n");
                     }
                     // All devices have Bluetooth
-                    printf("  Bluetooth:   Available (use [7] for operations)\n");
+                    printf("  Bluetooth:   Available (use [6] for operations)\n");
                 }
             } else {
                 printf("  Status:      Not connected\n");
@@ -2935,16 +2942,16 @@ static void printMenu(void)
             printf("\n");
             printf("  [1] Connect to UCX device\n");
             printf("  [2] Disconnect from device\n");
-            printf("  [3] List API commands\n");
-            printf("  [4] AT test (basic communication)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [5] ATI9 (device info)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [6] Module reboot/switch off%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [7] Bluetooth (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [3] AT test (basic communication)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [4] ATI9 (device info)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [5] Module reboot/switch off%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [6] Bluetooth (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [7] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [8] Wi-Fi (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [9] Toggle UCX logging (AT traffic)\n");
+            printf("  [9] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [l] Toggle UCX logging (AT traffic)\n");
             printf("  [t] Toggle timestamps in logs\n");
-            printf("  [a] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [b] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [c] List UCX API commands\n");
             printf("  [f] Firmware update (XMODEM)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [h] Help - Getting started guide\n");
             printf("  [q] Quit application\n");
@@ -3155,8 +3162,20 @@ static void handleUserInput(void)
             return;
         }
         
-        if (firstChar >= 'a' && firstChar <= 'z') {
-            // Convert letter to number: a=10, b=11, c=12, ... f=15, etc.
+        // Handle specific letter commands for main menu
+        if (gMenuState == MENU_MAIN) {
+            if (firstChar == 'l') {
+                choice = 12;  // Toggle UCX logging
+            } else if (firstChar == 'c') {
+                choice = 13;  // List API commands
+            } else if (firstChar == 'f') {
+                choice = 16;  // Firmware update
+            }
+        }
+        
+        // Generic letter conversion (for other contexts)
+        if (choice == 0 && firstChar >= 'a' && firstChar <= 'z') {
+            // Convert letter to number: a=10, b=11, c=12, ... z=35
             choice = 10 + (firstChar - 'a');
         }
     }
@@ -3208,34 +3227,38 @@ static void handleUserInput(void)
                     disconnectDevice();
                     break;
                 case 3:
-                    gMenuState = MENU_API_LIST;
-                    break;
-                case 4:
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeAtTest();
                     }
                     break;
-                case 5:
+                case 4:
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeAti9();
                     }
                     break;
-                case 6:
+                case 5:
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeModuleReboot();
                     }
                     break;
-                case 7:
+                case 6:
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_BLUETOOTH;
+                    }
+                    break;
+                case 7:
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_BLUETOOTH_FUNCTIONS;
                     }
                     break;
                 case 8:
@@ -3246,6 +3269,13 @@ static void handleUserInput(void)
                     }
                     break;
                 case 9:
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_WIFI_FUNCTIONS;
+                    }
+                    break;
+                case 12:  // Also accept 'l' or 'L' - Toggle UCX logging
                     if (uCxLogIsEnabled()) {
                         uCxLogDisable();
                         printf("UCX logging DISABLED\n");
@@ -3255,28 +3285,17 @@ static void handleUserInput(void)
                         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Logging re-enabled from menu");
                     }
                     break;
-                case 10:  // Also accept 'a' or 'A' - Bluetooth Functions
-                    if (!gConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
-                    } else {
-                        gMenuState = MENU_BLUETOOTH_FUNCTIONS;
-                    }
+                case 13:  // Also accept 'c' or 'C' - List API commands
+                    gMenuState = MENU_API_LIST;
                     break;
-                case 11:  // Also accept 'b' or 'B' - Wi-Fi Functions
-                    if (!gConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
-                    } else {
-                        gMenuState = MENU_WIFI_FUNCTIONS;
-                    }
-                    break;
-                case 15:  // Also accept 'f' or 'F'
+                case 16:  // Also accept 'f' or 'F' - Firmware update
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_FIRMWARE_UPDATE;
                     }
                     break;
-                case 17:  // Also accept 'h' or 'H' (handled above but keep for consistency)
+                case 18:  // Also accept 'h' or 'H' - Help (handled above but keep for consistency)
                     printHelp();
                     break;
                 case 0:
