@@ -108,9 +108,23 @@ if(WIN32)
   target_include_directories(windows_basic PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
   target_link_libraries(windows_basic PRIVATE setupapi ${FTDI_LIBRARY})
 
-  # Windows Console Application - ucxclient_win64
+  # Windows Console Application - ucxclient_win64 (Modular)
   add_executable(ucxclient_win64
-    examples/ucxclient_win64.c
+    examples/ucxclient_win64/main.c
+    examples/ucxclient_win64/urc_handlers.c
+    examples/ucxclient_win64/settings.c
+    examples/ucxclient_win64/device_connection.c
+    examples/ucxclient_win64/com_port_detect.c
+    examples/ucxclient_win64/api_commands.c
+    examples/ucxclient_win64/bluetooth.c
+    examples/ucxclient_win64/wifi.c
+    examples/ucxclient_win64/socket.c
+    examples/ucxclient_win64/sps.c
+    examples/ucxclient_win64/gatt.c
+    examples/ucxclient_win64/mqtt.c
+    examples/ucxclient_win64/http.c
+    examples/ucxclient_win64/firmware_update.c
+    examples/ucxclient_win64/ui_menus.c
     examples/port/u_port_windows.c
     examples/ucxclient_win64.rc
     ${UCXCLIENT_UCX_API_SRC}
@@ -123,7 +137,7 @@ if(WIN32)
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
-  target_include_directories(ucxclient_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_include_directories(ucxclient_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} examples/ucxclient_win64)
   target_link_libraries(ucxclient_win64 PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Firmware Update Standalone Application
