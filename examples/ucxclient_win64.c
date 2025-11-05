@@ -2156,6 +2156,250 @@ static void gattServerSetCharacteristic(void)
     }
 }
 
+// ============================================================================
+// MQTT OPERATIONS (Publish/Subscribe)
+// ============================================================================
+
+#define MQTT_CONFIG_ID 0
+#define MQTT_DEFAULT_HOST "broker.emqx.io"
+#define MQTT_DEFAULT_PORT 1883
+
+static void mqttConnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- MQTT Connect ---\n");
+    
+    // Configure MQTT connection parameters
+    const char *broker = MQTT_DEFAULT_HOST;
+    int32_t port = MQTT_DEFAULT_PORT;
+    char clientId[64];
+    
+    // Generate client ID with random component
+    snprintf(clientId, sizeof(clientId), "ucxclient-%d", rand() % 10000);
+    
+    printf("Broker: %s:%d\n", broker, port);
+    printf("Client ID: %s\n", clientId);
+    
+    // Set connection parameters
+    printf("Configuring MQTT connection...\n");
+    int32_t result = uCxMqttSetConnectionParams4(&gUcxHandle, MQTT_CONFIG_ID, broker, port, clientId);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to set connection parameters (code %d)\n", result);
+        return;
+    }
+    
+    // Set keepalive (60 seconds)
+    result = uCxMqttSetKeepAlive(&gUcxHandle, MQTT_CONFIG_ID, 60);
+    if (result != 0) {
+        printf("WARNING: Failed to set keepalive (code %d)\n", result);
+    }
+    
+    // Connect to broker
+    printf("Connecting to MQTT broker...\n");
+    result = uCxMqttConnect(&gUcxHandle, MQTT_CONFIG_ID);
+    
+    if (result == 0) {
+        printf("✓ Connected to MQTT broker successfully\n");
+        printf("\n");
+        printf("You can now:\n");
+        printf("  - Subscribe to topics\n");
+        printf("  - Publish messages\n");
+    } else {
+        printf("ERROR: Failed to connect (code %d)\n", result);
+        printf("\nTroubleshooting:\n");
+        printf("  - Ensure Wi-Fi is connected (use option 8)\n");
+        printf("  - Check if broker is accessible\n");
+        printf("  - Try again in a few seconds\n");
+    }
+}
+
+static void mqttDisconnect(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- MQTT Disconnect ---\n");
+    printf("Disconnecting from MQTT broker...\n");
+    
+    int32_t result = uCxMqttDisconnect(&gUcxHandle, MQTT_CONFIG_ID);
+    
+    if (result == 0) {
+        printf("Disconnected successfully.\n");
+    } else {
+        printf("ERROR: Failed to disconnect (code %d)\n", result);
+    }
+}
+
+static void mqttSubscribe(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- MQTT Subscribe ---\n");
+    
+    char topic[128];
+    printf("Enter topic to subscribe (wildcards allowed, e.g., 'test/#'): ");
+    if (fgets(topic, sizeof(topic), stdin)) {
+        // Remove newline
+        char *newline = strchr(topic, '\n');
+        if (newline) *newline = '\0';
+        
+        if (strlen(topic) == 0) {
+            printf("ERROR: Topic cannot be empty\n");
+            return;
+        }
+        
+        // Ask for QoS
+        printf("Select QoS level:\n");
+        printf("  [0] At most once (fire and forget)\n");
+        printf("  [1] At least once (acknowledged delivery)\n");
+        printf("  [2] Exactly once (assured delivery)\n");
+        printf("QoS: ");
+        
+        char qosStr[10];
+        if (fgets(qosStr, sizeof(qosStr), stdin)) {
+            int qos = atoi(qosStr);
+            if (qos < 0 || qos > 2) {
+                qos = 0;
+            }
+            
+            printf("Subscribing to '%s' with QoS %d...\n", topic, qos);
+            
+            int32_t result = uCxMqttSubscribe4(&gUcxHandle, MQTT_CONFIG_ID, 
+                                               U_SUBSCRIBE_ACTION_SUBSCRIBE, 
+                                               topic, (uQos_t)qos);
+            
+            if (result == 0) {
+                printf("✓ Subscribed successfully\n");
+                printf("\nYou will receive messages published to this topic.\n");
+                printf("Messages appear as URCs in the log (if logging is enabled).\n");
+            } else {
+                printf("ERROR: Failed to subscribe (code %d)\n", result);
+            }
+        }
+    }
+}
+
+static void mqttUnsubscribe(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- MQTT Unsubscribe ---\n");
+    
+    char topic[128];
+    printf("Enter topic to unsubscribe: ");
+    if (fgets(topic, sizeof(topic), stdin)) {
+        // Remove newline
+        char *newline = strchr(topic, '\n');
+        if (newline) *newline = '\0';
+        
+        if (strlen(topic) == 0) {
+            printf("ERROR: Topic cannot be empty\n");
+            return;
+        }
+        
+        printf("Unsubscribing from '%s'...\n", topic);
+        
+        int32_t result = uCxMqttSubscribe3(&gUcxHandle, MQTT_CONFIG_ID, 
+                                           U_SUBSCRIBE_ACTION_UNSUBSCRIBE, 
+                                           topic);
+        
+        if (result == 0) {
+            printf("✓ Unsubscribed successfully\n");
+        } else {
+            printf("ERROR: Failed to unsubscribe (code %d)\n", result);
+        }
+    }
+}
+
+static void mqttPublish(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- MQTT Publish ---\n");
+    
+    char topic[128];
+    char message[256];
+    
+    printf("Enter topic: ");
+    if (!fgets(topic, sizeof(topic), stdin)) return;
+    char *newline = strchr(topic, '\n');
+    if (newline) *newline = '\0';
+    
+    if (strlen(topic) == 0) {
+        printf("ERROR: Topic cannot be empty\n");
+        return;
+    }
+    
+    printf("Enter message: ");
+    if (!fgets(message, sizeof(message), stdin)) return;
+    newline = strchr(message, '\n');
+    if (newline) *newline = '\0';
+    
+    // Ask for QoS
+    printf("Select QoS level:\n");
+    printf("  [0] At most once\n");
+    printf("  [1] At least once\n");
+    printf("  [2] Exactly once\n");
+    printf("QoS: ");
+    
+    char qosStr[10];
+    int qos = 0;
+    if (fgets(qosStr, sizeof(qosStr), stdin)) {
+        qos = atoi(qosStr);
+        if (qos < 0 || qos > 2) {
+            qos = 0;
+        }
+    }
+    
+    // Ask for retain flag
+    printf("Retain message? [y/N]: ");
+    char retainStr[10];
+    int retain = 0;
+    if (fgets(retainStr, sizeof(retainStr), stdin)) {
+        retain = (tolower(retainStr[0]) == 'y') ? 1 : 0;
+    }
+    
+    printf("\nPublishing to '%s'...\n", topic);
+    printf("Message: %s\n", message);
+    printf("QoS: %d, Retain: %d\n", qos, retain);
+    
+    int32_t result = uCxMqttPublish(&gUcxHandle, MQTT_CONFIG_ID, (uQos_t)qos, 
+                                     (uRetain_t)retain, topic, 
+                                     (uint8_t*)message, strlen(message));
+    
+    if (result == 0) {
+        printf("✓ Message published successfully\n");
+    } else {
+        printf("ERROR: Failed to publish (code %d)\n", result);
+    }
+}
+
+static void mqttMenu(void)
+{
+    gMenuState = MENU_MQTT;
+}
+
+static void httpMenu(void)
+{
+    gMenuState = MENU_HTTP;
+}
+
 // ----------------------------------------------------------------
 // Main Function
 // ----------------------------------------------------------------
@@ -2499,15 +2743,13 @@ static void printMenu(void)
         case MENU_MQTT:
             printf("--- MQTT Menu (Publish/Subscribe) ---\n");
             printf("  NOTE: Requires Active Wi-Fi connection!\n");
-            printf("  [IN PROGRESS] - Feature under development\n");
+            printf("  Broker: %s:%d\n", MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
             printf("\n");
-            printf("  Planned features:\n");
-            printf("  - Connect to MQTT broker\n");
-            printf("  - Subscribe to topics\n");
-            printf("  - Publish messages\n");
-            printf("  - QoS configuration\n");
-            printf("  - Last Will and Testament\n");
-            printf("\n");
+            printf("  [1] Connect to MQTT broker\n");
+            printf("  [2] Disconnect from broker\n");
+            printf("  [3] Subscribe to topic\n");
+            printf("  [4] Unsubscribe from topic\n");
+            printf("  [5] Publish message\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -2897,8 +3139,23 @@ static void handleUserInput(void)
                 case 0:
                     gMenuState = MENU_WIFI_FUNCTIONS;
                     break;
+                case 1:
+                    mqttConnect();
+                    break;
+                case 2:
+                    mqttDisconnect();
+                    break;
+                case 3:
+                    mqttSubscribe();
+                    break;
+                case 4:
+                    mqttUnsubscribe();
+                    break;
+                case 5:
+                    mqttPublish();
+                    break;
                 default:
-                    printf("Feature in progress. Use [0] to return to Wi-Fi Functions menu.\n");
+                    printf("Invalid choice!\n");
                     break;
             }
             break;
