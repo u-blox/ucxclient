@@ -30,8 +30,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>     // For tolower()
-#include <windows.h>  // For Sleep() and CreateFile()
 #include <stdbool.h>
+// Winsock2 must be included BEFORE windows.h to avoid conflicts
+#include <winsock2.h>  // For socket functions
+#include <ws2tcpip.h>  // For getaddrinfo and related functions
+#include <windows.h>  // For Sleep() and CreateFile()
 #include <conio.h>  // For _kbhit() and _getch()
 #include <winhttp.h>  // For HTTP client to fetch from GitHub
 #include <setupapi.h>  // For device enumeration
@@ -40,6 +43,7 @@
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "ws2_32.lib")  // Windows Sockets library
 
 // FTD2XX library dynamic loading
 // Note: FT_HANDLE in FTD2XX is actually a pointer type despite being typedef'd as ULONG
@@ -128,9 +132,22 @@ static int32_t gCurrentSocket = -1;
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
-static char gWifiSsid[64] = "";               // Last Wi-Fi SSID
-static char gWifiPassword[64] = "";           // Last Wi-Fi password
+static char gWifiSsid[64] = "";               // Last Wi-Fi SSID (legacy, kept for backward compatibility)
+static char gWifiPassword[64] = "";           // Last Wi-Fi password (legacy)
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
+
+// WiFi Profile Management (up to 10 saved networks)
+typedef struct {
+    char name[32];              // Profile name (e.g., "Office", "Home", "Lab")
+    char ssid[64];              // Network SSID
+    char password[64];          // Network password
+    char ipSubnet[16];          // Expected IP subnet (e.g., "10.12.4", "192.168.0")
+} WiFiProfile_t;
+
+#define MAX_WIFI_PROFILES 10
+static WiFiProfile_t gWifiProfiles[MAX_WIFI_PROFILES];
+static int gWifiProfileCount = 0;
+static int gActiveProfileIndex = -1;  // Currently selected profile (-1 = none/manual)
 
 // Dynamic firmware path storage per product
 typedef struct {
@@ -357,6 +374,11 @@ static void wifiMenu(void);
 static void wifiScan(void);
 static void wifiConnect(void);
 static void wifiDisconnect(void);
+static void wifiManageProfiles(void);
+static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipSubnet);
+static int wifiSuggestProfile(void);
+static void wifiListProfiles(void);
+static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize);
 static void loadSettings(void);
 static void saveSettings(void);
 static void obfuscatePassword(const char *input, char *output, size_t outputSize);
@@ -2714,6 +2736,11 @@ static void printMenu(void)
             printf("  [3] Scan networks\n");
             printf("  [4] Connect to network\n");
             printf("  [5] Disconnect from network\n");
+            printf("  [6] Manage Wi-Fi profiles");
+            if (gWifiProfileCount > 0) {
+                printf(" (%d saved)", gWifiProfileCount);
+            }
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -3069,6 +3096,9 @@ static void handleUserInput(void)
                     break;
                 case 5:
                     wifiDisconnect();
+                    break;
+                case 6:
+                    wifiManageProfiles();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -3891,9 +3921,15 @@ static void setProductFirmwarePath(const char *productName, const char *firmware
 // Load settings from file
 static void loadSettings(void)
 {
+    // Reset profile data
+    gWifiProfileCount = 0;
+    gActiveProfileIndex = -1;
+    
     FILE *f = fopen(gSettingsFilePath, "r");
     if (f) {
         char line[256];
+        int tempProfileCount = 0;
+        
         while (fgets(line, sizeof(line), f)) {
             // Remove trailing newline/whitespace
             char *end = strchr(line, '\n');
@@ -3924,6 +3960,45 @@ static void loadSettings(void)
                 obfuscated[sizeof(obfuscated) - 1] = '\0';
                 deobfuscatePassword(obfuscated, gWifiPassword, sizeof(gWifiPassword));
             }
+            else if (strncmp(line, "wifi_profile_count=", 19) == 0) {
+                tempProfileCount = atoi(line + 19);
+                if (tempProfileCount > MAX_WIFI_PROFILES) {
+                    tempProfileCount = MAX_WIFI_PROFILES;
+                }
+            }
+            else if (strncmp(line, "wifi_active_profile=", 20) == 0) {
+                gActiveProfileIndex = atoi(line + 20);
+            }
+            else if (strncmp(line, "wifi_profile_", 13) == 0) {
+                // Parse profile field: wifi_profile_N_field=value
+                int profileIdx;
+                char field[32];
+                if (sscanf(line + 13, "%d_%31[^=]", &profileIdx, field) == 2) {
+                    if (profileIdx >= 0 && profileIdx < MAX_WIFI_PROFILES) {
+                        char *value = strchr(line, '=');
+                        if (value) {
+                            value++;  // Skip '='
+                            
+                            if (strcmp(field, "name") == 0) {
+                                strncpy(gWifiProfiles[profileIdx].name, value, sizeof(gWifiProfiles[profileIdx].name) - 1);
+                                gWifiProfiles[profileIdx].name[sizeof(gWifiProfiles[profileIdx].name) - 1] = '\0';
+                            }
+                            else if (strcmp(field, "ssid") == 0) {
+                                strncpy(gWifiProfiles[profileIdx].ssid, value, sizeof(gWifiProfiles[profileIdx].ssid) - 1);
+                                gWifiProfiles[profileIdx].ssid[sizeof(gWifiProfiles[profileIdx].ssid) - 1] = '\0';
+                            }
+                            else if (strcmp(field, "password") == 0) {
+                                // Deobfuscate password
+                                deobfuscatePassword(value, gWifiProfiles[profileIdx].password, sizeof(gWifiProfiles[profileIdx].password));
+                            }
+                            else if (strcmp(field, "subnet") == 0) {
+                                strncpy(gWifiProfiles[profileIdx].ipSubnet, value, sizeof(gWifiProfiles[profileIdx].ipSubnet) - 1);
+                                gWifiProfiles[profileIdx].ipSubnet[sizeof(gWifiProfiles[profileIdx].ipSubnet) - 1] = '\0';
+                            }
+                        }
+                    }
+                }
+            }
             else if (strncmp(line, "remote_address=", 15) == 0) {
                 strncpy(gRemoteAddress, line + 15, sizeof(gRemoteAddress) - 1);
                 gRemoteAddress[sizeof(gRemoteAddress) - 1] = '\0';
@@ -3951,6 +4026,13 @@ static void loadSettings(void)
                 }
             }
         }
+        
+        // Set profile count after loading all profiles
+        gWifiProfileCount = tempProfileCount;
+        if (gWifiProfileCount > 0) {
+            printf("Loaded %d Wi-Fi profile(s)\n", gWifiProfileCount);
+        }
+        
         fclose(f);
     }
 }
@@ -3970,6 +4052,21 @@ static void saveSettings(void)
         fprintf(f, "wifi_password=%s\n", obfuscatedPassword);
         
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
+        
+        // Save WiFi profiles (up to 10)
+        fprintf(f, "wifi_profile_count=%d\n", gWifiProfileCount);
+        fprintf(f, "wifi_active_profile=%d\n", gActiveProfileIndex);
+        for (int i = 0; i < gWifiProfileCount; i++) {
+            fprintf(f, "wifi_profile_%d_name=%s\n", i, gWifiProfiles[i].name);
+            fprintf(f, "wifi_profile_%d_ssid=%s\n", i, gWifiProfiles[i].ssid);
+            
+            // Obfuscate profile password
+            char obfuscatedProfilePassword[128];
+            obfuscatePassword(gWifiProfiles[i].password, obfuscatedProfilePassword, sizeof(obfuscatedProfilePassword));
+            fprintf(f, "wifi_profile_%d_password=%s\n", i, obfuscatedProfilePassword);
+            
+            fprintf(f, "wifi_profile_%d_subnet=%s\n", i, gWifiProfiles[i].ipSubnet);
+        }
         
         // Save dynamic per-product firmware paths
         for (int i = 0; i < gProductFirmwarePathCount; i++) {
@@ -5719,135 +5816,260 @@ static void wifiConnect(void)
         }
     }
     
-    char ssid[64];
-    char password[64];
+    char ssid[64] = "";
+    char password[64] = "";
+    bool useProfile = false;
     
-    // Show saved SSID if available
-    if (strlen(gWifiSsid) > 0) {
-        printf("Last SSID: %s\n", gWifiSsid);
+    // Check for saved profiles and offer auto-suggestion
+    if (gWifiProfileCount > 0) {
+        // Try to suggest profile based on PC IP
+        int suggestedIdx = wifiSuggestProfile();
+        
+        if (suggestedIdx >= 0) {
+            char currentIP[40];
+            getCurrentPCIPAddress(currentIP, sizeof(currentIP));
+            printf("Auto-detected: Profile '%s' matches your network (%s)\n", 
+                   gWifiProfiles[suggestedIdx].name, currentIP);
+            printf("Use profile '%s' (SSID: %s)? (Y/n): ", 
+                   gWifiProfiles[suggestedIdx].name, gWifiProfiles[suggestedIdx].ssid);
+            
+            char input[16];
+            if (fgets(input, sizeof(input), stdin)) {
+                if (strlen(input) == 0 || tolower(input[0]) == 'y' || input[0] == '\n') {
+                    strncpy(ssid, gWifiProfiles[suggestedIdx].ssid, sizeof(ssid) - 1);
+                    strncpy(password, gWifiProfiles[suggestedIdx].password, sizeof(password) - 1);
+                    gActiveProfileIndex = suggestedIdx;
+                    useProfile = true;
+                    printf("Using profile '%s'\n", gWifiProfiles[suggestedIdx].name);
+                }
+            }
+        }
+        
+        // If no auto-suggestion or user declined, offer profile selection
+        if (!useProfile) {
+            if (gActiveProfileIndex >= 0 && gActiveProfileIndex < gWifiProfileCount) {
+                printf("Active profile: '%s' (SSID: %s)\n", 
+                       gWifiProfiles[gActiveProfileIndex].name, 
+                       gWifiProfiles[gActiveProfileIndex].ssid);
+                printf("Use this profile? (Y/n/l=list): ");
+            } else {
+                printf("Saved profiles: %d\n", gWifiProfileCount);
+                printf("Use a profile? (y/N/l=list): ");
+            }
+            
+            char input[16];
+            if (fgets(input, sizeof(input), stdin)) {
+                input[strcspn(input, "\n")] = '\0';
+                
+                if (tolower(input[0]) == 'l') {
+                    // List profiles and let user choose
+                    wifiListProfiles();
+                    printf("Select profile (1-%d, 0=manual): ", gWifiProfileCount);
+                    if (fgets(input, sizeof(input), stdin)) {
+                        int profileIdx = atoi(input) - 1;
+                        if (profileIdx >= 0 && profileIdx < gWifiProfileCount) {
+                            strncpy(ssid, gWifiProfiles[profileIdx].ssid, sizeof(ssid) - 1);
+                            strncpy(password, gWifiProfiles[profileIdx].password, sizeof(password) - 1);
+                            gActiveProfileIndex = profileIdx;
+                            useProfile = true;
+                            printf("Using profile '%s'\n", gWifiProfiles[profileIdx].name);
+                        }
+                    }
+                } else if ((gActiveProfileIndex >= 0 && (strlen(input) == 0 || tolower(input[0]) == 'y')) ||
+                           (gActiveProfileIndex < 0 && tolower(input[0]) == 'y')) {
+                    // Use active profile or prompt for selection
+                    if (gActiveProfileIndex >= 0) {
+                        strncpy(ssid, gWifiProfiles[gActiveProfileIndex].ssid, sizeof(ssid) - 1);
+                        strncpy(password, gWifiProfiles[gActiveProfileIndex].password, sizeof(password) - 1);
+                        useProfile = true;
+                        printf("Using profile '%s'\n", gWifiProfiles[gActiveProfileIndex].name);
+                    } else {
+                        wifiListProfiles();
+                        printf("Select profile (1-%d): ", gWifiProfileCount);
+                        if (fgets(input, sizeof(input), stdin)) {
+                            int profileIdx = atoi(input) - 1;
+                            if (profileIdx >= 0 && profileIdx < gWifiProfileCount) {
+                                strncpy(ssid, gWifiProfiles[profileIdx].ssid, sizeof(ssid) - 1);
+                                strncpy(password, gWifiProfiles[profileIdx].password, sizeof(password) - 1);
+                                gActiveProfileIndex = profileIdx;
+                                useProfile = true;
+                                printf("Using profile '%s'\n", gWifiProfiles[profileIdx].name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
-    printf("Enter SSID (or press Enter to use saved): ");
-    if (fgets(ssid, sizeof(ssid), stdin)) {
-        // Remove trailing newline
-        char *end = strchr(ssid, '\n');
-        if (end) *end = '\0';
-        
-        // If empty and we have saved SSID, use it
-        if (strlen(ssid) == 0 && strlen(gWifiSsid) > 0) {
-            strncpy(ssid, gWifiSsid, sizeof(ssid) - 1);
-            ssid[sizeof(ssid) - 1] = '\0';
-            strncpy(password, gWifiPassword, sizeof(password) - 1);
-            password[sizeof(password) - 1] = '\0';
-            printf("Using saved credentials for '%s'\n", ssid);
-        } else {
-            printf("Enter password (or press Enter for open network): ");
-            if (fgets(password, sizeof(password), stdin)) {
-                // Remove trailing newline
-                end = strchr(password, '\n');
-                if (end) *end = '\0';
-            }
+    // Manual entry if no profile used
+    if (!useProfile) {
+        // Show legacy saved SSID if available and no profiles exist
+        if (strlen(gWifiSsid) > 0 && gWifiProfileCount == 0) {
+            printf("Last SSID: %s\n", gWifiSsid);
         }
         
-        printf("Connecting to '%s'...\n", ssid);
-        
-        // Set connection parameters (wlan_handle = 0, default)
-        if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
-            printf("ERROR: Failed to set connection parameters\n");
-            return;
-        }
-        
-        // Set security based on password
-        if (strlen(password) > 0) {
-            // WPA2/WPA3 with password (threshold = WPA2 or higher)
-            printf("Setting WPA2/WPA3 security...\n");
-            if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
-                printf("ERROR: Failed to set WPA security\n");
-                return;
-            }
-        } else {
-            // Open network (no password)
-            printf("Setting open security (no password)...\n");
-            if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
-                printf("ERROR: Failed to set open security\n");
+        printf("Enter SSID (or press Enter to use saved): ");
+        if (fgets(ssid, sizeof(ssid), stdin)) {
+            // Remove trailing newline
+            char *end = strchr(ssid, '\n');
+            if (end) *end = '\0';
+            
+            // If empty and we have saved SSID, use it
+            if (strlen(ssid) == 0 && strlen(gWifiSsid) > 0 && gWifiProfileCount == 0) {
+                strncpy(ssid, gWifiSsid, sizeof(ssid) - 1);
+                ssid[sizeof(ssid) - 1] = '\0';
+                strncpy(password, gWifiPassword, sizeof(password) - 1);
+                password[sizeof(password) - 1] = '\0';
+                printf("Using saved credentials for '%s'\n", ssid);
+            } else if (strlen(ssid) > 0) {
+                printf("Enter password (or press Enter for open network): ");
+                if (fgets(password, sizeof(password), stdin)) {
+                    // Remove trailing newline
+                    end = strchr(password, '\n');
+                    if (end) *end = '\0';
+                }
+            } else {
+                printf("ERROR: SSID cannot be empty.\n");
                 return;
             }
         }
-        
-        // Clear any pending network event flags before connecting
-        U_CX_MUTEX_LOCK(gUrcMutex);
-        gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
-        U_CX_MUTEX_UNLOCK(gUrcMutex);
-        
-        // Initiate connection
-        printf("Initiating connection...\n");
-        if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
-            printf("ERROR: Failed to initiate connection\n");
+    }
+    
+    // At this point we have ssid and password (either from profile or manual entry)
+    if (strlen(ssid) == 0) {
+        printf("ERROR: No SSID provided.\n");
+        return;
+    }
+    
+    printf("Connecting to '%s'...\n", ssid);
+    
+    // Set connection parameters (wlan_handle = 0, default)
+    if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
+        printf("ERROR: Failed to set connection parameters\n");
+        return;
+    }
+    
+    // Set security based on password
+    if (strlen(password) > 0) {
+        // WPA2/WPA3 with password (threshold = WPA2 or higher)
+        printf("Setting WPA2/WPA3 security...\n");
+        if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
+            printf("ERROR: Failed to set WPA security\n");
             return;
         }
-        
-        // Wait for network up event (using URC handler)
-        printf("Waiting for network up event...\n");
-        if (waitEvent(URC_FLAG_NETWORK_UP, 20)) {
-            printf("Successfully connected to '%s'\n", ssid);
-            
-            // Get RSSI
-            int32_t rssi = -100;  // Default value
-            uCxWifiStationStatus_t rssiStatus;
-            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &rssiStatus)) {
-                rssi = rssiStatus.rspWifiStatusIdInt.int_val;
-                if (rssi != -32768) {
-                    printf("Signal strength: %d dBm\n", rssi);
-                }
-                uCxEnd(&gUcxHandle);
-            }
-            
-            // Get IP address using WiFi Station Network Status (AT+UWSNST)
-            uSockIpAddress_t ipAddr;
-            char ipStr[40];  // Allow for IPv6
-            char gatewayStr[40] = "";  // Store gateway for ping test
-            
-            if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
-                if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
-                    printf("IP address: %s\n", ipStr);
-                }
-            }
-            
-            if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_SUBNET, &ipAddr) == 0) {
-                if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
-                    printf("Subnet mask: %s\n", ipStr);
-                }
-            }
-            
-            if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
-                if (uCxIpAddressToString(&ipAddr, gatewayStr, sizeof(gatewayStr)) > 0) {
-                    printf("Gateway: %s\n", gatewayStr);
-                }
-            }
-            
-            // Get channel number
-            int32_t channel = 0;
-            uCxWifiStationStatus_t channelStatus;
-            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CHANNEL, &channelStatus)) {
-                channel = channelStatus.rspWifiStatusIdInt.int_val;
-                uCxEnd(&gUcxHandle);
-            }
-            
-            // Save Wi-Fi credentials for next time
-            strncpy(gWifiSsid, ssid, sizeof(gWifiSsid) - 1);
-            gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
-            strncpy(gWifiPassword, password, sizeof(gWifiPassword) - 1);
-            gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
-            saveSettings();
-            
-            // Test connectivity (ping gateway and internet) with connection summary
-            if (strlen(gatewayStr) > 0) {
-                testConnectivity(gatewayStr, ssid, rssi, channel);
-            }
-        } else {
-            printf("Connection failed - timeout waiting for network up event (IP configuration)\n");
-            printf("Wi-Fi link is established but network layer failed to initialize.\n");
+    } else {
+        // Open network (no password)
+        printf("Setting open security (no password)...\n");
+        if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+            printf("ERROR: Failed to set open security\n");
+            return;
         }
+    }
+    
+    // Clear any pending network event flags before connecting
+    U_CX_MUTEX_LOCK(gUrcMutex);
+    gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    
+    // Initiate connection
+    printf("Initiating connection...\n");
+    if (uCxWifiStationConnect(&gUcxHandle, 0) != 0) {
+        printf("ERROR: Failed to initiate connection\n");
+        return;
+    }
+    
+    // Wait for network up event (using URC handler)
+    printf("Waiting for network up event...\n");
+    if (waitEvent(URC_FLAG_NETWORK_UP, 20)) {
+        printf("Successfully connected to '%s'\n", ssid);
+        
+        // Get RSSI
+        int32_t rssi = -100;  // Default value
+        uCxWifiStationStatus_t rssiStatus;
+        if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &rssiStatus)) {
+            rssi = rssiStatus.rspWifiStatusIdInt.int_val;
+            if (rssi != -32768) {
+                printf("Signal strength: %d dBm\n", rssi);
+            }
+            uCxEnd(&gUcxHandle);
+        }
+        
+        // Get IP address using WiFi Station Network Status (AT+UWSNST)
+        uSockIpAddress_t ipAddr;
+        char ipStr[40];  // Allow for IPv6
+        char gatewayStr[40] = "";  // Store gateway for ping test
+        
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
+            if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                printf("IP address: %s\n", ipStr);
+            }
+        }
+        
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_SUBNET, &ipAddr) == 0) {
+            if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                printf("Subnet mask: %s\n", ipStr);
+            }
+        }
+        
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
+            if (uCxIpAddressToString(&ipAddr, gatewayStr, sizeof(gatewayStr)) > 0) {
+                printf("Gateway: %s\n", gatewayStr);
+            }
+        }
+        
+        // Get channel number
+        int32_t channel = 0;
+        uCxWifiStationStatus_t channelStatus;
+        if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CHANNEL, &channelStatus)) {
+            channel = channelStatus.rspWifiStatusIdInt.int_val;
+            uCxEnd(&gUcxHandle);
+        }
+        
+        // Save Wi-Fi credentials
+        if (!useProfile && gWifiProfileCount < MAX_WIFI_PROFILES) {
+            // Offer to save as profile
+            printf("\nSave this network as a profile? (y/N): ");
+            char saveInput[16];
+            if (fgets(saveInput, sizeof(saveInput), stdin)) {
+                if (tolower(saveInput[0]) == 'y') {
+                    char profileName[32];
+                    printf("Profile name (e.g., Office, Home, Lab): ");
+                    if (fgets(profileName, sizeof(profileName), stdin)) {
+                        profileName[strcspn(profileName, "\n")] = '\0';
+                        if (strlen(profileName) > 0) {
+                            // Extract subnet from connected IP
+                            char subnet[16] = "";
+                            char *lastDot = strrchr(ipStr, '.');
+                            if (lastDot) {
+                                size_t subnetLen = lastDot - ipStr;
+                                if (subnetLen < sizeof(subnet)) {
+                                    strncpy(subnet, ipStr, subnetLen);
+                                    subnet[subnetLen] = '\0';
+                                }
+                            }
+                            
+                            wifiSaveProfile(profileName, ssid, password, subnet);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Also save to legacy fields for backward compatibility
+        strncpy(gWifiSsid, ssid, sizeof(gWifiSsid) - 1);
+        gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
+        strncpy(gWifiPassword, password, sizeof(gWifiPassword) - 1);
+        gWifiPassword[sizeof(gWifiPassword) - 1] = '\0';
+        saveSettings();
+        
+        // Test connectivity (ping gateway and internet) with connection summary
+        if (strlen(gatewayStr) > 0) {
+            testConnectivity(gatewayStr, ssid, rssi, channel);
+        }
+    } else {
+        printf("Connection failed - timeout waiting for network up event (IP configuration)\n");
+        printf("Wi-Fi link is established but network layer failed to initialize.\n");
     }
 }
 
@@ -5877,3 +6099,361 @@ static void wifiDisconnect(void)
         printf("ERROR: Failed to disconnect\n");
     }
 }
+
+// ============================================================================
+// WIFI PROFILE MANAGEMENT (Save up to 10 network configurations)
+// ============================================================================
+
+// Get current PC's IP address to suggest profile
+static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize)
+{
+    ipBuffer[0] = '\0';
+    
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        return;
+    }
+    
+    char hostname[256];
+    if (gethostname(hostname, sizeof(hostname)) == 0) {
+        struct addrinfo hints, *result;
+        ZeroMemory(&hints, sizeof(hints));
+        hints.ai_family = AF_INET;  // IPv4
+        hints.ai_socktype = SOCK_STREAM;
+        
+        if (getaddrinfo(hostname, NULL, &hints, &result) == 0) {
+            for (struct addrinfo *ptr = result; ptr != NULL; ptr = ptr->ai_next) {
+                struct sockaddr_in *sockaddr_ipv4 = (struct sockaddr_in *)ptr->ai_addr;
+                char *ip = inet_ntoa(sockaddr_ipv4->sin_addr);
+                
+                // Skip loopback addresses
+                if (ip && strncmp(ip, "127.", 4) != 0) {
+                    strncpy(ipBuffer, ip, bufferSize - 1);
+                    ipBuffer[bufferSize - 1] = '\0';
+                    break;
+                }
+            }
+            freeaddrinfo(result);
+        }
+    }
+    
+    WSACleanup();
+}
+
+// Suggest WiFi profile based on current PC IP address
+static int wifiSuggestProfile(void)
+{
+    char currentIP[40];
+    getCurrentPCIPAddress(currentIP, sizeof(currentIP));
+    
+    if (currentIP[0] == '\0') {
+        return -1;  // Couldn't get IP
+    }
+    
+    // Extract first 3 octets as subnet (e.g., "192.168.1.x" -> "192.168.1")
+    char subnet[16] = "";
+    char *lastDot = strrchr(currentIP, '.');
+    if (lastDot) {
+        size_t subnetLen = lastDot - currentIP;
+        if (subnetLen < sizeof(subnet)) {
+            strncpy(subnet, currentIP, subnetLen);
+            subnet[subnetLen] = '\0';
+        }
+    }
+    
+    // Find matching profile
+    for (int i = 0; i < gWifiProfileCount; i++) {
+        if (gWifiProfiles[i].ipSubnet[0] != '\0') {
+            if (strcmp(gWifiProfiles[i].ipSubnet, subnet) == 0) {
+                return i;  // Found matching profile
+            }
+        }
+    }
+    
+    return -1;  // No matching profile
+}
+
+// List all WiFi profiles
+static void wifiListProfiles(void)
+{
+    printf("\n=== Saved Wi-Fi Profiles ===\n");
+    
+    if (gWifiProfileCount == 0) {
+        printf("No saved profiles.\n");
+        return;
+    }
+    
+    for (int i = 0; i < gWifiProfileCount; i++) {
+        printf("[%d] %s\n", i + 1, gWifiProfiles[i].name);
+        printf("    SSID: %s\n", gWifiProfiles[i].ssid);
+        if (gWifiProfiles[i].ipSubnet[0] != '\0') {
+            printf("    Expected subnet: %s.x\n", gWifiProfiles[i].ipSubnet);
+        }
+        if (i == gActiveProfileIndex) {
+            printf("    [ACTIVE]\n");
+        }
+    }
+    printf("\n");
+}
+
+// Save a WiFi profile
+static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipSubnet)
+{
+    if (gWifiProfileCount >= MAX_WIFI_PROFILES) {
+        printf("ERROR: Maximum number of profiles (%d) reached.\n", MAX_WIFI_PROFILES);
+        printf("Please delete a profile before adding a new one.\n");
+        return;
+    }
+    
+    // Check if profile with same name exists
+    for (int i = 0; i < gWifiProfileCount; i++) {
+        if (strcmp(gWifiProfiles[i].name, name) == 0) {
+            printf("Profile '%s' already exists. Updating...\n", name);
+            strncpy(gWifiProfiles[i].ssid, ssid, sizeof(gWifiProfiles[i].ssid) - 1);
+            gWifiProfiles[i].ssid[sizeof(gWifiProfiles[i].ssid) - 1] = '\0';
+            
+            strncpy(gWifiProfiles[i].password, password, sizeof(gWifiProfiles[i].password) - 1);
+            gWifiProfiles[i].password[sizeof(gWifiProfiles[i].password) - 1] = '\0';
+            
+            strncpy(gWifiProfiles[i].ipSubnet, ipSubnet, sizeof(gWifiProfiles[i].ipSubnet) - 1);
+            gWifiProfiles[i].ipSubnet[sizeof(gWifiProfiles[i].ipSubnet) - 1] = '\0';
+            
+            saveSettings();
+            printf("Profile '%s' updated successfully.\n", name);
+            return;
+        }
+    }
+    
+    // Add new profile
+    WiFiProfile_t *profile = &gWifiProfiles[gWifiProfileCount];
+    
+    strncpy(profile->name, name, sizeof(profile->name) - 1);
+    profile->name[sizeof(profile->name) - 1] = '\0';
+    
+    strncpy(profile->ssid, ssid, sizeof(profile->ssid) - 1);
+    profile->ssid[sizeof(profile->ssid) - 1] = '\0';
+    
+    strncpy(profile->password, password, sizeof(profile->password) - 1);
+    profile->password[sizeof(profile->password) - 1] = '\0';
+    
+    strncpy(profile->ipSubnet, ipSubnet, sizeof(profile->ipSubnet) - 1);
+    profile->ipSubnet[sizeof(profile->ipSubnet) - 1] = '\0';
+    
+    gWifiProfileCount++;
+    saveSettings();
+    
+    printf("Profile '%s' added successfully. (Total: %d/%d)\n", name, gWifiProfileCount, MAX_WIFI_PROFILES);
+}
+
+// Manage WiFi profiles (add, edit, delete, select)
+static void wifiManageProfiles(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    char input[128];
+    
+    while (1) {
+        printf("\n=== Wi-Fi Profile Management ===\n");
+        printf("[1] List all profiles\n");
+        printf("[2] Add new profile\n");
+        printf("[3] Edit profile\n");
+        printf("[4] Delete profile\n");
+        printf("[5] Select profile for connection\n");
+        printf("[6] Auto-suggest profile (based on PC IP)\n");
+        printf("[0] Back to Wi-Fi menu\n");
+        printf("Choice: ");
+        
+        if (!fgets(input, sizeof(input), stdin)) {
+            continue;
+        }
+        
+        int choice = atoi(input);
+        
+        switch (choice) {
+            case 0:
+                return;
+                
+            case 1:  // List profiles
+                wifiListProfiles();
+                break;
+                
+            case 2: {  // Add new profile
+                char name[32], ssid[64], password[64], ipSubnet[16];
+                
+                printf("\nAdd New Wi-Fi Profile\n");
+                printf("Profile name (e.g., Office, Home, Lab): ");
+                if (!fgets(name, sizeof(name), stdin)) break;
+                name[strcspn(name, "\n")] = '\0';
+                if (strlen(name) == 0) {
+                    printf("ERROR: Profile name cannot be empty.\n");
+                    break;
+                }
+                
+                printf("SSID: ");
+                if (!fgets(ssid, sizeof(ssid), stdin)) break;
+                ssid[strcspn(ssid, "\n")] = '\0';
+                if (strlen(ssid) == 0) {
+                    printf("ERROR: SSID cannot be empty.\n");
+                    break;
+                }
+                
+                printf("Password (or press Enter for open network): ");
+                if (!fgets(password, sizeof(password), stdin)) break;
+                password[strcspn(password, "\n")] = '\0';
+                
+                printf("Expected IP subnet (e.g., 10.12.4 or 192.168.1) [optional]: ");
+                if (!fgets(ipSubnet, sizeof(ipSubnet), stdin)) break;
+                ipSubnet[strcspn(ipSubnet, "\n")] = '\0';
+                
+                wifiSaveProfile(name, ssid, password, ipSubnet);
+                break;
+            }
+                
+            case 3: {  // Edit profile
+                wifiListProfiles();
+                if (gWifiProfileCount == 0) break;
+                
+                printf("Select profile to edit (1-%d): ", gWifiProfileCount);
+                if (!fgets(input, sizeof(input), stdin)) break;
+                int profileIdx = atoi(input) - 1;
+                
+                if (profileIdx < 0 || profileIdx >= gWifiProfileCount) {
+                    printf("ERROR: Invalid profile number.\n");
+                    break;
+                }
+                
+                WiFiProfile_t *profile = &gWifiProfiles[profileIdx];
+                char newValue[64];
+                
+                printf("\nEditing profile: %s\n", profile->name);
+                printf("Current SSID: %s\n", profile->ssid);
+                printf("New SSID (or press Enter to keep): ");
+                if (fgets(newValue, sizeof(newValue), stdin)) {
+                    newValue[strcspn(newValue, "\n")] = '\0';
+                    if (strlen(newValue) > 0) {
+                        strncpy(profile->ssid, newValue, sizeof(profile->ssid) - 1);
+                        profile->ssid[sizeof(profile->ssid) - 1] = '\0';
+                    }
+                }
+                
+                printf("Current password: %s\n", strlen(profile->password) > 0 ? "****" : "(open)");
+                printf("New password (or press Enter to keep): ");
+                if (fgets(newValue, sizeof(newValue), stdin)) {
+                    newValue[strcspn(newValue, "\n")] = '\0';
+                    if (strlen(newValue) > 0) {
+                        strncpy(profile->password, newValue, sizeof(profile->password) - 1);
+                        profile->password[sizeof(profile->password) - 1] = '\0';
+                    }
+                }
+                
+                printf("Current subnet: %s\n", profile->ipSubnet[0] != '\0' ? profile->ipSubnet : "(none)");
+                printf("New subnet (or press Enter to keep): ");
+                if (fgets(newValue, sizeof(newValue), stdin)) {
+                    newValue[strcspn(newValue, "\n")] = '\0';
+                    if (strlen(newValue) > 0) {
+                        strncpy(profile->ipSubnet, newValue, sizeof(profile->ipSubnet) - 1);
+                        profile->ipSubnet[sizeof(profile->ipSubnet) - 1] = '\0';
+                    }
+                }
+                
+                saveSettings();
+                printf("Profile '%s' updated successfully.\n", profile->name);
+                break;
+            }
+                
+            case 4: {  // Delete profile
+                wifiListProfiles();
+                if (gWifiProfileCount == 0) break;
+                
+                printf("Select profile to delete (1-%d): ", gWifiProfileCount);
+                if (!fgets(input, sizeof(input), stdin)) break;
+                int profileIdx = atoi(input) - 1;
+                
+                if (profileIdx < 0 || profileIdx >= gWifiProfileCount) {
+                    printf("ERROR: Invalid profile number.\n");
+                    break;
+                }
+                
+                printf("Delete profile '%s'? (y/N): ", gWifiProfiles[profileIdx].name);
+                if (fgets(input, sizeof(input), stdin)) {
+                    if (tolower(input[0]) == 'y') {
+                        // Shift remaining profiles down
+                        for (int i = profileIdx; i < gWifiProfileCount - 1; i++) {
+                            gWifiProfiles[i] = gWifiProfiles[i + 1];
+                        }
+                        gWifiProfileCount--;
+                        
+                        if (gActiveProfileIndex == profileIdx) {
+                            gActiveProfileIndex = -1;
+                        } else if (gActiveProfileIndex > profileIdx) {
+                            gActiveProfileIndex--;
+                        }
+                        
+                        saveSettings();
+                        printf("Profile deleted successfully.\n");
+                    }
+                }
+                break;
+            }
+                
+            case 5: {  // Select profile
+                wifiListProfiles();
+                if (gWifiProfileCount == 0) break;
+                
+                printf("Select profile (1-%d, 0=manual): ", gWifiProfileCount);
+                if (!fgets(input, sizeof(input), stdin)) break;
+                int profileIdx = atoi(input) - 1;
+                
+                if (profileIdx == -1) {
+                    gActiveProfileIndex = -1;
+                    printf("Manual mode selected.\n");
+                } else if (profileIdx >= 0 && profileIdx < gWifiProfileCount) {
+                    gActiveProfileIndex = profileIdx;
+                    printf("Profile '%s' selected.\n", gWifiProfiles[profileIdx].name);
+                } else {
+                    printf("ERROR: Invalid profile number.\n");
+                }
+                break;
+            }
+                
+            case 6: {  // Auto-suggest
+                char currentIP[40];
+                getCurrentPCIPAddress(currentIP, sizeof(currentIP));
+                
+                if (currentIP[0] == '\0') {
+                    printf("ERROR: Could not determine your PC's IP address.\n");
+                    break;
+                }
+                
+                printf("Your PC's IP address: %s\n", currentIP);
+                
+                int suggestedIdx = wifiSuggestProfile();
+                if (suggestedIdx >= 0) {
+                    printf("Suggested profile: [%d] %s\n", suggestedIdx + 1, gWifiProfiles[suggestedIdx].name);
+                    printf("SSID: %s\n", gWifiProfiles[suggestedIdx].ssid);
+                    printf("Subnet: %s.x\n", gWifiProfiles[suggestedIdx].ipSubnet);
+                    printf("\nUse this profile? (Y/n): ");
+                    
+                    if (fgets(input, sizeof(input), stdin)) {
+                        if (strlen(input) == 0 || tolower(input[0]) == 'y' || input[0] == '\n') {
+                            gActiveProfileIndex = suggestedIdx;
+                            printf("Profile '%s' selected.\n", gWifiProfiles[suggestedIdx].name);
+                        }
+                    }
+                } else {
+                    printf("No matching profile found for your current network.\n");
+                    printf("Suggestion: Create a profile with subnet matching your IP.\n");
+                }
+                break;
+            }
+                
+            default:
+                printf("Invalid choice.\n");
+                break;
+        }
+    }
+}
+
