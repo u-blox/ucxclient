@@ -120,6 +120,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_PING_COMPLETE      (1 << 8)
 #define URC_FLAG_WIFI_LINK_UP       (1 << 9)  // Wi-Fi Link UP (connected to AP)
 #define URC_FLAG_WIFI_LINK_DOWN     (1 << 10) // Wi-Fi Link DOWN (disconnected from AP)
+#define URC_FLAG_MQTT_CONNECTED     (1 << 11) // MQTT connected (+UEMQC)
+#define URC_FLAG_MQTT_DATA          (1 << 12) // MQTT data received (+UEMQDA)
 
 // Global handles
 static uCxAtClient_t gUcxAtClient;
@@ -1530,6 +1532,73 @@ static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_pa
                    "Ping complete: %d/%d packets, avg %d ms", 
                    received_packets, transmitted_packets, avg_response_time);
     signalEvent(URC_FLAG_PING_COMPLETE);
+}
+
+static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "MQTT connected: client %d", mqtt_client_id);
+    
+    printf("\n*** MQTT Connection Established ***\n");
+    printf("Client ID: %d\n", mqtt_client_id);
+    printf("Status: Connected to broker\n");
+    printf("***********************************\n\n");
+    
+    signalEvent(URC_FLAG_MQTT_CONNECTED);
+}
+
+static void mqttDataAvailableUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id, int32_t number_bytes)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "MQTT data received: %d bytes on client %d", number_bytes, mqtt_client_id);
+    
+    // Read the MQTT data immediately
+    printf("\n*** MQTT Message Received ***\n");
+    printf("Client ID: %d\n", mqtt_client_id);
+    printf("Data size: %d bytes\n", number_bytes);
+    
+    // Read the message data using AT+UMQTTRD
+    const char *pTopic = NULL;
+    uint8_t readBuffer[1024];
+    
+    int32_t bytesRead = uCxMqttReadBegin(puCxHandle, mqtt_client_id, readBuffer, sizeof(readBuffer), &pTopic);
+    
+    if (bytesRead >= 0) {
+        if (pTopic) {
+            printf("Topic: %s\n", pTopic);
+        }
+        printf("Message (%d bytes): ", bytesRead);
+        
+        // Try to print as text, but handle binary data
+        bool isPrintable = true;
+        for (int32_t i = 0; i < bytesRead; i++) {
+            if (readBuffer[i] < 32 && readBuffer[i] != '\n' && readBuffer[i] != '\r' && readBuffer[i] != '\t') {
+                isPrintable = false;
+                break;
+            }
+        }
+        
+        if (isPrintable) {
+            // Print as text
+            printf("%.*s\n", bytesRead, readBuffer);
+        } else {
+            // Print as hex
+            printf("\n");
+            for (int32_t i = 0; i < bytesRead; i++) {
+                printf("%02X ", readBuffer[i]);
+                if ((i + 1) % 16 == 0) printf("\n");
+            }
+            if (bytesRead % 16 != 0) printf("\n");
+        }
+        
+        uCxEnd(puCxHandle);
+    } else {
+        printf("ERROR: Failed to read MQTT message (error %d)\n", bytesRead);
+    }
+    
+    printf("*****************************\n\n");
+    
+    signalEvent(URC_FLAG_MQTT_DATA);
 }
 
 // ----------------------------------------------------------------
@@ -3629,6 +3698,10 @@ static bool connectDevice(const char *comPort)
     // Register URC handlers for ping/diagnostics
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
     uCxDiagnosticsRegisterPingComplete(&gUcxHandle, pingCompleteUrc);
+    
+    // Register URC handlers for MQTT events
+    uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
+    uCxMqttRegisterDataAvailable(&gUcxHandle, mqttDataAvailableUrc);
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
 
