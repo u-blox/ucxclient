@@ -89,24 +89,24 @@ if(WIN32)
   target_include_directories(http_example_windows PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
   target_link_libraries(http_example_windows PRIVATE setupapi ${FTDI_LIBRARY})
 
-  # Windows Basic Application - COMMENTED OUT (file doesn't exist)
-  # add_executable(windows_basic
-  #   examples/windows_basic.c
-  #   examples/port/u_port_windows.c
-  #   ${UCXCLIENT_UCX_API_SRC}
-  #   ${UCXCLIENT_AT_API_SRC}
-  # )
-  # target_compile_options(windows_basic PRIVATE /W4)
-  # target_compile_definitions(windows_basic PRIVATE
-  #   U_PORT_WINDOWS
-  #   U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
-  #   _CRT_SECURE_NO_WARNINGS
-  #   U_EXAMPLE_UART="${U_EXAMPLE_UART}"
-  #   U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
-  #   U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
-  # )
-  # target_include_directories(windows_basic PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
-  # target_link_libraries(windows_basic PRIVATE setupapi ${FTDI_LIBRARY})
+  # Windows Basic WiFi Application
+  add_executable(ucxclient_basic_wifi
+    examples/ucxclient_basic_wifi.c
+    examples/port/u_port_windows.c
+    ${UCXCLIENT_UCX_API_SRC}
+    ${UCXCLIENT_AT_API_SRC}
+  )
+  target_compile_options(ucxclient_basic_wifi PRIVATE /W4)
+  target_compile_definitions(ucxclient_basic_wifi PRIVATE
+    U_PORT_WINDOWS
+    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    _CRT_SECURE_NO_WARNINGS
+    U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+    U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
+    U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
+  )
+  target_include_directories(ucxclient_basic_wifi PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(ucxclient_basic_wifi PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Windows Console Application - ucxclient_win64 (Monolithic)
   add_executable(ucxclient_win64
