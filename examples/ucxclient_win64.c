@@ -2940,15 +2940,24 @@ static void printMenu(void)
             }
             printf("  UCX Logging: %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
             printf("\n");
+            printf("  === CONNECTION ===\n");
             printf("  [1] Connect to UCX device\n");
             printf("  [2] Disconnect from device\n");
+            printf("\n");
+            printf("  === DEVICE OPERATIONS ===\n");
             printf("  [3] AT test (basic communication)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [4] ATI9 (device info)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [5] Module reboot/switch off%s\n", gConnected ? "" : " (requires connection)");
+            printf("\n");
+            printf("  === BLUETOOTH ===\n");
             printf("  [6] Bluetooth (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [7] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
+            printf("\n");
+            printf("  === WI-FI ===\n");
             printf("  [8] Wi-Fi (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [9] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)%s\n", gConnected ? "" : " (requires connection)");
+            printf("\n");
+            printf("  === UTILITIES ===\n");
             printf("  [l] Toggle UCX logging (AT traffic)\n");
             printf("  [t] Toggle timestamps in logs\n");
             printf("  [c] List UCX API commands\n");
