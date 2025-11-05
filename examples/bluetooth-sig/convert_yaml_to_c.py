@@ -109,6 +109,75 @@ static inline const char* btGetServiceName(uint16_t uuid) {{
     
     print(f"Generated {output_file} with {len(services)} services")
 
+def convert_appearance_values(yaml_file, output_file):
+    """Convert appearance_values.yaml to C header."""
+    
+    with open(yaml_file, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f)
+    
+    appearances = data['appearance_values']
+    
+    # Build a flat list of all appearance values
+    appearance_list = []
+    
+    for category_entry in appearances:
+        category = category_entry['category']
+        category_name = category_entry['name']
+        
+        # Add the main category (subcategory 0)
+        appearance_value = (category << 6) | 0
+        appearance_list.append((appearance_value, category_name))
+        
+        # Add subcategories if they exist
+        if 'subcategory' in category_entry:
+            for subcat in category_entry['subcategory']:
+                subcat_value = subcat['value']
+                subcat_name = subcat['name']
+                appearance_value = (category << 6) | subcat_value
+                appearance_list.append((appearance_value, subcat_name))
+    
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write("""/*
+ * Copyright 2025 u-blox
+ *
+ * Auto-generated from Bluetooth SIG appearance_values.yaml
+ * Do not edit manually - regenerate using convert_yaml_to_c.py
+ */
+
+#ifndef BT_APPEARANCE_VALUES_H
+#define BT_APPEARANCE_VALUES_H
+
+#include <stdint.h>
+
+typedef struct {
+    uint16_t value;
+    const char *name;
+} BtAppearance_t;
+
+static const BtAppearance_t BT_APPEARANCES[] = {
+""")
+        
+        for value, name in appearance_list:
+            name_escaped = name.replace('"', '\\"')  # Escape quotes
+            f.write(f'    {{{value}, "{name_escaped}"}},\n')
+        
+        f.write(f"""}};\n
+#define BT_APPEARANCES_COUNT {len(appearance_list)}
+
+static inline const char* btGetAppearanceName(uint16_t appearance) {{
+    for (int i = 0; i < BT_APPEARANCES_COUNT; i++) {{
+        if (BT_APPEARANCES[i].value == appearance) {{
+            return BT_APPEARANCES[i].name;
+        }}
+    }}
+    return NULL;
+}}
+
+#endif /* BT_APPEARANCE_VALUES_H */
+""")
+    
+    print(f"Generated {output_file} with {len(appearance_list)} appearance values")
+
 def main():
     script_dir = Path(__file__).parent
     
@@ -122,9 +191,15 @@ def main():
     service_h = script_dir / 'bt_service_uuids.h'
     convert_service_uuids(service_yaml, service_h)
     
+    # Convert appearance values
+    appearance_yaml = script_dir / 'appearance_values.yaml'
+    appearance_h = script_dir / 'bt_appearance_values.h'
+    convert_appearance_values(appearance_yaml, appearance_h)
+    
     print("\nDone! Include these headers in your C code:")
     print(f'  #include "{company_h.name}"')
     print(f'  #include "{service_h.name}"')
+    print(f'  #include "{appearance_h.name}"')
 
 if __name__ == '__main__':
     main()

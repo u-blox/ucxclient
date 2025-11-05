@@ -102,6 +102,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Bluetooth SIG name databases
 #include "bluetooth-sig/bt_company_identifiers.h"
 #include "bluetooth-sig/bt_service_uuids.h"
+#include "bluetooth-sig/bt_appearance_values.h"
 
 // Application version
 #define APP_VERSION "1.0.0"
@@ -5648,30 +5649,10 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
             case 0x19: // Appearance
                 if (adDataLen >= 2) {
                     uint16_t appearance = adData[0] | (adData[1] << 8);
+                    const char *appearanceName = btGetAppearanceName(appearance);
                     printf("    Appearance: 0x%04X", appearance);
-                    // Common appearance values
-                    switch (appearance) {
-                        case 0: printf(" (Unknown)"); break;
-                        case 64: printf(" (Phone)"); break;
-                        case 128: printf(" (Computer)"); break;
-                        case 192: printf(" (Watch)"); break;
-                        case 320: printf(" (Display)"); break;
-                        case 384: printf(" (Remote Control)"); break;
-                        case 448: printf(" (Eye-glasses)"); break;
-                        case 512: printf(" (Tag)"); break;
-                        case 576: printf(" (Keyring)"); break;
-                        case 640: printf(" (Media Player)"); break;
-                        case 704: printf(" (Barcode Scanner)"); break;
-                        case 768: printf(" (Thermometer)"); break;
-                        case 832: printf(" (Heart Rate Sensor)"); break;
-                        case 896: printf(" (Blood Pressure)"); break;
-                        case 960: printf(" (HID)"); break;
-                        case 1024: printf(" (Glucose Meter)"); break;
-                        case 1088: printf(" (Running/Walking Sensor)"); break;
-                        case 1152: printf(" (Cycling)"); break;
-                        case 3136: printf(" (Pulse Oximeter)"); break;
-                        case 3200: printf(" (Weight Scale)"); break;
-                        case 5184: printf(" (Outdoor Sports Activity)"); break;
+                    if (appearanceName) {
+                        printf(" (%s)", appearanceName);
                     }
                     printf("\n");
                 }
