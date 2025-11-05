@@ -468,7 +468,7 @@ static bool parseBluetoothAddress(const char *addrStr, uBtLeAddress_t *addr)
             addr->type = U_BD_ADDRESS_TYPE_PUBLIC;
         }
     } else {
-        // No type specified - default to public for backward compatibility
+        // No type specified - default to public
         addr->type = U_BD_ADDRESS_TYPE_PUBLIC;
     }
     
@@ -2794,8 +2794,8 @@ static void printWelcomeGuide(void)
     printf("  4. Try [5] ATI9 to see device information\n");
     printf("\n");
     printf("COMMON OPERATIONS:\n");
-    printf("  - Wi-Fi: Use [8] Wi-Fi menu to scan and connect\n");
-    printf("  - Bluetooth: Use [7] Bluetooth menu to scan devices\n");
+    printf("  - Wi-Fi: Use [8] Wi-Fi (scan, connect, disconnect, status)\n");
+    printf("  - Bluetooth: Use [7] Bluetooth (scan, connect, disconnect, status)\n");
     printf("  - Sockets: Use [a] Socket menu for TCP/UDP (requires Wi-Fi)\n");
     printf("  - SPS: Use [b] for Bluetooth Serial Port Service\n");
     printf("\n");
@@ -2827,16 +2827,18 @@ static void printHelp(void)
     printf("  [6] Reboot       - Restart the module\n");
     printf("\n");
     printf("BLUETOOTH OPERATIONS:\n");
-    printf("  [7] Bluetooth menu\n");
+    printf("  [7] Bluetooth (scan, connect, disconnect, status)\n");
     printf("      - Scan for nearby Bluetooth devices\n");
     printf("      - Connect to Bluetooth devices\n");
+    printf("      - Disconnect active connections\n");
     printf("      - Show connection status\n");
     printf("  NOTE: NORA-B26 is Bluetooth only, NORA-W36 has BT+Wi-Fi\n");
     printf("\n");
     printf("WI-FI OPERATIONS:\n");
-    printf("  [8] Wi-Fi menu\n");
+    printf("  [8] Wi-Fi (scan, connect, disconnect, status)\n");
     printf("      - Scan for Wi-Fi networks\n");
     printf("      - Connect to Wi-Fi (SSID and password saved)\n");
+    printf("      - Disconnect from networks\n");
     printf("      - Show connection status\n");
     printf("  NOTE: Only available on NORA-W36 modules\n");
     printf("\n");
@@ -2937,8 +2939,8 @@ static void printMenu(void)
             printf("  [4] AT test (basic communication)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [5] ATI9 (device info)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [6] Module reboot/switch off%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [7] Bluetooth menu%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [8] Wi-Fi menu%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [7] Bluetooth (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
+            printf("  [8] Wi-Fi (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
             printf("  [9] Toggle UCX logging (AT traffic)\n");
             printf("  [t] Toggle timestamps in logs\n");
             printf("  [a] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
