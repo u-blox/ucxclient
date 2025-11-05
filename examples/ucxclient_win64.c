@@ -5955,26 +5955,11 @@ static void bluetoothScan(void)
     
     uCxEnd(&gUcxHandle);
     
-    // Sort devices: named devices first, then by RSSI (strongest first)
+    // Sort devices by RSSI (strongest first, i.e., highest/least negative value)
     for (int i = 0; i < deviceCount - 1; i++) {
         for (int j = i + 1; j < deviceCount; j++) {
-            bool shouldSwap = false;
-            
-            // Prioritize devices with names
-            bool iHasName = (devices[i].name[0] != '\0');
-            bool jHasName = (devices[j].name[0] != '\0');
-            
-            if (!iHasName && jHasName) {
-                // j has name, i doesn't - swap
-                shouldSwap = true;
-            } else if (iHasName == jHasName) {
-                // Both have names or both don't - sort by RSSI (higher is better)
-                if (devices[j].rssi > devices[i].rssi) {
-                    shouldSwap = true;
-                }
-            }
-            
-            if (shouldSwap) {
+            // Sort by RSSI: higher is better (closer to 0 = stronger signal)
+            if (devices[j].rssi > devices[i].rssi) {
                 BtDevice_t temp = devices[i];
                 devices[i] = devices[j];
                 devices[j] = temp;
