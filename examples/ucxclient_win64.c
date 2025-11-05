@@ -370,6 +370,7 @@ static void showWifiStatus(void);
 static void bluetoothMenu(void);
 static void bluetoothScan(void);
 static void bluetoothConnect(void);
+static void decodeAdvertisingData(const uint8_t *data, size_t dataLen);
 static void wifiMenu(void);
 static void wifiScan(void);
 static void wifiConnect(void);
@@ -5365,6 +5366,161 @@ static void showWifiStatus(void)
     }
 }
 
+// Decode Bluetooth advertising data based on Bluetooth SIG assigned numbers
+// Reference: https://bitbucket.org/bluetooth-SIG/public/src/main/assigned_numbers/
+static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
+{
+    if (!data || dataLen == 0) {
+        return;
+    }
+    
+    printf("  Advertising Data:\n");
+    
+    size_t offset = 0;
+    while (offset < dataLen) {
+        // Each AD structure: [length][type][data...]
+        uint8_t length = data[offset];
+        if (length == 0 || offset + length >= dataLen) {
+            break; // Invalid or padding
+        }
+        
+        uint8_t type = data[offset + 1];
+        const uint8_t *adData = &data[offset + 2];
+        size_t adDataLen = length - 1;
+        
+        // Decode based on AD type (Bluetooth SIG assigned numbers)
+        switch (type) {
+            case 0x01: // Flags
+                printf("    Flags: 0x%02X", adData[0]);
+                if (adData[0] & 0x01) printf(" [LE Limited Discoverable]");
+                if (adData[0] & 0x02) printf(" [LE General Discoverable]");
+                if (adData[0] & 0x04) printf(" [BR/EDR Not Supported]");
+                if (adData[0] & 0x08) printf(" [Simultaneous LE and BR/EDR Controller]");
+                if (adData[0] & 0x10) printf(" [Simultaneous LE and BR/EDR Host]");
+                printf("\n");
+                break;
+                
+            case 0x02: // Incomplete List of 16-bit Service UUIDs
+            case 0x03: // Complete List of 16-bit Service UUIDs
+                printf("    %s16-bit Service UUIDs: ", type == 0x03 ? "Complete " : "Incomplete ");
+                for (size_t i = 0; i < adDataLen; i += 2) {
+                    if (i + 1 < adDataLen) {
+                        uint16_t uuid = adData[i] | (adData[i + 1] << 8);
+                        printf("0x%04X ", uuid);
+                    }
+                }
+                printf("\n");
+                break;
+                
+            case 0x06: // Incomplete List of 128-bit Service UUIDs
+            case 0x07: // Complete List of 128-bit Service UUIDs
+                printf("    %s128-bit Service UUIDs:\n", type == 0x07 ? "Complete " : "Incomplete ");
+                for (size_t i = 0; i < adDataLen; i += 16) {
+                    if (i + 15 < adDataLen) {
+                        printf("      ");
+                        for (int j = 15; j >= 0; j--) {
+                            printf("%02X", adData[i + j]);
+                            if (j == 12 || j == 10 || j == 8 || j == 6) printf("-");
+                        }
+                        printf("\n");
+                    }
+                }
+                break;
+                
+            case 0x08: // Shortened Local Name
+            case 0x09: // Complete Local Name
+                printf("    %sName: %.*s\n", 
+                       type == 0x09 ? "Complete " : "Shortened ", 
+                       (int)adDataLen, (const char*)adData);
+                break;
+                
+            case 0x0A: // Tx Power Level
+                printf("    TX Power: %d dBm\n", (int8_t)adData[0]);
+                break;
+                
+            case 0x16: // Service Data - 16-bit UUID
+                if (adDataLen >= 2) {
+                    uint16_t uuid = adData[0] | (adData[1] << 8);
+                    printf("    Service Data (UUID 0x%04X): ", uuid);
+                    for (size_t i = 2; i < adDataLen; i++) {
+                        printf("%02X ", adData[i]);
+                    }
+                    printf("\n");
+                }
+                break;
+                
+            case 0x19: // Appearance
+                if (adDataLen >= 2) {
+                    uint16_t appearance = adData[0] | (adData[1] << 8);
+                    printf("    Appearance: 0x%04X", appearance);
+                    // Common appearance values
+                    switch (appearance) {
+                        case 0: printf(" (Unknown)"); break;
+                        case 64: printf(" (Phone)"); break;
+                        case 128: printf(" (Computer)"); break;
+                        case 192: printf(" (Watch)"); break;
+                        case 320: printf(" (Display)"); break;
+                        case 384: printf(" (Remote Control)"); break;
+                        case 448: printf(" (Eye-glasses)"); break;
+                        case 512: printf(" (Tag)"); break;
+                        case 576: printf(" (Keyring)"); break;
+                        case 640: printf(" (Media Player)"); break;
+                        case 704: printf(" (Barcode Scanner)"); break;
+                        case 768: printf(" (Thermometer)"); break;
+                        case 832: printf(" (Heart Rate Sensor)"); break;
+                        case 896: printf(" (Blood Pressure)"); break;
+                        case 960: printf(" (HID)"); break;
+                        case 1024: printf(" (Glucose Meter)"); break;
+                        case 1088: printf(" (Running/Walking Sensor)"); break;
+                        case 1152: printf(" (Cycling)"); break;
+                        case 3136: printf(" (Pulse Oximeter)"); break;
+                        case 3200: printf(" (Weight Scale)"); break;
+                        case 5184: printf(" (Outdoor Sports Activity)"); break;
+                    }
+                    printf("\n");
+                }
+                break;
+                
+            case 0xFF: // Manufacturer Specific Data
+                if (adDataLen >= 2) {
+                    uint16_t companyId = adData[0] | (adData[1] << 8);
+                    printf("    Manufacturer Data (Company ID: 0x%04X", companyId);
+                    // Common manufacturers
+                    switch (companyId) {
+                        case 0x004C: printf(" - Apple"); break;
+                        case 0x0006: printf(" - Microsoft"); break;
+                        case 0x00E0: printf(" - Google"); break;
+                        case 0x0075: printf(" - Samsung"); break;
+                        case 0x0157: printf(" - u-blox"); break;
+                        case 0x0059: printf(" - Nordic Semiconductor"); break;
+                        case 0x000D: printf(" - Texas Instruments"); break;
+                        case 0x000F: printf(" - Broadcom"); break;
+                        case 0x0087: printf(" - Garmin"); break;
+                        case 0x004B: printf(" - Qualcomm"); break;
+                    }
+                    printf("): ");
+                    for (size_t i = 2; i < adDataLen && i < 22; i++) { // Limit output
+                        printf("%02X ", adData[i]);
+                    }
+                    if (adDataLen > 22) printf("...");
+                    printf("\n");
+                }
+                break;
+                
+            default:
+                printf("    Type 0x%02X (%d bytes): ", type, (int)adDataLen);
+                for (size_t i = 0; i < adDataLen && i < 16; i++) { // Limit output
+                    printf("%02X ", adData[i]);
+                }
+                if (adDataLen > 16) printf("...");
+                printf("\n");
+                break;
+        }
+        
+        offset += length + 1;
+    }
+}
+
 static void bluetoothScan(void)
 {
     if (!gConnected) {
@@ -5383,10 +5539,13 @@ static void bluetoothScan(void)
     
     // Store unique devices (deduplicate by MAC address)
     #define MAX_BT_DEVICES 100
+    #define MAX_ADV_DATA 256
     typedef struct {
         uBtLeAddress_t addr;
         char name[64];
         int8_t rssi;
+        uint8_t advData[MAX_ADV_DATA];
+        size_t advDataLen;
     } BtDevice_t;
     
     BtDevice_t devices[MAX_BT_DEVICES];
@@ -5415,6 +5574,12 @@ static void bluetoothScan(void)
                             devices[i].name[sizeof(devices[i].name) - 1] = '\0';
                         }
                     }
+                    // Store advertising data if available and not already stored
+                    if (device.data.pData && device.data.length > 0 && devices[i].advDataLen == 0) {
+                        size_t copyLen = device.data.length < MAX_ADV_DATA ? device.data.length : MAX_ADV_DATA;
+                        memcpy(devices[i].advData, device.data.pData, copyLen);
+                        devices[i].advDataLen = copyLen;
+                    }
                     found = true;
                     break;
                 }
@@ -5430,6 +5595,14 @@ static void bluetoothScan(void)
                     devices[deviceCount].name[sizeof(devices[deviceCount].name) - 1] = '\0';
                 } else {
                     devices[deviceCount].name[0] = '\0';
+                }
+                // Store advertising data
+                if (device.data.pData && device.data.length > 0) {
+                    size_t copyLen = device.data.length < MAX_ADV_DATA ? device.data.length : MAX_ADV_DATA;
+                    memcpy(devices[deviceCount].advData, device.data.pData, copyLen);
+                    devices[deviceCount].advDataLen = copyLen;
+                } else {
+                    devices[deviceCount].advDataLen = 0;
                 }
                 deviceCount++;
             }
@@ -5482,6 +5655,12 @@ static void bluetoothScan(void)
             }
             
             printf("  RSSI: %d dBm\n", devices[i].rssi);
+            
+            // Decode and display advertising data if available
+            if (devices[i].advDataLen > 0) {
+                decodeAdvertisingData(devices[i].advData, devices[i].advDataLen);
+            }
+            
             printf("\n");
         }
     }
