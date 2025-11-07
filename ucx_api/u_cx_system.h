@@ -32,7 +32,7 @@ typedef struct
     int32_t baud_rate;    /**< Baudrate */
     int32_t flow_control; /**< 0: No flow control
                                1: Use CTS/RTS flow control */
-} uCxSystemGetUartSettings_t;
+} uCxSysGetUartSettings_t;
 
 typedef struct
 {
@@ -41,7 +41,7 @@ typedef struct
     int32_t post_timeout;   /**< Minimum time (ms) of no data activity required after the escape sequence is sent. Factory
                                  default: 1000 */
     int32_t escape_timeout; /**< Maximum time interval (ms) between escape characters. Factory default: 200 */
-} uCxSystemGetEscSequenceSettings_t;
+} uCxSysGetEscSequenceSettings_t;
 
 
 /* ------------------------------------------------------------
@@ -80,7 +80,7 @@ int32_t uCxSystemStoreConfiguration(uCxHandle_t * puCxHandle);
  * @param      interface_id: 
  * @param[out] pAddress:     MAC address of the interface id. If the address is set to 000000000000, the local address
  *                           will be restored to factory-programmed value. The least significant bit of the first octet
- *                           of the <address> must be 0.
+ *                           of the address must be 0.
  * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * pAddress);
@@ -98,7 +98,7 @@ int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interf
  * @param      interface_id: 
  * @param      address:      MAC address of the interface id. If the address is set to 000000000000, the local address
  *                           will be restored to factory-programmed value. The least significant bit of the first octet
- *                           of the <address> must be 0.
+ *                           of the address must be 0.
  * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemSetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * address);
@@ -137,7 +137,8 @@ int32_t uCxSystemDefaultSettings(uCxHandle_t * puCxHandle);
 
 /**
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
- * unsupported.
+ * unsupported. If the flow_control parameter is omitted then no flow control will be used. If change_after_confirm is not
+ * provided the baudrate will be changed only after a store and reboot.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -153,7 +154,8 @@ int32_t uCxSystemSetUartSettings1(uCxHandle_t * puCxHandle, int32_t baud_rate);
 
 /**
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
- * unsupported.
+ * unsupported. If the flow_control parameter is omitted then no flow control will be used. If change_after_confirm is not
+ * provided the baudrate will be changed only after a store and reboot.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -171,7 +173,8 @@ int32_t uCxSystemSetUartSettings2(uCxHandle_t * puCxHandle, int32_t baud_rate, i
 
 /**
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
- * unsupported.
+ * unsupported. If the flow_control parameter is omitted then no flow control will be used. If change_after_confirm is not
+ * provided the baudrate will be changed only after a store and reboot.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -195,11 +198,11 @@ int32_t uCxSystemSetUartSettings3(uCxHandle_t * puCxHandle, int32_t baud_rate, i
  * Output AT command:
  * > AT+USYUS?
  *
- * @param[in]  puCxHandle:                uCX API handle
- * @param[out] pSystemGetUartSettingsRsp: Please see \ref uCxSystemGetUartSettings_t
- * @return                                0 on success, negative value on error.
+ * @param[in]  puCxHandle:             uCX API handle
+ * @param[out] pSysGetUartSettingsRsp: Please see \ref uCxSysGetUartSettings_t
+ * @return                             0 on success, negative value on error.
  */
-int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSystemGetUartSettings_t * pSystemGetUartSettingsRsp);
+int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSysGetUartSettings_t * pSysGetUartSettingsRsp);
 
 /**
  * Read the last error code
@@ -226,7 +229,7 @@ int32_t uCxSystemGetLastErrorCode(uCxHandle_t * puCxHandle, int32_t * pErrorCode
  * @param      extended_errors: Extended error codes setting
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t extended_errors);
+int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uSysExtendedErrors_t extended_errors);
 
 /**
  * Read extended error codes enabled/disabled
@@ -238,7 +241,37 @@ int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t ex
  * @param[out] pExtendedErrors: Extended error codes setting
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t * pExtendedErrors);
+int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uSysExtendedErrors_t * pExtendedErrors);
+
+/**
+ * Set system time of the module.
+ * 
+ * Output AT command:
+ * > AT+USYTU=<unix_time>,<unix_time_len>
+ *
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      unix_time:     time as hex string in Unix time format, which is the number of seconds since
+ *                            1970-01-01T00:00:00 (UTC)
+ * @param      unix_time_len: length of unix_time
+ * @return                    0 on success, negative value on error.
+ */
+int32_t uCxSystemSetUnixTime(uCxHandle_t * puCxHandle, const uint8_t * unix_time, int32_t unix_time_len);
+
+/**
+ * Get system time of the module.
+ * 
+ * Output AT command:
+ * > AT+USYTU?
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pUnixTime:  time as hex string in Unix time format, which is the number of seconds since
+ *                         1970-01-01T00:00:00 (UTC)
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxSystemGetUnixTimeBegin(uCxHandle_t * puCxHandle, uByteArray_t * pUnixTime);
 
 /**
  * Set echo off
@@ -278,7 +311,7 @@ int32_t uCxSystemSetEchoOn(uCxHandle_t * puCxHandle);
  * @param[out] pEchoOn:    
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uEchoOn_t * pEchoOn);
+int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uSysEchoOn_t * pEchoOn);
 
 /**
  * Write escape character. This settings change the decimal value of the escape character used by some modes, such as
@@ -420,11 +453,11 @@ int32_t uCxSystemSetEscSequenceSettings(uCxHandle_t * puCxHandle, int32_t pre_ti
  * Output AT command:
  * > AT+UTMES?
  *
- * @param[in]  puCxHandle:                       uCX API handle
- * @param[out] pSystemGetEscSequenceSettingsRsp: Please see \ref uCxSystemGetEscSequenceSettings_t
- * @return                                       0 on success, negative value on error.
+ * @param[in]  puCxHandle:                    uCX API handle
+ * @param[out] pSysGetEscSequenceSettingsRsp: Please see \ref uCxSysGetEscSequenceSettings_t
+ * @return                                    0 on success, negative value on error.
  */
-int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSystemGetEscSequenceSettings_t * pSystemGetEscSequenceSettingsRsp);
+int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSysGetEscSequenceSettings_t * pSysGetEscSequenceSettingsRsp);
 
 
 #ifdef __cplusplus

@@ -18,6 +18,16 @@
  * PARSER FUNCTIONS
  * ---------------------------------------------------------- */
 
+static int32_t parseSTARTUP(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.STARTUP) {
+        puCxHandle->callbacks.STARTUP(puCxHandle);
+    }
+    return ret;
+}
+
 static int32_t parseUEBTC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
     (void)paramsLength;
@@ -98,6 +108,21 @@ static int32_t parseUEBTPHYU(uCxHandle_t * puCxHandle, char * pParams, size_t pa
     int32_t ret = uCxAtUtilParseParamsF(pParams, "dddd", &conn_handle, &phy_status, &tx_phy, &rx_phy, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEBTPHYU) {
         puCxHandle->callbacks.UEBTPHYU(puCxHandle, conn_handle, phy_status, tx_phy, rx_phy);
+    }
+    return ret;
+}
+
+static int32_t parseUEBTBGD(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    uBtLeAddress_t bd_addr;
+    int32_t rssi;
+    const char * device_name;
+    int32_t data_type;
+    uByteArray_t data;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "bdsdh", &bd_addr, &rssi, &device_name, &data_type, &data, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEBTBGD) {
+        puCxHandle->callbacks.UEBTBGD(puCxHandle, &bd_addr, rssi, device_name, data_type, &data);
     }
     return ret;
 }
@@ -192,10 +217,10 @@ static int32_t parseUESPSDS(uCxHandle_t * puCxHandle, char * pParams, size_t par
 {
     (void)paramsLength;
     int32_t conn_handle;
-    const char * string_data;
-    int32_t ret = uCxAtUtilParseParamsF(pParams, "ds", &conn_handle, &string_data, U_CX_AT_UTIL_PARAM_LAST);
+    uByteArray_t string_data;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "d$", &conn_handle, &string_data, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESPSDS) {
-        puCxHandle->callbacks.UESPSDS(puCxHandle, conn_handle, string_data);
+        puCxHandle->callbacks.UESPSDS(puCxHandle, conn_handle, &string_data);
     }
     return ret;
 }
@@ -264,6 +289,39 @@ static int32_t parseUEWSND(uCxHandle_t * puCxHandle, char * pParams, size_t para
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWSND) {
         puCxHandle->callbacks.UEWSND(puCxHandle);
+    }
+    return ret;
+}
+
+static int32_t parseUEWSRSI(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEWSRSI) {
+        puCxHandle->callbacks.UEWSRSI(puCxHandle);
+    }
+    return ret;
+}
+
+static int32_t parseUEWSRSF(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEWSRSF) {
+        puCxHandle->callbacks.UEWSRSF(puCxHandle);
+    }
+    return ret;
+}
+
+static int32_t parseUEWSRSC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t wlan_handle;
+    uMacAddress_t bssid;
+    int32_t channel;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "dmd", &wlan_handle, &bssid, &channel, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEWSRSC) {
+        puCxHandle->callbacks.UEWSRSC(puCxHandle, wlan_handle, &bssid, channel);
     }
     return ret;
 }
@@ -357,10 +415,10 @@ static int32_t parseUESODS(uCxHandle_t * puCxHandle, char * pParams, size_t para
 {
     (void)paramsLength;
     int32_t socket_handle;
-    const char * string_data;
-    int32_t ret = uCxAtUtilParseParamsF(pParams, "ds", &socket_handle, &string_data, U_CX_AT_UTIL_PARAM_LAST);
+    uByteArray_t string_data;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "d$", &socket_handle, &string_data, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESODS) {
-        puCxHandle->callbacks.UESODS(puCxHandle, socket_handle, string_data);
+        puCxHandle->callbacks.UESODS(puCxHandle, socket_handle, &string_data);
     }
     return ret;
 }
@@ -371,10 +429,10 @@ static int32_t parseUESODSF(uCxHandle_t * puCxHandle, char * pParams, size_t par
     int32_t socket_handle;
     uSockIpAddress_t remote_ip;
     int32_t remote_port;
-    const char * string_data;
-    int32_t ret = uCxAtUtilParseParamsF(pParams, "dids", &socket_handle, &remote_ip, &remote_port, &string_data, U_CX_AT_UTIL_PARAM_LAST);
+    uByteArray_t string_data;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "did$", &socket_handle, &remote_ip, &remote_port, &string_data, U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UESODSF) {
-        puCxHandle->callbacks.UESODSF(puCxHandle, socket_handle, &remote_ip, remote_port, string_data);
+        puCxHandle->callbacks.UESODSF(puCxHandle, socket_handle, &remote_ip, remote_port, &string_data);
     }
     return ret;
 }
@@ -462,6 +520,67 @@ static int32_t parseUEMQDA(uCxHandle_t * puCxHandle, char * pParams, size_t para
     return ret;
 }
 
+static int32_t parseUEMQDD(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t mqtt_id;
+    int32_t message_len;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &mqtt_id, &message_len, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEMQDD) {
+        puCxHandle->callbacks.UEMQDD(puCxHandle, mqtt_id, message_len);
+    }
+    return ret;
+}
+
+static int32_t parseUEMQPC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t mqtt_id;
+    int32_t packet_id;
+    int32_t message_len;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "ddd", &mqtt_id, &packet_id, &message_len, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEMQPC) {
+        puCxHandle->callbacks.UEMQPC(puCxHandle, mqtt_id, packet_id, message_len);
+    }
+    return ret;
+}
+
+static int32_t parseUEMQSC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t mqtt_id;
+    int32_t subscribe_action;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "dd", &mqtt_id, &subscribe_action, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEMQSC) {
+        puCxHandle->callbacks.UEMQSC(puCxHandle, mqtt_id, subscribe_action);
+    }
+    return ret;
+}
+
+static int32_t parseUEHTCDC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t session_id;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "d", &session_id, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEHTCDC) {
+        puCxHandle->callbacks.UEHTCDC(puCxHandle, session_id);
+    }
+    return ret;
+}
+
+static int32_t parseUEHTCRS(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t session_id;
+    int32_t status_code;
+    const char * description;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "dds", &session_id, &status_code, &description, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEHTCRS) {
+        puCxHandle->callbacks.UEHTCRS(puCxHandle, session_id, status_code, description);
+    }
+    return ret;
+}
+
 static int32_t parseUEDGPC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
     (void)paramsLength;
@@ -504,6 +623,9 @@ static int32_t parseUEDGI(uCxHandle_t * puCxHandle, char * pParams, size_t param
  * ---------------------------------------------------------- */
 int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength)
 {
+    if (strcmp(pUrcName, "+STARTUP") == 0) {
+        return parseSTARTUP(puCxHandle, pParams, paramsLength);
+    }
     if (strcmp(pUrcName, "+UEBTC") == 0) {
         return parseUEBTC(puCxHandle, pParams, paramsLength);
     }
@@ -524,6 +646,9 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
     }
     if (strcmp(pUrcName, "+UEBTPHYU") == 0) {
         return parseUEBTPHYU(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEBTBGD") == 0) {
+        return parseUEBTBGD(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UEBTGCN") == 0) {
         return parseUEBTGCN(puCxHandle, pParams, paramsLength);
@@ -566,6 +691,15 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
     }
     if (strcmp(pUrcName, "+UEWSND") == 0) {
         return parseUEWSND(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEWSRSI") == 0) {
+        return parseUEWSRSI(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEWSRSF") == 0) {
+        return parseUEWSRSF(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEWSRSC") == 0) {
+        return parseUEWSRSC(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UEWAPNU") == 0) {
         return parseUEWAPNU(puCxHandle, pParams, paramsLength);
@@ -617,6 +751,21 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
     }
     if (strcmp(pUrcName, "+UEMQDA") == 0) {
         return parseUEMQDA(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEMQDD") == 0) {
+        return parseUEMQDD(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEMQPC") == 0) {
+        return parseUEMQPC(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEMQSC") == 0) {
+        return parseUEMQSC(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEHTCDC") == 0) {
+        return parseUEHTCDC(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEHTCRS") == 0) {
+        return parseUEHTCRS(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UEDGPC") == 0) {
         return parseUEDGPC(puCxHandle, pParams, paramsLength);

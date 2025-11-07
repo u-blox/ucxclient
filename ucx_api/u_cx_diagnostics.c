@@ -32,37 +32,37 @@ int32_t uCxDiagnosticsPingStop(uCxHandle_t * puCxHandle)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGSP", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxDiagnosticsIperf2(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type)
+int32_t uCxDiagnosticsIperf2(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGI=", "dd", iperf_action, protocol_type, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxDiagnosticsIperf5(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval)
+int32_t uCxDiagnosticsIperf5(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGI=", "ddddd", iperf_action, protocol_type, role, port, report_interval, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxDiagnosticsIperf7(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr)
+int32_t uCxDiagnosticsIperf7(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGI=", "ddddddi", iperf_action, protocol_type, role, port, report_interval, time_boundary, ip_addr, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxDiagnosticsIperf8(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length)
+int32_t uCxDiagnosticsIperf8(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGI=", "ddddddid", iperf_action, protocol_type, role, port, report_interval, time_boundary, ip_addr, length, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxDiagnosticsIperf9(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth)
+int32_t uCxDiagnosticsIperf9(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGI=", "ddddddidd", iperf_action, protocol_type, role, port, report_interval, time_boundary, ip_addr, length, bandwidth, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxDiagnosticsIperf10(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth, uBidirectional_t bidirectional)
+int32_t uCxDiagnosticsIperf10(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth, uDiagBidirectional_t bidirectional)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UDGI=", "ddddddiddd", iperf_action, protocol_type, role, port, report_interval, time_boundary, ip_addr, length, bandwidth, bidirectional, U_CX_AT_UTIL_PARAM_LAST);
