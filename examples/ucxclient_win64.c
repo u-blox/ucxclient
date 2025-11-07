@@ -103,6 +103,9 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "bluetooth-sig/bt_company_identifiers.h"
 #include "bluetooth-sig/bt_service_uuids.h"
 #include "bluetooth-sig/bt_appearance_values.h"
+#include "bluetooth-sig/bt_characteristic_uuids.h"
+#include "bluetooth-sig/bt_descriptor_uuids.h"
+#include "bluetooth-sig/bt_units.h"
 
 // Application version
 #define APP_VERSION "1.0.0"
@@ -148,6 +151,36 @@ typedef struct {
 
 static BtConnection_t gBtConnections[MAX_BT_CONNECTIONS];
 static int gBtConnectionCount = 0;
+
+// GATT Client tracking
+#define MAX_GATT_SERVICES 20
+#define MAX_GATT_CHARACTERISTICS 50
+
+typedef struct {
+    int32_t connHandle;
+    int32_t startHandle;
+    int32_t endHandle;
+    uint8_t uuid[16];
+    int32_t uuidLength;
+    char name[64];  // Optional friendly name
+} GattService_t;
+
+typedef struct {
+    int32_t connHandle;
+    int32_t serviceIndex;  // Index into gGattServices array
+    int32_t valueHandle;
+    int32_t properties;
+    uint8_t uuid[16];
+    int32_t uuidLength;
+    char name[64];  // Optional friendly name
+} GattCharacteristic_t;
+
+static GattService_t gGattServices[MAX_GATT_SERVICES];
+static int gGattServiceCount = 0;
+static GattCharacteristic_t gGattCharacteristics[MAX_GATT_CHARACTERISTICS];
+static int gGattCharacteristicCount = 0;
+static int32_t gCurrentGattConnHandle = -1;  // Currently selected GATT connection
+static int gLastCharacteristicIndex = -1;    // Last used characteristic index
 
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
@@ -418,6 +451,7 @@ static void spsSendData(void);
 static void spsReadData(void);
 static void gattClientMenu(void);
 static void gattClientDiscoverServices(void);
+static void gattClientDiscoverCharacteristics(void);
 static void gattClientReadCharacteristic(void);
 static void gattClientWriteCharacteristic(void);
 static void gattServerMenu(void);
@@ -1558,9 +1592,11 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
 
 static void startupUrc(struct uCxHandle *puCxHandle)
 {
-    // Record timestamp when STARTUP is received
+     // Record timestamp when STARTUP is received
     ULONGLONG currentTime = GetTickCount64();
     gStartupTimestamp = currentTime;
+
+    signalEvent(URC_FLAG_STARTUP);
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
     
@@ -1593,7 +1629,7 @@ static void startupUrc(struct uCxHandle *puCxHandle)
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Module reconfiguration complete");
     
-    signalEvent(URC_FLAG_STARTUP);
+    
 }
 
 static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time)
@@ -1726,7 +1762,136 @@ static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLe
         gBtConnectionCount++;
     }
     
+    // Remember this connection for GATT operations
+    gCurrentGattConnHandle = conn_handle;
+    
     printf("****************************************\n\n");
+    
+    // Auto-discover GATT services and characteristics
+    printf("Auto-discovering GATT services and characteristics...\n");
+    
+    // Discover services
+    uCxGattClientDiscoverPrimaryServicesBegin(puCxHandle, conn_handle);
+    gGattServiceCount = 0;
+    
+    uCxGattClientDiscoverPrimaryServices_t service;
+    while (uCxGattClientDiscoverPrimaryServicesGetNext(puCxHandle, &service)) {
+        if (gGattServiceCount < MAX_GATT_SERVICES) {
+            GattService_t *stored = &gGattServices[gGattServiceCount];
+            stored->connHandle = conn_handle;
+            stored->startHandle = service.start_handle;
+            stored->endHandle = service.end_handle;
+            stored->uuidLength = service.uuid.length;
+            memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
+            stored->name[0] = '\0';
+            
+            // Get friendly name for 16-bit UUIDs
+            if (stored->uuidLength == 2) {
+                uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                const char *name = btGetServiceName(uuid16);
+                if (name) {
+                    strncpy(stored->name, name, sizeof(stored->name) - 1);
+                }
+            }
+            
+            gGattServiceCount++;
+        }
+    }
+    uCxEnd(puCxHandle);
+    printf("  Found %d services:\n", gGattServiceCount);
+    
+    // Display discovered services
+    for (int i = 0; i < gGattServiceCount; i++) {
+        GattService_t *svc = &gGattServices[i];
+        printf("    [%d] 0x%04X-0x%04X", i, svc->startHandle, svc->endHandle);
+        
+        if (svc->uuidLength == 2) {
+            uint16_t uuid16 = (svc->uuid[0] << 8) | svc->uuid[1];
+            printf(" UUID: 0x%04X", uuid16);
+            if (svc->name[0] != '\0') {
+                printf(" (%s)", svc->name);
+            }
+        } else {
+            printf(" UUID: ");
+            for (int j = 0; j < svc->uuidLength; j++) {
+                printf("%02X", svc->uuid[j]);
+            }
+            // Check for u-blox SPS service UUID
+            if (svc->uuidLength == 16) {
+                const uint8_t ubloxSpsUuid[] = {0x24, 0x56, 0xE1, 0xB9, 0x26, 0xE2, 0x8F, 0x83,
+                                                 0xE7, 0x44, 0xF3, 0x4F, 0x01, 0xE9, 0xD7, 0x01};
+                if (memcmp(svc->uuid, ubloxSpsUuid, 16) == 0) {
+                    printf(" (u-blox SPS)");
+                }
+            }
+        }
+        printf("\n");
+    }
+    
+    // Discover characteristics for all services
+    gGattCharacteristicCount = 0;
+    
+    for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
+        GattService_t *svc = &gGattServices[svcIdx];
+        uCxGattClientDiscoverServiceCharsBegin(puCxHandle, conn_handle, svc->startHandle, svc->endHandle);
+        
+        uCxGattClientDiscoverServiceChars_t characteristic;
+        while (uCxGattClientDiscoverServiceCharsGetNext(puCxHandle, &characteristic)) {
+            if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
+                GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
+                stored->connHandle = conn_handle;
+                stored->serviceIndex = svcIdx;
+                stored->valueHandle = characteristic.value_handle;
+                stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
+                stored->uuidLength = characteristic.uuid.length;
+                memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
+                stored->name[0] = '\0';
+                
+                // Get friendly name for 16-bit UUIDs
+                if (stored->uuidLength == 2) {
+                    uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                    const char *name = btGetCharacteristicName(uuid16);
+                    if (name) {
+                        strncpy(stored->name, name, sizeof(stored->name) - 1);
+                    }
+                }
+                
+                gGattCharacteristicCount++;
+            }
+        }
+        uCxEnd(puCxHandle);
+    }
+    printf("  Found %d characteristics:\n", gGattCharacteristicCount);
+    
+    // Display discovered characteristics
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+        printf("    [%d] Handle: 0x%04X", i, ch->valueHandle);
+        
+        if (ch->uuidLength == 2) {
+            uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
+            printf(", UUID: 0x%04X", uuid16);
+            if (ch->name[0] != '\0') {
+                printf(" (%s)", ch->name);
+            }
+        } else {
+            printf(", UUID: ");
+            for (int j = 0; j < ch->uuidLength; j++) {
+                printf("%02X", ch->uuid[j]);
+            }
+        }
+        
+        // Show properties
+        printf(", Props: ");
+        uint8_t props = ch->properties;
+        if (props & 0x02) printf("R");
+        if (props & 0x08) printf("W");
+        if (props & 0x10) printf("N");
+        if (props & 0x20) printf("I");
+        printf("\n");
+    }
+    
+    printf("GATT discovery complete! You can now read/write characteristics.\n\n");
     
     signalEvent(URC_FLAG_BT_CONNECTED);
 }
@@ -1749,6 +1914,15 @@ static void btDisconnected(struct uCxHandle *puCxHandle, int32_t conn_handle)
             gBtConnectionCount--;
             break;
         }
+    }
+    
+    // Clear GATT data for this connection
+    if (gCurrentGattConnHandle == conn_handle) {
+        gCurrentGattConnHandle = -1;
+        gGattServiceCount = 0;
+        gGattCharacteristicCount = 0;
+        gLastCharacteristicIndex = -1;
+        printf("  Cleared GATT discovery data\n");
     }
     
     printf("******************************\n\n");
@@ -2153,6 +2327,218 @@ static void spsReadData(void)
 // GATT CLIENT OPERATIONS
 // ============================================================================
 
+// Sync GATT connection handle with active Bluetooth connections
+static void syncGattConnection(void)
+{
+    // First, sync the Bluetooth connections from the module
+    bluetoothSyncConnections();
+    
+    // If we already have a valid connection handle, verify it's still active
+    if (gCurrentGattConnHandle >= 0) {
+        bool stillActive = false;
+        for (int i = 0; i < gBtConnectionCount; i++) {
+            if (gBtConnections[i].handle == gCurrentGattConnHandle && gBtConnections[i].active) {
+                stillActive = true;
+                break;
+            }
+        }
+        if (stillActive) {
+            return;  // Current handle is still valid
+        }
+    }
+    
+    // No valid handle, try to find an active connection
+    if (gBtConnectionCount > 0) {
+        // Use the first active connection
+        for (int i = 0; i < gBtConnectionCount; i++) {
+            if (gBtConnections[i].active) {
+                gCurrentGattConnHandle = gBtConnections[i].handle;
+                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "[Auto-sync] Using Bluetooth connection handle: %d", gCurrentGattConnHandle);
+                
+                // Check if we need to discover GATT services/characteristics
+                bool needsDiscovery = false;
+                if (gGattServiceCount == 0 || gGattCharacteristicCount == 0) {
+                    needsDiscovery = true;
+                } else if (gGattServices[0].connHandle != gCurrentGattConnHandle) {
+                    needsDiscovery = true;
+                }
+                
+                if (needsDiscovery) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "[Auto-sync] Discovering GATT services and characteristics...");
+                    
+                    // Discover services
+                    uCxGattClientDiscoverPrimaryServicesBegin(&gUcxHandle, gCurrentGattConnHandle);
+                    gGattServiceCount = 0;
+                    
+                    uCxGattClientDiscoverPrimaryServices_t service;
+                    while (uCxGattClientDiscoverPrimaryServicesGetNext(&gUcxHandle, &service)) {
+                        if (gGattServiceCount < MAX_GATT_SERVICES) {
+                            GattService_t *stored = &gGattServices[gGattServiceCount];
+                            stored->connHandle = gCurrentGattConnHandle;
+                            stored->startHandle = service.start_handle;
+                            stored->endHandle = service.end_handle;
+                            stored->uuidLength = service.uuid.length;
+                            memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
+                            stored->name[0] = '\0';
+                            
+                            if (stored->uuidLength == 2) {
+                                uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                                const char *name = btGetServiceName(uuid16);
+                                if (name) {
+                                    strncpy(stored->name, name, sizeof(stored->name) - 1);
+                                }
+                            }
+                            gGattServiceCount++;
+                        }
+                    }
+                    uCxEnd(&gUcxHandle);
+                    
+                    printf("  Found %d services:\n", gGattServiceCount);
+                    
+                    // Display discovered services
+                    for (int i = 0; i < gGattServiceCount; i++) {
+                        GattService_t *svc = &gGattServices[i];
+                        printf("    [%d] 0x%04X-0x%04X", i, svc->startHandle, svc->endHandle);
+                        
+                        if (svc->uuidLength == 2) {
+                            uint16_t uuid16 = (svc->uuid[0] << 8) | svc->uuid[1];
+                            printf(" UUID: 0x%04X", uuid16);
+                            if (svc->name[0] != '\0') {
+                                printf(" (%s)", svc->name);
+                            }
+                        } else {
+                            printf(" UUID: ");
+                            for (int j = 0; j < svc->uuidLength; j++) {
+                                printf("%02X", svc->uuid[j]);
+                            }
+                            // Check for u-blox SPS service UUID
+                            if (svc->uuidLength == 16) {
+                                const uint8_t ubloxSpsUuid[] = {0x24, 0x56, 0xE1, 0xB9, 0x26, 0xE2, 0x8F, 0x83,
+                                                                 0xE7, 0x44, 0xF3, 0x4F, 0x01, 0xE9, 0xD7, 0x01};
+                                if (memcmp(svc->uuid, ubloxSpsUuid, 16) == 0) {
+                                    printf(" (u-blox SPS)");
+                                }
+                            }
+                        }
+                        printf("\n");
+                    }
+                    
+                    // Discover characteristics
+                    gGattCharacteristicCount = 0;
+                    for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
+                        GattService_t *svc = &gGattServices[svcIdx];
+                        uCxGattClientDiscoverServiceCharsBegin(&gUcxHandle, gCurrentGattConnHandle, 
+                                                              svc->startHandle, svc->endHandle);
+                        
+                        uCxGattClientDiscoverServiceChars_t characteristic;
+                        while (uCxGattClientDiscoverServiceCharsGetNext(&gUcxHandle, &characteristic)) {
+                            if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
+                                GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
+                                stored->connHandle = gCurrentGattConnHandle;
+                                stored->serviceIndex = svcIdx;
+                                stored->valueHandle = characteristic.value_handle;
+                                stored->properties = (characteristic.properties.length > 0) ? 
+                                                    characteristic.properties.pData[0] : 0;
+                                stored->uuidLength = characteristic.uuid.length;
+                                memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
+                                stored->name[0] = '\0';
+                                
+                                if (stored->uuidLength == 2) {
+                                    uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                                    const char *name = btGetCharacteristicName(uuid16);
+                                    if (name) {
+                                        strncpy(stored->name, name, sizeof(stored->name) - 1);
+                                    }
+                                }
+                                gGattCharacteristicCount++;
+                            }
+                        }
+                        uCxEnd(&gUcxHandle);
+                    }
+                    
+                    printf("  Found %d characteristics:\n", gGattCharacteristicCount);
+                    
+                    // Display discovered characteristics
+                    for (int i = 0; i < gGattCharacteristicCount; i++) {
+                        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+                        printf("    [%d] Handle: 0x%04X", i, ch->valueHandle);
+                        
+                        if (ch->uuidLength == 2) {
+                            uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
+                            printf(", UUID: 0x%04X", uuid16);
+                            if (ch->name[0] != '\0') {
+                                printf(" (%s)", ch->name);
+                            }
+                        } else {
+                            printf(", UUID: ");
+                            for (int j = 0; j < ch->uuidLength; j++) {
+                                printf("%02X", ch->uuid[j]);
+                            }
+                        }
+                        
+                        // Show properties
+                        printf(", Props: ");
+                        uint8_t props = ch->properties;
+                        if (props & 0x02) printf("R");
+                        if (props & 0x08) printf("W");
+                        if (props & 0x10) printf("N");
+                        if (props & 0x20) printf("I");
+                        printf("\n");
+                    }
+                    
+                    printf("GATT discovery complete!\n");
+                }
+                return;
+            }
+        }
+    }
+    
+    // No active connections found
+    gCurrentGattConnHandle = -1;
+}
+
+// Helper function to get expected unit UUID for common characteristics
+static uint16_t getExpectedUnitForCharacteristic(uint16_t charUuid)
+{
+    switch (charUuid) {
+        // Battery Level (0x2A19) -> percentage (0x27AD)
+        case 0x2A19: return 0x27AD;
+        
+        // Temperature characteristics -> Celsius (0x272F)
+        case 0x2A1C: // Temperature Measurement
+        case 0x2A1E: // Intermediate Temperature
+        case 0x2A6E: // Temperature
+            return 0x272F;
+        
+        // Pressure (0x2A6D) -> Pascal (0x2724)
+        case 0x2A6D: return 0x2724;
+        
+        // Humidity (0x2A6F) -> percentage (0x27AD)
+        case 0x2A6F: return 0x27AD;
+        
+        // Voltage (0x2B18) -> Volt (0x2728)
+        case 0x2B18: return 0x2728;
+        
+        // Current (0x2AEE) -> Ampere (0x2704)
+        case 0x2AEE: return 0x2704;
+        
+        // Energy (0x2AF3) -> Joule (0x2725)
+        case 0x2AF3: return 0x2725;
+        
+        // Power (0x2AF4) -> Watt (0x2729)
+        case 0x2AF4: return 0x2729;
+        
+        // Frequency (0x2AF5) -> Hertz (0x2727)
+        case 0x2AF5: return 0x2727;
+        
+        // Illuminance (0x2AFB) -> Lux (0x2731)
+        case 0x2AFB: return 0x2731;
+        
+        // No known unit
+        default: return 0;
+    }
+}
+
 static void gattClientDiscoverServices(void)
 {
     if (!gConnected) {
@@ -2162,35 +2548,207 @@ static void gattClientDiscoverServices(void)
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Discover Services ---");
-    printf("Enter connection handle: ");
     
-    int connHandle;
-    scanf("%d", &connHandle);
-    getchar(); // consume newline
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active GATT connection. Use Bluetooth menu to connect first.");
+        return;
+    }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting service discovery...");
+    printf("Using connection handle: %d\n", connHandle);
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting service discovery on connection %d...", connHandle);
+    
+    // Clear previous services for this connection
+    int oldCount = gGattServiceCount;
+    gGattServiceCount = 0;
     
     // Call GATT service discovery command
     uCxGattClientDiscoverPrimaryServicesBegin(&gUcxHandle, connHandle);
     
-    // Get services
+    // Get services and store them
     uCxGattClientDiscoverPrimaryServices_t service;
-    int serviceCount = 0;
     while (uCxGattClientDiscoverPrimaryServicesGetNext(&gUcxHandle, &service)) {
-        serviceCount++;
-        printf("  Service %d: start=0x%04X, end=0x%04X, UUID=", 
-               serviceCount, service.start_handle, service.end_handle);
-        for (int i = 0; i < service.uuid.length; i++) {
-            printf("%02X", service.uuid.pData[i]);
+        if (gGattServiceCount < MAX_GATT_SERVICES) {
+            GattService_t *stored = &gGattServices[gGattServiceCount];
+            stored->connHandle = connHandle;
+            stored->startHandle = service.start_handle;
+            stored->endHandle = service.end_handle;
+            stored->uuidLength = service.uuid.length;
+            memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
+            stored->name[0] = '\0';
+            
+            printf("  [%d] Service: start=0x%04X, end=0x%04X\n", 
+                   gGattServiceCount, stored->startHandle, stored->endHandle);
+            printf("      UUID: ");
+            
+            // For 16-bit UUIDs, display as proper hex value
+            if (stored->uuidLength == 2) {
+                uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];  // Big endian (network order)
+                printf("0x%04X", uuid16);
+                
+                const char *name = btGetServiceName(uuid16);
+                if (name) {
+                    printf(" (%s)", name);
+                    strncpy(stored->name, name, sizeof(stored->name) - 1);
+                }
+            } else {
+                // For 128-bit UUIDs, show raw bytes
+                for (int i = 0; i < stored->uuidLength; i++) {
+                    printf("%02X", stored->uuid[i]);
+                }
+                
+                // Check if it's a known u-blox UUID
+                if (stored->uuidLength == 16) {
+                    // u-blox SPS Service: 2456E1B9-26E2-8F83-E744-F34F-01E9D701
+                    const uint8_t ublox_sps[] = {0x01, 0xD7, 0xE9, 0x01, 0x4F, 0xF3, 0x44, 0xE7, 
+                                                  0x83, 0x8F, 0xE2, 0x26, 0xB9, 0xE1, 0x56, 0x24};
+                    if (memcmp(stored->uuid, ublox_sps, 16) == 0) {
+                        printf(" (u-blox SPS Service)");
+                        strncpy(stored->name, "u-blox SPS Service", sizeof(stored->name) - 1);
+                    }
+                }
+            }
+            printf("\n");
+            
+            gGattServiceCount++;
         }
-        printf("\n");
     }
     
     int32_t result = uCxEnd(&gUcxHandle);
     if (result == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service discovery complete. Found %d services.", serviceCount);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Service discovery complete. Found %d services.", gGattServiceCount);
+        if (oldCount > 0) {
+            printf("Note: Replaced %d previously discovered services\n", oldCount);
+        }
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Service discovery failed (code %d)", result);
+    }
+}
+
+static void gattClientDiscoverCharacteristics(void)
+{
+    if (!gConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Discover Characteristics ---");
+    
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active GATT connection. Use Bluetooth menu to connect first.");
+        return;
+    }
+    
+    printf("Using connection handle: %d\n", connHandle);
+    
+    // Show discovered services
+    if (gGattServiceCount == 0) {
+        printf("No services discovered yet. Please discover services first (option 1).\n");
+        return;
+    }
+    
+    printf("\nDiscovered services:\n");
+    for (int i = 0; i < gGattServiceCount; i++) {
+        if (gGattServices[i].connHandle == connHandle) {
+            printf("  [%d] 0x%04X-0x%04X", i, gGattServices[i].startHandle, gGattServices[i].endHandle);
+            if (gGattServices[i].name[0] != '\0') {
+                printf(" (%s)", gGattServices[i].name);
+            }
+            printf("\n");
+        }
+    }
+    
+    printf("\nEnter service index to discover (or -1 for all): ");
+    int serviceIndex;
+    scanf("%d", &serviceIndex);
+    getchar(); // consume newline
+    
+    // Clear previous characteristics
+    int oldCount = gGattCharacteristicCount;
+    gGattCharacteristicCount = 0;
+    
+    int startIdx = (serviceIndex == -1) ? 0 : serviceIndex;
+    int endIdx = (serviceIndex == -1) ? gGattServiceCount : (serviceIndex + 1);
+    
+    for (int svcIdx = startIdx; svcIdx < endIdx; svcIdx++) {
+        if (svcIdx >= gGattServiceCount) continue;
+        if (gGattServices[svcIdx].connHandle != connHandle) continue;
+        
+        GattService_t *svc = &gGattServices[svcIdx];
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Discovering characteristics for service %d (0x%04X-0x%04X)...", 
+                     svcIdx, svc->startHandle, svc->endHandle);
+        
+        // Discover characteristics within this service range
+        uCxGattClientDiscoverServiceCharsBegin(&gUcxHandle, connHandle, svc->startHandle, svc->endHandle);
+        
+        uCxGattClientDiscoverServiceChars_t characteristic;
+        while (uCxGattClientDiscoverServiceCharsGetNext(&gUcxHandle, &characteristic)) {
+            if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
+                GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
+                stored->connHandle = connHandle;
+                stored->serviceIndex = svcIdx;
+                stored->valueHandle = characteristic.value_handle;
+                // Properties is a byte array, extract first byte
+                stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
+                stored->uuidLength = characteristic.uuid.length;
+                memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
+                stored->name[0] = '\0';
+                
+                printf("    [%d] Char: handle=0x%04X, prop=0x%02X\n", 
+                       gGattCharacteristicCount, stored->valueHandle, stored->properties);
+                printf("        UUID: ");
+                for (int i = 0; i < stored->uuidLength; i++) {
+                    printf("%02X", stored->uuid[i]);
+                }
+                
+                // Try to get friendly name for 16-bit UUIDs
+                if (stored->uuidLength == 2) {
+                    uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                    const char *name = btGetCharacteristicName(uuid16);
+                    if (name) {
+                        printf(" (%s)", name);
+                        strncpy(stored->name, name, sizeof(stored->name) - 1);
+                    }
+                    
+                    // Show expected unit if known
+                    uint16_t unitUuid = getExpectedUnitForCharacteristic(uuid16);
+                    if (unitUuid != 0) {
+                        const char *unitSymbol = btGetUnitSymbol(unitUuid);
+                        if (unitSymbol && unitSymbol[0] != '\0') {
+                            printf(" [Unit: %s]", unitSymbol);
+                        }
+                    }
+                }
+                
+                // Show properties
+                printf("\n        Props: ");
+                uint8_t props = stored->properties;
+                if (props & 0x02) printf("Read ");
+                if (props & 0x04) printf("WriteWithoutResponse ");
+                if (props & 0x08) printf("Write ");
+                if (props & 0x10) printf("Notify ");
+                if (props & 0x20) printf("Indicate ");
+                printf("\n");
+                
+                gGattCharacteristicCount++;
+            }
+        }
+        
+        int32_t result = uCxEnd(&gUcxHandle);
+        if (result != 0) {
+            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to discover characteristics for service %d (code %d)", 
+                         svcIdx, result);
+        }
+    }
+    
+    printf("\nCharacteristic discovery complete. Found %d characteristics.\n", gGattCharacteristicCount);
+    if (oldCount > 0) {
+        printf("Note: Replaced %d previously discovered characteristics\n", oldCount);
     }
 }
 
@@ -2203,18 +2761,181 @@ static void gattClientReadCharacteristic(void)
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Read Characteristic ---");
-    printf("Enter connection handle: ");
     
-    int connHandle;
-    scanf("%d", &connHandle);
-    getchar(); // consume newline
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active GATT connection. Use Bluetooth menu to connect first.");
+        return;
+    }
     
-    printf("Enter characteristic handle: ");
-    int charHandle;
-    scanf("%d", &charHandle);
-    getchar(); // consume newline
+    printf("Using connection handle: %d\n", connHandle);
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Reading characteristic...");
+    // Auto-discover characteristics if not already done
+    if (gGattCharacteristicCount == 0 || 
+        (gGattCharacteristicCount > 0 && gGattCharacteristics[0].connHandle != connHandle)) {
+        printf("\nNo characteristics discovered yet. Auto-discovering...\n");
+        
+        // First check if we have services
+        if (gGattServiceCount == 0 || 
+            (gGattServiceCount > 0 && gGattServices[0].connHandle != connHandle)) {
+            printf("Discovering services first...\n");
+            
+            // Discover services
+            uCxGattClientDiscoverPrimaryServicesBegin(&gUcxHandle, connHandle);
+            gGattServiceCount = 0;
+            
+            uCxGattClientDiscoverPrimaryServices_t service;
+            while (uCxGattClientDiscoverPrimaryServicesGetNext(&gUcxHandle, &service)) {
+                if (gGattServiceCount < MAX_GATT_SERVICES) {
+                    GattService_t *stored = &gGattServices[gGattServiceCount];
+                    stored->connHandle = connHandle;
+                    stored->startHandle = service.start_handle;
+                    stored->endHandle = service.end_handle;
+                    stored->uuidLength = service.uuid.length;
+                    memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
+                    stored->name[0] = '\0';
+                    
+                    // Get friendly name for 16-bit UUIDs
+                    if (stored->uuidLength == 2) {
+                        uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                        const char *name = btGetServiceName(uuid16);
+                        if (name) {
+                            strncpy(stored->name, name, sizeof(stored->name) - 1);
+                        }
+                    }
+                    
+                    gGattServiceCount++;
+                }
+            }
+            uCxEnd(&gUcxHandle);
+            printf("Found %d services.\n", gGattServiceCount);
+        }
+        
+        // Now discover characteristics for all services
+        printf("Discovering characteristics...\n");
+        gGattCharacteristicCount = 0;
+        
+        for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
+            if (gGattServices[svcIdx].connHandle != connHandle) continue;
+            
+            GattService_t *svc = &gGattServices[svcIdx];
+            uCxGattClientDiscoverServiceCharsBegin(&gUcxHandle, connHandle, svc->startHandle, svc->endHandle);
+            
+            uCxGattClientDiscoverServiceChars_t characteristic;
+            while (uCxGattClientDiscoverServiceCharsGetNext(&gUcxHandle, &characteristic)) {
+                if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
+                    GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
+                    stored->connHandle = connHandle;
+                    stored->serviceIndex = svcIdx;
+                    stored->valueHandle = characteristic.value_handle;
+                    stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
+                    stored->uuidLength = characteristic.uuid.length;
+                    memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
+                    stored->name[0] = '\0';
+                    
+                    // Get friendly name for 16-bit UUIDs
+                    if (stored->uuidLength == 2) {
+                        uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                        const char *name = btGetCharacteristicName(uuid16);
+                        if (name) {
+                            strncpy(stored->name, name, sizeof(stored->name) - 1);
+                        }
+                    }
+                    
+                    gGattCharacteristicCount++;
+                }
+            }
+            uCxEnd(&gUcxHandle);
+        }
+        printf("Found %d characteristics.\n\n", gGattCharacteristicCount);
+    }
+    
+    // Show discovered characteristics if available
+    int charHandle = -1;
+    if (gGattCharacteristicCount > 0) {
+        printf("\nDiscovered characteristics:\n");
+        for (int i = 0; i < gGattCharacteristicCount; i++) {
+            if (gGattCharacteristics[i].connHandle == connHandle) {
+                GattCharacteristic_t *ch = &gGattCharacteristics[i];
+                
+                // Show index and handle
+                printf("  [%d] Handle=0x%04X", i, ch->valueHandle);
+                
+                // Show UUID
+                printf(", UUID=");
+                for (int j = 0; j < ch->uuidLength; j++) {
+                    printf("%02X", ch->uuid[j]);
+                }
+                
+                // Show friendly name if available
+                if (ch->name[0] != '\0') {
+                    printf(" (%s)", ch->name);
+                }
+                
+                // Show expected unit if available
+                if (ch->uuidLength == 2) {
+                    uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
+                    uint16_t unitUuid = getExpectedUnitForCharacteristic(uuid16);
+                    if (unitUuid != 0) {
+                        const char *unitSymbol = btGetUnitSymbol(unitUuid);
+                        if (unitSymbol && unitSymbol[0] != '\0') {
+                            printf(" [Unit: %s]", unitSymbol);
+                        }
+                    }
+                }
+                
+                // Show properties
+                printf("\n      Props: ");
+                uint8_t props = ch->properties;
+                if (props & 0x02) printf("Read ");
+                if (props & 0x04) printf("WriteWithoutResponse ");
+                if (props & 0x08) printf("Write ");
+                if (props & 0x10) printf("Notify ");
+                if (props & 0x20) printf("Indicate ");
+                printf("\n");
+            }
+        }
+        
+        // Prompt with default option
+        if (gLastCharacteristicIndex >= 0 && gLastCharacteristicIndex < gGattCharacteristicCount) {
+            printf("\nEnter characteristic [0-%d] (default: %d): ", 
+                   gGattCharacteristicCount - 1, gLastCharacteristicIndex);
+        } else {
+            printf("\nEnter characteristic index [0-%d]: ", gGattCharacteristicCount - 1);
+        }
+        
+        char input[32];
+        if (fgets(input, sizeof(input), stdin)) {
+            // Remove newline
+            input[strcspn(input, "\n")] = '\0';
+            
+            if (strlen(input) == 0 && gLastCharacteristicIndex >= 0) {
+                // Use default (last used)
+                charHandle = gGattCharacteristics[gLastCharacteristicIndex].valueHandle;
+                printf("Using characteristic %d (handle 0x%04X)\n", 
+                       gLastCharacteristicIndex, charHandle);
+            } else {
+                // Parse as index
+                int charIndex = atoi(input);
+                if (charIndex >= 0 && charIndex < gGattCharacteristicCount &&
+                    gGattCharacteristics[charIndex].connHandle == connHandle) {
+                    charHandle = gGattCharacteristics[charIndex].valueHandle;
+                    gLastCharacteristicIndex = charIndex;  // Remember this selection
+                    printf("Selected characteristic %d (handle 0x%04X)\n", charIndex, charHandle);
+                } else {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid characteristic index: %d", charIndex);
+                    return;
+                }
+            }
+        }
+    } else {
+        // No characteristics discovered, ask for handle directly
+        printf("No characteristics discovered yet. Please discover characteristics first (option 2).\n");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Reading characteristic handle 0x%04X...", charHandle);
     
     // Call GATT read characteristic command
     uByteArray_t data;
@@ -2226,11 +2947,48 @@ static void gattClientReadCharacteristic(void)
     int32_t result = uCxEnd(&gUcxHandle);
     
     if (success && result == 0) {
-        printf("  Read %zu bytes: ", data.length);
+        printf("  Read %d bytes: ", data.length);
         for (int i = 0; i < data.length; i++) {
-            printf("%02X", data.pData[i]);
+            printf("%02X ", data.pData[i]);
         }
         printf("\n");
+        
+        // Find the characteristic to get its UUID and check for units
+        uint16_t charUuid = 0;
+        const char *unitSymbol = NULL;
+        for (int i = 0; i < gGattCharacteristicCount; i++) {
+            if (gGattCharacteristics[i].valueHandle == charHandle) {
+                if (gGattCharacteristics[i].uuidLength == 2) {
+                    charUuid = (gGattCharacteristics[i].uuid[0] << 8) | gGattCharacteristics[i].uuid[1];
+                    uint16_t unitUuid = getExpectedUnitForCharacteristic(charUuid);
+                    if (unitUuid != 0) {
+                        unitSymbol = btGetUnitSymbol(unitUuid);
+                    }
+                }
+                break;
+            }
+        }
+        
+        // Try to interpret as numeric value with unit
+        if (data.length == 1 && unitSymbol && unitSymbol[0] != '\0') {
+            printf("  Value: %u %s\n", data.pData[0], unitSymbol);
+        } else if (data.length == 2 && unitSymbol && unitSymbol[0] != '\0') {
+            uint16_t value = data.pData[0] | (data.pData[1] << 8);
+            printf("  Value: %u %s\n", value, unitSymbol);
+        }
+        
+        // Try to interpret as text if printable
+        bool isPrintable = true;
+        for (int i = 0; i < data.length; i++) {
+            if (data.pData[i] < 32 || data.pData[i] > 126) {
+                isPrintable = false;
+                break;
+            }
+        }
+        if (isPrintable && data.length > 0) {
+            printf("  As text: %.*s\n", data.length, data.pData);
+        }
+        
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Read successful.");
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read characteristic (code %d)", result);
@@ -2246,18 +3004,184 @@ static void gattClientWriteCharacteristic(void)
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Write Characteristic ---");
-    printf("Enter connection handle: ");
     
-    int connHandle;
-    scanf("%d", &connHandle);
-    getchar(); // consume newline
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active GATT connection. Use Bluetooth menu to connect first.");
+        return;
+    }
     
-    printf("Enter characteristic handle: ");
-    int charHandle;
-    scanf("%d", &charHandle);
-    getchar(); // consume newline
+    printf("Using connection handle: %d\n", connHandle);
     
-    printf("Enter data to write (hex format, e.g., 01020304): ");
+    // Auto-discover characteristics if not already done
+    if (gGattCharacteristicCount == 0 || 
+        (gGattCharacteristicCount > 0 && gGattCharacteristics[0].connHandle != connHandle)) {
+        printf("\nNo characteristics discovered yet. Auto-discovering...\n");
+        
+        // First check if we have services
+        if (gGattServiceCount == 0 || 
+            (gGattServiceCount > 0 && gGattServices[0].connHandle != connHandle)) {
+            printf("Discovering services first...\n");
+            
+            // Discover services
+            uCxGattClientDiscoverPrimaryServicesBegin(&gUcxHandle, connHandle);
+            gGattServiceCount = 0;
+            
+            uCxGattClientDiscoverPrimaryServices_t service;
+            while (uCxGattClientDiscoverPrimaryServicesGetNext(&gUcxHandle, &service)) {
+                if (gGattServiceCount < MAX_GATT_SERVICES) {
+                    GattService_t *stored = &gGattServices[gGattServiceCount];
+                    stored->connHandle = connHandle;
+                    stored->startHandle = service.start_handle;
+                    stored->endHandle = service.end_handle;
+                    stored->uuidLength = service.uuid.length;
+                    memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
+                    stored->name[0] = '\0';
+                    
+                    // Get friendly name for 16-bit UUIDs
+                    if (stored->uuidLength == 2) {
+                        uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                        const char *name = btGetServiceName(uuid16);
+                        if (name) {
+                            strncpy(stored->name, name, sizeof(stored->name) - 1);
+                        }
+                    }
+                    
+                    gGattServiceCount++;
+                }
+            }
+            uCxEnd(&gUcxHandle);
+            printf("Found %d services.\n", gGattServiceCount);
+        }
+        
+        // Now discover characteristics for all services
+        printf("Discovering characteristics...\n");
+        gGattCharacteristicCount = 0;
+        
+        for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
+            if (gGattServices[svcIdx].connHandle != connHandle) continue;
+            
+            GattService_t *svc = &gGattServices[svcIdx];
+            uCxGattClientDiscoverServiceCharsBegin(&gUcxHandle, connHandle, svc->startHandle, svc->endHandle);
+            
+            uCxGattClientDiscoverServiceChars_t characteristic;
+            while (uCxGattClientDiscoverServiceCharsGetNext(&gUcxHandle, &characteristic)) {
+                if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
+                    GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
+                    stored->connHandle = connHandle;
+                    stored->serviceIndex = svcIdx;
+                    stored->valueHandle = characteristic.value_handle;
+                    stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
+                    stored->uuidLength = characteristic.uuid.length;
+                    memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
+                    stored->name[0] = '\0';
+                    
+                    // Get friendly name for 16-bit UUIDs
+                    if (stored->uuidLength == 2) {
+                        uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+                        const char *name = btGetCharacteristicName(uuid16);
+                        if (name) {
+                            strncpy(stored->name, name, sizeof(stored->name) - 1);
+                        }
+                    }
+                    
+                    gGattCharacteristicCount++;
+                }
+            }
+            uCxEnd(&gUcxHandle);
+        }
+        printf("Found %d characteristics.\n\n", gGattCharacteristicCount);
+    }
+    
+    // Show discovered characteristics if available
+    int charHandle = -1;
+    if (gGattCharacteristicCount > 0) {
+        printf("\nDiscovered characteristics:\n");
+        for (int i = 0; i < gGattCharacteristicCount; i++) {
+            if (gGattCharacteristics[i].connHandle == connHandle) {
+                GattCharacteristic_t *ch = &gGattCharacteristics[i];
+                
+                // Show index and handle
+                printf("  [%d] Handle=0x%04X", i, ch->valueHandle);
+                
+                // Show UUID
+                printf(", UUID=");
+                for (int j = 0; j < ch->uuidLength; j++) {
+                    printf("%02X", ch->uuid[j]);
+                }
+                
+                // Show friendly name if available
+                if (ch->name[0] != '\0') {
+                    printf(" (%s)", ch->name);
+                }
+                
+                // Show expected unit if available
+                if (ch->uuidLength == 2) {
+                    uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
+                    uint16_t unitUuid = getExpectedUnitForCharacteristic(uuid16);
+                    if (unitUuid != 0) {
+                        const char *unitSymbol = btGetUnitSymbol(unitUuid);
+                        if (unitSymbol && unitSymbol[0] != '\0') {
+                            printf(" [Unit: %s]", unitSymbol);
+                        }
+                    }
+                }
+                
+                // Show properties (highlight writable ones)
+                printf("\n      Props: ");
+                uint8_t props = ch->properties;
+                if (props & 0x02) printf("Read ");
+                if (props & 0x04) printf("WriteWithoutResponse ");
+                if (props & 0x08) printf("Write ");
+                if (props & 0x10) printf("Notify ");
+                if (props & 0x20) printf("Indicate ");
+                printf("\n");
+            }
+        }
+        
+        // Prompt with default option
+        if (gLastCharacteristicIndex >= 0 && gLastCharacteristicIndex < gGattCharacteristicCount) {
+            printf("\nEnter characteristic [0-%d] (default: %d): ", 
+                   gGattCharacteristicCount - 1, gLastCharacteristicIndex);
+        } else {
+            printf("\nEnter characteristic index [0-%d]: ", gGattCharacteristicCount - 1);
+        }
+        
+        char input[32];
+        if (fgets(input, sizeof(input), stdin)) {
+            // Remove newline
+            input[strcspn(input, "\n")] = '\0';
+            
+            if (strlen(input) == 0 && gLastCharacteristicIndex >= 0) {
+                // Use default (last used)
+                charHandle = gGattCharacteristics[gLastCharacteristicIndex].valueHandle;
+                printf("Using characteristic %d (handle 0x%04X)\n", 
+                       gLastCharacteristicIndex, charHandle);
+            } else {
+                // Parse as index
+                int charIndex = atoi(input);
+                if (charIndex >= 0 && charIndex < gGattCharacteristicCount &&
+                    gGattCharacteristics[charIndex].connHandle == connHandle) {
+                    charHandle = gGattCharacteristics[charIndex].valueHandle;
+                    gLastCharacteristicIndex = charIndex;  // Remember this selection
+                    printf("Selected characteristic %d (handle 0x%04X)\n", charIndex, charHandle);
+                } else {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid characteristic index: %d", charIndex);
+                    return;
+                }
+            }
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read input");
+            return;
+        }
+    } else {
+        // No characteristics discovered, ask for handle directly
+        printf("No characteristics discovered yet. Please discover characteristics first (option 2).\n");
+        return;
+    }
+    
+    printf("\nEnter data to write (hex format, e.g., 01020304): ");
     char hexInput[MAX_DATA_BUFFER * 2 + 1];
     if (fgets(hexInput, sizeof(hexInput), stdin) == NULL) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to read input");
@@ -3094,7 +4018,11 @@ static void printMenu(void)
             
         case MENU_GATT_CLIENT:
             printf("--- GATT Client Menu ---\n");
-            printf("  NOTE: Requires active Bluetooth connection!\n");
+            if (gCurrentGattConnHandle != -1) {
+                printf("  Current connection handle: %d\n", gCurrentGattConnHandle);
+            } else {
+                printf("  NOTE: No active connection! Use Bluetooth menu to connect.\n");
+            }
             printf("  [1] Discover services\n");
             printf("  [2] Discover characteristics\n");
             printf("  [3] Read characteristic\n");
@@ -3502,6 +4430,8 @@ static void handleUserInput(void)
                     gMenuState = MENU_SPS;
                     break;
                 case 2:
+                    bluetoothSyncConnections();  // Sync BT connections first
+                    syncGattConnection();        // Then sync GATT connection handle
                     gMenuState = MENU_GATT_CLIENT;
                     break;
                 case 3:
@@ -3545,7 +4475,7 @@ static void handleUserInput(void)
                     gattClientDiscoverServices();
                     break;
                 case 2:
-                    printf("Discover characteristics - not yet implemented\n");
+                    gattClientDiscoverCharacteristics();
                     break;
                 case 3:
                     gattClientReadCharacteristic();
