@@ -274,7 +274,7 @@ if !NEED_BUILD! EQU 1 (
     echo New executable built:
     for %%F in ("!EXE_PATH!") do echo   Build date: %%~tF
 ) else (
-    echo   Skipping build (executable is current)
+    echo   Skipping build - executable is current
 )
 
 REM Copy FTDI DLL if needed
