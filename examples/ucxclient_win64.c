@@ -74,10 +74,10 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Disable MSVC warnings for auto-generated UCX API headers
 // C4200: zero-sized array in struct (valid C99/C11 feature)
 // C4201: nameless struct/union (valid C11 feature)
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4200 4201)
-#endif
+//#ifdef _MSC_VER
+//#pragma warning(push)
+//#pragma warning(disable: 4200 4201)
+//#endif
 
 // Include ucxclient headers
 #include "u_cx_at_client.h"
@@ -90,6 +90,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_wifi.h"
 #include "u_cx_socket.h"
 #include "u_cx_mqtt.h"
+#include "u_cx_http.h"
+#include "u_cx_network_time.h"
 #include "u_cx_security.h"
 #include "u_cx_diagnostics.h"
 #include "u_cx_gatt_client.h"
@@ -5596,6 +5598,721 @@ static void mqttMenu(void)
     gMenuState = MENU_MQTT;
 }
 
+// ----------------------------------------------------------------
+// Wi-Fi Connectivity Check Helper
+// ----------------------------------------------------------------
+
+// Check Wi-Fi connection status, IP address, signal strength, and internet connectivity
+// Returns: true if all checks pass, false otherwise
+static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
+{
+    int32_t err;
+    
+    if (verbose) {
+        printf("Checking Wi-Fi connectivity...\n");
+    }
+    
+    // Step 1: Check Wi-Fi connection status
+    uCxWifiStationStatus_t wifiStatus;
+    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &wifiStatus)) {
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
+            if (wifiStatus.rspWifiStatusIdInt.int_val != 2) {  // 2 = Connected
+                printf("ERROR: Wi-Fi is not connected!\n");
+                printf("Please connect to Wi-Fi first using the [w] Wi-Fi menu.\n");
+                uCxEnd(&gUcxHandle);
+                return false;
+            }
+            if (verbose) {
+                printf("✓ Wi-Fi is connected\n");
+            }
+        } else {
+            printf("WARNING: Unexpected Wi-Fi status response type\n");
+        }
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("ERROR: Failed to check Wi-Fi connection status\n");
+        return false;
+    }
+    
+    // Step 2: Check RSSI (signal strength)
+    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &wifiStatus)) {
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
+            int32_t rssi = wifiStatus.rspWifiStatusIdInt.int_val;
+            if (rssi == -32768) {
+                printf("ERROR: Not connected to AP (RSSI unavailable)\n");
+                uCxEnd(&gUcxHandle);
+                return false;
+            }
+            
+            if (rssi < -90) {
+                printf("WARNING: Very weak Wi-Fi signal (RSSI: %d dBm)\n", rssi);
+                printf("         Signal quality may be insufficient for reliable operation.\n");
+            } else if (verbose) {
+                printf("✓ Signal strength: %d dBm", rssi);
+                if (rssi >= -50) {
+                    printf(" (Excellent)\n");
+                } else if (rssi >= -60) {
+                    printf(" (Very Good)\n");
+                } else if (rssi >= -70) {
+                    printf(" (Good)\n");
+                } else if (rssi >= -80) {
+                    printf(" (Fair)\n");
+                } else {
+                    printf(" (Weak)\n");
+                }
+            }
+        }
+        uCxEnd(&gUcxHandle);
+    }
+    
+    // Step 3: Check IP address using AT+UWSNST?
+    uCxWifiStationListNetworkStatus_t networkStatus;
+    bool ipFound = false;
+    char ipStr[50] = {0};
+    
+    uCxWifiStationListNetworkStatusBegin(&gUcxHandle);
+    while (uCxWifiStationListNetworkStatusGetNext(&gUcxHandle, &networkStatus)) {
+        // Status ID 0 = IPv4 address
+        if (networkStatus.status_id == 0 && networkStatus.status_val.type == U_SOCK_ADDRESS_TYPE_V4) {
+            uint32_t ipv4 = networkStatus.status_val.address.ipv4;
+            snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", 
+                     (ipv4 >> 24) & 0xFF,
+                     (ipv4 >> 16) & 0xFF,
+                     (ipv4 >> 8) & 0xFF,
+                     ipv4 & 0xFF);
+            
+            if (ipv4 == 0) {
+                printf("ERROR: No valid IP address assigned (0.0.0.0)\n");
+                printf("Please ensure Wi-Fi is properly connected with DHCP.\n");
+                return false;
+            }
+            if (verbose) {
+                printf("✓ IP address: %s\n", ipStr);
+            }
+            ipFound = true;
+            break;
+        }
+    }
+    
+    if (!ipFound) {
+        printf("ERROR: Could not read IP address from network status\n");
+        printf("Please ensure Wi-Fi is connected with valid IP configuration.\n");
+        return false;
+    }
+    
+    // Step 4: Check internet connectivity (optional ping test)
+    if (checkInternet) {
+        if (verbose) {
+            printf("Checking internet connectivity (ping 8.8.8.8)...\n");
+        }
+        
+        // Reset ping counters
+        gPingSuccess = 0;
+        gPingFailed = 0;
+        gPingAvgTime = 0;
+        
+        // Send ping to Google DNS (1 ping)
+        err = uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 1);
+        if (err == 0) {
+            // Wait for ping complete URC event (max 5 seconds for 1 ping)
+            if (waitEvent(URC_FLAG_PING_COMPLETE, 5)) {
+                if (gPingSuccess > 0) {
+                    if (verbose) {
+                        printf("✓ Internet connectivity OK: %d ms\n", gPingAvgTime);
+                    }
+                } else {
+                    printf("WARNING: Internet ping failed (no response from 8.8.8.8)\n");
+                    printf("         Local network OK, but internet may not be reachable.\n");
+                    // Don't return false - allow operation to continue
+                }
+            } else {
+                printf("WARNING: Internet connectivity test timeout\n");
+                printf("         Local network OK, but ping response not received.\n");
+                // Don't return false - allow operation to continue
+            }
+        } else {
+            printf("WARNING: Failed to send internet connectivity test (ping 8.8.8.8)\n");
+            printf("         Local network OK, but could not initiate ping test.\n");
+            printf("         Error code: %d\n", err);
+            // Don't return false - allow operation to continue
+        }
+    }
+    
+    if (verbose) {
+        printf("\n");
+    }
+    
+    return true;
+}
+
+// ----------------------------------------------------------------
+// HTTP Helper Functions
+// ----------------------------------------------------------------
+
+static bool saveResponseToFile(const char *filename, const char *data, int32_t dataLen, bool append)
+{
+    FILE *fp = fopen(filename, append ? "ab" : "wb");
+    if (!fp) {
+        printf("ERROR: Failed to open file '%s' for writing\n", filename);
+        return false;
+    }
+    
+    size_t written = fwrite(data, 1, dataLen, fp);
+    fclose(fp);
+    
+    if (written != (size_t)dataLen) {
+        printf("ERROR: Failed to write complete data to file\n");
+        return false;
+    }
+    
+    return true;
+}
+
+static int32_t readPostDataFromFile(const char *filename, char *buffer, int32_t maxLen)
+{
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) {
+        printf("ERROR: Failed to open file '%s' for reading\n", filename);
+        return -1;
+    }
+    
+    // Get file size
+    fseek(fp, 0, SEEK_END);
+    long fileSize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    if (fileSize > maxLen) {
+        printf("WARNING: File size (%ld bytes) exceeds buffer limit (%d bytes)\n", fileSize, maxLen);
+        printf("         Only first %d bytes will be sent\n", maxLen);
+        fileSize = maxLen;
+    }
+    
+    size_t bytesRead = fread(buffer, 1, fileSize, fp);
+    fclose(fp);
+    
+    return (int32_t)bytesRead;
+}
+
+// HTTP GET Request Example
+static void httpGetExample(void)
+{
+    char host[256];
+    char path[512];
+    char filename[256];
+    char response[2048];
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("=== HTTP GET REQUEST ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Enter hostname (e.g., httpbin.org): ");
+    if (!fgets(host, sizeof(host), stdin)) {
+        printf("ERROR: Failed to read hostname\n");
+        return;
+    }
+    host[strcspn(host, "\r\n")] = 0;  // Remove newline
+    
+    printf("Enter path (e.g., /get): ");
+    if (!fgets(path, sizeof(path), stdin)) {
+        printf("ERROR: Failed to read path\n");
+        return;
+    }
+    path[strcspn(path, "\r\n")] = 0;  // Remove newline
+    
+    printf("Save response to file (leave empty for display only): ");
+    if (!fgets(filename, sizeof(filename), stdin)) {
+        printf("ERROR: Failed to read filename\n");
+        return;
+    }
+    filename[strcspn(filename, "\r\n")] = 0;  // Remove newline
+    
+    bool saveToFile = (strlen(filename) > 0);
+    
+    printf("\n");
+    printf("Configuring HTTP connection...\n");
+    
+    // Step 1: Set connection parameters
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        return;
+    }
+    printf("✓ Connection configured for %s\n", host);
+    
+    // Step 2: Set request path
+    err = uCxHttpHttpSetPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        return;
+    }
+    printf("✓ Request path set to %s\n", path);
+    
+    // Step 3: Send GET request
+    printf("\n");
+    printf("Sending GET request to http://%s%s...\n", host, path);
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        return;
+    }
+    printf("✓ GET request sent successfully\n");
+    
+    // Step 4: Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    uCxHttpHeaderGet_t headerResp;
+    if (uCxHttpHeaderGet1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Step 5: Read response body
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    if (saveToFile) {
+        // Remove existing file
+        remove(filename);
+    }
+    
+    int32_t totalBytes = 0;
+    int32_t chunkSize = sizeof(response) - 1;
+    bool moreData = true;
+    
+    while (moreData) {
+        uCxHttpGetHttpBodyString_t bodyResp;
+        
+        if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
+            int32_t bytesReceived = bodyResp.data_length;
+            totalBytes += bytesReceived;
+            
+            if (saveToFile) {
+                // Append to file
+                if (!saveResponseToFile(filename, (const char *)bodyResp.byte_array_data.pData, 
+                                       bytesReceived, totalBytes > bytesReceived)) {
+                    uCxEnd(&gUcxHandle);
+                    return;
+                }
+            } else {
+                // Display to console
+                fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
+            }
+            
+            moreData = (bodyResp.more_to_read != 0);
+            uCxEnd(&gUcxHandle);
+            
+            if (moreData) {
+                printf(".");  // Progress indicator
+                fflush(stdout);
+            }
+        } else {
+            printf("\nERROR: Failed to read response body\n");
+            break;
+        }
+    }
+    
+    printf("\n");
+    printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    if (saveToFile) {
+        printf("✓ Response saved to '%s'\n", filename);
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+// HTTP POST Request Example
+static void httpPostExample(void)
+{
+    char host[256];
+    char path[512];
+    char dataSource[256];
+    char postData[4096];
+    char response[2048];
+    int32_t sessionId = 0;
+    int32_t err;
+    int32_t dataLen = 0;
+    
+    printf("\n");
+    printf("=== HTTP POST REQUEST ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Enter hostname (e.g., httpbin.org): ");
+    if (!fgets(host, sizeof(host), stdin)) {
+        printf("ERROR: Failed to read hostname\n");
+        return;
+    }
+    host[strcspn(host, "\r\n")] = 0;  // Remove newline
+    
+    printf("Enter path (e.g., /post): ");
+    if (!fgets(path, sizeof(path), stdin)) {
+        printf("ERROR: Failed to read path\n");
+        return;
+    }
+    path[strcspn(path, "\r\n")] = 0;  // Remove newline
+    
+    printf("\n");
+    printf("Data source:\n");
+    printf("  [1] Enter text manually\n");
+    printf("  [2] Read from file\n");
+    printf("Choice: ");
+    if (!fgets(dataSource, sizeof(dataSource), stdin)) {
+        printf("ERROR: Failed to read choice\n");
+        return;
+    }
+    
+    if (dataSource[0] == '1') {
+        // Manual text entry
+        printf("\n");
+        printf("Enter POST data (single line): ");
+        if (!fgets(postData, sizeof(postData), stdin)) {
+            printf("ERROR: Failed to read POST data\n");
+            return;
+        }
+        postData[strcspn(postData, "\r\n")] = 0;  // Remove newline
+        dataLen = (int32_t)strlen(postData);
+    } else if (dataSource[0] == '2') {
+        // Read from file
+        char filename[256];
+        printf("\n");
+        printf("Enter filename to read: ");
+        if (!fgets(filename, sizeof(filename), stdin)) {
+            printf("ERROR: Failed to read filename\n");
+            return;
+        }
+        filename[strcspn(filename, "\r\n")] = 0;  // Remove newline
+        
+        dataLen = readPostDataFromFile(filename, postData, sizeof(postData));
+        if (dataLen < 0) {
+            return;
+        }
+        printf("✓ Read %d bytes from '%s'\n", dataLen, filename);
+    } else {
+        printf("ERROR: Invalid choice\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("Configuring HTTP connection...\n");
+    
+    // Step 1: Set connection parameters
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        return;
+    }
+    printf("✓ Connection configured for %s\n", host);
+    
+    // Step 2: Set request path
+    err = uCxHttpHttpSetPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        return;
+    }
+    printf("✓ Request path set to %s\n", path);
+    
+    // Step 3: Send POST request with data
+    printf("\n");
+    printf("Sending POST request to http://%s%s...\n", host, path);
+    printf("POST data: %d bytes\n", dataLen);
+    
+    err = uCxHttpPostRequestString(&gUcxHandle, sessionId, postData, dataLen);
+    if (err < 0) {
+        printf("ERROR: POST request failed (error: %d)\n", err);
+        return;
+    }
+    printf("✓ POST request sent successfully\n");
+    
+    // Step 4: Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    uCxHttpHeaderGet_t headerResp;
+    if (uCxHttpHeaderGet1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Step 5: Read response body
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    int32_t totalBytes = 0;
+    int32_t chunkSize = sizeof(response) - 1;
+    bool moreData = true;
+    
+    while (moreData) {
+        uCxHttpGetHttpBodyString_t bodyResp;
+        
+        if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
+            int32_t bytesReceived = bodyResp.data_length;
+            totalBytes += bytesReceived;
+            
+            // Display response to console
+            fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
+            
+            moreData = (bodyResp.more_to_read != 0);
+            uCxEnd(&gUcxHandle);
+            
+            if (moreData) {
+                printf(".");  // Progress indicator
+                fflush(stdout);
+            }
+        } else {
+            printf("\nERROR: Failed to read response body\n");
+            break;
+        }
+    }
+    
+    printf("\n");
+    printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+// ----------------------------------------------------------------
+// NTP (Network Time Protocol) Helper Functions
+// ----------------------------------------------------------------
+
+// Convert Unix timestamp (seconds since Jan 1, 1970) to human-readable format
+static void unixTimeToString(uint64_t unixTime, char *buffer, size_t bufferSize)
+{
+    time_t rawTime = (time_t)unixTime;
+    struct tm *timeInfo;
+    
+    // Convert to local time
+    timeInfo = localtime(&rawTime);
+    
+    if (timeInfo != NULL) {
+        // Format: "YYYY-MM-DD HH:MM:SS (Day of Week)"
+        strftime(buffer, bufferSize, "%Y-%m-%d %H:%M:%S (%A)", timeInfo);
+    } else {
+        snprintf(buffer, bufferSize, "Invalid time");
+    }
+}
+
+// NTP Time Sync Example
+static void ntpTimeExample(void)
+{
+    int32_t err;
+    uEnable_t ntpEnabled;
+    char choice[10];
+    char serverAddress[256];
+    int32_t serverId = 0;
+    
+    printf("\n");
+    printf("=== NETWORK TIME (NTP) SYNCHRONIZATION ===\n");
+    printf("\n");
+    
+    // Popular NTP servers
+    const char *popularServers[] = {
+        "time.google.com",       // Google Public NTP
+        "time.cloudflare.com",   // Cloudflare NTP
+        "pool.ntp.org",          // NTP Pool Project
+        "time.nist.gov",         // NIST Internet Time Service
+        "time.windows.com",      // Microsoft NTP
+        "0.pool.ntp.org",        // Additional pool servers
+        "1.pool.ntp.org",
+        "2.pool.ntp.org"
+    };
+    int numServers = sizeof(popularServers) / sizeof(popularServers[0]);
+    
+    // Check Wi-Fi connectivity (connection, IP, RSSI, internet)
+    if (!checkWiFiConnectivity(false, true)) {  // No ping test, verbose output
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Check current NTP status
+    printf("\n");
+    err = uCxNetworkTimeGetNtpClientStatus(&gUcxHandle, &ntpEnabled);
+    if (err == 0) {
+        printf("Current NTP status: %s\n", (ntpEnabled == U_ENABLE_ENABLE_MANUAL || ntpEnabled == U_ENABLE_ENABLE_AUTO) ? "ENABLED" : "DISABLED");
+    } else {
+        printf("WARNING: Failed to read NTP status (error: %d)\n", err);
+    }
+    
+    printf("\n");
+    printf("Popular NTP servers:\n");
+    for (int i = 0; i < numServers; i++) {
+        printf("  [%d] %s\n", i + 1, popularServers[i]);
+    }
+    printf("  [9] Enter custom NTP server\n");
+    printf("\n");
+    printf("Choice (or 0 to cancel): ");
+    
+    if (!fgets(choice, sizeof(choice), stdin)) {
+        printf("ERROR: Failed to read choice\n");
+        return;
+    }
+    
+    int selection = atoi(choice);
+    
+    if (selection == 0) {
+        printf("Cancelled.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    } else if (selection >= 1 && selection <= numServers) {
+        strncpy(serverAddress, popularServers[selection - 1], sizeof(serverAddress) - 1);
+        serverAddress[sizeof(serverAddress) - 1] = '\0';
+    } else if (selection == 9) {
+        printf("Enter NTP server address: ");
+        if (!fgets(serverAddress, sizeof(serverAddress), stdin)) {
+            printf("ERROR: Failed to read server address\n");
+            return;
+        }
+        serverAddress[strcspn(serverAddress, "\r\n")] = 0;  // Remove newline
+    } else {
+        printf("ERROR: Invalid choice\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("Configuring NTP...\n");
+    
+    // Step 3: Enable NTP client if not already enabled
+    if (ntpEnabled != U_ENABLE_ENABLE_MANUAL && ntpEnabled != U_ENABLE_ENABLE_AUTO) {
+        printf("Enabling NTP client...\n");
+        err = uCxNetworkTimeSetNtpClientStatus(&gUcxHandle, U_ENABLE_ENABLE_MANUAL);
+        if (err < 0) {
+            printf("ERROR: Failed to enable NTP client (error: %d)\n", err);
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+        printf("✓ NTP client enabled\n");
+    }
+    
+    // Step 4: Configure NTP server
+    printf("Setting NTP server to: %s\n", serverAddress);
+    err = uCxNetworkTimeSetNtpServer(&gUcxHandle, serverId, serverAddress);
+    if (err < 0) {
+        printf("ERROR: Failed to set NTP server (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ NTP server configured\n");
+    
+    // Step 5: Wait for synchronization (NTP sync can take a few seconds)
+    printf("\n");
+    printf("Waiting for NTP synchronization");
+    for (int i = 0; i < 5; i++) {
+        printf(".");
+        fflush(stdout);
+        Sleep(1000);  // Wait 1 second
+    }
+    printf("\n");
+    
+    // Step 6: Read the synchronized time
+    printf("\n");
+    printf("Reading system time...\n");
+    uByteArray_t unixTimeData;
+    if (uCxSystemGetUnixTimeBegin(&gUcxHandle, &unixTimeData)) {
+        // Convert byte array to uint64_t
+        // The time is stored as hex bytes (little-endian or big-endian depending on module)
+        uint64_t unixTime = 0;
+        
+        if (unixTimeData.length >= 4) {
+            // Assume 4-byte (32-bit) or 8-byte (64-bit) Unix timestamp
+            // Most systems use little-endian format
+            for (int i = 0; i < unixTimeData.length && i < 8; i++) {
+                unixTime |= ((uint64_t)unixTimeData.pData[i]) << (i * 8);
+            }
+            
+            char timeString[128];
+            unixTimeToString(unixTime, timeString, sizeof(timeString));
+            
+            printf("─────────────────────────────────────────────────\n");
+            printf("NTP Server:    %s\n", serverAddress);
+            printf("Unix Time:     %llu seconds\n", unixTime);
+            printf("Local Time:    %s\n", timeString);
+            printf("─────────────────────────────────────────────────\n");
+            
+            // Also show UTC time
+            time_t rawTime = (time_t)unixTime;
+            struct tm *utcTime = gmtime(&rawTime);
+            if (utcTime != NULL) {
+                char utcString[128];
+                strftime(utcString, sizeof(utcString), "%Y-%m-%d %H:%M:%S UTC", utcTime);
+                printf("UTC Time:      %s\n", utcString);
+                printf("─────────────────────────────────────────────────\n");
+            }
+        } else {
+            printf("WARNING: Unexpected time data length: %zu bytes\n", unixTimeData.length);
+            printf("Raw data: ");
+            for (int i = 0; i < unixTimeData.length; i++) {
+                printf("%02X ", unixTimeData.pData[i]);
+            }
+            printf("\n");
+        }
+        
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("ERROR: Failed to read system time\n");
+        printf("NOTE: Make sure Wi-Fi is connected and NTP server is reachable\n");
+    }
+    
+    // Step 7: Show configured NTP servers
+    printf("\n");
+    printf("Configured NTP servers:\n");
+    uCxNetworkTimeGetNtpServer_t ntpServerInfo;
+    if (uCxNetworkTimeGetNtpServerBegin(&gUcxHandle, &ntpServerInfo)) {
+        printf("  Server %d: %s", ntpServerInfo.ntp_server_id, ntpServerInfo.ntp_server_address);
+        if (ntpServerInfo.reachable) {
+            printf(" (REACHABLE ✓)");
+        } else {
+            printf(" (NOT REACHABLE ✗)");
+        }
+        printf("\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("  (No servers configured or query failed)\n");
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
 static void httpMenu(void)
 {
     gMenuState = MENU_HTTP;
@@ -5759,19 +6476,25 @@ static void printWelcomeGuide(void)
     printf("\n");
     printf("QUICK START:\n");
     printf("  1. Connect your module via USB\n");
-    printf("  2. Use menu option [1] to connect to the device\n");
-    printf("  3. Try [3] AT test to verify communication\n");
-    printf("  4. Try [4] ATI9 to see device information\n");
+    printf("  2. Use menu option [c] to connect to the device\n");
+    printf("  3. Try AT command test to verify communication\n");
+    printf("  4. Try device info to see model and firmware version\n");
     printf("\n");
-    printf("COMMON OPERATIONS:\n");
-    printf("  - Wi-Fi: Use [8] Wi-Fi (scan, connect, disconnect, status)\n");
-    printf("  - Bluetooth: Use [6] Bluetooth (scan, connect, disconnect, status)\n");
-    printf("  - Sockets: Use [9] Wi-Fi functions for TCP/UDP (requires Wi-Fi)\n");
-    printf("  - SPS: Use [7] Bluetooth functions for Serial Port Service\n");
+    printf("BLUETOOTH OPERATIONS (NORA-B26 and NORA-W36):\n");
+    printf("  - [b] Bluetooth - Scan, connect, pair, status\n");
+    printf("  - [s] SPS - Serial Port Service data transfer\n");
+    printf("  - [g] GATT - Client/Server operations\n");
+    printf("  - [e] GATT Examples - Heartbeat, HID Keyboard\n");
+    printf("\n");
+    printf("WI-FI OPERATIONS (NORA-W36 only):\n");
+    printf("  - [w] Wi-Fi - Scan, connect, disconnect, status\n");
+    printf("  - [n] Network - Sockets, MQTT, HTTP\n");
+    printf("  - [p] HTTP Examples - GET/POST requests\n");
+    printf("  - [y] NTP Examples - Time synchronization\n");
     printf("\n");
     printf("TIPS:\n");
     printf("  - Type [h] anytime for help\n");
-    printf("  - Type [q] to quit from any menu\n");
+    printf("  - Type [0] to return to main menu\n");
     printf("  - Settings are saved automatically after successful operations\n");
     printf("  - Use [l] to toggle AT command logging on/off\n");
     printf("\n");
@@ -5786,93 +6509,85 @@ static void printHelp(void)
     printf("                    HELP & TIPS                          \n");
     printf("=========================================================\n");
     printf("\n");
-    printf("CONNECTION:\n");
-    printf("  [1] Connect      - Select and connect to your UCX device\n");
-    printf("  [2] Disconnect   - Close connection to device\n");
-    printf("  [q] Quit         - Exit from any menu\n");
+    printf("QUICK ACTIONS:\n");
+    printf("  [c] Connect      - Select and connect to your UCX device\n");
+    printf("  [d] Disconnect   - Close connection to device\n");
+    printf("  [i] Device info  - Show model and firmware version\n");
+    printf("  [r] Reboot       - Restart the module\n");
+    printf("  [a] AT terminal  - Send custom AT commands\n");
+    printf("  AT test          - Test basic communication\n");
     printf("\n");
-    printf("BASIC OPERATIONS:\n");
-    printf("  [3] AT test      - Test basic communication with device\n");
-    printf("  [4] ATI9         - Show device model and firmware version\n");
-    printf("  [5] Reboot       - Restart the module\n");
-    printf("\n");
-    printf("BLUETOOTH OPERATIONS:\n");
-    printf("  [6] Bluetooth (scan, connect, disconnect, status)\n");
+    printf("BLUETOOTH FEATURES (NORA-B26 and NORA-W36):\n");
+    printf("  [b] Bluetooth - Scan, connect, pair, disconnect, status\n");
     printf("      - Scan for nearby Bluetooth devices\n");
-    printf("      - Connect to Bluetooth devices\n");
-    printf("      - Disconnect active connections\n");
-    printf("      - Show connection status\n");
-    printf("  [7] Bluetooth functions (SPS, GATT Client/Server)\n");
-    printf("      - Serial Port Service for data transfer\n");
-    printf("      - GATT Client/Server operations\n");
-    printf("  [8] GATT examples (Heartbeat, HID over GATT)\n");
-    printf("      - GATT Server Heartbeat example\n");
-    printf("      - HID over GATT (Keyboard, Media Control)\n");
-    printf("  NOTE: NORA-B26 is Bluetooth only, NORA-W36 has BT+Wi-Fi\n");
+    printf("      - Connect/disconnect devices\n");
+    printf("      - Configure pairing settings (security, IO capabilities)\n");
+    printf("      - Manage bonded devices\n");
+    printf("  [s] Serial Port Service (SPS)\n");
+    printf("      - Enable SPS for wireless serial data transfer\n");
+    printf("      - Send/receive data over Bluetooth\n");
+    printf("  [g] GATT Client/Server\n");
+    printf("      - GATT Client: Discover and interact with remote services\n");
+    printf("      - GATT Server: Host custom services and characteristics\n");
     printf("\n");
-    printf("WI-FI OPERATIONS:\n");
-    printf("  [9] Wi-Fi (scan, connect, disconnect, status)\n");
-    printf("      - Scan for Wi-Fi networks\n");
-    printf("      - Connect to Wi-Fi (SSID and password saved)\n");
-    printf("      - Disconnect from networks\n");
-    printf("      - Show connection status\n");
-    printf("  [w] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)\n");
-    printf("      - TCP/UDP sockets\n");
-    printf("      - MQTT publish/subscribe\n");
-    printf("      - HTTP client operations\n");
+    printf("Wi-Fi FEATURES (NORA-W36 only):\n");
+    printf("  [w] Wi-Fi - Scan, connect, disconnect, status\n");
+    printf("      - Scan for Wi-Fi networks with RSSI and security info\n");
+    printf("      - Connect to Wi-Fi (SSID and password are saved)\n");
+    printf("      - Show connection status and IP address\n");
+    printf("  [n] Network - Sockets, MQTT, HTTP\n");
+    printf("      - TCP/UDP sockets for client/server communication\n");
+    printf("      - MQTT publish/subscribe with QoS\n");
+    printf("      - HTTP client (GET/POST/PUT/DELETE)\n");
     printf("      - Security and TLS certificates\n");
-    printf("  NOTE: Only available on NORA-W36 modules\n");
     printf("\n");
-    printf("OTHER OPTIONS:\n");
+    printf("FIRMWARE:\n");
+    printf("  [f] Firmware update - Update module firmware via XMODEM\n");
+    printf("      - Upload new firmware files\n");
+    printf("      - Automatic XMODEM transfer protocol\n");
+    printf("      - Verify firmware after update\n");
+    printf("\n");
+    printf("EXAMPLES:\n");
+    printf("  [e] GATT Examples - Heartbeat service and HID keyboard\n");
+    printf("      - GATT Server Heartbeat: Send periodic notifications\n");
+    printf("      - HID over GATT: Bluetooth keyboard and media controls\n");
+    printf("  [p] HTTP Examples - REST API operations\n");
+    printf("      - HTTP GET request with optional file save\n");
+    printf("      - HTTP POST request with text or file data\n");
+    printf("      - Automatic Wi-Fi connectivity validation\n");
+    printf("  [y] NTP Examples - Network time synchronization\n");
+    printf("      - Sync time with popular NTP servers\n");
+    printf("      - Configure custom NTP server\n");
+    printf("      - Display synchronized system time\n");
+    printf("\n");
+    printf("TOOLS & SETTINGS:\n");
     printf("  [l] Toggle logging - Show/hide AT command traffic\n");
     printf("  [t] Toggle timestamps - Add timing info to logs\n");
-    printf("  [c] List API commands - Show all available UCX APIs\n");
-    printf("  [f] Firmware update - Update module firmware via XMODEM\n");
-    printf("\n");
-    printf("  [b] SPS menu - Bluetooth Serial Port Service\n");
-    printf("      - Enable SPS service\n");
-    printf("      - Connect to SPS over Bluetooth\n");
-    printf("      - Send and receive serial data\n");
-    printf("  REQUIRES: Bluetooth connection first!\n");
-    printf("\n");
-    printf("  [c] MQTT menu - Message Queue Telemetry Transport\n");
-    printf("      - Connect to MQTT brokers\n");
-    printf("      - Publish and subscribe to topics\n");
-    printf("      - QoS configuration\n");
-    printf("  REQUIRES: Active Wi-Fi connection first!\n");
-    printf("  STATUS: [IN PROGRESS]\n");
-    printf("\n");
-    printf("  [d] HTTP Client menu - REST API operations\n");
-    printf("      - HTTP GET/POST/PUT/DELETE requests\n");
-    printf("      - Custom headers and data\n");
-    printf("      - HTTPS/TLS support\n");
-    printf("  REQUIRES: Active Wi-Fi connection first!\n");
-    printf("  STATUS: [IN PROGRESS]\n");
-    printf("\n");
-    printf("SECURITY:\n");
-    printf("  [e] Security/TLS menu - Certificate management\n");
-    printf("      - Upload CA and client certificates\n");
-    printf("      - Manage private keys\n");
-    printf("      - Configure TLS settings\n");
-    printf("  STATUS: [IN PROGRESS]\n");
-    printf("\n");
-    printf("ADVANCED:\n");
-    printf("  [3] List APIs    - Show all available UCX API commands\n");
-    printf("  [f] Firmware     - Update module firmware via XMODEM\n");
-    printf("  [9] Toggle log   - Show/hide AT command traffic\n");
+    printf("  [m] List API commands - Show all available UCX APIs\n");
+    printf("  [h] Help - Show this help screen\n");
+    printf("  [0] Main menu - Return to main menu from submenus\n");
     printf("\n");
     printf("SAVED SETTINGS:\n");
     printf("  The app remembers:\n");
     printf("    - Last COM port used\n");
+    printf("    - Last device model (NORA-B26/NORA-W36)\n");
     printf("    - Last Wi-Fi SSID and password\n");
     printf("    - Last remote server address\n");
     printf("  Settings saved in: %s\n", gSettingsFilePath);
     printf("\n");
     printf("TROUBLESHOOTING:\n");
     printf("  - Can't connect? Check COM port with Device Manager\n");
-    printf("  - Wi-Fi not working? Use [8] -> [1] to check status\n");
-    printf("  - Socket errors? Ensure Wi-Fi is connected first\n");
-    printf("  - Module not responding? Try [6] to reboot it\n");
+    printf("  - Wi-Fi not working? Use [w] to check status and signal\n");
+    printf("  - HTTP/NTP errors? Ensure Wi-Fi is connected with valid IP\n");
+    printf("  - Module not responding? Try [r] to reboot it\n");
+    printf("  - Weak signal? Check RSSI in Wi-Fi status (> -90 dBm needed)\n");
+    printf("\n");
+    printf("CONNECTIVITY VALIDATION:\n");
+    printf("  HTTP and NTP examples automatically check:\n");
+    printf("    ✓ Wi-Fi connection status\n");
+    printf("    ✓ Signal strength (RSSI)\n");
+    printf("    ✓ IP address assignment\n");
+    printf("    ✓ Internet connectivity (ping 8.8.8.8)\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -5933,18 +6648,18 @@ static void printMenu(void)
                 } else {
                     printf("  [1]     Connect to UCX device\n");
                 }
-            } else {
                 printf("  [2]     Disconnect device\n");
+            } else {
+                printf("  [a]     AT command test\n");
                 printf("  [i]     Device information (ATI9)\n");
                 printf("  [r]     Reboot module\n");
                 printf("  [t]     AT Terminal (interactive)\n");
-                printf("  [a]     AT command test\n");
             }
             printf("\n");
             
             if (gConnected) {
-                // === WIRELESS FEATURES (only when connected) ===
-                printf("WIRELESS FEATURES\n");
+                // === BLUETOOTH FEATURES (only when connected) ===
+                printf("BLUETOOTH FEATURES\n");
                 
                 // Bluetooth
                 printf("  [b]     Bluetooth - Scan, connect, pair\n");
@@ -5954,13 +6669,16 @@ static void printMenu(void)
                 }
                 printf("  [s]     Serial Port Service (SPS)\n");
                 printf("  [g]     GATT Client/Server\n");
+                printf("\n");
                 
-                // Wi-Fi (only for W3x modules)
+                // === Wi-Fi FEATURES (only for W3x modules) ===
                 bool hasWiFi = gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL;
                 if (hasWiFi) {
+                    printf("Wi-Fi FEATURES\n");
                     printf("  [w]     Wi-Fi - Scan, connect, status\n");
                     printf("  [n]     Network - Sockets, MQTT, HTTP\n");
                 } else {
+                    printf("Wi-Fi FEATURES\n");
                     printf("  [w]     Wi-Fi - Not available on this device\n");
                 }
                 printf("\n");
@@ -5973,7 +6691,8 @@ static void printMenu(void)
                 // === EXAMPLES ===
                 printf("EXAMPLES\n");
                 printf("  [e]     GATT Examples (Heartbeat, HID)\n");
-                printf("  [p]     HTTP Examples (HTTP POST, GET)\n");
+                printf("  [p]     HTTP Examples (GET, POST)\n");
+                printf("  [y]     NTP Examples (Time Sync)\n");
                 printf("\n");
             }
             
@@ -6099,15 +6818,9 @@ static void printMenu(void)
             printf("==============================================================\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
-            printf("STATUS: Feature under development\n");
             printf("\n");
-            printf("Planned features:\n");
-            printf("  - HTTP GET requests\n");
-            printf("  - HTTP POST with data\n");
-            printf("  - HTTP PUT/DELETE methods\n");
-            printf("  - Custom headers\n");
-            printf("  - Response parsing\n");
-            printf("  - HTTPS/TLS support\n");
+            printf("  [1] HTTP GET request (with optional file save)\n");
+            printf("  [2] HTTP POST request (with text or file data)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -6350,7 +7063,9 @@ static void handleUserInput(void)
             } else if (firstChar == 'e') {
                 choice = 9;   // Examples (Heartbeat, HID)
             } else if (firstChar == 'p') {
-                choice = 15;  // HTTP Examples (HTTP POST, GET)
+                choice = 15;  // HTTP Examples (GET, POST)
+            } else if (firstChar == 'y') {
+                choice = 17;  // NTP Examples (Time Sync)
             } else if (firstChar == 'a') {
                 choice = 3;   // AT command test
             } else if (firstChar == 'i') {
@@ -6462,11 +7177,18 @@ static void handleUserInput(void)
                         gMenuState = MENU_GATT_EXAMPLES;
                     }
                     break;
-                case 15:  // HTTP Examples (HTTP POST, GET)
+                case 15:  // HTTP Examples (GET, POST)
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_HTTP;
+                    }
+                    break;
+                case 17:  // NTP Examples (Time Sync)
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        ntpTimeExample();
                     }
                     break;
                 case 23:  // Also accept 'w' or 'W' - Wi-Fi (scan, connect, disconnect, status)
@@ -6692,11 +7414,17 @@ static void handleUserInput(void)
             
         case MENU_HTTP:
             switch (choice) {
+                case 1:
+                    httpGetExample();
+                    break;
+                case 2:
+                    httpPostExample();
+                    break;
                 case 0:
-                    gMenuState = MENU_WIFI_FUNCTIONS;
+                    gMenuState = MENU_MAIN;
                     break;
                 default:
-                    printf("Feature in progress. Use [0] to return to Wi-Fi Functions menu.\n");
+                    printf("Invalid choice!\n");
                     break;
             }
             break;
