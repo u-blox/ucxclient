@@ -104,7 +104,7 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
   * @param[out] ppPayload: the pointer value will be set to the address of the payload buffer.
   * @return                the available payload space.
   */
-size_t uCxAtUrcQueueEnqueueGetPayloadPtr(uCxAtUrcQueue_t *pUrcQueue, uint8_t **ppPayload);
+uint16_t uCxAtUrcQueueEnqueueGetPayloadPtr(uCxAtUrcQueue_t *pUrcQueue, uint8_t **ppPayload);
 
 /**
   * @brief  Complete the URC enqueueing
@@ -114,7 +114,7 @@ size_t uCxAtUrcQueueEnqueueGetPayloadPtr(uCxAtUrcQueue_t *pUrcQueue, uint8_t **p
   *                          fetched with uCxAtUrcQueueEnqueueGetPayloadPtr().
   *                          Set to 0 if there are no payload.
   */
-void uCxAtUrcQueueEnqueueEnd(uCxAtUrcQueue_t *pUrcQueue, size_t payloadSize);
+void uCxAtUrcQueueEnqueueEnd(uCxAtUrcQueue_t *pUrcQueue, uint16_t payloadSize);
 
 /**
   * @brief  Abort the URC enqueueing

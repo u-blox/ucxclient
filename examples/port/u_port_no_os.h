@@ -74,6 +74,6 @@
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-int32_t uCxMutexTryLock(bool *pMutex, int32_t timeoutMs);
+int32_t uCxMutexTryLock(bool *pMutex, uint32_t timeoutMs);
 
 #endif

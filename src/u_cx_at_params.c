@@ -158,7 +158,7 @@ static bool ipv6StringToIpAddress(const char *pAddressString,
 static int32_t findBdAddressType(const char *pStr,
                                  uBdAddressType_t *pBdAddressType)
 {
-    uint32_t length = strlen(pStr);
+    size_t length = strlen(pStr);
 
     switch (pStr[length - 1]) {
         case 'r':
@@ -240,7 +240,7 @@ int32_t uCxIpAddressToString(const uSockIpAddress_t *pIpAddress,
                     *pWritePtr = ':';
                     pWritePtr++;
                 }
-                int len = snprintf(pWritePtr, pBufEnd - pWritePtr,
+                int len = snprintf(pWritePtr, (size_t)(pBufEnd - pWritePtr),
                                    "%04x:%04x",
                                    (unsigned int) ((pIpAddress->address.ipv6[3 - i] >> 16) & 0xFFFF),
                                    (unsigned int) ((pIpAddress->address.ipv6[3 - i] >> 0)  & 0xFFFF));
@@ -284,7 +284,7 @@ int32_t uCxBdAddressToString(const uBtLeAddress_t *pBtLeAddr, char *pBuffer, siz
     size_t pos = strlen(pBuffer);
     pBuffer[pos++] = (pBtLeAddr->type == U_BD_ADDRESS_TYPE_RANDOM) ? 'r' : 'p';
     pBuffer[pos] = 0;
-    return pos;
+    return (int32_t)pos;
 }
 
 int32_t uCxStringToMacAddress(const char *pMacString, uMacAddress_t *pMac)
@@ -303,5 +303,5 @@ int32_t uCxMacAddressToString(const uMacAddress_t *pMac, char *pBuffer, size_t s
     if (!uCxAtUtilBinaryToHex(&pMac->address[0], U_MAC_ADDR_LEN, pBuffer, sizeBytes)) {
         return -1;
     }
-    return strlen(pBuffer);
+    return (int32_t)strlen(pBuffer);
 }

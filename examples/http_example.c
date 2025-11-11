@@ -72,7 +72,7 @@ static volatile uint32_t gUrcEventFlags = 0;
 
 static bool waitEvent(uint32_t evtFlag, uint32_t timeoutS)
 {
-    int32_t timeoutMs = timeoutS * 1000;
+    int32_t timeoutMs = (int32_t)timeoutS * 1000;
     int32_t startTime = U_CX_PORT_GET_TIME_MS();
 
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%d, %d)", evtFlag, timeoutS);
@@ -116,7 +116,7 @@ static void socketData(struct uCxHandle *puCxHandle, int32_t socket_handle, int3
     signalEvent(URC_FLAG_SOCK_DATA);
 }
 
-static void sleepMs(int32_t timeMs)
+static void sleepMs(uint32_t timeMs)
 {
     // Hack to implement sleep using a mutex
     static bool sleepMutexInit = false;

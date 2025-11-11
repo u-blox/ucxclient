@@ -70,7 +70,7 @@ static volatile uint32_t gUrcEventFlags = 0;
 // For no OS this function will "poll" uCxAtClientHandleRx()
 static bool waitEvent(uCxAtClient_t *pClient, uint32_t evtFlag, uint32_t timeoutS)
 {
-    int32_t timeoutMs = timeoutS * 1000;
+    int32_t timeoutMs = (int32_t)timeoutS * 1000;
     int32_t startTime = U_CX_PORT_GET_TIME_MS();
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "waitEvent(%d, %d)", evtFlag, timeoutS);

@@ -48,7 +48,7 @@
 
 static inline char nibbleToHex(uint8_t nibble)
 {
-    return (nibble < 10) ? '0' + nibble : 'A' + nibble - 10;
+    return (char)((nibble < 10) ? '0' + nibble : ('A' + nibble - 10));
 }
 
 
@@ -69,7 +69,7 @@ static inline int32_t hexToNibble(char hexChar)
 static bool binaryToHex(const uint8_t *pData, size_t dataLen, char *pBuf,
                         size_t bufSize, bool reverse)
 {
-    uint32_t i;
+    size_t i;
 
     U_CX_AT_PORT_ASSERT(pBuf != NULL);
     U_CX_AT_PORT_ASSERT(bufSize > 0);
@@ -83,7 +83,7 @@ static bool binaryToHex(const uint8_t *pData, size_t dataLen, char *pBuf,
 
     if (pData != NULL) {
         for (i = 0; i < dataLen; i++) {
-            uint32_t dataIndex = reverse ? dataLen - i - 1 : i;
+            size_t dataIndex = reverse ? dataLen - i - 1 : i;
             pBuf[i * 2] = nibbleToHex(pData[dataIndex] >> 4);
             pBuf[(i * 2) + 1] = nibbleToHex(pData[dataIndex] & 0x0F);
         }
@@ -119,7 +119,7 @@ int32_t uCxAtUtilHexToByte(const char *pHex, uint8_t *pOutByte)
 uint32_t uCxAtUtilHexToBinary(const char *pHexString, uint8_t *pBuf, size_t bufSize)
 {
     uint32_t i = 0;
-    uint32_t len;
+    size_t len;
     uint32_t toIndex = 0;
 
     len = strlen(pHexString);
@@ -204,7 +204,7 @@ int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list
                 char * pEnd;
                 int32_t *pI = va_arg(args, int32_t *);
                 U_CX_AT_PORT_ASSERT(pI != U_CX_AT_UTIL_PARAM_LAST);
-                *pI = strtol(pParam, &pEnd, 10);
+                *pI = (int32_t)strtol(pParam, &pEnd, 10);
                 if (((*pParam != '-') && !isdigit((int)*pParam)) || (*pEnd != 0)) {
                     // Not a valid integer
                     return -ret;

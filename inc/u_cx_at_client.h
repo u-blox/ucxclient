@@ -55,13 +55,13 @@ typedef struct {
     uint8_t rxHeaderCount;
     uint16_t remainingDataBytes;
     uint8_t *pBuffer;
-    size_t bufferSize;
-    size_t bufferPos;
+    uint16_t bufferSize;
+    uint16_t bufferPos;
 } uCxAtBinaryRx_t;
 
 typedef struct {
     uint8_t *pBuffer;
-    size_t *pBufferLength;
+    uint16_t *pBufferLength;
 } uCxAtBinaryResponseBuf_t;
 
 typedef struct uCxAtClient {
@@ -250,7 +250,7 @@ void uCxAtClientCmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *
   *                                 NOTE: The pExpectedRsp part will not be included in this string.
   */
 char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpectedRsp,
-                                    uint8_t *pBinaryBuf, size_t *pBinaryBufLength);
+                                    uint8_t *pBinaryBuf, uint16_t *pBinaryBufLength);
 
 /**
   * @brief  Get parsed AT response parameters for AT command started with uCxAtClientCmdBeginF()
@@ -274,7 +274,7 @@ char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpecte
   * @retval                         the number of parsed parameters on success otherwise negative value.
   */
 int32_t uCxAtClientCmdGetRspParamsF(uCxAtClient_t *pClient, const char *pExpectedRsp,
-                                    uint8_t *pBinaryBuf, size_t *pBinaryBufLength,
+                                    uint8_t *pBinaryBuf, uint16_t *pBinaryBufLength,
                                     const char *pParamFmt, ...);
 
 /**

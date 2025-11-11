@@ -59,7 +59,7 @@ typedef struct {
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
 
-static uint64_t gBootTime = 0;
+static int32_t gBootTime = 0;
 static int gUartFd;
 static uCxAtClientConfig_t *gPConfig = NULL;
 
@@ -71,7 +71,7 @@ static int32_t getTickTimeMs(void)
 {
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC_RAW, &time);
-    uint64_t timeMs = (time.tv_sec * 1000) + (time.tv_nsec / (1000 * 1000));
+    int64_t timeMs = (time.tv_sec * 1000) + (time.tv_nsec / (1000 * 1000));
     return (int32_t)(timeMs % (1000 * 60 * 60 * 24));
 }
 
@@ -173,7 +173,7 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
 
 // Create a time structure by adding the specified number of
 // milliseconds to the current clock time.
-static void msToTimeSpec(int32_t ms, struct timespec *pTime, bool fromNow)
+static void msToTimeSpec(uint32_t ms, struct timespec *pTime, bool fromNow)
 {
     struct timespec now = {0};
     if (fromNow) {
