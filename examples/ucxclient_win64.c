@@ -2296,7 +2296,6 @@ static void spsEnableService(void)
     
     if (result == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully enabled SPS service");
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "NOTE: SPS will be active after reboot");
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to enable SPS (code %d)", result);
     }
@@ -4515,7 +4514,7 @@ static void gattServerSetupHidKeyboard(void)
             printf("✓ All bonds cleared - ready for fresh pairing\n\n");
             
             printf("========================================\n");
-            printf("  ⚠️  CRITICAL STEP REQUIRED ⚠️\n");
+            printf("    CRITICAL STEP REQUIRED\n");
             printf("========================================\n\n");
             printf("You MUST also remove this device from your\n");
             printf("iPhone/Windows Bluetooth settings:\n\n");
