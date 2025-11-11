@@ -26,16 +26,16 @@ int32_t uCxSecurityCertificateRemoveAll(uCxHandle_t * puCxHandle)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECR", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSecurityCertificateUpload2(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, uint8_t * pWData, size_t wDataLen)
+int32_t uCxSecurityCertificateUpload(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const uint8_t * binary_data, int32_t binary_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECUB=", "dsB", cert_type, name, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECUB=", "dsB", cert_type, name, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSecurityCertificateUpload3(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const char * password, uint8_t * pWData, size_t wDataLen)
+int32_t uCxSecurityCertificateUploadPW(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const char * password, const uint8_t * binary_data, int32_t binary_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECUB=", "dssB", cert_type, name, password, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USECUB=", "dssB", cert_type, name, password, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
 }
 
 void uCxSecurityListCertificatesBegin(uCxHandle_t * puCxHandle)
@@ -49,6 +49,72 @@ bool uCxSecurityListCertificatesGetNext(uCxHandle_t * puCxHandle, uCxSecurityLis
     int32_t ret;
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USECL:", NULL, NULL, "ds", &pSecurityListCertificatesRsp->cert_type, &pSecurityListCertificatesRsp->name, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
+}
+
+bool uCxSecurityReadAllCertificatesDetailsBegin(uCxHandle_t * puCxHandle, const char * name, uCxSecurityReadAllCertificatesDetails_t * pSecurityReadAllCertificatesDetailsRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    char *pParamsLine;
+    int32_t rspSyntaxVal;
+    size_t  paramsLen;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+USECD=", "s", name, U_CX_AT_UTIL_PARAM_LAST);
+    pParamsLine = uCxAtClientCmdGetRspParamLine(pAtClient, "+USECD:", NULL, NULL);
+    if (pParamsLine == NULL) {
+        return false;
+    }
+    paramsLen = strlen(pParamsLine);
+    if (uCxAtUtilParseParamsF(pParamsLine, "d", &rspSyntaxVal) != 1) {
+        return false;
+    }
+    uCxAtUtilReplaceChar(pParamsLine, paramsLen, 0, ',');
+    switch (rspSyntaxVal)
+    {
+        case 0:
+            pSecurityReadAllCertificatesDetailsRsp->type = U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_BYTES;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dh", &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdBytes.certificate_detail_id, &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdBytes.hex_value, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 1:
+            pSecurityReadAllCertificatesDetailsRsp->type = U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_INT;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dd", &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdInt.certificate_detail_id, &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdInt.int_value, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        default:
+            return false;
+    } /* ~switch (rspSyntaxVal) */
+    return ret >= 0;
+}
+
+bool uCxSecurityReadCertificatesDetailsBegin(uCxHandle_t * puCxHandle, const char * name, uCertificateDetailId_t certificate_detail_id, uCxSecurityReadCertificatesDetails_t * pSecurityReadCertificatesDetailsRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    char *pParamsLine;
+    int32_t rspSyntaxVal;
+    size_t  paramsLen;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+USECD=", "sd", name, certificate_detail_id, U_CX_AT_UTIL_PARAM_LAST);
+    pParamsLine = uCxAtClientCmdGetRspParamLine(pAtClient, "+USECD:", NULL, NULL);
+    if (pParamsLine == NULL) {
+        return false;
+    }
+    paramsLen = strlen(pParamsLine);
+    if (uCxAtUtilParseParamsF(pParamsLine, "d", &rspSyntaxVal) != 1) {
+        return false;
+    }
+    uCxAtUtilReplaceChar(pParamsLine, paramsLen, 0, ',');
+    switch (rspSyntaxVal)
+    {
+        case 0:
+            pSecurityReadCertificatesDetailsRsp->type = U_CX_SECURITY_READ_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_BYTES;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dh", &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdBytes.certificate_detail_id, &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdBytes.hex_value, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 1:
+            pSecurityReadCertificatesDetailsRsp->type = U_CX_SECURITY_READ_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_INT;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dd", &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdInt.certificate_detail_id, &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdInt.int_value, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        default:
+            return false;
+    } /* ~switch (rspSyntaxVal) */
     return ret >= 0;
 }
 

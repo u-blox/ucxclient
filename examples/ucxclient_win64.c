@@ -31,6 +31,7 @@
 #include <string.h>
 #include <ctype.h>     // For tolower()
 #include <stdbool.h>
+#include <time.h>      // For time() to generate unique device names
 // Winsock2 must be included BEFORE windows.h to avoid conflicts
 #include <winsock2.h>  // For socket functions
 #include <ws2tcpip.h>  // For getaddrinfo and related functions
@@ -182,6 +183,47 @@ static int gGattCharacteristicCount = 0;
 static int32_t gCurrentGattConnHandle = -1;  // Currently selected GATT connection
 static int gLastCharacteristicIndex = -1;    // Last used characteristic index
 
+// GATT Server tracking
+static int32_t gGattServerServiceHandle = -1;      // Last created service handle
+static int32_t gGattServerCharHandle = -1;         // Last created characteristic handle
+static int32_t gHeartbeatServiceHandle = -1;       // Heartbeat service handle
+static int32_t gHeartbeatCharHandle = -1;          // Heartbeat characteristic handle
+static int32_t gHeartbeatCccdHandle = -1;          // Heartbeat CCCD handle
+static bool gHeartbeatNotificationsEnabled = false; // Client subscribed to notifications
+static uint8_t gHeartbeatCounter = 60;             // Heartbeat BPM value
+static HANDLE gHeartbeatThread = NULL;             // Background thread handle
+static volatile bool gHeartbeatThreadRunning = false; // Thread control flag
+
+// HID over GATT (HoG) tracking
+static int32_t gHidServiceHandle = -1;             // HID Service (0x1812)
+static int32_t gHidInfoHandle = -1;                // HID Information characteristic
+static int32_t gHidReportMapHandle = -1;           // Report Map characteristic
+static int32_t gHidBootKbdInputHandle = -1;        // Boot Keyboard Input Report characteristic
+static int32_t gHidBootKbdCccdHandle = -1;         // Boot Keyboard Input CCCD handle
+static int32_t gHidBootKbdOutputHandle = -1;       // Boot Keyboard Output Report characteristic
+static int32_t gHidKeyboardInputHandle = -1;       // Keyboard Input Report characteristic
+static int32_t gHidKeyboardCccdHandle = -1;        // Keyboard Input CCCD handle
+static int32_t gHidKeyboardOutputHandle = -1;      // Keyboard Output Report characteristic
+static int32_t gHidMediaInputHandle = -1;          // Media Control Input Report characteristic
+static int32_t gHidMediaCccdHandle = -1;           // Media Input CCCD handle
+static int32_t gHidControlPointHandle = -1;        // HID Control Point characteristic
+static int32_t gBatteryServiceHandle = -1;         // Battery Service (0x180F)
+static int32_t gBatteryLevelHandle = -1;           // Battery Level characteristic
+static int32_t gBatteryCccdHandle = -1;            // Battery Level CCCD handle
+static bool gHidNotificationsEnabled = false;      // HID notifications enabled
+static bool gUseBootKeyboard = false;              // True if Boot Keyboard CCCD enabled, false for Regular Keyboard
+
+// Bluetooth state tracking
+static bool gBluetoothAdvertising = false;         // Advertising/discoverable state
+static char gBluetoothLocalAddress[18] = "";       // Local BT address (XX:XX:XX:XX:XX:XX)
+static char gBluetoothPairedDevice[18] = "";       // Last paired device address
+
+// Wi-Fi status tracking
+static bool gWifiConnected = false;                // Wi-Fi connection status
+static char gWifiSsid[64] = "";                    // Connected network SSID
+static char gWifiIpAddress[16] = "";               // Device IP address
+static int gWifiChannel = 0;                       // Wi-Fi channel (1-13)
+
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
@@ -235,17 +277,20 @@ typedef enum {
     MENU_MAIN,
     MENU_BLUETOOTH,
     MENU_BLUETOOTH_FUNCTIONS,
+    MENU_GATT_EXAMPLES,
     MENU_WIFI,
     MENU_WIFI_FUNCTIONS,
     MENU_SOCKET,
     MENU_SPS,
     MENU_GATT_CLIENT,
     MENU_GATT_SERVER,
+    MENU_HID,
     MENU_MQTT,
     MENU_HTTP,
     MENU_SECURITY_TLS,
     MENU_FIRMWARE_UPDATE,
     MENU_API_LIST,
+    MENU_AT_TERMINAL,
     MENU_EXIT
 } MenuState_t;
 
@@ -414,9 +459,13 @@ static char* extractProductFromFilename(const char *filename);
 static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t pathSize);
 static bool extractZipFile(const char *zipPath, const char *destFolder);
 static bool saveBinaryFile(const char *filepath, const char *data, size_t size);
+static void enableAllUrcs(void);
+static void disableAllUrcs(void);
 static void executeAtTest(void);
+static void executeAtTerminal(void);
 static void executeAti9(void);
 static void executeModuleReboot(void);
+static void showLegacyAdvertisementStatus(void);
 static void showBluetoothStatus(void);
 static void showWifiStatus(void);
 static void bluetoothMenu(void);
@@ -424,6 +473,7 @@ static void bluetoothScan(void);
 static void bluetoothConnect(void);
 static void bluetoothDisconnect(void);
 static void bluetoothSyncConnections(void);
+static void syncGattConnectionOnly(void);
 static void decodeAdvertisingData(const uint8_t *data, size_t dataLen);
 static void wifiMenu(void);
 static void wifiScan(void);
@@ -456,7 +506,29 @@ static void gattClientReadCharacteristic(void);
 static void gattClientWriteCharacteristic(void);
 static void gattServerMenu(void);
 static void gattServerAddService(void);
+static void gattServerAddCharacteristic(void);
 static void gattServerSetCharacteristic(void);
+static void gattServerSendNotification(void);
+static void gattServerSetupHeartbeat(void);
+static void gattServerSetupHidKeyboard(void);
+static void gattServerSendKeyPress(void);
+static void gattServerSendMediaControl(void);
+static void gattServerSendHelloWorld(void);
+static void bluetoothSetAdvertising(void);
+static void bluetoothShowStatus(void);
+static void bluetoothSetPairing(void);
+static void bluetoothListBondedDevices(void);
+static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBondStatus_t bond_status);
+static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
+static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t passkey);
+static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr);
+static void bluetoothPhyUpdateUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t phy_status, int32_t tx_phy, int32_t rx_phy);
+static void gattServerSetupHeartbeat(void);
+static void gattServerSetupHidKeyboard(void);
+static void gattServerSendKeyPress(void);
+static void gattServerSendMediaControl(void);
+static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uOptions_t options);
+static DWORD WINAPI heartbeatThread(LPVOID lpParam);
 static void bluetoothFunctionsMenu(void);
 static void wifiFunctionsMenu(void);
 static void socketMenu(void);
@@ -1767,131 +1839,133 @@ static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLe
     
     printf("****************************************\n\n");
     
-    // Auto-discover GATT services and characteristics
-    printf("Auto-discovering GATT services and characteristics...\n");
+    // Note: Service Changed indication not needed - client will discover automatically
     
-    // Discover services
-    uCxGattClientDiscoverPrimaryServicesBegin(puCxHandle, conn_handle);
-    gGattServiceCount = 0;
+    // // Auto-discover GATT services and characteristics
+    // printf("Auto-discovering GATT services and characteristics...\n");
     
-    uCxGattClientDiscoverPrimaryServices_t service;
-    while (uCxGattClientDiscoverPrimaryServicesGetNext(puCxHandle, &service)) {
-        if (gGattServiceCount < MAX_GATT_SERVICES) {
-            GattService_t *stored = &gGattServices[gGattServiceCount];
-            stored->connHandle = conn_handle;
-            stored->startHandle = service.start_handle;
-            stored->endHandle = service.end_handle;
-            stored->uuidLength = service.uuid.length;
-            memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
-            stored->name[0] = '\0';
+    // // Discover services
+    // uCxGattClientDiscoverPrimaryServicesBegin(puCxHandle, conn_handle);
+    // gGattServiceCount = 0;
+    
+    // uCxGattClientDiscoverPrimaryServices_t service;
+    // while (uCxGattClientDiscoverPrimaryServicesGetNext(puCxHandle, &service)) {
+    //     if (gGattServiceCount < MAX_GATT_SERVICES) {
+    //         GattService_t *stored = &gGattServices[gGattServiceCount];
+    //         stored->connHandle = conn_handle;
+    //         stored->startHandle = service.start_handle;
+    //         stored->endHandle = service.end_handle;
+    //         stored->uuidLength = (int32_t)service.uuid.length;
+    //         memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
+    //         stored->name[0] = '\0';
             
-            // Get friendly name for 16-bit UUIDs
-            if (stored->uuidLength == 2) {
-                uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
-                const char *name = btGetServiceName(uuid16);
-                if (name) {
-                    strncpy(stored->name, name, sizeof(stored->name) - 1);
-                }
-            }
+    //         // Get friendly name for 16-bit UUIDs
+    //         if (stored->uuidLength == 2) {
+    //             uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+    //             const char *name = btGetServiceName(uuid16);
+    //             if (name) {
+    //                 strncpy(stored->name, name, sizeof(stored->name) - 1);
+    //             }
+    //         }
             
-            gGattServiceCount++;
-        }
-    }
-    uCxEnd(puCxHandle);
-    printf("  Found %d services:\n", gGattServiceCount);
+    //         gGattServiceCount++;
+    //     }
+    // }
+    // uCxEnd(puCxHandle);
+    // printf("  Found %d services:\n", gGattServiceCount);
     
-    // Display discovered services
-    for (int i = 0; i < gGattServiceCount; i++) {
-        GattService_t *svc = &gGattServices[i];
-        printf("    [%d] 0x%04X-0x%04X", i, svc->startHandle, svc->endHandle);
+    // // Display discovered services
+    // for (int i = 0; i < gGattServiceCount; i++) {
+    //     GattService_t *svc = &gGattServices[i];
+    //     printf("    [%d] 0x%04X-0x%04X", i, svc->startHandle, svc->endHandle);
         
-        if (svc->uuidLength == 2) {
-            uint16_t uuid16 = (svc->uuid[0] << 8) | svc->uuid[1];
-            printf(" UUID: 0x%04X", uuid16);
-            if (svc->name[0] != '\0') {
-                printf(" (%s)", svc->name);
-            }
-        } else {
-            printf(" UUID: ");
-            for (int j = 0; j < svc->uuidLength; j++) {
-                printf("%02X", svc->uuid[j]);
-            }
-            // Check for u-blox SPS service UUID
-            if (svc->uuidLength == 16) {
-                const uint8_t ubloxSpsUuid[] = {0x24, 0x56, 0xE1, 0xB9, 0x26, 0xE2, 0x8F, 0x83,
-                                                 0xE7, 0x44, 0xF3, 0x4F, 0x01, 0xE9, 0xD7, 0x01};
-                if (memcmp(svc->uuid, ubloxSpsUuid, 16) == 0) {
-                    printf(" (u-blox SPS)");
-                }
-            }
-        }
-        printf("\n");
-    }
+    //     if (svc->uuidLength == 2) {
+    //         uint16_t uuid16 = (svc->uuid[0] << 8) | svc->uuid[1];
+    //         printf(" UUID: 0x%04X", uuid16);
+    //         if (svc->name[0] != '\0') {
+    //             printf(" (%s)", svc->name);
+    //         }
+    //     } else {
+    //         printf(" UUID: ");
+    //         for (int j = 0; j < svc->uuidLength; j++) {
+    //             printf("%02X", svc->uuid[j]);
+    //         }
+    //         // Check for u-blox SPS service UUID
+    //         if (svc->uuidLength == 16) {
+    //             const uint8_t ubloxSpsUuid[] = {0x24, 0x56, 0xE1, 0xB9, 0x26, 0xE2, 0x8F, 0x83,
+    //                                              0xE7, 0x44, 0xF3, 0x4F, 0x01, 0xE9, 0xD7, 0x01};
+    //             if (memcmp(svc->uuid, ubloxSpsUuid, 16) == 0) {
+    //                 printf(" (u-blox SPS)");
+    //             }
+    //         }
+    //     }
+    //     printf("\n");
+    // }
     
-    // Discover characteristics for all services
-    gGattCharacteristicCount = 0;
+    // // Discover characteristics for all services
+    // gGattCharacteristicCount = 0;
     
-    for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
-        GattService_t *svc = &gGattServices[svcIdx];
-        uCxGattClientDiscoverServiceCharsBegin(puCxHandle, conn_handle, svc->startHandle, svc->endHandle);
+    // for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
+    //     GattService_t *svc = &gGattServices[svcIdx];
+    //     uCxGattClientDiscoverServiceCharsBegin(puCxHandle, conn_handle, svc->startHandle, svc->endHandle);
         
-        uCxGattClientDiscoverServiceChars_t characteristic;
-        while (uCxGattClientDiscoverServiceCharsGetNext(puCxHandle, &characteristic)) {
-            if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
-                GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
-                stored->connHandle = conn_handle;
-                stored->serviceIndex = svcIdx;
-                stored->valueHandle = characteristic.value_handle;
-                stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
-                stored->uuidLength = characteristic.uuid.length;
-                memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
-                stored->name[0] = '\0';
+    //     uCxGattClientDiscoverServiceChars_t characteristic;
+    //     while (uCxGattClientDiscoverServiceCharsGetNext(puCxHandle, &characteristic)) {
+    //         if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
+    //             GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
+    //             stored->connHandle = conn_handle;
+    //             stored->serviceIndex = svcIdx;
+    //             stored->valueHandle = characteristic.value_handle;
+    //             stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
+    //             stored->uuidLength = (int32_t)characteristic.uuid.length;
+    //             memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
+    //             stored->name[0] = '\0';
                 
-                // Get friendly name for 16-bit UUIDs
-                if (stored->uuidLength == 2) {
-                    uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
-                    const char *name = btGetCharacteristicName(uuid16);
-                    if (name) {
-                        strncpy(stored->name, name, sizeof(stored->name) - 1);
-                    }
-                }
+    //             // Get friendly name for 16-bit UUIDs
+    //             if (stored->uuidLength == 2) {
+    //                 uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
+    //                 const char *name = btGetCharacteristicName(uuid16);
+    //                 if (name) {
+    //                     strncpy(stored->name, name, sizeof(stored->name) - 1);
+    //                 }
+    //             }
                 
-                gGattCharacteristicCount++;
-            }
-        }
-        uCxEnd(puCxHandle);
-    }
-    printf("  Found %d characteristics:\n", gGattCharacteristicCount);
+    //             gGattCharacteristicCount++;
+    //         }
+    //     }
+    //     uCxEnd(puCxHandle);
+    // }
+    // printf("  Found %d characteristics:\n", gGattCharacteristicCount);
     
-    // Display discovered characteristics
-    for (int i = 0; i < gGattCharacteristicCount; i++) {
-        GattCharacteristic_t *ch = &gGattCharacteristics[i];
-        printf("    [%d] Handle: 0x%04X", i, ch->valueHandle);
+    // // Display discovered characteristics
+    // for (int i = 0; i < gGattCharacteristicCount; i++) {
+    //     GattCharacteristic_t *ch = &gGattCharacteristics[i];
+    //     printf("    [%d] Handle: 0x%04X", i, ch->valueHandle);
         
-        if (ch->uuidLength == 2) {
-            uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
-            printf(", UUID: 0x%04X", uuid16);
-            if (ch->name[0] != '\0') {
-                printf(" (%s)", ch->name);
-            }
-        } else {
-            printf(", UUID: ");
-            for (int j = 0; j < ch->uuidLength; j++) {
-                printf("%02X", ch->uuid[j]);
-            }
-        }
+    //     if (ch->uuidLength == 2) {
+    //         uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
+    //         printf(", UUID: 0x%04X", uuid16);
+    //         if (ch->name[0] != '\0') {
+    //             printf(" (%s)", ch->name);
+    //         }
+    //     } else {
+    //         printf(", UUID: ");
+    //         for (int j = 0; j < ch->uuidLength; j++) {
+    //             printf("%02X", ch->uuid[j]);
+    //         }
+    //     }
         
-        // Show properties
-        printf(", Props: ");
-        uint8_t props = ch->properties;
-        if (props & 0x02) printf("R");
-        if (props & 0x08) printf("W");
-        if (props & 0x10) printf("N");
-        if (props & 0x20) printf("I");
-        printf("\n");
-    }
+    //     // Show properties
+    //     printf(", Props: ");
+    //     uint8_t props = (uint8_t)ch->properties;
+    //     if (props & 0x02) printf("R");
+    //     if (props & 0x08) printf("W");
+    //     if (props & 0x10) printf("N");
+    //     if (props & 0x20) printf("I");
+    //     printf("\n");
+    // }
     
-    printf("GATT discovery complete! You can now read/write characteristics.\n\n");
+    // printf("GATT discovery complete! You can now read/write characteristics.\n\n");
     
     signalEvent(URC_FLAG_BT_CONNECTED);
 }
@@ -1916,13 +1990,26 @@ static void btDisconnected(struct uCxHandle *puCxHandle, int32_t conn_handle)
         }
     }
     
-    // Clear GATT data for this connection
+    // Clear connection handle
     if (gCurrentGattConnHandle == conn_handle) {
         gCurrentGattConnHandle = -1;
-        gGattServiceCount = 0;
-        gGattCharacteristicCount = 0;
-        gLastCharacteristicIndex = -1;
-        printf("  Cleared GATT discovery data\n");
+        
+        // Only clear GATT discovery data if we're in client mode
+        // (i.e., we discovered services from a remote device)
+        // In server mode (HID, Heartbeat), keep the service data intact
+        if (gGattServiceCount > 0 && gGattCharacteristicCount > 0) {
+            // This looks like GATT Client discovery data - clear it
+            gGattServiceCount = 0;
+            gGattCharacteristicCount = 0;
+            gLastCharacteristicIndex = -1;
+            printf("  Cleared GATT Client discovery data\n");
+        } else {
+            // GATT Server mode - keep services intact for reconnection
+            printf("  GATT Server services remain active (ready for reconnection)\n");
+        }
+        
+        // Reset HID notification flag (client must re-enable CCCDs on reconnect)
+        gHidNotificationsEnabled = false;
     }
     
     printf("******************************\n\n");
@@ -2071,7 +2158,7 @@ static void socketSendData(void)
         size_t len = strlen(data);
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Sending %zu bytes...", len);
         
-        int32_t result = uCxSocketWrite(&gUcxHandle, gCurrentSocket, (uint8_t*)data, len);
+        int32_t result = uCxSocketWrite(&gUcxHandle, gCurrentSocket, (uint8_t*)data, (int32_t)len);
         
         if (result >= 0) {
             U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully sent %d bytes", result);
@@ -2266,7 +2353,7 @@ static void spsSendData(void)
         size_t len = strlen(data);
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Sending %zu bytes...", len);
         
-        int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, (uint8_t*)data, len);
+        int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, (uint8_t*)data, (int32_t)len);
         
         if (result >= 0) {
             U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully sent %d bytes", result);
@@ -2327,7 +2414,43 @@ static void spsReadData(void)
 // GATT CLIENT OPERATIONS
 // ============================================================================
 
-// Sync GATT connection handle with active Bluetooth connections
+// Sync connection handle only (no discovery) - for GATT Server
+static void syncGattConnectionOnly(void)
+{
+    // First, sync the Bluetooth connections from the module
+    bluetoothSyncConnections();
+    
+    // If we already have a valid connection handle, verify it's still active
+    if (gCurrentGattConnHandle >= 0) {
+        bool stillActive = false;
+        for (int i = 0; i < gBtConnectionCount; i++) {
+            if (gBtConnections[i].handle == gCurrentGattConnHandle && gBtConnections[i].active) {
+                stillActive = true;
+                break;
+            }
+        }
+        if (stillActive) {
+            return;  // Current handle is still valid
+        }
+    }
+    
+    // No valid handle, try to find an active connection
+    if (gBtConnectionCount > 0) {
+        // Use the first active connection
+        for (int i = 0; i < gBtConnectionCount; i++) {
+            if (gBtConnections[i].active) {
+                gCurrentGattConnHandle = gBtConnections[i].handle;
+                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "[GATT Server] Using connection handle: %d", gCurrentGattConnHandle);
+                return;
+            }
+        }
+    }
+    
+    // No active connections
+    gCurrentGattConnHandle = -1;
+}
+
+// Sync GATT connection handle with active Bluetooth connections (GATT Client - with discovery)
 static void syncGattConnection(void)
 {
     // First, sync the Bluetooth connections from the module
@@ -2377,7 +2500,7 @@ static void syncGattConnection(void)
                             stored->connHandle = gCurrentGattConnHandle;
                             stored->startHandle = service.start_handle;
                             stored->endHandle = service.end_handle;
-                            stored->uuidLength = service.uuid.length;
+                            stored->uuidLength = (int32_t)service.uuid.length;
                             memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
                             stored->name[0] = '\0';
                             
@@ -2396,9 +2519,9 @@ static void syncGattConnection(void)
                     printf("  Found %d services:\n", gGattServiceCount);
                     
                     // Display discovered services
-                    for (int i = 0; i < gGattServiceCount; i++) {
-                        GattService_t *svc = &gGattServices[i];
-                        printf("    [%d] 0x%04X-0x%04X", i, svc->startHandle, svc->endHandle);
+                    for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
+                        GattService_t *svc = &gGattServices[svcIdx];
+                        printf("    [%d] 0x%04X-0x%04X", svcIdx, svc->startHandle, svc->endHandle);
                         
                         if (svc->uuidLength == 2) {
                             uint16_t uuid16 = (svc->uuid[0] << 8) | svc->uuid[1];
@@ -2439,7 +2562,7 @@ static void syncGattConnection(void)
                                 stored->valueHandle = characteristic.value_handle;
                                 stored->properties = (characteristic.properties.length > 0) ? 
                                                     characteristic.properties.pData[0] : 0;
-                                stored->uuidLength = characteristic.uuid.length;
+                                stored->uuidLength = (int32_t)characteristic.uuid.length;
                                 memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
                                 stored->name[0] = '\0';
                                 
@@ -2459,9 +2582,9 @@ static void syncGattConnection(void)
                     printf("  Found %d characteristics:\n", gGattCharacteristicCount);
                     
                     // Display discovered characteristics
-                    for (int i = 0; i < gGattCharacteristicCount; i++) {
-                        GattCharacteristic_t *ch = &gGattCharacteristics[i];
-                        printf("    [%d] Handle: 0x%04X", i, ch->valueHandle);
+                    for (int charIdx = 0; charIdx < gGattCharacteristicCount; charIdx++) {
+                        GattCharacteristic_t *ch = &gGattCharacteristics[charIdx];
+                        printf("    [%d] Handle: 0x%04X", charIdx, ch->valueHandle);
                         
                         if (ch->uuidLength == 2) {
                             uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
@@ -2478,7 +2601,7 @@ static void syncGattConnection(void)
                         
                         // Show properties
                         printf(", Props: ");
-                        uint8_t props = ch->properties;
+                        uint8_t props = (uint8_t)ch->properties;
                         if (props & 0x02) printf("R");
                         if (props & 0x08) printf("W");
                         if (props & 0x10) printf("N");
@@ -2575,7 +2698,7 @@ static void gattClientDiscoverServices(void)
             stored->connHandle = connHandle;
             stored->startHandle = service.start_handle;
             stored->endHandle = service.end_handle;
-            stored->uuidLength = service.uuid.length;
+            stored->uuidLength = (int32_t)service.uuid.length;
             memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
             stored->name[0] = '\0';
             
@@ -2663,10 +2786,29 @@ static void gattClientDiscoverCharacteristics(void)
         }
     }
     
-    printf("\nEnter service index to discover (or -1 for all): ");
-    int serviceIndex;
-    scanf("%d", &serviceIndex);
-    getchar(); // consume newline
+    printf("\nEnter service index to discover [all]: ");
+    
+    char input[64];
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    // Trim newline
+    input[strcspn(input, "\n")] = 0;
+    
+    int serviceIndex = -1; // Default to all
+    
+    // If not empty, parse the number
+    if (strlen(input) > 0) {
+        serviceIndex = atoi(input);
+        if (serviceIndex < 0 || serviceIndex >= gGattServiceCount) {
+            printf("ERROR: Invalid service index %d (must be 0-%d)\n", serviceIndex, gGattServiceCount - 1);
+            return;
+        }
+    } else {
+        printf("Discovering characteristics for all services...\n");
+    }
     
     // Clear previous characteristics
     int oldCount = gGattCharacteristicCount;
@@ -2695,7 +2837,7 @@ static void gattClientDiscoverCharacteristics(void)
                 stored->valueHandle = characteristic.value_handle;
                 // Properties is a byte array, extract first byte
                 stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
-                stored->uuidLength = characteristic.uuid.length;
+                stored->uuidLength = (int32_t)characteristic.uuid.length;
                 memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
                 stored->name[0] = '\0';
                 
@@ -2727,7 +2869,7 @@ static void gattClientDiscoverCharacteristics(void)
                 
                 // Show properties
                 printf("\n        Props: ");
-                uint8_t props = stored->properties;
+                uint8_t props = (uint8_t)stored->properties;
                 if (props & 0x02) printf("Read ");
                 if (props & 0x04) printf("WriteWithoutResponse ");
                 if (props & 0x08) printf("Write ");
@@ -2792,7 +2934,7 @@ static void gattClientReadCharacteristic(void)
                     stored->connHandle = connHandle;
                     stored->startHandle = service.start_handle;
                     stored->endHandle = service.end_handle;
-                    stored->uuidLength = service.uuid.length;
+                    stored->uuidLength = (int32_t)service.uuid.length;
                     memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
                     stored->name[0] = '\0';
                     
@@ -2830,7 +2972,7 @@ static void gattClientReadCharacteristic(void)
                     stored->serviceIndex = svcIdx;
                     stored->valueHandle = characteristic.value_handle;
                     stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
-                    stored->uuidLength = characteristic.uuid.length;
+                    stored->uuidLength = (int32_t)characteristic.uuid.length;
                     memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
                     stored->name[0] = '\0';
                     
@@ -2887,7 +3029,7 @@ static void gattClientReadCharacteristic(void)
                 
                 // Show properties
                 printf("\n      Props: ");
-                uint8_t props = ch->properties;
+                uint8_t props = (uint8_t)ch->properties;
                 if (props & 0x02) printf("Read ");
                 if (props & 0x04) printf("WriteWithoutResponse ");
                 if (props & 0x08) printf("Write ");
@@ -2947,8 +3089,8 @@ static void gattClientReadCharacteristic(void)
     int32_t result = uCxEnd(&gUcxHandle);
     
     if (success && result == 0) {
-        printf("  Read %d bytes: ", data.length);
-        for (int i = 0; i < data.length; i++) {
+        printf("  Read %zd bytes: ", data.length);
+        for (size_t i = 0; i < data.length; i++) {
             printf("%02X ", data.pData[i]);
         }
         printf("\n");
@@ -2986,7 +3128,7 @@ static void gattClientReadCharacteristic(void)
             }
         }
         if (isPrintable && data.length > 0) {
-            printf("  As text: %.*s\n", data.length, data.pData);
+            printf("  As text: %.*s\n", (int)data.length, data.pData);
         }
         
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Read successful.");
@@ -3035,7 +3177,7 @@ static void gattClientWriteCharacteristic(void)
                     stored->connHandle = connHandle;
                     stored->startHandle = service.start_handle;
                     stored->endHandle = service.end_handle;
-                    stored->uuidLength = service.uuid.length;
+                    stored->uuidLength = (int32_t)service.uuid.length;
                     memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
                     stored->name[0] = '\0';
                     
@@ -3073,7 +3215,7 @@ static void gattClientWriteCharacteristic(void)
                     stored->serviceIndex = svcIdx;
                     stored->valueHandle = characteristic.value_handle;
                     stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
-                    stored->uuidLength = characteristic.uuid.length;
+                    stored->uuidLength = (int32_t)characteristic.uuid.length;
                     memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
                     stored->name[0] = '\0';
                     
@@ -3130,7 +3272,7 @@ static void gattClientWriteCharacteristic(void)
                 
                 // Show properties (highlight writable ones)
                 printf("\n      Props: ");
-                uint8_t props = ch->properties;
+                uint8_t props = (uint8_t)ch->properties;
                 if (props & 0x02) printf("Read ");
                 if (props & 0x04) printf("WriteWithoutResponse ");
                 if (props & 0x08) printf("Write ");
@@ -3322,6 +3464,1897 @@ static void gattServerSetCharacteristic(void)
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to set value (code %d)", result);
     }
+}
+
+static void gattServerAddCharacteristic(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gGattServerServiceHandle == -1) {
+        printf("\nERROR: No service created yet. Use option [1] to add a service first.\n");
+        printf("Tip: Or use option [5] for the Heartbeat service example.\n");
+        return;
+    }
+    
+    printf("\n--- GATT Server: Add Characteristic ---\n");
+    printf("Service handle: %d\n\n", gGattServerServiceHandle);
+    
+    // Get UUID
+    printf("Enter characteristic UUID (hex, e.g., 2A37 for Heart Rate Measurement): ");
+    char uuidStr[33];
+    if (fgets(uuidStr, sizeof(uuidStr), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    uuidStr[strcspn(uuidStr, "\n")] = '\0';
+    
+    // Convert hex string to bytes
+    size_t hexLen = strlen(uuidStr);
+    if (hexLen % 2 != 0) {
+        printf("ERROR: Invalid UUID (must be even number of hex digits)\n");
+        return;
+    }
+    
+    uint8_t uuid[16];
+    int32_t uuidLen = (int32_t)(hexLen / 2);
+    for (int i = 0; i < uuidLen; i++) {
+        char byteStr[3] = {uuidStr[i*2], uuidStr[i*2 + 1], '\0'};
+        uuid[i] = (uint8_t)strtol(byteStr, NULL, 16);
+    }
+    
+    // Get properties
+    printf("\nSelect properties (you can combine):\n");
+    printf("  [1] Read\n");
+    printf("  [2] Write\n");
+    printf("  [3] Write Without Response\n");
+    printf("  [4] Notify\n");
+    printf("  [5] Indicate\n");
+    printf("Enter property numbers (e.g., 14 for Read+Notify): ");
+    
+    char propInput[32];
+    if (fgets(propInput, sizeof(propInput), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    // Parse properties
+    int32_t properties = 0;
+    for (int i = 0; propInput[i] != '\0' && propInput[i] != '\n'; i++) {
+        switch (propInput[i]) {
+            case '1': properties |= 0x02; break; // Read
+            case '2': properties |= 0x08; break; // Write
+            case '3': properties |= 0x04; break; // Write Without Response
+            case '4': properties |= 0x10; break; // Notify
+            case '5': properties |= 0x20; break; // Indicate
+        }
+    }
+    
+    if (properties == 0) {
+        printf("ERROR: No valid properties selected\n");
+        return;
+    }
+    
+    printf("\nAdding characteristic to service %d...\n", gGattServerServiceHandle);
+    
+    // Properties as byte array
+    uint8_t propBytes[] = {(uint8_t)properties};
+    
+    // Call uCxGattServerCharDefine6 with all parameters
+    uCxGattServerCharDefine_t response;
+    uint8_t defaultValue[] = {0x00}; // Default value
+    
+    int32_t result = uCxGattServerCharDefine6(&gUcxHandle, uuid, uuidLen,
+                                              propBytes, 1, // properties as byte array
+                                              U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE, // no security
+                                              defaultValue, 1, // default value
+                                              20, // max 20 bytes
+                                              &response);
+    
+    if (result == 0) {
+        gGattServerCharHandle = response.value_handle;
+        printf("✓ Characteristic added successfully!\n");
+        printf("  Characteristic handle: %d\n", gGattServerCharHandle);
+        if (response.cccd_handle > 0) {
+            printf("  CCCD handle: %d (for notifications)\n", response.cccd_handle);
+        }
+        printf("  Properties: 0x%02X\n", properties);
+        printf("\nNext steps:\n");
+        printf("  1. Repeat [2] to add more characteristics (optional)\n");
+        printf("  2. Use [3] to set the characteristic value\n");
+        printf("  3. Use [4] to send notifications (if Notify property is set)\n");
+        printf("\nNote: Service must be activated before it's visible to clients.\n");
+        printf("      This happens automatically when you set a characteristic value.\n");
+    } else {
+        printf("ERROR: Failed to add characteristic (code %d)\n", result);
+    }
+}
+
+static void gattServerSendNotification(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentGattConnHandle == -1) {
+        printf("\nERROR: No active Bluetooth connection.\n");
+        printf("Tip: Use Bluetooth menu to connect first.\n");
+        return;
+    }
+    
+    if (gGattServerCharHandle == -1) {
+        printf("\nERROR: No characteristic created yet.\n");
+        printf("Tip: Use option [2] to add a characteristic with Notify property.\n");
+        return;
+    }
+    
+    printf("\n--- GATT Server: Send Notification ---\n");
+    printf("Connection handle: %d\n", gCurrentGattConnHandle);
+    printf("Characteristic handle: %d\n\n", gGattServerCharHandle);
+    
+    printf("Enter data (hex format, e.g., 01020304): ");
+    char hexInput[MAX_DATA_BUFFER * 2 + 1];
+    if (fgets(hexInput, sizeof(hexInput), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    // Remove newline
+    hexInput[strcspn(hexInput, "\n")] = '\0';
+    
+    // Convert hex string to bytes
+    size_t hexLen = strlen(hexInput);
+    if (hexLen % 2 != 0) {
+        printf("ERROR: Invalid hex data (must be even number of digits)\n");
+        return;
+    }
+    
+    uint8_t data[MAX_DATA_BUFFER];
+    size_t dataLen = hexLen / 2;
+    
+    for (size_t i = 0; i < dataLen; i++) {
+        char byteStr[3] = {hexInput[i*2], hexInput[i*2 + 1], '\0'};
+        data[i] = (uint8_t)strtol(byteStr, NULL, 16);
+    }
+    
+    printf("Sending notification (%zu bytes)...\n", dataLen);
+    
+    // Call GATT server send notification command
+    int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
+                                                   gGattServerCharHandle, data, (int32_t)dataLen);
+    
+    if (result == 0) {
+        printf("✓ Notification sent successfully.\n");
+    } else {
+        printf("ERROR: Failed to send notification (code %d)\n", result);
+        printf("Make sure:\n");
+        printf("  - Client is connected\n");
+        printf("  - Client has subscribed to notifications (CCCD enabled)\n");
+        printf("  - Characteristic has Notify property\n");
+    }
+}
+
+static void gattServerSetupHeartbeat(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n========================================\n");
+    printf("  GATT Server: Heartbeat Service Setup\n");
+    printf("========================================\n\n");
+    
+    printf("This will create a Heart Rate Service (0x180D) with:\n");
+    printf("  - Heart Rate Measurement characteristic (0x2A37)\n");
+    printf("  - Properties: Notify\n");
+    printf("  - Sends heartbeat value every second when client subscribes\n\n");
+    
+    // Heart Rate Service UUID: 0x180D
+    uint8_t serviceUuid[] = {0x18, 0x0D};
+    
+    printf("Step 1: Defining Heart Rate Service (UUID: 0x180D)...\n");
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle, serviceUuid, 2, &gHeartbeatServiceHandle);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to define service (code %d)\n", result);
+        return;
+    }
+    printf("✓ Service defined with handle: %d\n\n", gHeartbeatServiceHandle);
+    
+    // Heart Rate Measurement UUID: 0x2A37
+    uint8_t charUuid[] = {0x2A, 0x37};
+    
+    printf("Step 2: Adding Heart Rate Measurement characteristic (UUID: 0x2A37)...\n");
+    printf("  Properties: Notify (0x10)\n");
+    
+    // Properties as byte array: Notify (0x10)
+    uint8_t propBytes[] = {0x10};
+    uint8_t defaultValue[] = {0x00, 60}; // Flags=0, Initial BPM=60
+    
+    uCxGattServerCharDefine_t charResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, charUuid, 2,
+                                      propBytes, 1,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      defaultValue, 2,
+                                      20, // max length
+                                      &charResponse);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to add characteristic (code %d)\n", result);
+        return;
+    }
+    gHeartbeatCharHandle = charResponse.value_handle;
+    printf("✓ Characteristic added with handle: %d\n", gHeartbeatCharHandle);
+    if (charResponse.cccd_handle > 0) {
+        gHeartbeatCccdHandle = charResponse.cccd_handle;
+        printf("  CCCD handle: %d (for notifications)\n\n", charResponse.cccd_handle);
+    } else {
+        printf("\n");
+    }
+    
+    // Activate the service
+    printf("Step 3: Activating service...\n");
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to activate service (code %d)\n", result);
+        return;
+    }
+    printf("✓ Service activated successfully!\n\n");
+    
+    // Set initial heartbeat value
+    gHeartbeatCounter = 60; // Start at 60 BPM
+    uint8_t heartbeatData[] = {0x00, gHeartbeatCounter}; // Flags=0, BPM value
+    
+    result = uCxGattServerSetAttrValue(&gUcxHandle, gHeartbeatCharHandle, 
+                                       heartbeatData, sizeof(heartbeatData));
+    
+    if (result == 0) {
+        printf("Step 4: Initial value set to %d BPM\n\n", gHeartbeatCounter);
+    }
+    
+    printf("========================================\n");
+    printf("  Heartbeat Service Ready!\n");
+    printf("========================================\n\n");
+    
+    printf("Next steps:\n");
+    printf("  1. Connect a GATT client (phone app, etc.)\n");
+    printf("  2. Client should discover Heart Rate Service\n");
+    printf("  3. Client enables notifications on Heart Rate Measurement\n");
+    printf("  4. Server will automatically send heartbeat updates every second\n\n");
+    
+    printf("Manual control:\n");
+    printf("  - Heartbeat starts automatically when client enables notifications\n");
+    printf("  - Heartbeat stops automatically when client disables notifications\n");
+    printf("  - Use [3] to change the heartbeat BPM value\n\n");
+    
+    // Store handles for later use
+    gGattServerServiceHandle = gHeartbeatServiceHandle;
+    gGattServerCharHandle = gHeartbeatCharHandle;
+}
+
+// GATT Server URC handler - called when client writes to a characteristic
+static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, 
+                                   int32_t value_handle, uByteArray_t *value, uOptions_t options)
+{
+    (void)puCxHandle;
+    (void)options;
+    
+    printf("\n[CCCD WRITE] conn=%d, handle=%d, len=%zu", 
+           conn_handle, value_handle, value->length);
+    
+    // Print the value being written
+    if (value->length >= 2) {
+        uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+        printf(", value=0x%04X", cccdValue);
+        if (cccdValue & 0x0001) printf(" (Notifications)");
+        if (cccdValue & 0x0002) printf(" (Indications)");
+    }
+    printf("\n");
+    
+    // Log the current CCCD handles for debugging
+    printf("[DEBUG] Known CCCD handles: BootKbd=%d, Keyboard=%d, Battery=%d\n", 
+           gHidBootKbdCccdHandle, gHidKeyboardCccdHandle, gBatteryCccdHandle);
+    
+    // Update current connection handle (client is connected!)
+    if (gCurrentGattConnHandle != conn_handle) {
+        gCurrentGattConnHandle = conn_handle;
+        printf("[DEBUG] Updated GATT connection handle to %d\n", conn_handle);
+    }
+    
+    // Check if this is a CCCD write for Boot Keyboard Input
+    if (gHidBootKbdCccdHandle > 0 && value_handle == gHidBootKbdCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[HID Boot Keyboard] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gHidNotificationsEnabled = true;
+                gUseBootKeyboard = true;  // Use Boot Keyboard for sending
+            } else {
+                printf("\n[HID Boot Keyboard] Client disabled notifications\n");
+                gHidNotificationsEnabled = false;
+                gUseBootKeyboard = false;
+            }
+        }
+        return;
+    }
+    
+    // Check if this is a CCCD write for HID Keyboard Input
+    if (gHidKeyboardCccdHandle > 0 && value_handle == gHidKeyboardCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[HID Keyboard] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gHidNotificationsEnabled = true;
+                gUseBootKeyboard = false;  // Use Regular Keyboard for sending
+            } else {
+                printf("\n[HID Keyboard] Client disabled notifications\n");
+                gHidNotificationsEnabled = false;
+                gUseBootKeyboard = false;
+            }
+        }
+        return;
+    }
+    
+    // Check if this is a CCCD write for HID Media Input
+    if (gHidMediaCccdHandle > 0 && value_handle == gHidMediaCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[HID Media] Client enabled notifications (CCCD handle %d)\n", value_handle);
+            } else {
+                printf("\n[HID Media] Client disabled notifications\n");
+            }
+        }
+        return;
+    }
+    
+    // Check if this is a CCCD write for Battery Level
+    if (gBatteryCccdHandle > 0 && value_handle == gBatteryCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[Battery] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                
+                // Send initial battery level (100%)
+                uint8_t batteryLevel = 100;
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle, conn_handle, 
+                                                               gBatteryLevelHandle, &batteryLevel, 1);
+                if (result == 0) {
+                    printf("[Battery] Sent initial battery level: 100%%\n");
+                } else {
+                    printf("[Battery] WARNING: Failed to send battery level (code %d)\n", result);
+                }
+            } else {
+                printf("\n[Battery] Client disabled notifications\n");
+            }
+        }
+        return;
+    }
+    
+    // Unknown CCCD write - log it for debugging
+    if (value->length >= 2) {
+        uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Unknown CCCD write to handle %d, value=0x%04X", 
+                      value_handle, cccdValue);
+        printf("\n[INFO] Client wrote to handle %d (not a known HID CCCD)\n", value_handle);
+    }
+    
+    // Check if this is a CCCD write for the heartbeat characteristic
+    if (gHeartbeatCccdHandle > 0 && value_handle == gHeartbeatCccdHandle) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Heartbeat CCCD write detected! (handle=%d, expected=%d)", 
+                      value_handle, gHeartbeatCccdHandle);
+        
+        // CCCD write: 0x0001 = enable notifications, 0x0002 = enable indications, 0x0000 = disable
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            
+            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "CCCD value: 0x%04X", cccdValue);
+            
+            if (cccdValue & 0x0001) {  // Bit 0 = Notifications enabled
+                // Client enabled notifications
+                printf("\n[Heartbeat] Client enabled notifications\n");
+                gHeartbeatNotificationsEnabled = true;
+                
+                // Start heartbeat thread if not already running
+                if (gHeartbeatThread == NULL) {
+                    gHeartbeatThreadRunning = true;
+                    gHeartbeatThread = CreateThread(NULL, 0, heartbeatThread, NULL, 0, NULL);
+                    if (gHeartbeatThread) {
+                        printf("[Heartbeat] Auto-notification thread started\n");
+                    } else {
+                        printf("[Heartbeat] ERROR: Failed to start thread\n");
+                        gHeartbeatThreadRunning = false;
+                    }
+                }
+            } else {
+                // Client disabled notifications (cccdValue == 0x0000)
+                printf("\n[Heartbeat] Client disabled notifications\n");
+                gHeartbeatNotificationsEnabled = false;
+                
+                // Stop heartbeat thread
+                if (gHeartbeatThread) {
+                    gHeartbeatThreadRunning = false;
+                    WaitForSingleObject(gHeartbeatThread, 2000);
+                    CloseHandle(gHeartbeatThread);
+                    gHeartbeatThread = NULL;
+                    printf("[Heartbeat] Auto-notification thread stopped\n");
+                }
+            }
+        }
+    }
+}
+
+// GATT Server URC handler - called when client reads a characteristic
+static void gattServerCharReadUrc(struct uCxHandle *puCxHandle, int32_t conn_handle,
+                                  int32_t value_handle)
+{
+    (void)puCxHandle;
+    
+    printf("[GATT Read] conn=%d, handle=%d", conn_handle, value_handle);
+    
+    // Try to identify what was read
+    if (value_handle == 23) {
+        printf(" (HID Information)\n");
+    } else if (value_handle == 25) {
+        printf(" (HID Report Map)\n");
+    } else if (value_handle == 27) {
+        printf(" (HID Keyboard Input)\n");
+    } else if (value_handle == 30) {
+        printf(" (HID Media Input)\n");
+    } else if (value_handle == 33) {
+        printf(" (HID Control Point)\n");
+    } else if (value_handle == 36) {
+        printf(" (Battery Level)\n");
+    } else if (value_handle == 11) {
+        printf(" (Service Changed)\n");
+    } else {
+        printf(" (Unknown)\n");
+    }
+}
+
+// Background thread that sends heartbeat notifications every second
+static DWORD WINAPI heartbeatThread(LPVOID lpParam)
+{
+    (void)lpParam;
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Heartbeat thread started");
+    printf("[Heartbeat] Thread running (enabled=%d, conn_handle=%d, char_handle=%d)\n",
+           gHeartbeatNotificationsEnabled, gCurrentGattConnHandle, gHeartbeatCharHandle);
+    
+    while (gHeartbeatThreadRunning) {
+        // Only send if notifications are enabled and we have a connection
+        if (gHeartbeatNotificationsEnabled && gCurrentGattConnHandle >= 0) {
+            // Vary the heart rate slightly for realism (58-72 BPM)
+            static int direction = 1;
+            gHeartbeatCounter = (uint8_t)(gHeartbeatCounter + direction);
+            if (gHeartbeatCounter >= 72) direction = -1;
+            if (gHeartbeatCounter <= 58) direction = 1;
+            
+            // Build heart rate measurement value: [Flags, BPM]
+            uint8_t heartbeatData[] = {0x00, gHeartbeatCounter};
+            
+            // Send notification
+            int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                           gHeartbeatCharHandle, 
+                                                           heartbeatData, sizeof(heartbeatData));
+            
+            if (result == 0) {
+                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Heartbeat notification sent: %d BPM", gHeartbeatCounter);
+            } else {
+                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to send heartbeat notification (code %d)", result);
+            }
+        }
+        
+        // Wait 1 second
+        Sleep(1000);
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Heartbeat thread stopped");
+    return 0;
+}
+
+// ----------------------------------------------------------------
+// URC Management Functions
+// ----------------------------------------------------------------
+
+static void enableAllUrcs(void)
+{
+    if (!gConnected) {
+        return;
+    }
+    
+    // Wi-Fi link and network events
+    uCxWifiRegisterLinkUp(&gUcxHandle, linkUpUrc);
+    uCxWifiRegisterLinkDown(&gUcxHandle, linkDownUrc);
+    uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
+    uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
+    
+    // Socket events
+    uCxSocketRegisterConnect(&gUcxHandle, sockConnected);
+    uCxSocketRegisterDataAvailable(&gUcxHandle, socketDataAvailable);
+    
+    // SPS events
+    uCxSpsRegisterConnect(&gUcxHandle, spsConnected);
+    uCxSpsRegisterDisconnect(&gUcxHandle, spsDisconnected);
+    uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
+    
+    // System events
+    uCxSystemRegisterStartup(&gUcxHandle, startupUrc);
+    
+    // Ping/diagnostics events
+    uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
+    uCxDiagnosticsRegisterPingComplete(&gUcxHandle, pingCompleteUrc);
+    
+    // MQTT events
+    uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
+    uCxMqttRegisterDataAvailable(&gUcxHandle, mqttDataAvailableUrc);
+    
+    // Bluetooth events
+    uCxBluetoothRegisterConnect(&gUcxHandle, btConnected);
+    uCxBluetoothRegisterDisconnect(&gUcxHandle, btDisconnected);
+    uCxBluetoothRegisterBondStatus(&gUcxHandle, bluetoothPairUrc);
+    uCxBluetoothRegisterUserConfirmation(&gUcxHandle, bluetoothUserConfirmationUrc);
+    uCxBluetoothRegisterPasskeyEntry(&gUcxHandle, bluetoothPasskeyDisplayUrc);
+    uCxBluetoothRegisterPasskeyRequest(&gUcxHandle, bluetoothPasskeyRequestUrc);
+    uCxBluetoothRegisterPhyUpdate(&gUcxHandle, bluetoothPhyUpdateUrc);
+    
+    // GATT Server events
+    uCxGattServerRegisterNotification(&gUcxHandle, gattServerCharWriteUrc);
+}
+
+static void disableAllUrcs(void)
+{
+    if (!gConnected) {
+        return;
+    }
+    
+    // Deregister all URCs by passing NULL callbacks
+    uCxWifiRegisterLinkUp(&gUcxHandle, NULL);
+    uCxWifiRegisterLinkDown(&gUcxHandle, NULL);
+    uCxWifiRegisterStationNetworkUp(&gUcxHandle, NULL);
+    uCxWifiRegisterStationNetworkDown(&gUcxHandle, NULL);
+    uCxSocketRegisterConnect(&gUcxHandle, NULL);
+    uCxSocketRegisterDataAvailable(&gUcxHandle, NULL);
+    uCxSpsRegisterConnect(&gUcxHandle, NULL);
+    uCxSpsRegisterDisconnect(&gUcxHandle, NULL);
+    uCxSpsRegisterDataAvailable(&gUcxHandle, NULL);
+    uCxSystemRegisterStartup(&gUcxHandle, NULL);
+    uCxDiagnosticsRegisterPingResponse(&gUcxHandle, NULL);
+    uCxDiagnosticsRegisterPingComplete(&gUcxHandle, NULL);
+    uCxMqttRegisterConnect(&gUcxHandle, NULL);
+    uCxMqttRegisterDataAvailable(&gUcxHandle, NULL);
+    uCxBluetoothRegisterConnect(&gUcxHandle, NULL);
+    uCxBluetoothRegisterDisconnect(&gUcxHandle, NULL);
+    uCxBluetoothRegisterBondStatus(&gUcxHandle, NULL);
+    uCxBluetoothRegisterUserConfirmation(&gUcxHandle, NULL);
+    uCxBluetoothRegisterPasskeyEntry(&gUcxHandle, NULL);
+    uCxBluetoothRegisterPasskeyRequest(&gUcxHandle, NULL);
+    uCxBluetoothRegisterPhyUpdate(&gUcxHandle, NULL);
+    uCxGattServerRegisterNotification(&gUcxHandle, NULL);
+}
+
+// ============================================================================
+// HID OVER GATT (HoG) - Keyboard + Media Control
+// ============================================================================
+
+// HID Report Descriptor - Bluetooth SIG Standard Keyboard with LEDs (Report ID 1 only)
+// 63 bytes total - Exact reference implementation for maximum compatibility
+// Hex: 05010906A101850105071 9E029E715002501750195088102950175088101950675081500256505071900296581000508950575011901290591029501750391 03C0
+static const uint8_t gHidReportMapKeyboard[] = {
+    0x05, 0x01,        // Usage Page (Generic Desktop)
+    0x09, 0x06,        // Usage (Keyboard)
+    0xA1, 0x01,        // Collection (Application)
+    0x85, 0x01,        //   Report ID (1)
+    0x05, 0x07,        //   Usage Page (Keyboard/Keypad)
+    0x19, 0xE0,        //   Usage Minimum (Left Control)
+    0x29, 0xE7,        //   Usage Maximum (Right GUI)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x01,        //   Logical Maximum (1)
+    0x75, 0x01,        //   Report Size (1)
+    0x95, 0x08,        //   Report Count (8)
+    0x81, 0x02,        //   Input (Data,Var,Abs) - Modifiers
+    0x95, 0x01,        //   Report Count (1)
+    0x75, 0x08,        //   Report Size (8)
+    0x81, 0x01,        //   Input (Const,Array,Abs) - Reserved
+    0x95, 0x06,        //   Report Count (6)
+    0x75, 0x08,        //   Report Size (8)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x65,        //   Logical Maximum (101)
+    0x05, 0x07,        //   Usage Page (Keyboard/Keypad)
+    0x19, 0x00,        //   Usage Minimum (0)
+    0x29, 0x65,        //   Usage Maximum (101)
+    0x81, 0x00,        //   Input (Data,Array,Abs) - Keys
+    0x05, 0x08,        //   Usage Page (LEDs)
+    0x95, 0x05,        //   Report Count (5)
+    0x75, 0x01,        //   Report Size (1)
+    0x19, 0x01,        //   Usage Minimum (Num Lock)
+    0x29, 0x05,        //   Usage Maximum (Kana)
+    0x91, 0x02,        //   Output (Data,Var,Abs) - LEDs
+    0x95, 0x01,        //   Report Count (1)
+    0x75, 0x03,        //   Report Size (3)
+    0x91, 0x03,        //   Output (Const,Var,Abs) - Padding
+    0xC0               // End Collection
+};
+
+
+// HID Information value (version 1.11, country code 0, flags 0x03 = normally connectable + remote wake)
+static const uint8_t gHidInfo[] = {0x11, 0x01, 0x00, 0x03};
+
+// Setup complete HID over GATT service structure
+static void gattServerSetupHidKeyboard(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("========================================\n");
+    printf("  HID over GATT (HoG) Setup\n");
+    printf("========================================\n");
+    printf("Profile: Keyboard + Media Control\n\n");
+    
+    // STEP 0: Configure Bluetooth settings BEFORE creating GATT services
+    printf("Step 0: Configuring Bluetooth settings...\n");
+    
+    // Set Bluetooth device name (add timestamp suffix to force cache refresh on phones)
+    char deviceName[64];
+    time_t now = time(NULL);
+    snprintf(deviceName, sizeof(deviceName), "u-blox HID Keyboard %02d", (int)(now % 100));
+    printf("  Setting device name to '%s'...\n", deviceName);
+    int result = uCxBluetoothSetLocalName(&gUcxHandle, deviceName);
+    if (result == 0) {
+        printf("  ✓ Device name set\n");
+    }
+    
+    // Set security mode to unauthenticated for "Just Works" pairing
+    printf("  Setting security mode to unauthenticated...\n");
+    result = uCxBluetoothSetSecurityMode(&gUcxHandle, U_BT_SECURITY_MODE_UNAUTHENTICATED);
+    if (result == 0) {
+        printf("  ✓ Security mode set\n");
+    }
+    
+    // Set IO capabilities
+    printf("  Setting IO capabilities to NoInputNoOutput...\n");
+    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, U_IO_CAPABILITIES_NO_INPUT_NO_OUTPUT);
+    if (result == 0) {
+        printf("  ✓ IO capabilities set\n");
+    }
+    
+    // Set advertising interval to 100-150ms using new API
+    // Interval units are in 0.625ms steps: 160 * 0.625 = 100ms, 240 * 0.625 = 150ms
+    printf("  Setting advertising interval to 100-150ms...\n");
+    result = uCxBluetoothSetAdvertismentLegacyConfiguration(&gUcxHandle, 160, 240);
+    if (result == 0) {
+        printf("  ✓ Advertising interval set\n");
+    } else {
+        printf("  WARNING: Failed to set advertising interval (code %d)\n", result);
+    }
+    
+    // Display Device Information Service (built-in, pre-configured in module)
+    printf("  Reading Device Information Service...\n");
+    uCxBluetoothListDeviceInfoServiceCharsBegin(&gUcxHandle);
+    uCxBluetoothListDeviceInfoServiceChars_t disChar;
+    while (uCxBluetoothListDeviceInfoServiceCharsGetNext(&gUcxHandle, &disChar)) {
+        const char *charName = "";
+        switch (disChar.characteristic_id) {
+            case U_CHARACTERISTIC_ID_MANUFACTURER_NAME: charName = "Manufacturer"; break;
+            case U_CHARACTERISTIC_ID_MODEL_NAME: charName = "Model"; break;
+            case U_CHARACTERISTIC_ID_FIRMWARE_REVISION: charName = "Firmware"; break;
+            case U_CHARACTERISTIC_ID_SOFTWARE_REVISION: charName = "Software"; break;
+        }
+        printf("    %s: %s\n", charName, disChar.characteristic_value);
+    }
+    uCxEnd(&gUcxHandle);
+    printf("  ✓ Device Information Service ready\n\n");
+    
+    // Step 1: Define HID Service (0x1812)
+    printf("Step 1: Creating HID Service (UUID: 0x1812)...\n");
+    uint8_t hidServiceUuid[] = {0x18, 0x12};  // 16-bit UUID for HID Service (little-endian: LSB first)
+    
+    result = uCxGattServerServiceDefine(&gUcxHandle, hidServiceUuid, 2, &gHidServiceHandle);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to create HID Service (code %d)\n", result);
+        return;
+    }
+    
+    printf("✓ HID Service defined with handle: %d\n\n", gHidServiceHandle);
+    
+    // Step 2: Add HID Information characteristic (0x2A4A) - Read (0x02)
+    printf("Step 2: Adding HID Information characteristic...\n");
+    uint8_t hidInfoUuid[] = {0x2A, 0x4A};  // Little-endian
+    uint8_t propRead[] = {0x02};  // Read property
+    
+    uCxGattServerCharDefine_t infoResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, hidInfoUuid, 2,
+                                      propRead, 1,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      (uint8_t*)gHidInfo, sizeof(gHidInfo),
+                                      sizeof(gHidInfo),
+                                      &infoResponse);
+    
+    if (result == 0) {
+        gHidInfoHandle = infoResponse.value_handle;
+        printf("✓ HID Info characteristic created (handle: %d)\n", gHidInfoHandle);
+    }
+    
+    // Step 2a: Add Protocol Mode characteristic (0x2A4E) - Read + Write Without Response
+    // CRITICAL: Read = NONE (no encryption) so Windows can read early before bonding
+    // Write = UNAUTHENTICATED (encrypted) forces Windows/iOS to pair on first write
+    // AT equivalent: AT+UBTGC=2A4E,06,1,2,01,1
+    printf("Step 2a: Adding Protocol Mode characteristic...\n");
+    uint8_t protoModeUuid[] = {0x2A, 0x4E};  // Little-endian
+    uint8_t propReadWriteNoResp[] = {0x06};  // Read (0x02) + Write Without Response (0x04) = 0x06
+    uint8_t protoModeValue[] = {0x01};  // 0x01 = Report Protocol (default)
+    
+    uCxGattServerCharDefine_t protoResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, protoModeUuid, 2,
+                                      propReadWriteNoResp, 1,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      protoModeValue, 1,
+                                      1,
+                                      &protoResponse);
+    
+    if (result == 0) {
+        printf("✓ Protocol Mode characteristic created (handle: %d, read=open, write=encrypted)\n", protoResponse.value_handle);
+    } else {
+        printf("WARNING: Failed to create Protocol Mode (code %d)\n", result);
+    }
+    
+    // Step 3: Add Report Map characteristic (0x2A4B) - Read (0x02)
+    printf("Step 3: Adding Report Map characteristic...\n");
+    uint8_t reportMapUuid[] = {0x2A, 0x4B};  // Little-endian
+    
+    uCxGattServerCharDefine_t mapResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, reportMapUuid, 2,
+                                      propRead, 1,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      (uint8_t*)gHidReportMapKeyboard, sizeof(gHidReportMapKeyboard),
+                                      sizeof(gHidReportMapKeyboard),
+                                      &mapResponse);
+    
+    if (result == 0) {
+        gHidReportMapHandle = mapResponse.value_handle;
+        printf("✓ Report Map characteristic created (handle: %d)\n", gHidReportMapHandle);
+        
+        // Add External Report Reference descriptor (0x2907)
+        // This links the Report Map to the Battery Level characteristic (UUID 0x2A19)
+        // CRITICAL: Must reference the characteristic (0x2A19), NOT the service (0x180F)
+        uint8_t extReportRefUuid[] = {0x29, 0x07};  // External Report Reference UUID (little-endian)
+        uint8_t batteryLevelCharUuid[] = {0x2A, 0x19};  // Battery Level Characteristic UUID (little-endian)
+        
+        int32_t extReportRefHandle;
+        result = uCxGattServerDescriptorDefine4(&gUcxHandle, extReportRefUuid, 2,
+                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                batteryLevelCharUuid, 2,
+                                                &extReportRefHandle);
+        
+        if (result == 0) {
+            printf("  ✓ External Report Reference descriptor added (handle: %d, links to Battery Level char)\n", extReportRefHandle);
+        } else {
+            printf("  WARNING: Failed to add External Report Reference (code %d)\n", result);
+        }
+    }
+    
+    // Step 3a: Add Boot Keyboard Input Report (0x2A22) - Notify (0x10)
+    // CRITICAL: Required for Windows/iOS to recognize device as HID Keyboard
+    // Security set to UNAUTHENTICATED (Encrypted) as per HID spec
+    // Boot reports MUST be exactly 8 bytes (per HID spec)
+    printf("Step 3a: Adding Boot Keyboard Input Report (required for OS recognition)...\n");
+    uint8_t bootKbdInputUuid[] = {0x2A, 0x22};  // Little-endian
+    uint8_t propNotify[] = {0x10};  // Notify only
+    uint8_t emptyBootKbdReport[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Standard 8-byte boot report
+    
+    uCxGattServerCharDefine_t bootKbdResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdInputUuid, 2,
+                                      propNotify, 1,
+                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      emptyBootKbdReport, 8,
+                                      8,
+                                      &bootKbdResponse);
+    
+    if (result == 0) {
+        gHidBootKbdInputHandle = bootKbdResponse.value_handle;
+        gHidBootKbdCccdHandle = bootKbdResponse.cccd_handle;
+        printf("✓ Boot Keyboard Input Report created (handle: %d, CCCD: %d)\n", 
+               bootKbdResponse.value_handle, bootKbdResponse.cccd_handle);
+        
+        // CRITICAL: Add Report Reference descriptor (0x2908) for Boot Keyboard Input
+        // This tells Windows: Report ID=1, Report Type=1 (Input)
+        // Without this, Windows won't recognize the device as HoG!
+        uint8_t reportRefUuid[] = {0x29, 0x08};  // Report Reference UUID (little-endian)
+        uint8_t reportRefValue[] = {0x01, 0x01}; // Report ID=1, Report Type=1 (Input)
+        
+        int32_t reportRefHandle;
+        result = uCxGattServerDescriptorDefine4(&gUcxHandle, reportRefUuid, 2,
+                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                reportRefValue, 2,
+                                                &reportRefHandle);
+        
+        if (result == 0) {
+            printf("  ✓ Boot Keyboard Report Reference descriptor added (handle: %d)\n", reportRefHandle);
+        } else {
+            printf("  WARNING: Failed to add Boot Keyboard Report Reference (code %d)\n", result);
+        }
+    } else {
+        printf("WARNING: Failed to create Boot Keyboard Input Report (code %d)\n", result);
+    }
+    
+    // Step 3b: Add Boot Keyboard Output Report (0x2A32) - Write Without Response (0x04)
+    // Recommended for complete HID keyboard compliance
+    // Security set to UNAUTHENTICATED (Encrypted) as per HID spec
+    printf("Step 3b: Adding Boot Keyboard Output Report...\n");
+    uint8_t bootKbdOutputUuid[] = {0x2A, 0x32};  // Little-endian
+    uint8_t propWriteWoResp[] = {0x04};  // Write Without Response
+    uint8_t emptyBootKbdOutput[1] = {0x00};  // LED state (Num/Caps/Scroll Lock)
+    
+    uCxGattServerCharDefine_t bootKbdOutResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdOutputUuid, 2,
+                                      propWriteWoResp, 1,
+                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      emptyBootKbdOutput, 1,
+                                      1,
+                                      &bootKbdOutResponse);
+    
+    if (result == 0) {
+        gHidBootKbdOutputHandle = bootKbdOutResponse.value_handle;
+        printf("✓ Boot Keyboard Output Report created (handle: %d)\n", bootKbdOutResponse.value_handle);
+        
+        // Add Report Reference descriptor (0x2908) for Boot Keyboard Output
+        // Value: [Report ID, Report Type] = [0x01, 0x02] (ID=1, Type=Output)
+        uint8_t reportRefUuid[] = {0x29, 0x08};  // Little-endian
+        uint8_t bootOutReportRefValue[] = {0x01, 0x02};  // Report ID 1, Output Report
+        
+        int32_t bootOutDescHandle;
+        result = uCxGattServerDescriptorDefine4(&gUcxHandle,
+                                                reportRefUuid, 2,
+                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                bootOutReportRefValue, 2,
+                                                &bootOutDescHandle);
+        
+        if (result == 0) {
+            printf("  ✓ Boot Output Report Reference descriptor added (handle: %d)\n", bootOutDescHandle);
+        } else {
+            printf("  WARNING: Failed to add Boot Output Report Reference (code %d)\n", result);
+        }
+    } else {
+        printf("WARNING: Failed to create Boot Keyboard Output Report (code %d)\n", result);
+    }
+    
+    // Step 4: Add Keyboard Input Report characteristic (0x2A4D) - Read (0x02) + Notify (0x10) = 0x12
+    // Security set to UNAUTHENTICATED (Encrypted) as per HID spec
+    printf("Step 4: Adding Keyboard Input Report characteristic...\n");
+    uint8_t reportUuid[] = {0x2A, 0x4D};  // Little-endian
+    uint8_t propReadNotify[] = {0x12};  // Read + Notify
+    uint8_t emptyKbdReport[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Report ID + 8 bytes
+    
+    uCxGattServerCharDefine_t kbdResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, reportUuid, 2,
+                                      propReadNotify, 1,
+                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      emptyKbdReport, 9,
+                                      9,
+                                      &kbdResponse);
+    
+    if (result == 0) {
+        gHidKeyboardInputHandle = kbdResponse.value_handle;
+        gHidKeyboardCccdHandle = kbdResponse.cccd_handle;
+        printf("✓ Keyboard Input Report created (handle: %d)\n", gHidKeyboardInputHandle);
+        if (kbdResponse.cccd_handle > 0) {
+            printf("  CCCD handle: %d\n", kbdResponse.cccd_handle);
+        }
+        
+        // Add Report Reference descriptor (0x2908) for Keyboard Input Report
+        // Value: [Report ID, Report Type] = [0x01, 0x01] (ID=1, Type=Input)
+        uint8_t reportRefUuid[] = {0x29, 0x08};  // Little-endian
+        uint8_t kbdReportRefValue[] = {0x01, 0x01};  // Report ID 1, Input Report
+        
+        int32_t kbdDescHandle;
+        result = uCxGattServerDescriptorDefine4(&gUcxHandle,
+                                                reportRefUuid, 2,
+                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                kbdReportRefValue, 2,
+                                                &kbdDescHandle);
+        
+        if (result == 0) {
+            printf("  Report Reference descriptor added (handle: %d)\n", kbdDescHandle);
+        } else {
+            printf("  WARNING: Failed to add Report Reference descriptor (code %d)\n", result);
+        }
+    }
+    
+    // Step 4b: Add Keyboard Output Report characteristic (0x2A4D) - LED indicators
+    // CRITICAL: Windows expects an LED Output report to match the Report Map
+    // This is for Report mode (complementary to Boot Keyboard Output)
+    printf("Step 4b: Adding Keyboard Output Report (LED indicators)...\n");
+    uint8_t kbdOutputUuid[] = {0x2A, 0x4D};  // Report characteristic (little-endian)
+    uint8_t propReadWriteWWR[] = {0x0E};  // Read (0x02) + Write (0x08) + Write Without Response (0x04) = 0x0E
+    uint8_t ledOutputValue[] = {0x00};  // 1 byte: LED bitmap (Num/Caps/Scroll/etc)
+    
+    uCxGattServerCharDefine_t kbdOutResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, kbdOutputUuid, 2,
+                                      propReadWriteWWR, 1,
+                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      ledOutputValue, 1,
+                                      1,
+                                      &kbdOutResponse);
+    
+    if (result == 0) {
+        gHidKeyboardOutputHandle = kbdOutResponse.value_handle;
+        printf("✓ Keyboard Output Report created (handle: %d)\n", gHidKeyboardOutputHandle);
+        
+        // Add Report Reference descriptor (0x2908) for Keyboard Output Report
+        // Value: [Report ID, Report Type] = [0x01, 0x02] (ID=1, Type=Output)
+        uint8_t reportRefUuid[] = {0x29, 0x08};  // Little-endian
+        uint8_t kbdOutReportRefValue[] = {0x01, 0x02};  // Report ID 1, Output Report
+        
+        int32_t kbdOutDescHandle;
+        result = uCxGattServerDescriptorDefine4(&gUcxHandle,
+                                                reportRefUuid, 2,
+                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                kbdOutReportRefValue, 2,
+                                                &kbdOutDescHandle);
+        
+        if (result == 0) {
+            printf("  ✓ LED Output Report Reference descriptor added (handle: %d)\n", kbdOutDescHandle);
+        } else {
+            printf("  WARNING: Failed to add LED Output Report Reference (code %d)\n", result);
+        }
+    } else {
+        printf("WARNING: Failed to create Keyboard Output Report (code %d)\n", result);
+    }
+    
+    // Step 5: Add HID Control Point characteristic (0x2A4C) - Write without response (0x04)
+    // AT equivalent: AT+UBTGC=4C2A,04,2,2,00,1
+    printf("Step 5: Adding HID Control Point characteristic...\n");
+    uint8_t controlPointUuid[] = {0x2A, 0x4C};  // Little-endian
+    uint8_t propWriteNoResp[] = {0x04};  // Write without response
+    uint8_t cpValue[] = {0x00};
+    
+    uCxGattServerCharDefine_t cpResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, controlPointUuid, 2,
+                                      propWriteNoResp, 1,
+                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      cpValue, 1,
+                                      1,
+                                      &cpResponse);
+    
+    if (result == 0) {
+        gHidControlPointHandle = cpResponse.value_handle;
+        printf("✓ HID Control Point created (handle: %d)\n", gHidControlPointHandle);
+    }
+    
+    // Step 6: Activating HID Service
+    printf("\nStep 6: Activating HID Service...\n");
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to activate HID service (code %d)\n", result);
+        return;
+    }
+    
+    printf("✓ HID Service activated!\n\n");
+    
+    // Step 7: Create Battery Service (0x180F)
+    printf("Step 7: Creating Battery Service (UUID: 0x180F)...\n");
+    uint8_t batteryServiceUuid[] = {0x18, 0x0F};  // Little-endian
+    
+    result = uCxGattServerServiceDefine(&gUcxHandle, batteryServiceUuid, 2, &gBatteryServiceHandle);
+    
+    if (result == 0) {
+        printf("✓ Battery Service defined (handle: %d)\n", gBatteryServiceHandle);
+        
+        // Add Battery Level characteristic (0x2A19) - Read + Notify
+        uint8_t batteryLevelUuid[] = {0x2A, 0x19};  // Little-endian
+        uint8_t batValue[] = {100};  // 100%
+        
+        uCxGattServerCharDefine_t batResponse;
+        result = uCxGattServerCharDefine6(&gUcxHandle, batteryLevelUuid, 2,
+                                          propReadNotify, 1,
+                                          U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                          batValue, 1,
+                                          1,
+                                          &batResponse);
+        
+        if (result == 0) {
+            gBatteryLevelHandle = batResponse.value_handle;
+            gBatteryCccdHandle = batResponse.cccd_handle;
+            printf("✓ Battery Level characteristic created (handle: %d)\n", gBatteryLevelHandle);
+            if (batResponse.cccd_handle > 0) {
+                printf("  CCCD handle: %d\n", batResponse.cccd_handle);
+            }
+        }
+        
+        // Step 8: Activate Battery Service
+        printf("\nStep 8: Activating Battery Service...\n");
+        result = uCxGattServerServiceActivate(&gUcxHandle);
+        
+        if (result != 0) {
+            printf("ERROR: Failed to activate Battery service (code %d)\n", result);
+            return;
+        }
+        
+        printf("✓ Battery Service activated!\n\n");
+    }
+    
+    printf("========================================\n");
+    printf("  HID Keyboard + Battery Services Ready!\n");
+    printf("========================================\n\n");
+    
+    // Bond management - Check existing bonds
+    printf("Checking existing bonds...\n");
+    uCxBluetoothListBondedDevicesBegin(&gUcxHandle);
+    uBtLeAddress_t bondedAddr;
+    int bondCount = 0;
+    while (uCxBluetoothListBondedDevicesGetNext(&gUcxHandle, &bondedAddr)) {
+        bondCount++;
+    }
+    result = uCxEnd(&gUcxHandle);
+    if (result == 0) {
+        printf("✓ Found %d bonded device(s)\n\n", bondCount);
+    } else {
+        printf("✓ Bond list checked\n\n");
+    }
+    
+    // Ask user if they want to clear bonds
+    printf("Do you want to clear existing bonds? (y/n): ");
+    int clearBonds = getchar();
+    getchar(); // consume newline
+    printf("\n");
+    
+    if (clearBonds == 'y' || clearBonds == 'Y') {
+        printf("Clearing all Bluetooth bonds...\n");
+        result = uCxBluetoothUnbondAll(&gUcxHandle);
+        if (result == 0) {
+            printf("✓ All bonds cleared - ready for fresh pairing\n\n");
+            
+            printf("========================================\n");
+            printf("  ⚠️  CRITICAL STEP REQUIRED ⚠️\n");
+            printf("========================================\n\n");
+            printf("You MUST also remove this device from your\n");
+            printf("iPhone/Windows Bluetooth settings:\n\n");
+            printf("iPhone:\n");
+            printf("  1. Settings → Bluetooth\n");
+            printf("  2. Find 'u-blox ucxclient HID device'\n");
+            printf("  3. Tap (i) icon\n");
+            printf("  4. Tap 'Forget This Device'\n\n");
+            printf("Windows 11:\n");
+            printf("  1. Settings → Bluetooth & devices\n");
+            printf("  2. Find 'u-blox ucxclient HID device'\n");
+            printf("  3. Click ⋮ (three dots)\n");
+            printf("  4. Click 'Remove device'\n\n");
+            printf("Press ENTER after you have removed the device...");
+            getchar();
+            printf("\n");
+        }
+    } else {
+        printf("Keeping existing bonds\n\n");
+    }
+    
+    // Configure advertising data for HID keyboard
+    printf("Configuring advertising data for HID keyboard...\n");
+    
+    // Build advertising data packet:
+    // Flags (3 bytes): Length=2, Type=0x01, Value=0x06 (LE General Discoverable, BR/EDR not supported)
+    // Service UUIDs (6 bytes): Length=5, Type=0x03, UUIDs=0x1812,0x180F (HID, Battery)
+    // Appearance (4 bytes): Length=3, Type=0x19, Value=0x03C1 (Keyboard)
+    uint8_t advData[] = {
+        0x02, 0x01, 0x06,       // Flags
+        0x05, 0x03, 0x12, 0x18, 0x0F, 0x18,  // Service UUIDs (HID + Battery)
+        0x03, 0x19, 0xC1, 0x03  // Appearance (Keyboard)
+    };
+    
+    result = uCxBluetoothSetAdvertiseData(&gUcxHandle, advData, sizeof(advData));
+    
+    if (result == 0) {
+        printf("✓ Advertising data configured (Flags + HID/Battery services + Keyboard appearance)\n");
+    } else {
+        printf("ERROR: Failed to set advertising data (code %d)\n", result);
+        return;
+    }
+    
+    // Enable pairing mode
+    printf("Enabling pairing mode...\n");
+    result = uCxBluetoothSetPairingMode(&gUcxHandle, U_PAIRING_MODE_PAIRING_MODE_ENABLE);
+    if (result == 0) {
+        printf("✓ Pairing mode enabled\n");
+    } else {
+        printf("WARNING: Failed to enable pairing (code %d)\n", result);
+    }
+    
+    // Enable advertising to make device discoverable using new API
+    printf("Enabling Bluetooth legacy advertising...\n");
+    result = uCxBluetoothSetLegacyAdvertisements(&gUcxHandle);
+    if (result == 0) {
+        gBluetoothAdvertising = true;
+        printf("✓ Advertising enabled - Device is now discoverable!\n\n");
+    } else {
+        printf("WARNING: Failed to enable advertising (code %d)\n\n", result);
+    }
+        printf("========================================\n");
+    printf("  Device Ready for Pairing!\n");
+    printf("========================================\n\n");
+    
+    printf("Next steps:\n");
+    printf("  1. Scan for Bluetooth devices on your phone/PC\n");
+    printf("  2. Look for 'u-blox ucxclient HID device'\n");
+    printf("  3. Pair/Connect to the device\n");
+    printf("  4. Use menu options to send key presses or media controls\n\n");
+    
+    printf("Manual control:\n");
+    printf("  - Use [8] to send keyboard key presses\n");
+    printf("  - Use [9] to send media control commands\n");
+    printf("  - Use [a] to send 'Hello World' test\n\n");
+    
+    gGattServerServiceHandle = gHidServiceHandle;
+}
+
+// Send a keyboard key press via HID
+static void gattServerSendKeyPress(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gHidKeyboardInputHandle < 0) {
+        printf("ERROR: HID Keyboard service not set up. Use option [6] first.\n");
+        return;
+    }
+    
+    if (gCurrentGattConnHandle < 0) {
+        printf("ERROR: No GATT client connected\n");
+        return;
+    }
+    
+    if (!gHidNotificationsEnabled) {
+        printf("\n========================================\n");
+        printf("  HID Notifications Not Yet Enabled\n");
+        printf("========================================\n");
+        printf("The client (Windows/phone) has connected but hasn't\n");
+        printf("enabled notifications on the HID Input Report yet.\n\n");
+        printf("This is normal - the client first enables Service Changed\n");
+        printf("notifications, then reads HID characteristics, and finally\n");
+        printf("enables HID Input Report notifications.\n\n");
+        printf("Please wait a few seconds and try again.\n");
+        printf("You'll see '[HID Keyboard] Client enabled notifications'\n");
+        printf("when it's ready.\n");
+        printf("========================================\n");
+        return;
+    }
+    
+    printf("\n--- Send Keyboard Key Press ---\n");
+    printf("Enter key to send:\n");
+    printf("  [a-z] Letters\n");
+    printf("  [0-9] Numbers\n");
+    printf("  [space] Space bar\n");
+    printf("  [enter] Enter key\n");
+    printf("  [esc] Escape\n");
+    printf("Choice: ");
+    
+    char input[64];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    // Remove newline
+    input[strcspn(input, "\n")] = '\0';
+    
+    // HID Keyboard Report: [ReportID][Modifier][Reserved][Key1-Key6]
+    uint8_t report[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    
+    // Map input to HID usage codes
+    uint8_t keycode = 0;
+    const char *keyName = "";
+    
+    if (strcmp(input, "a") == 0) { keycode = 0x04; keyName = "A"; }
+    else if (strcmp(input, "b") == 0) { keycode = 0x05; keyName = "B"; }
+    else if (strcmp(input, "c") == 0) { keycode = 0x06; keyName = "C"; }
+    else if (strcmp(input, "d") == 0) { keycode = 0x07; keyName = "D"; }
+    else if (strcmp(input, "e") == 0) { keycode = 0x08; keyName = "E"; }
+    else if (strcmp(input, "f") == 0) { keycode = 0x09; keyName = "F"; }
+    else if (strcmp(input, "g") == 0) { keycode = 0x0A; keyName = "G"; }
+    else if (strcmp(input, "h") == 0) { keycode = 0x0B; keyName = "H"; }
+    else if (strcmp(input, "i") == 0) { keycode = 0x0C; keyName = "I"; }
+    else if (strcmp(input, "j") == 0) { keycode = 0x0D; keyName = "J"; }
+    else if (strcmp(input, "k") == 0) { keycode = 0x0E; keyName = "K"; }
+    else if (strcmp(input, "l") == 0) { keycode = 0x0F; keyName = "L"; }
+    else if (strcmp(input, "m") == 0) { keycode = 0x10; keyName = "M"; }
+    else if (strcmp(input, "n") == 0) { keycode = 0x11; keyName = "N"; }
+    else if (strcmp(input, "o") == 0) { keycode = 0x12; keyName = "O"; }
+    else if (strcmp(input, "p") == 0) { keycode = 0x13; keyName = "P"; }
+    else if (strcmp(input, "q") == 0) { keycode = 0x14; keyName = "Q"; }
+    else if (strcmp(input, "r") == 0) { keycode = 0x15; keyName = "R"; }
+    else if (strcmp(input, "s") == 0) { keycode = 0x16; keyName = "S"; }
+    else if (strcmp(input, "t") == 0) { keycode = 0x17; keyName = "T"; }
+    else if (strcmp(input, "u") == 0) { keycode = 0x18; keyName = "U"; }
+    else if (strcmp(input, "v") == 0) { keycode = 0x19; keyName = "V"; }
+    else if (strcmp(input, "w") == 0) { keycode = 0x1A; keyName = "W"; }
+    else if (strcmp(input, "x") == 0) { keycode = 0x1B; keyName = "X"; }
+    else if (strcmp(input, "y") == 0) { keycode = 0x1C; keyName = "Y"; }
+    else if (strcmp(input, "z") == 0) { keycode = 0x1D; keyName = "Z"; }
+    else if (strcmp(input, "1") == 0) { keycode = 0x1E; keyName = "1"; }
+    else if (strcmp(input, "2") == 0) { keycode = 0x1F; keyName = "2"; }
+    else if (strcmp(input, "3") == 0) { keycode = 0x20; keyName = "3"; }
+    else if (strcmp(input, "4") == 0) { keycode = 0x21; keyName = "4"; }
+    else if (strcmp(input, "5") == 0) { keycode = 0x22; keyName = "5"; }
+    else if (strcmp(input, "6") == 0) { keycode = 0x23; keyName = "6"; }
+    else if (strcmp(input, "7") == 0) { keycode = 0x24; keyName = "7"; }
+    else if (strcmp(input, "8") == 0) { keycode = 0x25; keyName = "8"; }
+    else if (strcmp(input, "9") == 0) { keycode = 0x26; keyName = "9"; }
+    else if (strcmp(input, "0") == 0) { keycode = 0x27; keyName = "0"; }
+    else if (strcmp(input, "enter") == 0) { keycode = 0x28; keyName = "Enter"; }
+    else if (strcmp(input, "esc") == 0) { keycode = 0x29; keyName = "Escape"; }
+    else if (strcmp(input, "space") == 0) { keycode = 0x2C; keyName = "Space"; }
+    else {
+        printf("Unknown key: %s\n", input);
+        return;
+    }
+    
+    report[3] = keycode;  // First key in array
+    
+    printf("Sending key press: %s (code 0x%02X)\n", keyName, keycode);
+    
+    // Send key down (key pressed)
+    int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
+                                         gHidKeyboardInputHandle, report, 9);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to send key down notification (code %d)\n", result);
+        return;
+    }
+    
+    Sleep(50);  // Hold key for 50ms
+    
+    // Send key up (all zeros = no keys pressed)
+    uint8_t releaseReport[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
+                                  gHidKeyboardInputHandle, releaseReport, 9);
+    
+    if (result == 0) {
+        printf("✓ Key press sent successfully\n");
+    } else {
+        printf("ERROR: Failed to send key release (code %d)\n", result);
+    }
+}
+
+// Send media control command via HID
+static void gattServerSendMediaControl(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gHidMediaInputHandle < 0) {
+        printf("ERROR: HID service not set up. Use option [6] first.\n");
+        return;
+    }
+    
+    if (gCurrentGattConnHandle < 0) {
+        printf("ERROR: No GATT client connected\n");
+        return;
+    }
+    
+    printf("\n--- Send Media Control ---\n");
+    printf("  [1] Play/Pause\n");
+    printf("  [2] Next Track\n");
+    printf("  [3] Previous Track\n");
+    printf("  [4] Volume Up\n");
+    printf("  [5] Volume Down\n");
+    printf("Choice: ");
+    
+    char input[64];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    // Media Report: [ReportID][BitMask]
+    // Bits: [VolUp][VolDown][Play][Next][Prev][Pad][Pad][Pad]
+    uint8_t report[2] = {0x02, 0x00};  // Report ID 2 for media
+    const char *actionName = "";
+    
+    switch(input[0]) {
+        case '1':
+            report[1] = 0b00000100;  // Play/Pause bit
+            actionName = "Play/Pause";
+            break;
+        case '2':
+            report[1] = 0b00001000;  // Next Track bit
+            actionName = "Next Track";
+            break;
+        case '3':
+            report[1] = 0b00010000;  // Previous Track bit
+            actionName = "Previous Track";
+            break;
+        case '4':
+            report[1] = 0b00000001;  // Volume Up bit
+            actionName = "Volume Up";
+            break;
+        case '5':
+            report[1] = 0b00000010;  // Volume Down bit
+            actionName = "Volume Down";
+            break;
+        default:
+            printf("Invalid choice\n");
+            return;
+    }
+    
+    printf("Sending: %s\n", actionName);
+    
+    // Send button press
+    int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
+                                         gHidMediaInputHandle, report, 2);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to send media press (code %d)\n", result);
+        return;
+    }
+    
+    Sleep(100);  // Hold for 100ms
+    
+    // Send button release (all zeros)
+    uint8_t releaseReport[2] = {0x02, 0x00};
+    result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
+                                  gHidMediaInputHandle, releaseReport, 2);
+    
+    if (result == 0) {
+        printf("✓ Media control sent successfully\n");
+    } else {
+        printf("ERROR: Failed to send release (code %d)\n", result);
+    }
+}
+
+// Send "Hello World" as keyboard key presses
+static void gattServerSendHelloWorld(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gHidKeyboardInputHandle < 0) {
+        printf("ERROR: HID Keyboard service not set up. Use option [6] first.\n");
+        return;
+    }
+    
+    if (gCurrentGattConnHandle < 0) {
+        printf("ERROR: No GATT client connected\n");
+        return;
+    }
+    
+    if (!gHidNotificationsEnabled) {
+        printf("\n========================================\n");
+        printf("  HID Notifications Not Yet Enabled\n");
+        printf("========================================\n");
+        printf("The client (Windows/phone) has connected but hasn't\n");
+        printf("enabled notifications on the HID Input Report yet.\n\n");
+        printf("This is normal - the client first enables Service Changed\n");
+        printf("notifications, then reads HID characteristics, and finally\n");
+        printf("enables HID Input Report notifications.\n\n");
+        printf("Please wait a few seconds and try again.\n");
+        printf("You'll see '[HID Keyboard] Client enabled notifications'\n");
+        printf("when it's ready.\n");
+        printf("========================================\n");
+        return;
+    }
+    
+    // Determine which handle to use based on which CCCD the client enabled
+    int32_t targetHandle = gUseBootKeyboard ? gHidBootKbdInputHandle : gHidKeyboardInputHandle;
+    const char *reportType = gUseBootKeyboard ? "Boot Keyboard" : "Regular Keyboard";
+    
+    printf("\n--- Sending 'Hello World' (via %s, handle %d) ---\n", reportType, targetHandle);
+    
+    // Map: H e l l o   W o r l d
+    const char *text = "Hello World";
+    const uint8_t keycodes[] = {
+        0x0B, // H
+        0x08, // e
+        0x0F, // l
+        0x0F, // l
+        0x12, // o
+        0x2C, // space
+        0x1A, // W
+        0x12, // o
+        0x15, // r
+        0x0F, // l
+        0x07  // d
+    };
+    
+    for (size_t i = 0; i < strlen(text); i++) {
+        // HID Keyboard Report: [ReportID][Modifier][Reserved][Key1-Key6]
+        uint8_t report[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        
+        // Check if uppercase (need Shift modifier = 0x02)
+        if (text[i] >= 'A' && text[i] <= 'Z') {
+            report[1] = 0x02;  // Left Shift modifier
+        }
+        
+        report[3] = keycodes[i];  // First key in array
+        
+        printf("  Sending: '%c'\n", text[i]);
+        
+        // Send key down (use appropriate handle based on what client enabled)
+        int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
+                                             targetHandle, report, 9);
+        
+        if (result != 0) {
+            printf("ERROR: Failed to send key (code %d)\n", result);
+            return;
+        }
+        
+        Sleep(50);  // Hold key
+        
+        // Send key up (all zeros)
+        uint8_t releaseReport[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+        uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
+                                       targetHandle, releaseReport, 9);
+        
+        Sleep(50);  // Delay between keys
+    }
+    
+    printf("✓ 'Hello World' sent successfully!\n");
+}
+
+// ============================================================================
+// BLUETOOTH MANAGEMENT (Advertising, Pairing, Status)
+// ============================================================================
+
+// URC handler for bond/pairing status
+static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBondStatus_t bond_status)
+{
+    (void)puCxHandle;
+    
+    // Safety check: handle empty URC params
+    if (bd_addr == NULL) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Received UEBTB with empty params (ignoring)");
+        return;
+    }
+    
+    char addrStr[18];
+    snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
+             bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
+    
+    if (bond_status == U_BOND_STATUS_BONDING_SUCCEEDED) {
+        printf("\n*** PAIRING SUCCESS ***\n");
+        printf("Device: %s\n", addrStr);
+        printf("Type: %d\n", bd_addr->type);
+        strncpy(gBluetoothPairedDevice, addrStr, sizeof(gBluetoothPairedDevice) - 1);
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Paired with device: %s", addrStr);
+        
+        // As a HID keyboard peripheral, we should reconnect to the paired host
+        printf("\n[INFO] HID device will advertise for automatic reconnection...\n");
+        printf("[INFO] On your phone/PC, tap the device to reconnect\n");
+        
+        // Note: Some hosts automatically reconnect, others require manual reconnection
+        // The advertising is already enabled, so the host can initiate connection
+
+        // printf("[INFO] Restarting advertising for HID reconnect...\n");
+        // // Re-enable general advertising so Host can reconnect automatically
+        // uCxAtClientExecSimpleCmd(gUcxHandle.pAtClient, "AT+UBTAL");
+        // int32_t result = uCxEnd(&gUcxHandle);
+        // if (result == 0) {
+        //     printf("✓ Advertising restarted for reconnect\n");
+        // } else {
+        //     printf("WARNING: Could not restart advertising (code %d)\n", result);
+        // }
+        
+    } else {
+        printf("\n*** PAIRING FAILED ***\n");
+        printf("Device: %s\n", addrStr);
+        printf("Status: %d\n", bond_status);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Pairing failed for device: %s, status: %d", addrStr, bond_status);
+    }
+}
+
+// URC handler for user confirmation during pairing (DisplayYesNo)
+static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value)
+{
+    (void)puCxHandle;
+    
+    char addrStr[18];
+    snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
+             bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
+    
+    printf("\n╔══════════════════════════════════════════╗\n");
+    printf("║       BLUETOOTH PAIRING REQUEST         ║\n");
+    printf("╚══════════════════════════════════════════╝\n\n");
+    printf("Device: %s\n", addrStr);
+    printf("Pairing Code: %06d\n\n", numeric_value);
+    printf("Verify this code matches on both devices.\n");
+    printf("Accept pairing? (y/n): ");
+    fflush(stdout);
+    
+    int response = getchar();
+    getchar(); // consume newline
+    
+    uYesNo_t answer = (response == 'y' || response == 'Y') ? U_YES_NO_YES : U_YES_NO_NO;
+    int32_t result = uCxBluetoothUserConfirmation(&gUcxHandle, bd_addr, answer);
+    
+    if (result == 0) {
+        if (answer == U_YES_NO_YES) {
+            printf("✓ Pairing accepted - waiting for confirmation...\n");
+        } else {
+            printf("✗ Pairing rejected\n");
+        }
+    } else {
+        printf("ERROR: Failed to send confirmation (code %d)\n", result);
+    }
+}
+
+// URC handler for passkey display during pairing (DisplayOnly)
+static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t passkey)
+{
+    (void)puCxHandle;
+    
+    char addrStr[18];
+    snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
+             bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
+    
+    printf("\n╔══════════════════════════════════════════╗\n");
+    printf("║     BLUETOOTH PAIRING - ENTER CODE      ║\n");
+    printf("╚══════════════════════════════════════════╝\n\n");
+    printf("Device: %s\n", addrStr);
+    printf("\nEnter this code on the remote device:\n\n");
+    printf("        >>> %06d <<<\n\n", passkey);
+    printf("Waiting for remote device to confirm...\n");
+}
+
+// URC handler for passkey request during pairing (KeyboardOnly)
+static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr)
+{
+    (void)puCxHandle;
+    
+    char addrStr[18];
+    snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
+             bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
+    
+    printf("\n╔══════════════════════════════════════════╗\n");
+    printf("║    BLUETOOTH PAIRING - CODE REQUIRED    ║\n");
+    printf("╚══════════════════════════════════════════╝\n\n");
+    printf("Device: %s\n", addrStr);
+    printf("\nEnter the pairing code shown on the remote device.\n");
+    printf("Passkey (6 digits): ");
+    fflush(stdout);
+    
+    int32_t passkey = 0;
+    if (scanf("%d", &passkey) == 1) {
+        getchar(); // consume newline
+        
+        int32_t result = uCxBluetoothUserPasskeyEntry3(&gUcxHandle, bd_addr, U_YES_NO_YES, passkey);
+        if (result == 0) {
+            printf("✓ Passkey sent - waiting for pairing completion...\n");
+        } else {
+            printf("ERROR: Failed to send passkey (code %d)\n", result);
+        }
+    } else {
+        printf("ERROR: Invalid passkey\n");
+        getchar(); // clear input
+        uCxBluetoothUserPasskeyEntry2(&gUcxHandle, bd_addr, U_YES_NO_NO);
+    }
+}
+
+// URC handler for PHY update events
+static void bluetoothPhyUpdateUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t phy_status, int32_t tx_phy, int32_t rx_phy)
+{
+    (void)puCxHandle;
+    (void)phy_status;
+    
+    const char *txPhyStr = (tx_phy == 2) ? "2 Mbps" : (tx_phy == 1) ? "1 Mbps" : "Unknown";
+    const char *rxPhyStr = (rx_phy == 2) ? "2 Mbps" : (rx_phy == 1) ? "1 Mbps" : "Unknown";
+    
+    printf("\n[PHY Update] Connection %d: TX=%s, RX=%s\n", conn_handle, txPhyStr, rxPhyStr);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "PHY updated - conn=%d, TX=%d, RX=%d", conn_handle, tx_phy, rx_phy);
+}
+
+// Enable/disable Bluetooth advertising (discoverable mode)
+static void bluetoothSetAdvertising(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Bluetooth Advertising Control ---\n");
+    printf("Current state: %s\n", gBluetoothAdvertising ? "ENABLED" : "DISABLED");
+    printf("\n");
+    printf("  [1] Enable advertising (discoverable)\n");
+    printf("  [2] Disable advertising\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    char input[64];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    int choice = atoi(input);
+    
+    if (choice == 1) {
+        // Enable advertising using new API
+        printf("\nEnabling Bluetooth legacy advertising...\n");
+        
+        int32_t result = uCxBluetoothSetLegacyAdvertisements(&gUcxHandle);
+        
+        if (result == 0) {
+            gBluetoothAdvertising = true;
+            printf("✓ Bluetooth advertising ENABLED\n");
+            printf("  Device is now discoverable\n");
+        } else {
+            printf("ERROR: Failed to enable advertising (code %d)\n", result);
+        }
+    } else if (choice == 2) {
+        // Disable advertising using new API
+        printf("\nDisabling Bluetooth advertising...\n");
+        
+        int32_t result = uCxBluetoothLegacyAdvertisementStop(&gUcxHandle);
+        
+        if (result == 0) {
+            gBluetoothAdvertising = false;
+            printf("✓ Bluetooth advertising DISABLED\n");
+        } else {
+            printf("ERROR: Failed to disable advertising (code %d)\n", result);
+        }
+    }
+}
+
+// Configure Bluetooth pairing settings
+static void bluetoothSetPairing(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("            BLUETOOTH PAIRING CONFIGURATION\n");
+    printf("==============================================================\n");
+    
+    // Step 1: Pairing Mode
+    printf("\n[1/3] Pairing Mode:\n");
+    printf("  [1] Enable pairing (allow new devices to pair)\n");
+    printf("  [2] Disable pairing (reject new pairing attempts)\n");
+    printf("\nChoice: ");
+    
+    char choice[10];
+    if (fgets(choice, sizeof(choice), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    int pairingMode;
+    if (choice[0] == '1') {
+        pairingMode = U_PAIRING_MODE_PAIRING_MODE_ENABLE;
+        printf("Selected: Enable pairing\n");
+    } else if (choice[0] == '2') {
+        pairingMode = U_PAIRING_MODE_PAIRING_MODE_DISABLE;
+        printf("Selected: Disable pairing\n");
+    } else {
+        printf("Invalid choice, using default (Enable)\n");
+        pairingMode = U_PAIRING_MODE_PAIRING_MODE_ENABLE;
+    }
+    
+    // Step 2: Security Mode
+    printf("\n[2/3] Security Mode:\n");
+    printf("  [1] None (no security - not recommended)\n");
+    printf("  [2] Unauthenticated bonding (Just Works)\n");
+    printf("  [3] Authenticated bonding (requires PIN/passkey)\n");
+    printf("  [4] Authenticated + Secure connection (encrypted link)\n");
+    printf("  [5] Authenticated + Secure connection only (strict)\n");
+    printf("\nChoice: ");
+    
+    if (fgets(choice, sizeof(choice), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    int securityMode;
+    if (choice[0] == '1') {
+        securityMode = U_BT_SECURITY_MODE_NONE;
+        printf("Selected: No security\n");
+    } else if (choice[0] == '2') {
+        securityMode = U_BT_SECURITY_MODE_UNAUTHENTICATED;
+        printf("Selected: Unauthenticated bonding\n");
+    } else if (choice[0] == '3') {
+        securityMode = U_BT_SECURITY_MODE_AUTHENTICATED;
+        printf("Selected: Authenticated bonding\n");
+    } else if (choice[0] == '4') {
+        securityMode = U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION;
+        printf("Selected: Authenticated + Secure connection\n");
+    } else if (choice[0] == '5') {
+        securityMode = U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION_ONLY;
+        printf("Selected: Authenticated + Secure connection only\n");
+    } else {
+        printf("Invalid choice, using default (Unauthenticated)\n");
+        securityMode = U_BT_SECURITY_MODE_UNAUTHENTICATED;
+    }
+    
+    // Step 3: IO Capabilities
+    printf("\n[3/3] IO Capabilities:\n");
+    printf("  [1] Display only (can show PIN)\n");
+    printf("  [2] Display + Yes/No buttons (can confirm)\n");
+    printf("  [3] Keyboard only (can enter PIN)\n");
+    printf("  [4] No input/output (Just Works - automatic)\n");
+    printf("  [5] Keyboard + Display (full interaction)\n");
+    printf("\nChoice: ");
+    
+    if (fgets(choice, sizeof(choice), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    int ioCapabilities;
+    const char *ioCapDesc;
+    if (choice[0] == '1') {
+        ioCapabilities = U_IO_CAPABILITIES_DISPLAY_ONLY;
+        ioCapDesc = "Display only";
+    } else if (choice[0] == '2') {
+        ioCapabilities = U_IO_CAPABILITIES_DISPLAY_YES_NO;
+        ioCapDesc = "Display + Yes/No";
+    } else if (choice[0] == '3') {
+        ioCapabilities = U_IO_CAPABILITIES_KEYBOARD_ONLY;
+        ioCapDesc = "Keyboard only";
+    } else if (choice[0] == '4') {
+        ioCapabilities = U_IO_CAPABILITIES_NO_INPUT_NO_OUTPUT;
+        ioCapDesc = "No input/output (Just Works)";
+    } else if (choice[0] == '5') {
+        ioCapabilities = U_IO_CAPABILITIES_KEYBOARD_DISPLAY;
+        ioCapDesc = "Keyboard + Display";
+    } else {
+        printf("Invalid choice, using default (No input/output)\n");
+        ioCapabilities = U_IO_CAPABILITIES_NO_INPUT_NO_OUTPUT;
+        ioCapDesc = "No input/output (Just Works)";
+    }
+    printf("Selected: %s\n", ioCapDesc);
+    
+    // Apply settings
+    printf("\n");
+    printf("==============================================================\n");
+    printf("Applying configuration...\n");
+    printf("==============================================================\n");
+    
+    // Set pairing mode
+    int32_t result = uCxBluetoothSetPairingMode(&gUcxHandle, pairingMode);
+    if (result == 0) {
+        printf("✓ Pairing mode set\n");
+    } else {
+        printf("✗ Failed to set pairing mode (code %d)\n", result);
+        return;
+    }
+    
+    // Set security mode
+    result = uCxBluetoothSetSecurityMode(&gUcxHandle, securityMode);
+    if (result == 0) {
+        printf("✓ Security mode set\n");
+    } else {
+        printf("⚠ Failed to set security mode (code %d)\n", result);
+    }
+    
+    // Set IO capabilities
+    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, ioCapabilities);
+    if (result == 0) {
+        printf("✓ IO capabilities set\n");
+    } else {
+        printf("⚠ Failed to set IO capabilities (code %d)\n", result);
+    }
+    
+    printf("\n✓ Pairing configuration complete!\n");
+    printf("  Device is now ready for pairing\n");
+}
+
+// List all bonded (paired) devices
+static void bluetoothListBondedDevices(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                   BONDED DEVICES LIST\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    uCxBluetoothListBondedDevicesBegin(&gUcxHandle);
+    uBtLeAddress_t bondedAddr;
+    int bondCount = 0;
+    
+    while (uCxBluetoothListBondedDevicesGetNext(&gUcxHandle, &bondedAddr)) {
+        bondCount++;
+        char addrStr[18];
+        snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 bondedAddr.address[0], bondedAddr.address[1], bondedAddr.address[2],
+                 bondedAddr.address[3], bondedAddr.address[4], bondedAddr.address[5]);
+        
+        const char *typeStr = (bondedAddr.type == 0) ? "Public" : "Random";
+        printf("  [%d] %s (%s)\n", bondCount, addrStr, typeStr);
+    }
+    
+    int32_t result = uCxEnd(&gUcxHandle);
+    
+    if (result == 0 && bondCount > 0) {
+        printf("\n✓ Found %d bonded device(s)\n", bondCount);
+    } else if (bondCount == 0) {
+        printf("  No bonded devices found\n");
+    } else {
+        printf("\nWARNING: Error reading bond list (code %d)\n", result);
+    }
+    
+    printf("\n");
+    printf("Do you want to clear all bonds? (y/n): ");
+    int clearBonds = getchar();
+    getchar(); // consume newline
+    
+    if (clearBonds == 'y' || clearBonds == 'Y') {
+        printf("\nClearing all Bluetooth bonds...\n");
+        result = uCxBluetoothUnbondAll(&gUcxHandle);
+        if (result == 0) {
+            printf("✓ All bonds cleared\n");
+            printf("\n[INFO] Remember to also remove this device from your\n");
+            printf("       phone/PC Bluetooth settings for clean re-pairing.\n");
+        } else {
+            printf("ERROR: Failed to clear bonds (code %d)\n", result);
+        }
+    }
+    
+    printf("\n");
+}
+
+// Show current Bluetooth status
+static void bluetoothShowStatus(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                   BLUETOOTH STATUS\n");
+    printf("==============================================================\n");
+    
+    // Display status based on tracked state
+    printf("Advertising:       %s\n", gBluetoothAdvertising ? "ENABLED (Discoverable)" : "DISABLED");
+    
+    if (gBluetoothPairedDevice[0] != '\0') {
+        printf("Last Paired:       %s\n", gBluetoothPairedDevice);
+    } else {
+        printf("Last Paired:       None\n");
+    }
+    
+    // Show GATT connection status
+    if (gCurrentGattConnHandle >= 0) {
+        printf("GATT Connection:   CONNECTED (handle %d)\n", gCurrentGattConnHandle);
+    } else {
+        printf("GATT Connection:   Not connected\n");
+    }
+    
+    // Show active services
+    printf("\nActive GATT Services:\n");
+    if (gHeartbeatServiceHandle >= 0) {
+        printf("  • Heart Rate Service (handle %d)\n", gHeartbeatServiceHandle);
+    }
+    if (gHidServiceHandle >= 0) {
+        printf("  • HID Service (handle %d)\n", gHidServiceHandle);
+        printf("  • Battery Service (handle %d)\n", gBatteryServiceHandle);
+    }
+    if (gHeartbeatServiceHandle < 0 && gHidServiceHandle < 0) {
+        printf("  (none)\n");
+    }
+    
+    printf("==============================================================\n");
 }
 
 // ============================================================================
@@ -3547,9 +5580,10 @@ static void mqttPublish(void)
     printf("Message: %s\n", message);
     printf("QoS: %d, Retain: %d\n", qos, retain);
     
+    uCxMqttPublish_t publishRsp;
     int32_t result = uCxMqttPublish(&gUcxHandle, MQTT_CONFIG_ID, (uQos_t)qos, 
                                      (uRetain_t)retain, topic, 
-                                     (uint8_t*)message, strlen(message));
+                                     (uint8_t*)message, (int32_t)strlen(message), &publishRsp);
     
     if (result == 0) {
         printf("✓ Message published successfully\n");
@@ -3769,18 +5803,21 @@ static void printHelp(void)
     printf("      - Connect to Bluetooth devices\n");
     printf("      - Disconnect active connections\n");
     printf("      - Show connection status\n");
-    printf("  [7] Bluetooth functions (SPS, GATT)\n");
+    printf("  [7] Bluetooth functions (SPS, GATT Client/Server)\n");
     printf("      - Serial Port Service for data transfer\n");
     printf("      - GATT Client/Server operations\n");
+    printf("  [8] GATT examples (Heartbeat, HID over GATT)\n");
+    printf("      - GATT Server Heartbeat example\n");
+    printf("      - HID over GATT (Keyboard, Media Control)\n");
     printf("  NOTE: NORA-B26 is Bluetooth only, NORA-W36 has BT+Wi-Fi\n");
     printf("\n");
     printf("WI-FI OPERATIONS:\n");
-    printf("  [8] Wi-Fi (scan, connect, disconnect, status)\n");
+    printf("  [9] Wi-Fi (scan, connect, disconnect, status)\n");
     printf("      - Scan for Wi-Fi networks\n");
     printf("      - Connect to Wi-Fi (SSID and password saved)\n");
     printf("      - Disconnect from networks\n");
     printf("      - Show connection status\n");
-    printf("  [9] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)\n");
+    printf("  [w] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)\n");
     printf("      - TCP/UDP sockets\n");
     printf("      - MQTT publish/subscribe\n");
     printf("      - HTTP client operations\n");
@@ -3848,93 +5885,166 @@ static void printMenu(void)
     
     switch (gMenuState) {
         case MENU_MAIN:
-            printf("--- Main Menu ---\n");
+            printf("\n");
+            printf("==============================================================\n");
+            printf("             u-blox UCX Client - Main Menu\n");
+            printf("==============================================================\n");
+            
+            // === STATUS DASHBOARD ===
             if (gConnected) {
-                printf("  Device:      %s", gComPort);
+                printf("\n✓ CONNECTED");
                 if (gDeviceModel[0] != '\0') {
-                    printf(" (%s", gDeviceModel);
+                    printf("  |  %s", gDeviceModel);
                     if (gDeviceFirmware[0] != '\0') {
-                        printf(" %s", gDeviceFirmware);
+                        printf(" (FW: %s)", gDeviceFirmware);
                     }
-                    printf(")");
+                }
+                printf("  |  Port: %s\n", gComPort);
+                
+                // Show active connections summary
+                bool hasActivity = false;
+                if (gBtConnectionCount > 0) {
+                    printf("  Bluetooth: %d connection%s", gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
+                    hasActivity = true;
+                }
+                // TODO: Add Wi-Fi status when available
+                if (hasActivity) {
+                    printf("\n");
+                }
+            } else {
+                printf("\n○ NOT CONNECTED");
+                if (gComPort[0] != '\0') {
+                    printf("  |  Last: %s", gComPort);
+                    if (gLastDeviceModel[0] != '\0') {
+                        printf(" (%s)", gLastDeviceModel);
+                    }
+                }
+                printf("\n");
+            }
+            
+            printf("==============================================================\n");
+            printf("\n");
+            
+            // === QUICK ACTIONS (always visible) ===
+            printf("QUICK ACTIONS\n");
+            if (!gConnected) {
+                if (gComPort[0] != '\0') {
+                    printf("  [ENTER] Quick connect to %s\n", gComPort);
+                    printf("  [1]     Connect to different device\n");
+                } else {
+                    printf("  [1]     Connect to UCX device\n");
+                }
+            } else {
+                printf("  [2]     Disconnect device\n");
+                printf("  [i]     Device information (ATI9)\n");
+                printf("  [r]     Reboot module\n");
+                printf("  [t]     AT Terminal (interactive)\n");
+            }
+            printf("\n");
+            
+            if (gConnected) {
+                // === WIRELESS FEATURES (only when connected) ===
+                printf("WIRELESS FEATURES\n");
+                
+                // Bluetooth
+                printf("  [b]     Bluetooth - Scan, connect, pair\n");
+                if (gBtConnectionCount > 0) {
+                    printf("          └─ %d active connection%s\n", 
+                           gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
+                }
+                printf("  [s]     Serial Port Service (SPS)\n");
+                printf("  [g]     GATT Client/Server\n");
+                
+                // Wi-Fi (only for W3x modules)
+                bool hasWiFi = gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL;
+                if (hasWiFi) {
+                    printf("  [w]     Wi-Fi - Scan, connect, status\n");
+                    printf("  [n]     Network - Sockets, MQTT, HTTP\n");
+                } else {
+                    printf("  [w]     Wi-Fi - Not available on this device\n");
                 }
                 printf("\n");
                 
-                // Show connection status for WiFi/Bluetooth if available
-                if (gDeviceModel[0] != '\0') {
-                    // Check if this is a Wi-Fi-capable device (NORA-W36)
-                    if (strstr(gDeviceModel, "W3") != NULL) {
-                        printf("  Wi-Fi:       Available (use [8] to connect)\n");
-                    }
-                    // All devices have Bluetooth
-                    printf("  Bluetooth:   Available (use [6] for operations)\n");
-                }
-            } else {
-                printf("  Status:      Not connected\n");
-                if (gComPort[0] != '\0') {
-                    printf("  Last port:   %s\n", gComPort);
-                }
+                // === ADVANCED FEATURES ===
+                printf("ADVANCED\n");
+                printf("  [a]     AT command test\n");
+                printf("  [f]     Firmware update (XMODEM)\n");
+                printf("  [e]     Examples (Heartbeat, HID)\n");
+                printf("\n");
             }
-            printf("  UCX Logging: %s\n", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
+            
+            // === TOOLS & SETTINGS (always available) ===
+            printf("TOOLS & SETTINGS\n");
+            printf("  [l]     Toggle logging: %s\n", 
+                   uCxLogIsEnabled() ? "ON (disable for cleaner output)" : "OFF (enable to see AT commands)");
+            printf("  [m]     Toggle timestamps: %s\n",
+                   uCxLogTimestampIsEnabled() ? "ON" : "OFF");
+            printf("  [c]     List all UCX API commands\n");
+            printf("  [h]     Help & getting started\n");
             printf("\n");
-            printf("  === CONNECTION ===\n");
-            printf("  [1] Connect to UCX device\n");
-            printf("  [2] Disconnect from device\n");
-            printf("\n");
-            printf("  === DEVICE OPERATIONS ===\n");
-            printf("  [3] AT test (basic communication)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [4] ATI9 (device info)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [5] Module reboot/switch off%s\n", gConnected ? "" : " (requires connection)");
-            printf("\n");
-            printf("  === BLUETOOTH ===\n");
-            printf("  [6] Bluetooth (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [7] Bluetooth functions (SPS, GATT)%s\n", gConnected ? "" : " (requires connection)");
-            printf("\n");
-            printf("  === WI-FI ===\n");
-            printf("  [8] Wi-Fi (scan, connect, disconnect, status)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [9] Wi-Fi functions (Sockets, MQTT, HTTP, TLS)%s\n", gConnected ? "" : " (requires connection)");
-            printf("\n");
-            printf("  === UTILITIES ===\n");
-            printf("  [l] Toggle UCX logging (AT traffic)\n");
-            printf("  [t] Toggle timestamps in logs\n");
-            printf("  [c] List UCX API commands\n");
-            printf("  [f] Firmware update (XMODEM)%s\n", gConnected ? "" : " (requires connection)");
-            printf("  [h] Help - Getting started guide\n");
-            printf("  [q] Quit application\n");
+            
+            printf("  [q]     Quit application\n");
+            printf("==============================================================\n");
+            
+            // Contextual hint
+            if (!gConnected) {
+                printf("Tip: Connect a device to unlock all features\n");
+            } else {
+                printf("Tip: Press [h] for help, [t] for AT terminal\n");
+            }
             break;
             
         case MENU_BLUETOOTH:
-            printf("--- Bluetooth Menu ---\n");
+            printf("==============================================================\n");
+            printf("                      BLUETOOTH MENU\n");
+            printf("==============================================================\n");
+            printf("\n");
+            if (gBtConnectionCount > 0) {
+                printf("STATUS: %d active connection(s)\n", gBtConnectionCount);
+            } else {
+                printf("STATUS: No active connections\n");
+            }
+            printf("\n");
             printf("  [1] Show BT status\n");
             printf("  [2] Scan for devices\n");
             printf("  [3] Connect to device\n");
-            printf("  [4] Disconnect from device");
-            if (gBtConnectionCount > 0) {
-                printf(" (%d active)", gBtConnectionCount);
-            }
-            printf("\n");
+            printf("  [4] Disconnect from device\n");
             printf("  [5] List active connections\n");
+            printf("  [6] Enable/Disable advertising (discoverable)\n");
+            printf("  [7] Configure pairing settings\n");
+            printf("  [8] List bonded devices\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_WIFI:
-            printf("--- Wi-Fi Menu ---\n");
+            printf("==============================================================\n");
+            printf("                        WI-FI MENU\n");
+            printf("==============================================================\n");
+            printf("\n");
+            if (gWifiProfileCount > 0) {
+                printf("SAVED PROFILES: %d\n", gWifiProfileCount);
+            } else {
+                printf("SAVED PROFILES: None\n");
+            }
+            printf("\n");
             printf("  [1] Show Wi-Fi status\n");
-            printf("  [2] Regulatory Domain (World)\n");
+            printf("  [2] Regulatory domain (World)\n");
             printf("  [3] Scan networks\n");
             printf("  [4] Connect to network\n");
             printf("  [5] Disconnect from network\n");
-            printf("  [6] Manage Wi-Fi profiles");
-            if (gWifiProfileCount > 0) {
-                printf(" (%d saved)", gWifiProfileCount);
-            }
+            printf("  [6] Manage Wi-Fi profiles\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_SOCKET:
-            printf("--- Socket Menu (TCP/UDP) ---\n");
-            printf("  NOTE: Requires Active Wi-Fi connection!\n");
+            printf("==============================================================\n");
+            printf("                    SOCKET MENU (TCP/UDP)\n");
+            printf("==============================================================\n");
+            printf("\n");
+            printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("\n");
             printf("  [1] Create TCP socket\n");
             printf("  [2] Create UDP socket\n");
             printf("  [3] Connect socket\n");
@@ -3942,22 +6052,32 @@ static void printMenu(void)
             printf("  [5] Read data\n");
             printf("  [6] Close socket\n");
             printf("  [7] List sockets\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_SPS:
-            printf("--- SPS Menu (Bluetooth Serial Port Service) ---\n");
-            printf("  NOTE: Requires active Bluetooth connection!\n");
+            printf("==============================================================\n");
+            printf("           SPS MENU (Bluetooth Serial Port Service)\n");
+            printf("==============================================================\n");
+            printf("\n");
+            printf("NOTE: Requires active Bluetooth connection\n");
+            printf("\n");
             printf("  [1] Enable SPS service\n");
             printf("  [2] Connect SPS on BT connection\n");
             printf("  [3] Send data\n");
             printf("  [4] Read data\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_MQTT:
-            printf("--- MQTT Menu (Publish/Subscribe) ---\n");
-            printf("  NOTE: Requires Active Wi-Fi connection!\n");
+            printf("==============================================================\n");
+            printf("                 MQTT MENU (Publish/Subscribe)\n");
+            printf("==============================================================\n");
+            printf("\n");
+            printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("\n");
             printf("  Broker: %s:%d\n", MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
             printf("\n");
             printf("  [1] Connect to MQTT broker\n");
@@ -3965,15 +6085,19 @@ static void printMenu(void)
             printf("  [3] Subscribe to topic\n");
             printf("  [4] Unsubscribe from topic\n");
             printf("  [5] Publish message\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_HTTP:
-            printf("--- HTTP Client Menu (REST API) ---\n");
-            printf("  NOTE: Requires Active Wi-Fi connection!\n");
-            printf("  [IN PROGRESS] - Feature under development\n");
+            printf("==============================================================\n");
+            printf("                  HTTP CLIENT MENU (REST API)\n");
+            printf("==============================================================\n");
             printf("\n");
-            printf("  Planned features:\n");
+            printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("STATUS: Feature under development\n");
+            printf("\n");
+            printf("Planned features:\n");
             printf("  - HTTP GET requests\n");
             printf("  - HTTP POST with data\n");
             printf("  - HTTP PUT/DELETE methods\n");
@@ -3985,10 +6109,13 @@ static void printMenu(void)
             break;
             
         case MENU_SECURITY_TLS:
-            printf("--- Security/TLS Menu (Certificates & Encryption) ---\n");
-            printf("  [IN PROGRESS] - Feature under development\n");
+            printf("==============================================================\n");
+            printf("           SECURITY/TLS MENU (Certificates & Encryption)\n");
+            printf("==============================================================\n");
             printf("\n");
-            printf("  Planned features:\n");
+            printf("STATUS: Feature under development\n");
+            printf("\n");
+            printf("Planned features:\n");
             printf("  - Upload CA certificates\n");
             printf("  - Upload client certificates\n");
             printf("  - Manage private keys\n");
@@ -3999,63 +6126,141 @@ static void printMenu(void)
             break;
             
         case MENU_BLUETOOTH_FUNCTIONS:
-            printf("--- Bluetooth Functions ---\n");
+            printf("==============================================================\n");
+            printf("                   BLUETOOTH FUNCTIONS\n");
+            printf("==============================================================\n");
+            printf("\n");
             printf("  [1] SPS (Serial Port Service)\n");
             printf("  [2] GATT Client\n");
             printf("  [3] GATT Server\n");
+            printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_GATT_EXAMPLES:
+            printf("==============================================================\n");
+            printf("                      GATT EXAMPLES\n");
+            printf("==============================================================\n");
+            printf("\n");
+            printf("  [1] GATT Server Heartbeat example\n");
+            printf("  [2] HID over GATT (HOGP)\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_WIFI_FUNCTIONS:
-            printf("--- Wi-Fi Functions ---\n");
-            printf("  NOTE: Requires Active Wi-Fi connection!\n");
+            printf("==============================================================\n");
+            printf("                     WI-FI FUNCTIONS\n");
+            printf("==============================================================\n");
+            printf("\n");
+            printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("\n");
             printf("  [1] Socket menu (TCP/UDP)\n");
             printf("  [2] MQTT (publish/subscribe)\n");
             printf("  [3] HTTP Client (GET/POST/PUT)\n");
             printf("  [4] Security/TLS (certificates)\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_GATT_CLIENT:
-            printf("--- GATT Client Menu ---\n");
+            printf("==============================================================\n");
+            printf("                      GATT CLIENT\n");
+            printf("==============================================================\n");
+            printf("\n");
             if (gCurrentGattConnHandle != -1) {
-                printf("  Current connection handle: %d\n", gCurrentGattConnHandle);
+                printf("CONNECTION: Handle %d\n", gCurrentGattConnHandle);
             } else {
-                printf("  NOTE: No active connection! Use Bluetooth menu to connect.\n");
+                printf("CONNECTION: No active connection\n");
+                printf("NOTE: Use Bluetooth menu to connect first\n");
             }
+            printf("\n");
             printf("  [1] Discover services\n");
             printf("  [2] Discover characteristics\n");
             printf("  [3] Read characteristic\n");
             printf("  [4] Write characteristic\n");
             printf("  [5] Subscribe to notifications\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_GATT_SERVER:
-            printf("--- GATT Server Menu ---\n");
+            // Sync GATT connection state before showing menu (no discovery for server!)
+            syncGattConnectionOnly();
+            
+            printf("==============================================================\n");
+            printf("                      GATT SERVER\n");
+            printf("==============================================================\n");
+            printf("\n");
+            if (gCurrentGattConnHandle != -1) {
+                printf("CONNECTION: Handle %d\n", gCurrentGattConnHandle);
+            } else {
+                printf("CONNECTION: No active connection\n");
+            }
+            printf("\n");
+            printf("GATT SERVER OPERATIONS\n");
             printf("  [1] Add service\n");
             printf("  [2] Add characteristic\n");
             printf("  [3] Set characteristic value\n");
             printf("  [4] Send notification\n");
+            printf("\n");
+            printf("NOTE: For examples (Heartbeat, HID), use main menu option [9]\n");
+            printf("\n");
+            printf("  [0] Back to Bluetooth Functions  [q] Quit\n");
+            break;
+            
+        case MENU_HID:
+            // Sync GATT connection state
+            syncGattConnectionOnly();
+            
+            printf("==============================================================\n");
+            printf("                    HID OVER GATT (HOGP)\n");
+            printf("==============================================================\n");
+            printf("\n");
+            if (gCurrentGattConnHandle != -1) {
+                printf("CONNECTION: Handle %d\n", gCurrentGattConnHandle);
+            } else {
+                printf("CONNECTION: No active connection\n");
+            }
+            printf("\n");
+            printf("SERVICE SETUP\n");
+            printf("  [1] Enable HID Keyboard service\n");
+            printf("  [2] Enable HID Media Control service\n");
+            printf("  [3] Disable HID (reboot device)\n");
+            printf("\n");
+            printf("KEYBOARD ACTIONS\n");
+            printf("  [4] Send keyboard key press\n");
+            printf("  [5] Send 'Hello World' text\n");
+            printf("\n");
+            printf("MEDIA CONTROL\n");
+            printf("  [6] Send media control command\n");
+            printf("\n");
+            printf("STATUS\n");
+            printf("  [s] Show Bluetooth connection status\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_FIRMWARE_UPDATE:
-            printf("--- Firmware Update (XMODEM) ---\n");
-            printf("  This will update the module firmware via XMODEM protocol.\n");
-            printf("  The module will reboot after a successful update.\n");
+            printf("==============================================================\n");
+            printf("                  FIRMWARE UPDATE (XMODEM)\n");
+            printf("==============================================================\n");
             printf("\n");
-            printf("  Current device: %s", gComPort);
+            printf("This will update the module firmware via XMODEM protocol.\n");
+            printf("The module will reboot after a successful update.\n");
+            printf("\n");
+            printf("CURRENT DEVICE\n");
+            printf("  Port          : %s\n", gComPort);
             if (gDeviceModel[0] != '\0') {
-                printf(" (%s", gDeviceModel);
+                printf("  Model         : %s\n", gDeviceModel);
                 if (gDeviceFirmware[0] != '\0') {
-                    printf(" v%s", gDeviceFirmware);
+                    printf("  Firmware      : %s\n", gDeviceFirmware);
                 }
-                printf(")");
             }
-            printf("\n\n");
+            printf("\n");
             printf("  [1] Select firmware file and start update\n");
             printf("  [2] Download latest firmware from GitHub\n");
+            printf("\n");
             printf("  [0] Back to main menu\n");
             break;
             
@@ -4081,6 +6286,12 @@ static void handleUserInput(void)
     // Remove newline
     input[strcspn(input, "\n")] = 0;
     
+    // Handle ENTER key (empty input) for quick connect
+    if (strlen(input) == 0 && gMenuState == MENU_MAIN && !gConnected && gComPort[0] != '\0') {
+        quickConnectToLastDevice();
+        return;
+    }
+    
     // Parse choice
     int choice = atoi(input);
     
@@ -4099,14 +6310,14 @@ static void handleUserInput(void)
             return;
         }
         
-        // Handle 't' for timestamp toggle (main menu only)
-        if (firstChar == 't' && gMenuState == MENU_MAIN) {
+        // Handle 'm' for timestamp toggle (main menu only)
+        if (firstChar == 'm' && gMenuState == MENU_MAIN) {
             if (uCxLogTimestampIsEnabled()) {
                 uCxLogTimestampDisable();
-                printf("Log timestamps DISABLED (cleaner output)\n");
+                printf("✓ Log timestamps DISABLED (cleaner output)\n");
             } else {
                 uCxLogTimestampEnable();
-                printf("Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
+                printf("✓ Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
                 U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Timestamps enabled from menu");
             }
             return;
@@ -4114,12 +6325,32 @@ static void handleUserInput(void)
         
         // Handle specific letter commands for main menu
         if (gMenuState == MENU_MAIN) {
-            if (firstChar == 'l') {
+            if (firstChar == 'w') {
+                choice = 23;  // Wi-Fi menu
+            } else if (firstChar == 'n') {
+                choice = 24;  // Network functions (sockets, MQTT, HTTP)
+            } else if (firstChar == 'b') {
+                choice = 7;   // Bluetooth menu
+            } else if (firstChar == 's') {
+                choice = 50;  // SPS (Serial Port Service)
+            } else if (firstChar == 'g') {
+                choice = 51;  // GATT functions
+            } else if (firstChar == 't') {
+                choice = 52;  // AT Terminal (interactive)
+            } else if (firstChar == 'l') {
                 choice = 12;  // Toggle UCX logging
             } else if (firstChar == 'c') {
                 choice = 13;  // List API commands
             } else if (firstChar == 'f') {
                 choice = 16;  // Firmware update
+            } else if (firstChar == 'e') {
+                choice = 9;   // Examples (Heartbeat, HID)
+            } else if (firstChar == 'a') {
+                choice = 3;   // AT command test
+            } else if (firstChar == 'i') {
+                choice = 4;   // Device information (ATI9)
+            } else if (firstChar == 'r') {
+                choice = 5;   // Reboot module
             }
         }
         
@@ -4201,24 +6432,38 @@ static void handleUserInput(void)
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
-                        gMenuState = MENU_BLUETOOTH;
+                        showLegacyAdvertisementStatus();
                     }
                     break;
                 case 7:
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
-                        gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                        gMenuState = MENU_BLUETOOTH;
                     }
                     break;
                 case 8:
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
-                        gMenuState = MENU_WIFI;
+                        gMenuState = MENU_BLUETOOTH_FUNCTIONS;
                     }
                     break;
                 case 9:
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_GATT_EXAMPLES;
+                    }
+                    break;
+                case 23:  // Also accept 'w' or 'W' - Wi-Fi (scan, connect, disconnect, status)
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_WIFI;
+                    }
+                    break;
+                case 24:  // Also accept 'x' or 'X' - Wi-Fi functions
                     if (!gConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
@@ -4243,6 +6488,27 @@ static void handleUserInput(void)
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_FIRMWARE_UPDATE;
+                    }
+                    break;
+                case 50:  // Also accept 's' or 'S' - SPS (Serial Port Service)
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_SPS;
+                    }
+                    break;
+                case 51:  // Also accept 'g' or 'G' - GATT functions
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                    }
+                    break;
+                case 52:  // Also accept 't' or 'T' - AT Terminal
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        executeAtTerminal();
                     }
                     break;
                 case 18:  // Also accept 'h' or 'H' - Help (handled above but keep for consistency)
@@ -4278,6 +6544,15 @@ static void handleUserInput(void)
                     break;
                 case 5:
                     showBluetoothStatus();  // Shows connections
+                    break;
+                case 6:
+                    bluetoothSetAdvertising();
+                    break;
+                case 7:
+                    bluetoothSetPairing();
+                    break;
+                case 8:
+                    bluetoothListBondedDevices();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -4446,6 +6721,23 @@ static void handleUserInput(void)
             }
             break;
             
+        case MENU_GATT_EXAMPLES:
+            switch (choice) {
+                case 1:
+                    gMenuState = MENU_GATT_SERVER;  // Heartbeat example
+                    break;
+                case 2:
+                    gMenuState = MENU_HID;  // HID menu
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
         case MENU_WIFI_FUNCTIONS:
             switch (choice) {
                 case 1:
@@ -4496,21 +6788,70 @@ static void handleUserInput(void)
             break;
             
         case MENU_GATT_SERVER:
+            // No special character handling needed for basic GATT Server menu
+            
             switch (choice) {
                 case 1:
                     gattServerAddService();
                     break;
                 case 2:
-                    printf("Add characteristic - not yet implemented\n");
+                    gattServerAddCharacteristic();
                     break;
                 case 3:
                     gattServerSetCharacteristic();
                     break;
                 case 4:
-                    printf("Send notification - not yet implemented\n");
+                    gattServerSendNotification();
                     break;
                 case 0:
                     gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_HID:
+            // Check for 's' (status) command
+            if (input[0] == 's' || input[0] == 'S') {
+                bluetoothShowStatus();
+                break;
+            }
+            
+            switch (choice) {
+                case 1:
+                    gattServerSetupHidKeyboard();
+                    printf("\nNOTE: HID Keyboard service includes both keyboard and media control\n");
+                    break;
+                case 2:
+                    gattServerSetupHidKeyboard();
+                    printf("\nNOTE: Media control is included in the HID Keyboard service\n");
+                    break;
+                case 3:
+                    // Disable HID by rebooting
+                    printf("\nRebooting device to reset GATT services...\n");
+                    uCxSystemReboot(&gUcxHandle);
+                    gConnected = false;
+                    gCurrentGattConnHandle = -1;
+                    gHeartbeatServiceHandle = -1;
+                    gHidServiceHandle = -1;
+                    gHidKeyboardInputHandle = -1;
+                    gHidMediaInputHandle = -1;
+                    printf("Device rebooted. Please reconnect.\n");
+                    gMenuState = MENU_MAIN;
+                    break;
+                case 4:
+                    gattServerSendKeyPress();
+                    break;
+                case 5:
+                    gattServerSendHelloWorld();
+                    break;
+                case 6:
+                    gattServerSendMediaControl();
+                    break;
+                case 0:
+                    gMenuState = MENU_GATT_EXAMPLES;
                     break;
                 default:
                     printf("Invalid choice!\n");
@@ -4834,6 +7175,11 @@ static bool connectDevice(const char *comPort)
     // Register URC handlers for Bluetooth events
     uCxBluetoothRegisterConnect(&gUcxHandle, btConnected);
     uCxBluetoothRegisterDisconnect(&gUcxHandle, btDisconnected);
+    uCxBluetoothRegisterBondStatus(&gUcxHandle, bluetoothPairUrc);
+    
+    // Register URC handlers for GATT Server events
+    uCxGattServerRegisterNotification(&gUcxHandle, gattServerCharWriteUrc);
+    uCxGattServerRegisterReadAttribute(&gUcxHandle, gattServerCharReadUrc);
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
 
@@ -4956,7 +7302,18 @@ static void disconnectDevice(void)
     uCxBluetoothRegisterConnect(&gUcxHandle, NULL);
     uCxBluetoothRegisterDisconnect(&gUcxHandle, NULL);
     
+    // Unregister GATT Server event handlers
+    uCxGattServerRegisterNotification(&gUcxHandle, NULL);
+    
     printf("All URC handlers unregistered.\n");
+    
+    // Stop heartbeat thread if running
+    if (gHeartbeatThread) {
+        gHeartbeatThreadRunning = false;
+        WaitForSingleObject(gHeartbeatThread, 2000);
+        CloseHandle(gHeartbeatThread);
+        gHeartbeatThread = NULL;
+    }
     
     // Delete mutex
     U_CX_MUTEX_DELETE(gUrcMutex);
@@ -6261,6 +8618,132 @@ static void executeAtTest(void)
     }
 }
 
+static void executeAtTerminal(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    // Disable all URCs for clean terminal output
+    printf("\nPreparing AT Terminal session...\n");
+    disableAllUrcs();
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                    AT COMMAND TERMINAL\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Interactive AT command terminal using UCX API.\n");
+    printf("Commands are sent via uCxAtClientExecSimpleCmd() API.\n");
+    printf("\n");
+    printf("Note: You'll see [AT TX] and [AT RX] logging below.\n");
+    printf("      This is normal and shows the AT command traffic.\n");
+    printf("\n");
+    printf("Commands:\n");
+    printf("  Type complete AT command (e.g., 'ATI9' or 'AT+GMI')\n");
+    printf("  [ENTER] sends 'AT' (module health check)\n");
+    printf("  Type 'quit', 'exit', or 'q' to exit terminal\n");
+    printf("  Type 'help' for more info, 'history' to see past commands\n");
+    printf("\n");
+    printf("==============================================================\n");
+    
+    // Command history (simple circular buffer)
+    #define MAX_HISTORY 20
+    #define MAX_CMD_LEN 256
+    char history[MAX_HISTORY][MAX_CMD_LEN];
+    int historyCount = 0;
+    
+    while (true) {
+        printf("\nAT> ");
+        fflush(stdout);
+        
+        char input[MAX_CMD_LEN];
+        if (!fgets(input, sizeof(input), stdin)) {
+            break;
+        }
+        
+        // Remove newline
+        input[strcspn(input, "\n")] = 0;
+        
+        // Exit commands
+        if (strcmp(input, "quit") == 0 || strcmp(input, "exit") == 0 || strcmp(input, "q") == 0) {
+            printf("\nExiting AT Terminal...\n");
+            break;
+        }
+        
+        // Empty input = send AT (health check)
+        if (strlen(input) == 0) {
+            strcpy(input, "AT");
+        }
+        
+        // Add to history (simple implementation - circular buffer)
+        if (historyCount < MAX_HISTORY) {
+            strncpy(history[historyCount], input, MAX_CMD_LEN - 1);
+            history[historyCount][MAX_CMD_LEN - 1] = '\0';
+            historyCount++;
+        } else {
+            // Shift history
+            for (int i = 0; i < MAX_HISTORY - 1; i++) {
+                strncpy(history[i], history[i + 1], MAX_CMD_LEN - 1);
+            }
+            strncpy(history[MAX_HISTORY - 1], input, MAX_CMD_LEN - 1);
+            history[MAX_HISTORY - 1][MAX_CMD_LEN - 1] = '\0';
+        }
+        
+        // Special commands
+        if (strcmp(input, "help") == 0 || strcmp(input, "?") == 0) {
+            printf("\nAT Terminal Help:\n");
+            printf("  - Type complete AT commands (e.g., 'ATI9', 'AT+GMI')\n");
+            printf("  - Can also use shortcuts: 'I9', '+GMI' (AT prefix added automatically)\n");
+            printf("  - Press ENTER to send 'AT' (health check)\n");
+            printf("  - Type 'quit', 'exit', or 'q' to exit terminal\n");
+            printf("  - Type 'history' to see command history\n");
+            continue;
+        }
+        
+        if (strcmp(input, "history") == 0) {
+            printf("\nCommand History:\n");
+            for (int i = 0; i < historyCount; i++) {
+                printf("  %2d: %s\n", i + 1, history[i]);
+            }
+            if (historyCount == 0) {
+                printf("  (empty)\n");
+            }
+            continue;
+        }
+        
+        // Determine if user typed full AT command or shorthand
+        const char *atCommand;
+        char fullCommand[MAX_CMD_LEN + 3];
+        
+        if (strncmp(input, "AT", 2) == 0 || strncmp(input, "at", 2) == 0) {
+            // User typed full command with AT prefix
+            atCommand = input;
+        } else {
+            // Add AT prefix automatically for convenience
+            snprintf(fullCommand, sizeof(fullCommand), "AT%s", input);
+            atCommand = fullCommand;
+        }
+        
+        // Send command using UCX AT Client API
+        printf("\nSending: %s\n", atCommand);
+        
+        int32_t result = uCxAtClientExecSimpleCmd(gUcxHandle.pAtClient, atCommand);
+        
+        if (result == 0) {
+            printf("✓ OK\n");
+        } else {
+            printf("✗ ERROR (code %d)\n", result);
+        }
+    }
+    
+    // Re-enable URCs when exiting terminal
+    printf("\nRestoring normal operation...\n");
+    enableAllUrcs();
+    printf("✓ Terminal session ended\n");
+}
+
 static void executeAti9(void)
 {
     if (!gConnected) {
@@ -6382,6 +8865,128 @@ static void executeModuleReboot(void)
     } else {
         printf("ERROR: Failed to send AT+CPWROFF (error %d)\n", result);
     }
+}
+
+static void showLegacyAdvertisementStatus(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Legacy Advertisement Status ---\n");
+    
+    // Get advertisement information (enabled/disabled state)
+    uCxBluetoothGetAdvertiseInformation_t advInfo;
+    int32_t result = uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to get advertisement information (error %d)\n", result);
+        return;
+    }
+    
+    printf("\nAdvertisement State:\n");
+    printf("  Legacy Advertisement: %s\n", 
+           advInfo.legacy_advertisement ? "ENABLED" : "DISABLED");
+    printf("  Directed Advertisement: %s\n", 
+           advInfo.directed_advertisement ? "ENABLED" : "DISABLED");
+    
+    // Display extended advertisements if any
+    if (advInfo.enabled_extended_advertisements.length > 0) {
+        printf("  Extended Advertisements: ");
+        for (size_t i = 0; i < advInfo.enabled_extended_advertisements.length; i++) {
+            printf("%d", advInfo.enabled_extended_advertisements.pIntValues[i]);
+            if (i < advInfo.enabled_extended_advertisements.length - 1) {
+                printf(", ");
+            }
+        }
+        printf("\n");
+    } else {
+        printf("  Extended Advertisements: None\n");
+    }
+    
+    // Get legacy advertisement configuration (interval settings)
+    uCxBluetoothGetAdvertismentLegacyConfiguration_t legacyConfig;
+    result = uCxBluetoothGetAdvertismentLegacyConfiguration(&gUcxHandle, &legacyConfig);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to get legacy advertisement configuration (error %d)\n", result);
+        return;
+    }
+    
+    printf("\nLegacy Advertisement Configuration:\n");
+    printf("  Interval Minimum: %d units (%.2f ms)\n", 
+           legacyConfig.advertisement_interval_minimum,
+           legacyConfig.advertisement_interval_minimum * 0.625);
+    printf("  Interval Maximum: %d units (%.2f ms)\n", 
+           legacyConfig.advertisement_interval_maximum,
+           legacyConfig.advertisement_interval_maximum * 0.625);
+    
+    // Get and display advertisement data
+    printf("\nAdvertisement Data:\n");
+    uint8_t advDataBuffer[256];
+    uByteArray_t advData;
+    advData.pData = advDataBuffer;
+    
+    if (uCxBluetoothGetAdvertiseDataBegin(&gUcxHandle, &advData)) {
+        if (advData.length > 0) {
+            printf("  Raw data (%zu bytes): ", advData.length);
+            for (size_t i = 0; i < advData.length; i++) {
+                printf("%02X ", advData.pData[i]);
+                if ((i + 1) % 16 == 0 && i < advData.length - 1) {
+                    printf("\n                         ");
+                }
+            }
+            printf("\n");
+            
+            // Parse and display AD structures
+            printf("\n  Parsed AD Structures:\n");
+            size_t pos = 0;
+            while (pos < advData.length) {
+                uint8_t len = advData.pData[pos];
+                if (len == 0 || pos + len >= advData.length) {
+                    break;
+                }
+                
+                uint8_t type = advData.pData[pos + 1];
+                printf("    [Type 0x%02X, Len %d] ", type, len - 1);
+                
+                // Decode common AD types
+                switch (type) {
+                    case 0x01: printf("Flags: 0x%02X", advData.pData[pos + 2]); break;
+                    case 0x02: printf("Incomplete 16-bit UUIDs"); break;
+                    case 0x03: printf("Complete 16-bit UUIDs"); break;
+                    case 0x06: printf("Incomplete 128-bit UUIDs"); break;
+                    case 0x07: printf("Complete 128-bit UUIDs"); break;
+                    case 0x08: printf("Shortened Local Name: "); 
+                              for (size_t i = 0; i < len - 1; i++) {
+                                  printf("%c", advData.pData[pos + 2 + i]);
+                              }
+                              break;
+                    case 0x09: printf("Complete Local Name: ");
+                              for (size_t i = 0; i < len - 1; i++) {
+                                  printf("%c", advData.pData[pos + 2 + i]);
+                              }
+                              break;
+                    case 0x0A: printf("TX Power Level: %d dBm", (int8_t)advData.pData[pos + 2]); break;
+                    case 0x16: printf("Service Data - 16-bit UUID"); break;
+                    case 0xFF: printf("Manufacturer Specific Data"); break;
+                    default: printf("Unknown Type"); break;
+                }
+                printf("\n");
+                
+                pos += len + 1;
+            }
+        } else {
+            printf("  No advertisement data configured\n");
+        }
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("  ERROR: Failed to read advertisement data\n");
+    }
+    
+    printf("\nNote: Use menu option [6] in Bluetooth menu to enable/disable advertising\n");
+    printf("      Use menu options [8] for GATT examples (Heartbeat, HID over GATT)\n");
 }
 
 // ============================================================================
@@ -6816,13 +9421,13 @@ static void bluetoothScan(void)
     }
     
     printf("\n--- Bluetooth Device Scan ---\n");
-    printf("Scanning for devices... (this may take 10-15 seconds)\n\n");
+    printf("Scanning for devices using default parameters...\n\n");
     
-    // Set 30 second timeout for scan command (scan can take time)
+    // Set 30 second timeout for scan command
     uCxAtClientSetCommandTimeout(gUcxHandle.pAtClient, 30000, false);
     
-    // Start discovery (type 0 = general discovery, timeout in milliseconds 10000 = 10 sec)
-    uCxBluetoothDiscovery3Begin(&gUcxHandle, 0, 0, 10000);
+    // Start discovery using default parameters (AT+UBTD with no parameters)
+    uCxBluetoothDiscoveryDefaultBegin(&gUcxHandle);
     
     // Store unique devices (deduplicate by MAC address)
     #define MAX_BT_DEVICES 100
@@ -6838,12 +9443,12 @@ static void bluetoothScan(void)
     BtDevice_t devices[MAX_BT_DEVICES];
     memset(devices, 0, sizeof(devices));  // Clear array before use
     int deviceCount = 0;
-    uCxBluetoothDiscovery_t device;
+    uCxBluetoothDiscoveryDefault_t device;
     
     // Get discovered devices and deduplicate
     bool gotResponse;
     do {
-        gotResponse = uCxBluetoothDiscovery3GetNext(&gUcxHandle, &device);
+        gotResponse = uCxBluetoothDiscoveryDefaultGetNext(&gUcxHandle, &device);
         if (gotResponse) {
             // Check if device already exists (compare MAC address)
             bool found = false;
@@ -7023,27 +9628,38 @@ static void bluetoothDisconnect(void)
                gBtConnections[i].address.address[5]);
     }
     
-    printf("\nEnter connection handle to disconnect: ");
+    // Suggest default if only one connection
+    if (gBtConnectionCount == 1) {
+        printf("\nEnter connection number to disconnect [1]: ");
+    } else {
+        printf("\nEnter connection number to disconnect (1-%d): ", gBtConnectionCount);
+    }
     
     char input[64];
     if (fgets(input, sizeof(input), stdin)) {
-        int32_t handle = atoi(input);
+        // Trim newline
+        input[strcspn(input, "\n")] = 0;
         
-        // Verify the handle exists in our tracking
-        bool found = false;
-        for (int i = 0; i < gBtConnectionCount; i++) {
-            if (gBtConnections[i].handle == handle) {
-                found = true;
-                break;
-            }
+        int32_t index;
+        
+        // If empty input and only one connection, use it
+        if (strlen(input) == 0 && gBtConnectionCount == 1) {
+            index = 1;
+            printf("Using connection 1\n");
+        } else {
+            index = atoi(input);
         }
         
-        if (!found) {
-            printf("ERROR: Invalid connection handle %d\n", handle);
+        // Verify the index is valid
+        if (index < 1 || index > gBtConnectionCount) {
+            printf("ERROR: Invalid connection number %d (must be 1-%d)\n", index, gBtConnectionCount);
             return;
         }
         
-        printf("Disconnecting handle %d...\n", handle);
+        // Get the handle from the index (subtract 1 for 0-based array)
+        int32_t handle = gBtConnections[index - 1].handle;
+        
+        printf("Disconnecting connection %d (handle %d)...\n", index, handle);
         
         // uCxBluetoothDisconnect returns 0 on success
         int32_t result = uCxBluetoothDisconnect(&gUcxHandle, handle);

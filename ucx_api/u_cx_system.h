@@ -241,6 +241,36 @@ int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t ex
 int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t * pExtendedErrors);
 
 /**
+ * Set system time of the module.
+ * 
+ * Output AT command:
+ * > AT+USYTU=<unix_time>,<unix_time_len>
+ *
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      unix_time:     time as hex string in Unix time format, which is the number of seconds since
+ *                            1970-01-01T00:00:00 (UTC)
+ * @param      unix_time_len: length of unix_time
+ * @return                    0 on success, negative value on error.
+ */
+int32_t uCxSystemSetUnixTime(uCxHandle_t * puCxHandle, const uint8_t * unix_time, int32_t unix_time_len);
+
+/**
+ * Get system time of the module.
+ * 
+ * Output AT command:
+ * > AT+USYTU?
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pUnixTime:  time as hex string in Unix time format, which is the number of seconds since
+ *                         1970-01-01T00:00:00 (UTC)
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxSystemGetUnixTimeBegin(uCxHandle_t * puCxHandle, uByteArray_t * pUnixTime);
+
+/**
  * Set echo off
  * 
  * Notes:

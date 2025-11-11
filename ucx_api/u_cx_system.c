@@ -132,6 +132,19 @@ int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t * 
     return ret;
 }
 
+int32_t uCxSystemSetUnixTime(uCxHandle_t * puCxHandle, const uint8_t * unix_time, int32_t unix_time_len)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYTU=", "h", unix_time, unix_time_len, U_CX_AT_UTIL_PARAM_LAST);
+}
+bool uCxSystemGetUnixTimeBegin(uCxHandle_t * puCxHandle, uByteArray_t * pUnixTime)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+USYTU?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USYTU:", NULL, NULL, "h", pUnixTime, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
+}
 int32_t uCxSystemSetEchoOff(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;

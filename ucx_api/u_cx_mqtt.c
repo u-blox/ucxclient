@@ -162,10 +162,20 @@ int32_t uCxMqttDisconnect(uCxHandle_t * puCxHandle, int32_t mqtt_id)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQDC=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uRetain_t retain, const char * topic, uint8_t * pWData, size_t wDataLen)
+int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len, uCxMqttPublish_t * pMqttPublishRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQPB=", "dddsB", mqtt_id, qos, retain, topic, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMQPB=", "dddsB", mqtt_id, qos, retain, topic, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQPB:", NULL, NULL, "dd", &pMqttPublishRsp->mqtt_id, &pMqttPublishRsp->packet_id, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
 }
 
 int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action, const char * topic)
@@ -204,4 +214,19 @@ void uCxMqttRegisterDisconnect(uCxHandle_t * puCxHandle, uUEMQDC_t callback)
 void uCxMqttRegisterDataAvailable(uCxHandle_t * puCxHandle, uUEMQDA_t callback)
 {
     puCxHandle->callbacks.UEMQDA = callback;
+}
+
+void uCxMqttRegisterDataDropped(uCxHandle_t * puCxHandle, uUEMQDD_t callback)
+{
+    puCxHandle->callbacks.UEMQDD = callback;
+}
+
+void uCxMqttRegisterPublishCompleted(uCxHandle_t * puCxHandle, uUEMQPC_t callback)
+{
+    puCxHandle->callbacks.UEMQPC = callback;
+}
+
+void uCxMqttRegisterSubscribeCompleted(uCxHandle_t * puCxHandle, uUEMQSC_t callback)
+{
+    puCxHandle->callbacks.UEMQSC = callback;
 }

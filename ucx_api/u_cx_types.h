@@ -84,9 +84,9 @@ typedef enum
 
 typedef enum
 {
-    U_BACKGROUND_DISCOVERY_MODE_BACKGROUND_DISCOVERY_OFF,   /**< Set background discovery off */
-    U_BACKGROUND_DISCOVERY_MODE_BACKGROUND_DISCOVERY_ON = 1 /**< Set background discovery on */
-} uBackgroundDiscoveryMode_t;
+    U_OUTPUT_EVENTS_OUTPUT_EVENTS_DISABLED,   /**< Disable output events during background discovery */
+    U_OUTPUT_EVENTS_OUTPUT_EVENTS_ENABLED = 1 /**< Enable output events during background discovery */
+} uOutputEvents_t;
 
 typedef enum
 {
@@ -108,14 +108,20 @@ typedef enum
     U_PROPERTY_ID_RX_PHY = 9                 /**< RX Phy used in this connection
                                                   Bit 0: 1 Mbps
                                                   Bit 1: 2 Mbps
-                                                  Bit 2: reserved for future use */
+                                                  Bit 2: Coded */
 } uPropertyId_t;
 
 typedef enum
 {
-    U_ADV_MODE_ADVERTISEMENTS_OFF,   /**< Set Bluetooth Advertisements off */
-    U_ADV_MODE_ADVERTISEMENTS_ON = 1 /**< Set Bluetooth Advertisements on */
-} uAdvMode_t;
+    U_LEGACY_ADVERTISEMENT_LEGACY_ADVERTISEMENT_DISABLED,   /**< Legacy Advertisement Not Running */
+    U_LEGACY_ADVERTISEMENT_LEGACY_ADVERTISEMENT_ENABLED = 1 /**< Legacy Advertisement Running */
+} uLegacyAdvertisement_t;
+
+typedef enum
+{
+    U_DIRECTED_ADVERTISEMENT_DIRECTED_ADVERTISEMENT_DISABLED,   /**< Directed Advertisement Not Running */
+    U_DIRECTED_ADVERTISEMENT_DIRECTED_ADVERTISEMENT_ENABLED = 1 /**< Directed Advertisement Running */
+} uDirectedAdvertisement_t;
 
 typedef enum
 {
@@ -210,6 +216,14 @@ typedef enum
 
 typedef enum
 {
+    U_TLS_VERSION_NO_TLS,                /**< Disable TLS */
+    U_TLS_VERSION_TLS1_2 = 1,            /**< TLS 1.2 */
+    U_TLS_VERSION_TLS1_3 = 2,            /**< TLS 1.3 */
+    U_TLS_VERSION_TLS1_2__OR__TLS1_3 = 3 /**< TLS 1.2 or 1.3 (negotiate highest) */
+} uTlsVersion_t;
+
+typedef enum
+{
     U_SECURITY_MODE_OPEN,    /**< Open security */
     U_SECURITY_MODE_WPA = 1, /**< WPA security */
     U_SECURITY_MODE_EAP = 2, /**< EAP-TLS security */
@@ -286,6 +300,24 @@ typedef enum
 
 typedef enum
 {
+    U_ROAMING_DISABLE,   /**< Disable roaming */
+    U_ROAMING_ENABLE = 1 /**< Enable roaming */
+} uRoaming_t;
+
+typedef enum
+{
+    U_ROAMING_AGGRESSIVE_DISABLE,   /**< Disable aggressive roaming */
+    U_ROAMING_AGGRESSIVE_ENABLE = 1 /**< Enable aggressive roaming */
+} uRoamingAggressive_t;
+
+typedef enum
+{
+    U_ROAMING_ALL_CHANNELS_CURRENT_CHANNEL, /**< Roaming on current channel */
+    U_ROAMING_ALL_CHANNELS_ALL_CHANNELS = 1 /**< Roaming on all channels */
+} uRoamingAllChannels_t;
+
+typedef enum
+{
     U_PROTOCOL_TCP = 6, /**< TCP */
     U_PROTOCOL_UDP = 17 /**< UDP */
 } uProtocol_t;
@@ -295,12 +327,6 @@ typedef enum
     U_PREFERRED_PROTOCOL_TYPE_IP_V4,    /**< IPv4 address. */
     U_PREFERRED_PROTOCOL_TYPE_IP_V6 = 1 /**< IPv6 address. */
 } uPreferredProtocolType_t;
-
-typedef enum
-{
-    U_TLS_VERSION_NO_TLS,    /**< Disable TLS */
-    U_TLS_VERSION_TLS1_2 = 1 /**< TLS 1.2 or up */
-} uTlsVersion_t;
 
 typedef enum
 {
@@ -334,10 +360,15 @@ typedef enum
                                   successive keepalive retransmissions.
                                   Defaults to 3.
                                   Note: Only valid for TCP sockets. */
-    U_OPTION_KEEP_CNT = 5    /**< Set keep alive counter value for the socket.
+    U_OPTION_KEEP_CNT = 5,   /**< Set keep alive counter value for the socket.
                                   The number of unanswered probes required to force closure of the socket.
                                   Defaults to 3.
                                   Note: Only valid for TCP sockets. */
+    U_OPTION_BROADCAST = 6   /**< Set broadcast capability for UDP sockets.
+                                  Integer flag: 0 = off, 1 = on.
+                                  When enabled, allows sending and receiving UDP packets to/from broadcast addresses.
+                                  Defaults to 0 (disabled).
+                                  Note: Only valid for UDP sockets. */
 } uOption_t;
 
 typedef enum
@@ -361,10 +392,32 @@ typedef enum
 
 typedef enum
 {
+    U_ENABLE_DISABLE,           /**< (Factory default) Disable NTP client */
+    U_ENABLE_ENABLE_MANUAL = 1, /**< Enable NTP client using NTP servers configured by AT+UNTSC */
+    U_ENABLE_ENABLE_AUTO = 2    /**< Enable NTP client using NTP servers configured by DHCP if exists, otherwise use NTP
+                                     servers configured by AT+UNTSC */
+} uEnable_t;
+
+typedef enum
+{
+    U_REACHABLE_UNREACHABLE,  /**< NTP server is unreachable */
+    U_REACHABLE_REACHABLE = 1 /**< NTP server is reachable */
+} uReachable_t;
+
+typedef enum
+{
     U_CERT_TYPEROOT,       /**< Root certificate */
     U_CERT_TYPECLIENT = 1, /**< Client certificate */
     U_CERT_TYPEKEY = 2     /**< Client private key */
 } uCertType_t;
+
+typedef enum
+{
+    U_CERTIFICATE_DETAIL_IDFINGERPRINT,          /**< The fingerprint of the certificate, returns hex_value */
+    U_CERTIFICATE_DETAIL_IDCERTIFICATE_SIZE = 1, /**< The size of the certificate, returns int_value */
+    U_CERTIFICATE_DETAIL_IDNOT_BEFORE_DATE = 2,  /**< Certificate not valid before date, returns hex_value */
+    U_CERTIFICATE_DETAIL_IDNOT_AFTER_DATE = 3    /**< Certificate not valid after date, returns hex_value */
+} uCertificateDetailId_t;
 
 typedef enum
 {
@@ -408,12 +461,14 @@ typedef enum
 
 typedef enum
 {
-    U_BOND_STATUS_BONDING_SUCCEEDED,          /**< Bonding procedure succeeded. */
-    U_BOND_STATUS_BONDING_FAILED_TIMEOUT = 1, /**< Bonding procedure failed due to page timeout. */
-    U_BOND_STATUS_BONDING_FAILED_AUTH = 2,    /**< Bonding failed because of authentication or pairing failed. This could be due to incorrect
-                                                   PIN/passkey. */
-    U_BOND_STATUS_BONDING_FAILED_MITM = 3     /**< Bonding failed because the protection against Man-In-The-Middle attack could not be
-                                                   guaranteed; the generated link key was too weak. */
+    U_BOND_STATUS_BONDING_SUCCEEDED,                /**< Bonding procedure succeeded. */
+    U_BOND_STATUS_BONDING_FAILED_TIMEOUT = 1,       /**< Bonding procedure failed due to page timeout. */
+    U_BOND_STATUS_BONDING_FAILED_AUTH = 2,          /**< Bonding failed because of authentication or pairing failed. This could be due to incorrect
+                                                         PIN/passkey. */
+    U_BOND_STATUS_BONDING_FAILED_MITM = 3,          /**< Bonding failed because the protection against Man-In-The-Middle attack could not be
+                                                         guaranteed; the generated link key was too weak. */
+    U_BOND_STATUS_BONDING_FAILED_PEER_LOST_BOND = 4 /**< Bonding failed because peer have lost the bonding info. Use AT+UBTUB to delete the local
+                                                         bond to allow re-bonding. */
 } uBondStatus_t;
 
 typedef enum
@@ -441,6 +496,7 @@ typedef void (*uUEBTUC_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr,
 typedef void (*uUEBTUPD_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
 typedef void (*uUEBTUPE_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr);
 typedef void (*uUEBTPHYU_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t phy_status, int32_t tx_phy, int32_t rx_phy);
+typedef void (*uUEBTBGD_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t rssi, const char * device_name, uDataType_t data_type, uByteArray_t *data);
 typedef void (*uUEBTGCN_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
 typedef void (*uUEBTGCI_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
 typedef void (*uUEBTGCW_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uOptions_t options);
@@ -448,7 +504,7 @@ typedef void (*uUEBTGRR_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, in
 typedef void (*uUEBTGIC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t char_handle);
 typedef void (*uUESPSC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
 typedef void (*uUESPSDC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
-typedef void (*uUESPSDS_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, const char * string_data);
+typedef void (*uUESPSDS_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, uByteArray_t *string_data);
 typedef void (*uUESPSDB_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
 typedef void (*uUESPSDA_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t number_bytes);
 typedef void (*uUEWLU_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMacAddress_t *bssid, int32_t channel);
@@ -456,6 +512,9 @@ typedef void (*uUEWLD_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, int3
 typedef void (*uUEWSNU_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWSND_t)(struct uCxHandle *puCxHandle);
 typedef void (*uSTARTUP_t)(struct uCxHandle *puCxHandle);
+typedef void (*uUEWSRSI_t)(struct uCxHandle *puCxHandle);
+typedef void (*uUEWSRSF_t)(struct uCxHandle *puCxHandle);
+typedef void (*uUEWSRSC_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMacAddress_t *bssid, int32_t channel);
 typedef void (*uUEWAPNU_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWAPND_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWAPU_t)(struct uCxHandle *puCxHandle);
@@ -464,8 +523,8 @@ typedef void (*uUEWAPSA_t)(struct uCxHandle *puCxHandle, uMacAddress_t *mac);
 typedef void (*uUEWAPSDA_t)(struct uCxHandle *puCxHandle, uMacAddress_t *mac);
 typedef void (*uUESOC_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
 typedef void (*uUESODA_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes);
-typedef void (*uUESODS_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, const char * string_data);
-typedef void (*uUESODSF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port, const char * string_data);
+typedef void (*uUESODS_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uByteArray_t *string_data);
+typedef void (*uUESODSF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port, uByteArray_t *string_data);
 typedef void (*uUESODB_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
 typedef void (*uUESODBF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port);
 typedef void (*uUESOCL_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
@@ -473,6 +532,11 @@ typedef void (*uUESOIC_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, u
 typedef void (*uUEMQC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id);
 typedef void (*uUEMQDC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t disconnect_reason);
 typedef void (*uUEMQDA_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t message_len);
+typedef void (*uUEMQDD_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t message_len);
+typedef void (*uUEMQPC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t packet_id, int32_t message_len);
+typedef void (*uUEMQSC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action);
+typedef void (*uUEHTCDC_t)(struct uCxHandle *puCxHandle, int32_t session_id);
+typedef void (*uUEHTCRS_t)(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char * description);
 typedef void (*uUEDGPC_t)(struct uCxHandle *puCxHandle, int32_t transmitted_packets, int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 typedef void (*uUEDGP_t)(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time);
 typedef void (*uUEDGI_t)(struct uCxHandle *puCxHandle, const char * iperf_output);
@@ -490,6 +554,7 @@ typedef struct
     uUEBTUPD_t UEBTUPD;
     uUEBTUPE_t UEBTUPE;
     uUEBTPHYU_t UEBTPHYU;
+    uUEBTBGD_t UEBTBGD;
     uUEBTGCN_t UEBTGCN;
     uUEBTGCI_t UEBTGCI;
     uUEBTGCW_t UEBTGCW;
@@ -505,6 +570,9 @@ typedef struct
     uUEWSNU_t UEWSNU;
     uUEWSND_t UEWSND;
     uSTARTUP_t STARTUP;
+    uUEWSRSI_t UEWSRSI;
+    uUEWSRSF_t UEWSRSF;
+    uUEWSRSC_t UEWSRSC;
     uUEWAPNU_t UEWAPNU;
     uUEWAPND_t UEWAPND;
     uUEWAPU_t UEWAPU;
@@ -522,6 +590,11 @@ typedef struct
     uUEMQC_t UEMQC;
     uUEMQDC_t UEMQDC;
     uUEMQDA_t UEMQDA;
+    uUEMQDD_t UEMQDD;
+    uUEMQPC_t UEMQPC;
+    uUEMQSC_t UEMQSC;
+    uUEHTCDC_t UEHTCDC;
+    uUEHTCRS_t UEHTCRS;
     uUEDGPC_t UEDGPC;
     uUEDGP_t UEDGP;
     uUEDGI_t UEDGI;

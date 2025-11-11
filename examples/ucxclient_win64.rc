@@ -40,10 +40,10 @@ BEGIN
             VALUE "CompanyName", "u-blox AG"
             VALUE "FileDescription", "ucxclient Windows Tool for NORA-W36/NORA-B26"
             VALUE "FileVersion", "1.0.0.0"
-            VALUE "InternalName", "ucxtool_win64.exe"
+            VALUE "InternalName", "ucxclient_win64.exe"
             VALUE "LegalCopyright", "Copyright (C) 2025 u-blox AG"
-            VALUE "OriginalFilename", "ucxtool_win64.exe"
-            VALUE "ProductName", "ucxclient ucxtool_win64"
+            VALUE "OriginalFilename", "ucxclient_win64.exe"
+            VALUE "ProductName", "ucxclient_win64"
             VALUE "ProductVersion", "1.0.0.0"
         END
     END

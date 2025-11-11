@@ -132,21 +132,6 @@ bool uCxGeneralGetSerialNumberBegin(uCxHandle_t * puCxHandle, const char ** ppSe
 bool uCxGeneralGetIdentInfoBegin(uCxHandle_t * puCxHandle, uCxGeneralGetIdentInfo_t * pGeneralGetIdentInfoRsp);
 
 /**
- * Read MCU ID.
- * 
- * Output AT command:
- * > ATI10
- *
- * @param[in]  puCxHandle: uCX API handle
- * @param[out] ppMcuId:    Two byte hex string representing the MCU ID.
- * @return                 true on success, false on error (error code will be returned by uCxEnd()).
- *
- * NOTES:
- * Must be terminated by calling uCxEnd()
- */
-bool uCxGeneralGetMcuIdBegin(uCxHandle_t * puCxHandle, const char ** ppMcuId);
-
-/**
  * Read type code.
  * 
  * Output AT command:

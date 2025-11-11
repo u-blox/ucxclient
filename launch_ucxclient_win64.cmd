@@ -213,9 +213,43 @@ REM Set build directory
 set BUILD_DIR=build\!CONFIG!
 set FTDI_DLL=examples\ftdi\ftd2xx64.dll
 
-REM Check if executable exists, build if not
-if not exist "!BUILD_DIR!\ucxclient_win64.exe" (
+REM Check if executable exists and if source files are newer
+set NEED_BUILD=0
+set EXE_PATH=!BUILD_DIR!\ucxclient_win64.exe
+set SOURCE_FILE=examples\ucxclient_win64.c
+
+if not exist "!EXE_PATH!" (
     echo Executable not found. Auto-building !CONFIG!...
+    set NEED_BUILD=1
+) else (
+    echo.
+    echo Checking build status...
+    echo Executable: !EXE_PATH!
+    for %%F in ("!EXE_PATH!") do echo   Build date: %%~tF
+    echo Source file: !SOURCE_FILE!
+    for %%F in ("!SOURCE_FILE!") do echo   Modified:   %%~tF
+    
+    REM Compare file timestamps (newer source file triggers rebuild)
+    for %%S in ("!SOURCE_FILE!") do set SOURCE_TIME=%%~tS
+    for %%E in ("!EXE_PATH!") do set EXE_TIME=%%~tE
+    
+    REM Simple comparison: if source is newer, rebuild
+    if "!SOURCE_FILE!" NEQ "" (
+        forfiles /P "examples" /M "ucxclient_win64.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
+        if exist "!SOURCE_FILE!" (
+            powershell -Command "if ((Get-Item '!SOURCE_FILE!').LastWriteTime -gt (Get-Item '!EXE_PATH!').LastWriteTime) { exit 1 }" >nul 2>&1
+            if errorlevel 1 (
+                echo.
+                echo [REBUILD NEEDED] Source file is newer than executable!
+                set NEED_BUILD=1
+            ) else (
+                echo   Status: Executable is up-to-date
+            )
+        )
+    )
+)
+
+if !NEED_BUILD! EQU 1 (
     echo.
     
     REM Configure if needed
@@ -236,8 +270,11 @@ if not exist "!BUILD_DIR!\ucxclient_win64.exe" (
         exit /b 1
     )
     echo Build successful!
+    echo.
+    echo New executable built:
+    for %%F in ("!EXE_PATH!") do echo   Build date: %%~tF
 ) else (
-    echo Executable found. Skipping build.
+    echo   Skipping build (executable is current)
 )
 
 REM Copy FTDI DLL if needed

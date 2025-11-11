@@ -65,15 +65,6 @@ bool uCxGeneralGetIdentInfoBegin(uCxHandle_t * puCxHandle, uCxGeneralGetIdentInf
     return ret >= 0;
 }
 
-bool uCxGeneralGetMcuIdBegin(uCxHandle_t * puCxHandle, const char ** ppMcuId)
-{
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "ATI10", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "", NULL, NULL, "s", ppMcuId, U_CX_AT_UTIL_PARAM_LAST);
-    return ret >= 0;
-}
-
 bool uCxGeneralGetTypeCodeBegin(uCxHandle_t * puCxHandle, const char ** ppTypeCode)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;

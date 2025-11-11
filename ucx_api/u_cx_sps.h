@@ -88,16 +88,16 @@ int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * p
  * Writes the specified amount of data to the specified SPS connection in binary mode. Max 1000 bytes.
  * 
  * Output AT command:
- * > AT+USPSWB=<conn_handle>
+ * > AT+USPSWB=<conn_handle>,<binary_data>,<binary_data_len>
  *
- * @param[in]  puCxHandle:  uCX API handle
- * @param      conn_handle: Connection handle of remote peer which has SPS enabled
- * @param[in]  pWData:      binary data to write
- * @param      wDataLen:    number of bytes to write
- * @return                  Negative value on error. On success:
- *                          Data length that was written.
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      conn_handle:     Connection handle of remote peer which has SPS enabled
+ * @param      binary_data:     The data to write.
+ * @param      binary_data_len: length of binary_data
+ * @return                      Negative value on error. On success:
+ *                              Data length that was written.
  */
-int32_t uCxSpsWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t * pWData, size_t wDataLen);
+int32_t uCxSpsWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * binary_data, int32_t binary_data_len);
 
 /**
  * Set the mode in which to receive SPS data in AT mode.

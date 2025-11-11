@@ -29,10 +29,16 @@ bool uCxWifiGetHostnameBegin(uCxHandle_t * puCxHandle, const char ** ppHostName)
     return ret >= 0;
 }
 
-int32_t uCxWifiStationSetSecurityEnterprise(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * ca_name, const char * client_cert_name, const char * client_key_name)
+int32_t uCxWifiStationSetSecurityEnterprise5(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSE=", "dsss", wlan_handle, ca_name, client_cert_name, client_key_name, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSE=", "ddsss", wlan_handle, tls_version, ca_name, client_cert_name, client_key_name, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiStationSetSecurityEnterprise6(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name, const char * identity)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSE=", "ddssss", wlan_handle, tls_version, ca_name, client_cert_name, client_key_name, identity, U_CX_AT_UTIL_PARAM_LAST);
 }
 
 bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetSecurity_t * pWifiStationGetSecurityRsp)
@@ -62,13 +68,21 @@ bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handl
             pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE;
             ret = uCxAtUtilParseParamsF(pParamsLine, "-d", &pWifiStationGetSecurityRsp->rspSecurityMode.security_mode, U_CX_AT_UTIL_PARAM_LAST);
             break;
-        case 2:
-            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_STR_STR_STR;
-            ret = uCxAtUtilParseParamsF(pParamsLine, "-dsss", &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.ca_name, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.client_cert_name, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStr.client_key_name, U_CX_AT_UTIL_PARAM_LAST);
+        case -1:
+            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_STR_STR_STR_STR;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-dssss", &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStrStr.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStrStr.ca_name, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStrStr.client_cert_name, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStrStr.client_key_name, &pWifiStationGetSecurityRsp->rspSecurityModeStrStrStrStr.identity, U_CX_AT_UTIL_PARAM_LAST);
             break;
-        case 3:
+        case 2:
+            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_TLS_VERSION_STR_STR_STR_STR;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-ddssss", &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStrStrStr.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStrStrStr.tls_version, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStrStrStr.ca_name, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStrStrStr.client_cert_name, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStrStrStr.client_key_name, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStrStrStr.identity, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case -2:
             pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_STR_STR;
             ret = uCxAtUtilParseParamsF(pParamsLine, "-dss", &pWifiStationGetSecurityRsp->rspSecurityModeStrStr.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeStrStr.username, &pWifiStationGetSecurityRsp->rspSecurityModeStrStr.ca_name, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 3:
+            pWifiStationGetSecurityRsp->type = U_CX_WIFI_STATION_GET_SECURITY_RSP_TYPE_SECURITY_MODE_TLS_VERSION_STR_STR;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-ddss", &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStr.security_mode, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStr.tls_version, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStr.username, &pWifiStationGetSecurityRsp->rspSecurityModeTlsVersionStrStr.ca_name, U_CX_AT_UTIL_PARAM_LAST);
             break;
         default:
             return false;
@@ -76,16 +90,16 @@ bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handl
     return ret >= 0;
 }
 
-int32_t uCxWifiStationSetSecurityPeap3(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * peap_user, const char * peap_password)
+int32_t uCxWifiStationSetSecurityPeap4(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * peap_user, const char * peap_password)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSP=", "dss", wlan_handle, peap_user, peap_password, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSP=", "ddss", wlan_handle, tls_version, peap_user, peap_password, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxWifiStationSetSecurityPeap4(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * peap_user, const char * peap_password, const char * ca_name)
+int32_t uCxWifiStationSetSecurityPeap5(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * peap_user, const char * peap_password, const char * ca_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSP=", "dsss", wlan_handle, peap_user, peap_password, ca_name, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSSP=", "ddsss", wlan_handle, tls_version, peap_user, peap_password, ca_name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
 int32_t uCxWifiStationSetSecurityWpa(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * passphrase, uWpaThreshold_t wpa_threshold)
@@ -437,6 +451,160 @@ bool uCxWifiApListNetworkStatusGetNext(uCxHandle_t * puCxHandle, uCxWifiApListNe
     return ret >= 0;
 }
 
+int32_t uCxWifiSetWifiRoaming(uCxHandle_t * puCxHandle, uRoaming_t roaming)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSROE=", "d", roaming, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetWifiRoaming(uCxHandle_t * puCxHandle, uRoaming_t * pRoaming)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSROE?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSROE:", NULL, NULL, "d", pRoaming, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxWifiSetRoamingBackgroundScanThreshold(uCxHandle_t * puCxHandle, int32_t roaming_scanning_threshold)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSROS0=", "d", roaming_scanning_threshold, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetRoamingBackgroundScanThreshold(uCxHandle_t * puCxHandle, int32_t * pRoamingScanningThreshold)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSROS0?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSROS0:", NULL, NULL, "d", pRoamingScanningThreshold, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxWifiSetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t roaming_switch_limit)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSROS1=", "d", roaming_switch_limit, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t * pRoamingSwitchLimit)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSROS1?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSROS1:", NULL, NULL, "d", pRoamingSwitchLimit, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxWifiSetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t roaming_scan_interval)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSROS2=", "d", roaming_scan_interval, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t * pRoamingScanInterval)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSROS2?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSROS2:", NULL, NULL, "d", pRoamingScanInterval, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxWifiSetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t roaming_aggressive)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSROS3=", "d", roaming_aggressive, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t * pRoamingAggressive)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSROS3?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSROS3:", NULL, NULL, "d", pRoamingAggressive, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxWifiSetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t roaming_delay_time)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSROS4=", "d", roaming_delay_time, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t * pRoamingDelayTime)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSROS4?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSROS4:", NULL, NULL, "d", pRoamingDelayTime, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxWifiSetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t roaming_all_channels)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWSROS5=", "d", roaming_all_channels, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t * pRoamingAllChannels)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWSROS5?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWSROS5:", NULL, NULL, "d", pRoamingAllChannels, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
 void uCxWifiRegisterLinkUp(uCxHandle_t * puCxHandle, uUEWLU_t callback)
 {
     puCxHandle->callbacks.UEWLU = callback;
@@ -455,6 +623,21 @@ void uCxWifiRegisterStationNetworkUp(uCxHandle_t * puCxHandle, uUEWSNU_t callbac
 void uCxWifiRegisterStationNetworkDown(uCxHandle_t * puCxHandle, uUEWSND_t callback)
 {
     puCxHandle->callbacks.UEWSND = callback;
+}
+
+void uCxWifiRegisterStationRoamingSwitchInitiated(uCxHandle_t * puCxHandle, uUEWSRSI_t callback)
+{
+    puCxHandle->callbacks.UEWSRSI = callback;
+}
+
+void uCxWifiRegisterStationRoamingSwitchFailed(uCxHandle_t * puCxHandle, uUEWSRSF_t callback)
+{
+    puCxHandle->callbacks.UEWSRSF = callback;
+}
+
+void uCxWifiRegisterStationRoamingSwitchCompleted(uCxHandle_t * puCxHandle, uUEWSRSC_t callback)
+{
+    puCxHandle->callbacks.UEWSRSC = callback;
 }
 
 void uCxWifiRegisterApNetworkUp(uCxHandle_t * puCxHandle, uUEWAPNU_t callback)
