@@ -5938,6 +5938,7 @@ static void printMenu(void)
                 printf("  [i]     Device information (ATI9)\n");
                 printf("  [r]     Reboot module\n");
                 printf("  [t]     AT Terminal (interactive)\n");
+                printf("  [a]     AT command test\n");
             }
             printf("\n");
             
@@ -5964,11 +5965,15 @@ static void printMenu(void)
                 }
                 printf("\n");
                 
-                // === ADVANCED FEATURES ===
-                printf("ADVANCED\n");
-                printf("  [a]     AT command test\n");
+                // === FIRMWARE ===
+                printf("FIRMWARE\n");
                 printf("  [f]     Firmware update (XMODEM)\n");
-                printf("  [e]     Examples (Heartbeat, HID)\n");
+                printf("\n");
+                
+                // === EXAMPLES ===
+                printf("EXAMPLES\n");
+                printf("  [e]     GATT Examples (Heartbeat, HID)\n");
+                printf("  [p]     HTTP Examples (HTTP POST, GET)\n");
                 printf("\n");
             }
             
@@ -6344,6 +6349,8 @@ static void handleUserInput(void)
                 choice = 16;  // Firmware update
             } else if (firstChar == 'e') {
                 choice = 9;   // Examples (Heartbeat, HID)
+            } else if (firstChar == 'p') {
+                choice = 15;  // HTTP Examples (HTTP POST, GET)
             } else if (firstChar == 'a') {
                 choice = 3;   // AT command test
             } else if (firstChar == 'i') {
@@ -6453,6 +6460,13 @@ static void handleUserInput(void)
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_GATT_EXAMPLES;
+                    }
+                    break;
+                case 15:  // HTTP Examples (HTTP POST, GET)
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_HTTP;
                     }
                     break;
                 case 23:  // Also accept 'w' or 'W' - Wi-Fi (scan, connect, disconnect, status)
