@@ -94,7 +94,7 @@ int32_t uCxSpsRead(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uint8_t *pBinBuffer = pDataBuf;
-    size_t binBufferLen = length;
+    uint16_t binBufferLen = (uint16_t)length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USPSRB=", "dd", conn_handle, length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSRB:", pBinBuffer, &binBufferLen, "-", U_CX_AT_UTIL_PARAM_LAST);
@@ -106,7 +106,7 @@ int32_t uCxSpsRead(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length
         }
     }
     if (ret >= 0) {
-        ret = binBufferLen;
+        ret = (int32_t)binBufferLen;
     }
     return ret;
 }

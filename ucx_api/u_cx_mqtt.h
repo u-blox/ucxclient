@@ -426,7 +426,7 @@ int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeA
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, size_t dataBufLength, const char ** ppTopic);
+int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, uint16_t dataBufLength, const char ** ppTopic);
 
 /**
  * Register Connect event callback

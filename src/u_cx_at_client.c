@@ -80,7 +80,7 @@ static int32_t gNextInstance = 0;
 
 // Helper function for setting up the RX binary transfer buffer
 static void setupBinaryRxBuffer(uCxAtClient_t *pClient, uCxAtBinaryState_t state,
-                                uint8_t *pBuffer, size_t bufferSize, uint16_t remainingBytes)
+                                uint8_t *pBuffer, uint16_t bufferSize, uint16_t remainingBytes)
 {
     uCxAtBinaryRx_t *pBinRx = &pClient->binaryRx;
     pBinRx->bufferPos = 0;
@@ -127,14 +127,14 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 // Extended error code
                 char *pEnd;
                 char *pCodeStr = &pLine[6];
-                int code = strtol(pCodeStr, &pEnd, 10);
+                int code = (int)strtol(pCodeStr, &pEnd, 10);
                 if (isdigit((int) * pCodeStr) && (*pEnd == 0)) {
                     pClient->status = U_CX_EXTENDED_ERROR_OFFSET - code;
                     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Command failed with error code: %d", code);
                     ret = AT_PARSER_GOT_STATUS;
                 }
             }
-        } else if ((pLine[0] != '+') && (pLine[0] != '*') && (strncmp(pLine, "AT+", 2) != 0)) {
+        } else if ((pLine[0] != '+') && (pLine[0] != '*') && (strncmp(pLine, "AT+", 3) != 0)) {
             pClient->pRspParams = &pLine[0];
             ret = AT_PARSER_GOT_RSP;
         }
@@ -211,7 +211,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
             // Setup the binary buffer, but don't return AT_PARSER_GOT_RSP
             // until transfer is done.
             uCxAtBinaryResponseBuf_t *pRspBuf = &pClient->rspBinaryBuf;
-            size_t length = 0;
+            uint16_t length = 0;
             if (pRspBuf->pBufferLength) {
                 length = *pRspBuf->pBufferLength;
                 *pRspBuf->pBufferLength = 0;
@@ -224,7 +224,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
 #if U_CX_USE_URC_QUEUE == 1
             // Place the binary data directly after the URC string
             uint8_t *pPtr = pConfig->pUrcBuffer;
-            size_t len = uCxAtUrcQueueEnqueueGetPayloadPtr(&pClient->urcQueue, &pPtr);
+            uint16_t len = uCxAtUrcQueueEnqueueGetPayloadPtr(&pClient->urcQueue, &pPtr);
             if (len > binLength) {
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_URC, pPtr, len, binLength);
             } else {
@@ -272,7 +272,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
                                             pClient->pConfig->timeoutMs);
         CHECK_READ_ERROR(pClient, readStatus);
         if (readStatus > 0) {
-            pBinRx->rxHeaderCount += readStatus;
+            pBinRx->rxHeaderCount += (uint8_t)readStatus;
         }
         if (readStatus < (int32_t)readLen) {
             return ret;
@@ -297,7 +297,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
                                                 pClient->pConfig->timeoutMs);
             CHECK_READ_ERROR(pClient, readStatus);
             if (readStatus > 0) {
-                pBinRx->bufferPos += readStatus;
+                pBinRx->bufferPos += (uint16_t)readStatus;
             }
         } else {
             // There are no buffer space - just throw away all data until binary transfer is done
@@ -310,7 +310,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
         }
 
         if (readStatus > 0) {
-            pBinRx->remainingDataBytes -= readStatus;
+            pBinRx->remainingDataBytes -= (uint16_t)readStatus;
         } else {
             break;
         }
@@ -519,8 +519,9 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
             case 'd': {
                 // Digit (integer)
                 int i = va_arg(args, int);
-                int32_t len = snprintf(buf, sizeof(buf), "%d", i);
-                writeAndLog(pClient, buf, len);
+                int32_t len = (size_t)snprintf(buf, sizeof(buf), "%d", i);
+                U_CX_AT_PORT_ASSERT(len > 0);
+                writeAndLog(pClient, buf, (size_t)len);
             }
             break;
             case 's': {
@@ -536,7 +537,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 uSockIpAddress_t *pIpAddr = va_arg(args, uSockIpAddress_t *);
                 int32_t len = uCxIpAddressToString(pIpAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeAndLog(pClient, buf, len);
+                writeAndLog(pClient, buf, (size_t)len);
             }
             break;
             case 'm': {
@@ -544,7 +545,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 uMacAddress_t *pMacAddr = va_arg(args, uMacAddress_t *);
                 int32_t len = uCxMacAddressToString(pMacAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeAndLog(pClient, buf, len);
+                writeAndLog(pClient, buf, (size_t)len);
             }
             break;
             case 'b': {
@@ -552,7 +553,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 uBtLeAddress_t *pBtLeAddr = va_arg(args, uBtLeAddress_t *);
                 int32_t len = uCxBdAddressToString(pBtLeAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeAndLog(pClient, buf, len);
+                writeAndLog(pClient, buf, (size_t)len);
             }
             break;
             case 'B': {
@@ -561,12 +562,12 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 int32_t len = va_arg(args, int32_t);
                 char binHeader[3] = {
                     U_CX_SOH_CHAR,
-                    (uint8_t)(len >> 8),
-                    (uint8_t)(len & 0xFF),
+                    (char)(len >> 8),
+                    (char)(len & 0xFF),
                 };
                 U_CX_AT_PORT_ASSERT(len > 0);
                 writeNoLog(pClient, binHeader, sizeof(binHeader));
-                writeNoLog(pClient, pData, len);
+                writeNoLog(pClient, pData, (size_t)len);
                 U_CX_LOG(U_CX_LOG_CH_TX, "[%d bytes]", len);
 
                 // Binary transfer must always be last param
@@ -621,7 +622,7 @@ void uCxAtClientCmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *
 }
 
 char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpectedRsp,
-                                    uint8_t *pBinaryBuf, size_t *pBinaryBufLength)
+                                    uint8_t *pBinaryBuf, uint16_t *pBinaryBufLength)
 {
     char *pRet = NULL;
     pClient->rspBinaryBuf.pBuffer = pBinaryBuf;
@@ -651,7 +652,7 @@ char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpecte
 }
 
 int32_t uCxAtClientCmdGetRspParamsF(uCxAtClient_t *pClient, const char *pExpectedRsp,
-                                    uint8_t *pBinaryBuf, size_t *pBinaryBufLength,
+                                    uint8_t *pBinaryBuf, uint16_t *pBinaryBufLength,
                                     const char *pParamFmt, ...)
 {
     va_list args;

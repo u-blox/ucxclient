@@ -190,11 +190,11 @@ int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeA
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQS=", "ddsd", mqtt_id, subscribe_action, topic, qos, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, size_t dataBufLength, const char ** ppTopic)
+int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, uint16_t dataBufLength, const char ** ppTopic)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uint8_t *pBinBuffer = pDataBuf;
-    size_t binBufferLen = dataBufLength;
+    uint16_t binBufferLen = dataBufLength;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UMQRB=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQRB:", pBinBuffer, &binBufferLen, "-s", ppTopic, U_CX_AT_UTIL_PARAM_LAST);

@@ -131,7 +131,7 @@ int32_t uCxSocketRead(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t l
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uint8_t *pBinBuffer = pDataBuf;
-    size_t binBufferLen = length;
+    uint16_t binBufferLen = (uint16_t)length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USORB=", "dd", socket_handle, length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USORB:", pBinBuffer, &binBufferLen, "-", U_CX_AT_UTIL_PARAM_LAST);
@@ -143,7 +143,7 @@ int32_t uCxSocketRead(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t l
         }
     }
     if (ret >= 0) {
-        ret = binBufferLen;
+        ret = (int32_t)binBufferLen;
     }
     return ret;
 }
@@ -186,7 +186,7 @@ int32_t uCxSocketReceiveFrom(uCxHandle_t * puCxHandle, int32_t socket_handle, in
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uint8_t *pBinBuffer = pDataBuf;
-    size_t binBufferLen = length;
+    uint16_t binBufferLen = (uint16_t)length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USORFB=", "dd", socket_handle, length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USORFB:", pBinBuffer, &binBufferLen, "-id", &pSocketReceiveFromRsp->remote_ip, &pSocketReceiveFromRsp->remote_port, U_CX_AT_UTIL_PARAM_LAST);
@@ -198,7 +198,7 @@ int32_t uCxSocketReceiveFrom(uCxHandle_t * puCxHandle, int32_t socket_handle, in
         }
     }
     if (ret >= 0) {
-        ret = binBufferLen;
+        ret = (int32_t)binBufferLen;
     }
     return ret;
 }
