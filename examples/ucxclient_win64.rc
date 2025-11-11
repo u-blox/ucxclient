@@ -2,6 +2,10 @@
 //
 #include <windows.h>
 
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_ICON1               ICON                    "../images/ShortRange.ico"
+
 /////////////////////////////////////////////////////////////////////////////
 //
 // Binary Resources - Embedded FTDI DLL
