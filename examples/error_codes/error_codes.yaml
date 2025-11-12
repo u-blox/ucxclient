@@ -1,0 +1,189 @@
+title: u-connectXpress v3.1.0 Error Codes Documentation
+description: Error codes defined in the codebase
+generated_on: '2025-09-28 10:34:56'
+modules:
+  Common:
+    error_count: 23
+    errors:
+    - name: U_ERROR_COMMON_BSD_ERROR
+      value: 1
+    - name: U_ERROR_COMMON_NOT_INITIALISED
+      value: 2
+    - name: U_ERROR_COMMON_NOT_IMPLEMENTED
+      value: 3
+    - name: U_ERROR_COMMON_NOT_SUPPORTED
+      value: 4
+    - name: U_ERROR_COMMON_INVALID_PARAMETER
+      value: 5
+    - name: U_ERROR_COMMON_NO_MEMORY
+      value: 6
+    - name: U_ERROR_COMMON_NOT_RESPONDING
+      value: 7
+    - name: U_ERROR_COMMON_PLATFORM
+      value: 8
+    - name: U_ERROR_COMMON_TIMEOUT
+      value: 9
+    - name: U_ERROR_COMMON_DEVICE_ERROR
+      value: 10
+    - name: U_ERROR_COMMON_NOT_FOUND
+      value: 11
+    - name: U_ERROR_COMMON_INVALID_ADDRESS
+      value: 12
+    - name: U_ERROR_COMMON_TEMPORARY_FAILURE
+      value: 13
+    - name: U_ERROR_COMMON_AUTHENTICATION_FAILURE
+      value: 14
+    - name: U_ERROR_COMMON_OPERATION_IN_PROGRESS
+      value: 15
+    - name: U_ERROR_COMMON_NOT_CONNECTED
+      value: 16
+    - name: U_ERROR_COMMON_LIMIT_REACHED
+      value: 17
+    - name: U_ERROR_COMMON_ALREADY_CREATED
+      value: 18
+    - name: U_ERROR_COMMON_END_OF_TRANSMISSION
+      value: 19
+    - name: U_ERROR_COMMON_REMOTE_CANCELLED_TRANSMISSION
+      value: 19
+    - name: U_ERROR_COMMON_NOT_CONFIGURED
+      value: 20
+    - name: U_ERROR_COMMON_INVALID_RESPONSE
+      value: 21
+    - name: U_ERROR_COMMON_UNKNOWN
+      value: 22
+  AT:
+    error_count: 21
+    errors:
+    - name: U_AT_STATUS_NOT_IMPLEMENTED
+      value: 31
+    - name: U_AT_STATUS_INVALID_COMMAND
+      value: 32
+    - name: U_AT_STATUS_INVALID_ARGUMENTS
+      value: 33
+    - name: U_AT_STATUS_INVALID_ARGUMENT_COUNT
+      value: 34
+    - name: U_AT_STATUS_INVALID_INT_ARG
+      value: 35
+    - name: U_AT_STATUS_INVALID_INT_RANGE
+      value: 36
+    - name: U_AT_STATUS_INVALID_STR_ARG
+      value: 37
+    - name: U_AT_STATUS_INVALID_STR_LENGTH
+      value: 38
+    - name: U_AT_STATUS_INVALID_ENUM_ARG
+      value: 39
+    - name: U_AT_STATUS_INVALID_IP_ADDR_ARG
+      value: 40
+    - name: U_AT_STATUS_INVALID_MAC_ADDR_ARG
+      value: 41
+    - name: U_AT_STATUS_INVALID_BD_ADDR_ARG
+      value: 42
+    - name: U_AT_STATUS_INVALID_BYTE_ARRAY_ARG
+      value: 43
+    - name: U_AT_STATUS_INVALID_BYTE_ARRAY_LENGTH
+      value: 44
+    - name: U_AT_STATUS_UNMATCHED_QUOTE
+      value: 45
+    - name: U_AT_STATUS_TIMEOUT
+      value: 46
+    - name: U_AT_STATUS_BIN_CMD_EXEC_AS_STD_CMD
+      value: 47
+    - name: U_AT_STATUS_INVALID_ESCAPE_CODE
+      value: 48
+    - name: U_AT_STATUS_INVALID_CHARACTER
+      value: 49
+    - name: U_AT_STATUS_INVALID_INT_LIST_ARG
+      value: 50
+    - name: U_AT_STATUS_INVALID_INT_LIST_LENGTH
+      value: 51
+  Wi-Fi:
+    error_count: 12
+    errors:
+    - name: U_ERROR_WIFI_AT
+      value: 60
+    - name: U_ERROR_WIFI_NOT_CONFIGURED
+      value: 61
+    - name: U_ERROR_WIFI_NOT_FOUND
+      value: 62
+    - name: U_ERROR_WIFI_INVALID_MODE
+      value: 63
+    - name: U_ERROR_WIFI_TEMPORARY_FAILURE
+      value: 64
+    - name: U_ERROR_WIFI_ALREADY_CONNECTED
+      value: 65
+    - name: U_ERROR_WIFI_ALREADY_CONNECTED_TO_SSID
+      value: 66
+    - name: U_ERROR_WIFI_DISCONNECTED
+      value: 67
+    - name: U_ERROR_WIFI_ALREADY_UP
+      value: 68
+    - name: U_ERROR_WIFI_AP_NOT_STARTED
+      value: 69
+    - name: U_ERROR_WIFI_IS_DOWN
+      value: 70
+    - name: U_ERROR_WIFI_ALREADY_STARTED
+      value: 71
+  GATT:
+    error_count: 24
+    errors:
+    - name: U_PORT_GATT_STATUS_INVALID_HANDLE
+      value: 91
+    - name: U_PORT_GATT_STATUS_READ_NOT_PERMITTED
+      value: 92
+    - name: U_PORT_GATT_STATUS_WRITE_NOT_PERMITTED
+      value: 93
+    - name: U_PORT_GATT_STATUS_INVALID_PDU
+      value: 94
+    - name: U_PORT_GATT_STATUS_AUTHENTICATION
+      value: 95
+    - name: U_PORT_GATT_STATUS_NOT_SUPPORTED
+      value: 96
+    - name: U_PORT_GATT_STATUS_INVALID_OFFSET
+      value: 97
+    - name: U_PORT_GATT_STATUS_AUTHORIZATION
+      value: 98
+    - name: U_PORT_GATT_STATUS_PREPARE_QUEUE_FULL
+      value: 99
+    - name: U_PORT_GATT_STATUS_ATTRIBUTE_NOT_FOUND
+      value: 100
+    - name: U_PORT_GATT_STATUS_ATTRIBUTE_NOT_LONG
+      value: 101
+    - name: U_PORT_GATT_STATUS_ENCRYPTION_KEY_SIZE
+      value: 102
+    - name: U_PORT_GATT_STATUS_INVALID_ATTRIBUTE_LEN
+      value: 103
+    - name: U_PORT_GATT_STATUS_UNLIKELY
+      value: 104
+    - name: U_PORT_GATT_STATUS_INSUFFICIENT_ENCRYPTION
+      value: 105
+    - name: U_PORT_GATT_STATUS_UNSUPPORTED_GROUP_TYPE
+      value: 106
+    - name: U_PORT_GATT_STATUS_INSUFFICIENT_RESOURCES
+      value: 107
+    - name: U_PORT_GATT_STATUS_DB_OUT_OF_SYNC
+      value: 108
+    - name: U_PORT_GATT_STATUS_VALUE_NOT_ALLOWED
+      value: 109
+    - name: U_PORT_GATT_STATUS_WRITE_REQ_REJECTED
+      value: 110
+    - name: U_PORT_GATT_STATUS_CCC_IMPROPER_CONF
+      value: 111
+    - name: U_PORT_GATT_STATUS_PROCEDURE_IN_PROGRESS
+      value: 112
+    - name: U_PORT_GATT_STATUS_OUT_OF_RANGE
+      value: 113
+    - name: U_PORT_GATT_STATUS_UNKNOWN
+      value: 114
+  HTTP:
+    error_count: 1
+    errors:
+    - name: U_ERROR_HTTP_HEADER_NOT_READ
+      value: 160
+  Socket:
+    error_count: 1
+    errors:
+    - name: U_ERROR_SOCKET_ALREADY_BOUND
+      value: 180
+summary:
+  total_modules: 6
+  total_error_codes: 82

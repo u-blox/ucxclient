@@ -772,6 +772,9 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
 {
     uPortContext_t *pCtx = (uPortContext_t *)pStreamHandle;
     DWORD dwBytesRead = 0;
+    
+    // Suppress unused parameter warning (timeoutMs is used in FTDI mode and timeout paths)
+    (void)timeoutMs;
 
 #if defined(USE_UART_FTDI)
     // FTDI mode: Check FTDI handle

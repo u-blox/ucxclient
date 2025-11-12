@@ -43,7 +43,7 @@
 typedef struct {
     uint16_t strLineLen;  // String length excluding null term
     uint16_t payloadSize; // Binary payload length (0 if none)
-    uint8_t data[];       // Layout is {strLineLen}{null term}{payloadSize}
+    uint8_t data[0];       // Layout is {strLineLen}{null term}{payloadSize}
 } uUrcEntry_t;
 
 typedef struct uCxAtUrcQueue {
@@ -145,16 +145,5 @@ uUrcEntry_t *uCxAtUrcQueueDequeueBegin(uCxAtUrcQueue_t *pUrcQueue);
   * @param[in]  pUrcQueue: the URC queue initialized with uCxAtUrcQueueInit().
   */
 void uCxAtUrcQueueDequeueEnd(uCxAtUrcQueue_t *pUrcQueue, uUrcEntry_t *pEntry);
-
-/**
-  * @brief  Get URC queue usage statistics
-  *
-  * Returns the current buffer usage for debugging/monitoring.
-  *
-  * @param[in]   pUrcQueue: the URC queue initialized with uCxAtUrcQueueInit().
-  * @param[out]  pUsedBytes: pointer to receive used bytes count
-  * @param[out]  pTotalBytes: pointer to receive total buffer size
-  */
-void uCxAtUrcQueueGetStats(uCxAtUrcQueue_t *pUrcQueue, size_t *pUsedBytes, size_t *pTotalBytes);
 
 #endif // U_CX_AT_URC_QUEUE_H

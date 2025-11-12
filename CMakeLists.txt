@@ -113,6 +113,7 @@ if(WIN32)
     examples/ucxclient_win64.c
     examples/port/u_port_windows.c
     examples/ucxclient_win64.rc
+    examples/qrcodegen/qrcodegen.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
@@ -123,7 +124,7 @@ if(WIN32)
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
-  target_include_directories(ucxclient_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_include_directories(ucxclient_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/examples)
   target_link_libraries(ucxclient_win64 PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Firmware Update Standalone Application

@@ -25,15 +25,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Include port layer first (defines U_CX_PORT_PRINTF)
+#include "u_port.h"
+
 // Enable logging for this test application
+#ifndef U_CX_PORT_PRINTF
 #define U_CX_PORT_PRINTF printf
+#endif
+#ifndef U_CX_PORT_GET_TIME_MS
 #define U_CX_PORT_GET_TIME_MS() 0
+#endif
 
 #include "u_cx.h"
 #include "u_cx_at_client.h"
 #include "u_cx_general.h"
 #include "u_cx_firmware_update.h"
-#include "u_port.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS

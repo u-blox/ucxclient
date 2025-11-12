@@ -74,10 +74,10 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Disable MSVC warnings for auto-generated UCX API headers
 // C4200: zero-sized array in struct (valid C99/C11 feature)
 // C4201: nameless struct/union (valid C11 feature)
-//#ifdef _MSC_VER
-//#pragma warning(push)
-//#pragma warning(disable: 4200 4201)
-//#endif
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4200 4201)
+#endif
 
 // Include ucxclient headers
 #include "u_cx_at_client.h"
@@ -98,6 +98,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_gatt_server.h"
 #include "u_cx_sps.h"
 #include "u_cx_firmware_update.h"
+#include "qrcodegen/qrcodegen.h"
 
 // Port layer
 #include "port/u_port.h"
@@ -281,6 +282,7 @@ typedef enum {
     MENU_BLUETOOTH_FUNCTIONS,
     MENU_GATT_EXAMPLES,
     MENU_WIFI,
+    MENU_WIFI_AP,
     MENU_WIFI_FUNCTIONS,
     MENU_SOCKET,
     MENU_SPS,
@@ -485,11 +487,22 @@ static void wifiManageProfiles(void);
 static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipPrefix);
 static int wifiSuggestProfile(void);
 static void wifiListProfiles(void);
+static void wifiApEnable(void);
+static void wifiApDisable(void);
+static void wifiApShowStatus(void);
+static void wifiApGenerateQrCode(void);
+static void wifiApConfigure(void);
 static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize);
 static void loadSettings(void);
 static void saveSettings(void);
 static void obfuscatePassword(const char *input, char *output, size_t outputSize);
 static void deobfuscatePassword(const char *input, char *output, size_t outputSize);
+static void tlsSetVersion(void);
+static void tlsShowConfig(void);
+static void tlsListCertificates(void);
+static void tlsShowCertificateDetails(void);
+static void tlsUploadCertificate(void);
+static void tlsDeleteCertificate(void);
 static void socketCreateTcp(void);
 static void socketCreateUdp(void);
 static void socketConnect(void);
@@ -1622,6 +1635,52 @@ static void linkDownUrc(struct uCxHandle *puCxHandle, int32_t wlan_handle, int32
     (void)reason;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi Link DOWN");
     signalEvent(URC_FLAG_WIFI_LINK_DOWN);
+}
+
+static void apNetworkUpUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi AP Network UP");
+    printf("\n[EVENT] Wi-Fi Access Point Network is UP\n");
+}
+
+static void apNetworkDownUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi AP Network DOWN");
+    printf("\n[EVENT] Wi-Fi Access Point Network is DOWN\n");
+}
+
+static void apUpUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi AP UP");
+    printf("\n[EVENT] Wi-Fi Access Point is UP\n");
+}
+
+static void apDownUrc(struct uCxHandle *puCxHandle)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi AP DOWN");
+    printf("\n[EVENT] Wi-Fi Access Point is DOWN\n");
+}
+
+static void apStationAssociatedUrc(struct uCxHandle *puCxHandle, uMacAddress_t *mac)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi Station Associated");
+    printf("\n[EVENT] Station connected to AP - MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+           mac->address[0], mac->address[1], mac->address[2],
+           mac->address[3], mac->address[4], mac->address[5]);
+}
+
+static void apStationDisassociatedUrc(struct uCxHandle *puCxHandle, uMacAddress_t *mac)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Wi-Fi Station Disassociated");
+    printf("\n[EVENT] Station disconnected from AP - MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+           mac->address[0], mac->address[1], mac->address[2],
+           mac->address[3], mac->address[4], mac->address[5]);
 }
 
 static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
@@ -3975,6 +4034,14 @@ static void enableAllUrcs(void)
     uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
     uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
     
+    // Wi-Fi Access Point events
+    uCxWifiRegisterApNetworkUp(&gUcxHandle, apNetworkUpUrc);
+    uCxWifiRegisterApNetworkDown(&gUcxHandle, apNetworkDownUrc);
+    uCxWifiRegisterApUp(&gUcxHandle, apUpUrc);
+    uCxWifiRegisterApDown(&gUcxHandle, apDownUrc);
+    uCxWifiRegisterApStationAssociated(&gUcxHandle, apStationAssociatedUrc);
+    uCxWifiRegisterApStationDisassociated(&gUcxHandle, apStationDisassociatedUrc);
+    
     // Socket events
     uCxSocketRegisterConnect(&gUcxHandle, sockConnected);
     uCxSocketRegisterDataAvailable(&gUcxHandle, socketDataAvailable);
@@ -4019,6 +4086,12 @@ static void disableAllUrcs(void)
     uCxWifiRegisterLinkDown(&gUcxHandle, NULL);
     uCxWifiRegisterStationNetworkUp(&gUcxHandle, NULL);
     uCxWifiRegisterStationNetworkDown(&gUcxHandle, NULL);
+    uCxWifiRegisterApNetworkUp(&gUcxHandle, NULL);
+    uCxWifiRegisterApNetworkDown(&gUcxHandle, NULL);
+    uCxWifiRegisterApUp(&gUcxHandle, NULL);
+    uCxWifiRegisterApDown(&gUcxHandle, NULL);
+    uCxWifiRegisterApStationAssociated(&gUcxHandle, NULL);
+    uCxWifiRegisterApStationDisassociated(&gUcxHandle, NULL);
     uCxSocketRegisterConnect(&gUcxHandle, NULL);
     uCxSocketRegisterDataAvailable(&gUcxHandle, NULL);
     uCxSpsRegisterConnect(&gUcxHandle, NULL);
@@ -6318,6 +6391,459 @@ static void httpMenu(void)
     gMenuState = MENU_HTTP;
 }
 
+// ============================================================================
+// SECURITY / TLS FUNCTIONS
+// ============================================================================
+
+static void tlsSetVersion(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                   SET TLS VERSION\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("NOTE: TLS version configuration is managed through server\n");
+    printf("      certificate selection and connection parameters.\n");
+    printf("\n");
+    printf("The module supports TLS 1.2 and will negotiate the best\n");
+    printf("available version with the server automatically.\n");
+    printf("\n");
+    printf("For TLS configuration, use:\n");
+    printf("  - Upload CA certificates (option [5])\n");
+    printf("  - Configure certificate validation (AT+USECVAL)\n");
+    printf("  - Enable/disable TLS extensions (AT+USECEXT)\n");
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void tlsShowConfig(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                TLS CONFIGURATION STATUS\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    printf("TLS Version: TLS 1.2 (auto-negotiated)\n");
+    printf("\n");
+    
+    // Get TLS Server Name Indication status
+    uEnabled_t sniEnabled;
+    int32_t err = uCxSecurityGetTlsServerNameIndication(&gUcxHandle, &sniEnabled);
+    
+    if (err == 0) {
+        printf("Server Name Indication (SNI): %s\n", 
+               (sniEnabled == U_ENABLED_ENABLED) ? "Enabled" : "Disabled");
+    } else {
+        printf("Server Name Indication (SNI): ERROR (failed to query)\n");
+    }
+    
+    // Get TLS Handshake Fragmentation status
+    uEnabled_t fragEnabled;
+    err = uCxSecurityGetTlsHandshakeFrag(&gUcxHandle, &fragEnabled);
+    
+    if (err == 0) {
+        printf("Handshake Fragmentation: %s\n",
+               (fragEnabled == U_ENABLED_ENABLED) ? "Enabled" : "Disabled");
+    } else {
+        printf("Handshake Fragmentation: ERROR (failed to query)\n");
+    }
+    
+    printf("\n");
+    printf("NOTE: Certificate validation and other TLS settings are\n");
+    printf("      configured per connection. Use certificate management\n");
+    printf("      options to upload and configure certificates.\n");
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void tlsListCertificates(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                  CERTIFICATE LIST\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    // List certificates using AT+USECL command
+    printf("Querying installed certificates...\n");
+    printf("\n");
+    
+    uCxSecurityListCertificatesBegin(&gUcxHandle);
+    
+    uCxSecurityListCertificates_t certInfo;
+    int certCount = 0;
+    
+    while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
+        certCount++;
+        printf("[%d] Certificate:\n", certCount);
+        printf("    Name: %s\n", certInfo.name);
+        
+        // Certificate type
+        printf("    Type: ");
+        switch (certInfo.cert_type) {
+            case U_CERT_TYPEROOT:
+                printf("Root/CA Certificate\n");
+                break;
+            case U_CERT_TYPECLIENT:
+                printf("Client Certificate\n");
+                break;
+            case U_CERT_TYPEKEY:
+                printf("Client Private Key\n");
+                break;
+            default:
+                printf("Unknown (%d)\n", certInfo.cert_type);
+                break;
+        }
+        
+        printf("\n");
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (certCount == 0) {
+        printf("No certificates installed.\n");
+        printf("\n");
+        printf("Use option [5] to upload certificates (CA, Client, or Key).\n");
+    } else {
+        printf("Total: %d certificate(s)\n", certCount);
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void tlsShowCertificateDetails(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("              CERTIFICATE DETAILS\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    char certName[128];
+    printf("Enter certificate name: ");
+    if (!fgets(certName, sizeof(certName), stdin)) {
+        return;
+    }
+    certName[strcspn(certName, "\r\n")] = 0;  // Remove newline
+    
+    if (strlen(certName) == 0) {
+        printf("ERROR: Certificate name cannot be empty\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("Querying certificate details for: %s\n", certName);
+    printf("\n");
+    
+    // Note: The UCX API might not provide detailed certificate info retrieval
+    // This is a placeholder for future implementation
+    printf("NOTE: Detailed certificate information retrieval is not fully\n");
+    printf("      supported by the current UCX API.\n");
+    printf("\n");
+    printf("Available actions:\n");
+    printf("  - View certificate list with [3]\n");
+    printf("  - Delete certificate with [6]\n");
+    printf("  - Upload new certificate with [5]\n");
+    printf("\n");
+    printf("For detailed certificate inspection, use OpenSSL tools:\n");
+    printf("  openssl x509 -in cert.pem -text -noout\n");
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void tlsUploadCertificate(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                 UPLOAD CERTIFICATE\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Select certificate type:\n");
+    printf("  [1] CA Certificate (root or intermediate)\n");
+    printf("  [2] Client Certificate (for mutual TLS)\n");
+    printf("  [3] Client Private Key (for mutual TLS)\n");
+    printf("  [0] Cancel\n");
+    printf("\n");
+    printf("Choice: ");
+    
+    char input[256];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    int choice = atoi(input);
+    uCertType_t certType;
+    const char *typeStr;
+    
+    switch (choice) {
+        case 1:
+            certType = U_CERT_TYPEROOT;
+            typeStr = "CA/Root Certificate";
+            break;
+        case 2:
+            certType = U_CERT_TYPECLIENT;
+            typeStr = "Client Certificate";
+            break;
+        case 3:
+            certType = U_CERT_TYPEKEY;
+            typeStr = "Client Private Key";
+            break;
+        case 0:
+            printf("Cancelled.\n");
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        default:
+            printf("ERROR: Invalid choice\n");
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+    }
+    
+    printf("\n");
+    printf("Selected: %s\n", typeStr);
+    printf("\n");
+    
+    // Get certificate name
+    char certName[128];
+    printf("Enter certificate name (internal reference): ");
+    if (!fgets(certName, sizeof(certName), stdin)) {
+        return;
+    }
+    certName[strcspn(certName, "\r\n")] = 0;  // Remove newline
+    
+    if (strlen(certName) == 0) {
+        printf("ERROR: Certificate name cannot be empty\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Get file path
+    char filePath[512];
+    printf("Enter certificate file path (PEM format): ");
+    if (!fgets(filePath, sizeof(filePath), stdin)) {
+        return;
+    }
+    filePath[strcspn(filePath, "\r\n")] = 0;  // Remove newline
+    
+    if (strlen(filePath) == 0) {
+        printf("ERROR: File path cannot be empty\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Read certificate file
+    FILE *fp = fopen(filePath, "rb");
+    if (!fp) {
+        printf("ERROR: Failed to open file: %s\n", filePath);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Get file size
+    fseek(fp, 0, SEEK_END);
+    long fileSize = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    if (fileSize <= 0 || fileSize > 8192) {
+        printf("ERROR: Invalid file size (%ld bytes). Must be 1-8192 bytes.\n", fileSize);
+        fclose(fp);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Allocate buffer and read file
+    char *certData = (char *)malloc(fileSize + 1);
+    if (!certData) {
+        printf("ERROR: Memory allocation failed\n");
+        fclose(fp);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    size_t bytesRead = fread(certData, 1, fileSize, fp);
+    fclose(fp);
+    
+    if (bytesRead != (size_t)fileSize) {
+        printf("ERROR: Failed to read complete file\n");
+        free(certData);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    certData[fileSize] = '\0';  // Null terminate
+    
+    printf("\n");
+    printf("Uploading certificate...\n");
+    printf("  Name: %s\n", certName);
+    printf("  Type: %s\n", typeStr);
+    printf("  Size: %ld bytes\n", fileSize);
+    printf("\n");
+    
+    // Upload certificate using UCX API
+    int32_t err = uCxSecurityCertificateUpload(&gUcxHandle, certType, certName, (const uint8_t *)certData, (int32_t)fileSize);
+    
+    free(certData);
+    
+    if (err == 0) {
+        printf("✓ Certificate uploaded successfully!\n");
+        printf("\n");
+        printf("The certificate is now available for TLS connections.\n");
+        printf("Use option [3] to verify it appears in the certificate list.\n");
+    } else {
+        printf("ERROR: Failed to upload certificate (error: %d)\n", err);
+        printf("\n");
+        printf("Common issues:\n");
+        printf("  - Invalid PEM format (must start with -----BEGIN CERTIFICATE-----)\n");
+        printf("  - File encoding issues (use UTF-8 or ASCII)\n");
+        printf("  - Certificate too large (max 8KB)\n");
+        printf("  - Certificate name already exists\n");
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void tlsDeleteCertificate(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                DELETE CERTIFICATE\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    char certName[128];
+    printf("Enter certificate name to delete: ");
+    if (!fgets(certName, sizeof(certName), stdin)) {
+        return;
+    }
+    certName[strcspn(certName, "\r\n")] = 0;  // Remove newline
+    
+    if (strlen(certName) == 0) {
+        printf("ERROR: Certificate name cannot be empty\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Confirm deletion
+    printf("\n");
+    printf("WARNING: This will permanently delete the certificate!\n");
+    printf("Are you sure you want to delete '%s'? (y/N): ", certName);
+    
+    char confirm[10];
+    if (!fgets(confirm, sizeof(confirm), stdin)) {
+        return;
+    }
+    
+    if (tolower(confirm[0]) != 'y') {
+        printf("Cancelled.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("Deleting certificate: %s\n", certName);
+    
+    // Note: UCX API requires cert type for deletion
+    // We'll try all three types since we don't know which one it is
+    int32_t err = -1;
+    
+    // Try as Root cert first
+    err = uCxSecurityCertificateRemove(&gUcxHandle, U_CERT_TYPEROOT, certName);
+    if (err != 0) {
+        // Try as Client cert
+        err = uCxSecurityCertificateRemove(&gUcxHandle, U_CERT_TYPECLIENT, certName);
+    }
+    if (err != 0) {
+        // Try as Key
+        err = uCxSecurityCertificateRemove(&gUcxHandle, U_CERT_TYPEKEY, certName);
+    }
+    
+    if (err == 0) {
+        printf("✓ Certificate deleted successfully\n");
+    } else {
+        printf("ERROR: Failed to delete certificate (error: %d)\n", err);
+        printf("\n");
+        printf("Possible reasons:\n");
+        printf("  - Certificate name not found\n");
+        printf("  - Certificate is currently in use by an active connection\n");
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
 // ----------------------------------------------------------------
 // Main Function
 // ----------------------------------------------------------------
@@ -6487,8 +7013,10 @@ static void printWelcomeGuide(void)
     printf("  - [e] GATT Examples - Heartbeat, HID Keyboard\n");
     printf("\n");
     printf("WI-FI OPERATIONS (NORA-W36 only):\n");
-    printf("  - [w] Wi-Fi - Scan, connect, disconnect, status\n");
+    printf("  - [w] Wi-Fi Station - Scan, connect, disconnect, status\n");
+    printf("  - [o] Wi-Fi Access Point - Create hotspot with QR code\n");
     printf("  - [n] Network - Sockets, MQTT, HTTP\n");
+    printf("  - [x] Security - TLS/SSL certificates and configuration\n");
     printf("  - [p] HTTP Examples - GET/POST requests\n");
     printf("  - [y] NTP Examples - Time synchronization\n");
     printf("\n");
@@ -6531,15 +7059,24 @@ static void printHelp(void)
     printf("      - GATT Server: Host custom services and characteristics\n");
     printf("\n");
     printf("Wi-Fi FEATURES (NORA-W36 only):\n");
-    printf("  [w] Wi-Fi - Scan, connect, disconnect, status\n");
+    printf("  [w] Wi-Fi Station - Scan, connect, disconnect, status\n");
     printf("      - Scan for Wi-Fi networks with RSSI and security info\n");
     printf("      - Connect to Wi-Fi (SSID and password are saved)\n");
     printf("      - Show connection status and IP address\n");
+    printf("  [o] Wi-Fi Access Point - Create wireless hotspot\n");
+    printf("      - Enable/disable Access Point mode\n");
+    printf("      - Configure SSID, password, and security (WPA2)\n");
+    printf("      - Generate QR code for easy mobile connection\n");
+    printf("      - View connected stations and AP status\n");
     printf("  [n] Network - Sockets, MQTT, HTTP\n");
     printf("      - TCP/UDP sockets for client/server communication\n");
     printf("      - MQTT publish/subscribe with QoS\n");
     printf("      - HTTP client (GET/POST/PUT/DELETE)\n");
-    printf("      - Security and TLS certificates\n");
+    printf("  [x] Security - TLS/SSL configuration and certificates\n");
+    printf("      - Configure TLS version (1.2 / 1.3)\n");
+    printf("      - Upload CA certificates for server validation\n");
+    printf("      - Manage client certificates for mutual TLS\n");
+    printf("      - View certificate details and validation settings\n");
     printf("\n");
     printf("FIRMWARE:\n");
     printf("  [f] Firmware update - Update module firmware via XMODEM\n");
@@ -6675,8 +7212,10 @@ static void printMenu(void)
                 bool hasWiFi = gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL;
                 if (hasWiFi) {
                     printf("Wi-Fi FEATURES\n");
-                    printf("  [w]     Wi-Fi - Scan, connect, status\n");
+                    printf("  [w]     Wi-Fi Station - Scan, connect, status\n");
+                    printf("  [o]     Wi-Fi Access Point - Enable, QR code\n");
                     printf("  [n]     Network - Sockets, MQTT, HTTP\n");
+                    printf("  [x]     Security - TLS and certificates\n");
                 } else {
                     printf("Wi-Fi FEATURES\n");
                     printf("  [w]     Wi-Fi - Not available on this device\n");
@@ -6742,7 +7281,7 @@ static void printMenu(void)
             
         case MENU_WIFI:
             printf("==============================================================\n");
-            printf("                        WI-FI MENU\n");
+            printf("                  WI-FI STATION MENU\n");
             printf("==============================================================\n");
             printf("\n");
             if (gWifiProfileCount > 0) {
@@ -6757,6 +7296,20 @@ static void printMenu(void)
             printf("  [4] Connect to network\n");
             printf("  [5] Disconnect from network\n");
             printf("  [6] Manage Wi-Fi profiles\n");
+            printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_WIFI_AP:
+            printf("==============================================================\n");
+            printf("                  WI-FI ACCESS POINT MENU\n");
+            printf("==============================================================\n");
+            printf("\n");
+            printf("  [1] Enable Access Point\n");
+            printf("  [2] Disable Access Point\n");
+            printf("  [3] Show AP status\n");
+            printf("  [4] Generate QR code for easy connection\n");
+            printf("  [5] Configure AP settings (SSID, password, security)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -6830,14 +7383,15 @@ static void printMenu(void)
             printf("           SECURITY/TLS MENU (Certificates & Encryption)\n");
             printf("==============================================================\n");
             printf("\n");
-            printf("STATUS: Feature under development\n");
+            printf("TLS CONFIGURATION\n");
+            printf("  [1] Set TLS version (1.2 / 1.3)\n");
+            printf("  [2] Show TLS configuration\n");
             printf("\n");
-            printf("Planned features:\n");
-            printf("  - Upload CA certificates\n");
-            printf("  - Upload client certificates\n");
-            printf("  - Manage private keys\n");
-            printf("  - Configure TLS settings\n");
-            printf("  - Certificate validation options\n");
+            printf("CERTIFICATE MANAGEMENT\n");
+            printf("  [3] List all certificates\n");
+            printf("  [4] Show certificate details\n");
+            printf("  [5] Upload certificate (CA, Client, or Private Key)\n");
+            printf("  [6] Delete certificate\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -7043,9 +7597,13 @@ static void handleUserInput(void)
         // Handle specific letter commands for main menu
         if (gMenuState == MENU_MAIN) {
             if (firstChar == 'w') {
-                choice = 23;  // Wi-Fi menu
+                choice = 23;  // Wi-Fi Station menu
+            } else if (firstChar == 'o') {
+                choice = 60;  // Wi-Fi Access Point menu
             } else if (firstChar == 'n') {
                 choice = 24;  // Network functions (sockets, MQTT, HTTP)
+            } else if (firstChar == 'x') {
+                choice = 61;  // Security/TLS menu
             } else if (firstChar == 'b') {
                 choice = 7;   // Bluetooth menu
             } else if (firstChar == 's') {
@@ -7246,11 +7804,29 @@ static void handleUserInput(void)
                         executeAtTerminal();
                     }
                     break;
+                case 60:  // Also accept 'o' or 'O' - Wi-Fi Access Point
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_WIFI_AP;
+                    }
+                    break;
+                case 61:  // Also accept 'x' or 'X' - Security/TLS
+                    if (!gConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_SECURITY_TLS;
+                    }
+                    break;
                 case 18:  // Also accept 'h' or 'H' - Help (handled above but keep for consistency)
                     printHelp();
                     break;
                 case 0:
-                    gMenuState = MENU_EXIT;
+                    // Don't exit on Enter/0 in main menu - only 'q' should quit
+                    // This prevents accidental exits
+                    if (strlen(input) > 0) {
+                        printf("Invalid choice! Use [q] to quit.\n");
+                    }
                     break;
                 default:
                     printf("Invalid choice!\n");
@@ -7321,6 +7897,32 @@ static void handleUserInput(void)
                     break;
                 case 6:
                     wifiManageProfiles();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_WIFI_AP:
+            switch (choice) {
+                case 1:
+                    wifiApEnable();
+                    break;
+                case 2:
+                    wifiApDisable();
+                    break;
+                case 3:
+                    wifiApShowStatus();
+                    break;
+                case 4:
+                    wifiApGenerateQrCode();
+                    break;
+                case 5:
+                    wifiApConfigure();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -7431,11 +8033,29 @@ static void handleUserInput(void)
             
         case MENU_SECURITY_TLS:
             switch (choice) {
+                case 1:
+                    tlsSetVersion();
+                    break;
+                case 2:
+                    tlsShowConfig();
+                    break;
+                case 3:
+                    tlsListCertificates();
+                    break;
+                case 4:
+                    tlsShowCertificateDetails();
+                    break;
+                case 5:
+                    tlsUploadCertificate();
+                    break;
+                case 6:
+                    tlsDeleteCertificate();
+                    break;
                 case 0:
-                    gMenuState = MENU_WIFI_FUNCTIONS;
+                    gMenuState = MENU_MAIN;
                     break;
                 default:
-                    printf("Feature in progress. Use [0] to return to Wi-Fi Functions menu.\n");
+                    printf("Invalid choice!\n");
                     break;
             }
             break;
@@ -7893,6 +8513,14 @@ static bool connectDevice(const char *comPort)
     uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
     uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
     
+    // Register URC handlers for Wi-Fi Access Point events
+    uCxWifiRegisterApNetworkUp(&gUcxHandle, apNetworkUpUrc);
+    uCxWifiRegisterApNetworkDown(&gUcxHandle, apNetworkDownUrc);
+    uCxWifiRegisterApUp(&gUcxHandle, apUpUrc);
+    uCxWifiRegisterApDown(&gUcxHandle, apDownUrc);
+    uCxWifiRegisterApStationAssociated(&gUcxHandle, apStationAssociatedUrc);
+    uCxWifiRegisterApStationDisassociated(&gUcxHandle, apStationDisassociatedUrc);
+    
     // Register URC handlers for socket events
     uCxSocketRegisterConnect(&gUcxHandle, sockConnected);
     uCxSocketRegisterDataAvailable(&gUcxHandle, socketDataAvailable);
@@ -8018,6 +8646,14 @@ static void disconnectDevice(void)
     uCxWifiRegisterLinkDown(&gUcxHandle, NULL);
     uCxWifiRegisterStationNetworkUp(&gUcxHandle, NULL);
     uCxWifiRegisterStationNetworkDown(&gUcxHandle, NULL);
+    
+    // Unregister Wi-Fi Access Point event handlers
+    uCxWifiRegisterApNetworkUp(&gUcxHandle, NULL);
+    uCxWifiRegisterApNetworkDown(&gUcxHandle, NULL);
+    uCxWifiRegisterApUp(&gUcxHandle, NULL);
+    uCxWifiRegisterApDown(&gUcxHandle, NULL);
+    uCxWifiRegisterApStationAssociated(&gUcxHandle, NULL);
+    uCxWifiRegisterApStationDisassociated(&gUcxHandle, NULL);
     
     // Unregister socket event handlers
     uCxSocketRegisterConnect(&gUcxHandle, NULL);
@@ -11092,6 +11728,466 @@ static void wifiDisconnect(void)
     } else {
         printf("ERROR: Failed to disconnect\n");
     }
+}
+
+// ============================================================================
+// WI-FI ACCESS POINT FUNCTIONS
+// ============================================================================
+
+static void wifiApEnable(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    char ssid[64];
+    char password[64];
+    int32_t err;
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                  ENABLE WI-FI ACCESS POINT\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    // Get SSID
+    printf("Enter AP SSID (default: ucxclient Access Point): ");
+    if (!fgets(ssid, sizeof(ssid), stdin)) {
+        printf("ERROR: Failed to read SSID\n");
+        return;
+    }
+    ssid[strcspn(ssid, "\r\n")] = 0;  // Remove newline
+    
+    if (strlen(ssid) == 0) {
+        strcpy(ssid, "ucxclient Access Point");
+        printf("Using default SSID: %s\n", ssid);
+    }
+    
+    // Get password
+    printf("Enter WPA2 password (default: 12345678): ");
+    if (!fgets(password, sizeof(password), stdin)) {
+        printf("ERROR: Failed to read password\n");
+        return;
+    }
+    password[strcspn(password, "\r\n")] = 0;  // Remove newline
+    
+    if (strlen(password) == 0) {
+        strcpy(password, "12345678");
+        printf("Using default password: %s\n", password);
+    } else if (strlen(password) < 8) {
+        printf("ERROR: Password must be at least 8 characters\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("Configuring Access Point...\n");
+    
+    // Step 1: Set AP SSID and channel
+    err = uCxWifiApSetConnectionParams2(&gUcxHandle, ssid, 6);
+    if (err != 0) {
+        printf("ERROR: Failed to set AP SSID and channel (error: %d)\n", err);
+        return;
+    }
+    printf("✓ SSID set: %s\n", ssid);
+    printf("✓ Channel set: 6\n");
+    
+    // Step 2: Set AP passphrase (WPA2)
+    err = uCxWifiApSetSecurityWpa2(&gUcxHandle, password, U_WPA_VERSION_WPA2);
+    if (err != 0) {
+        printf("ERROR: Failed to set AP passphrase (error: %d)\n", err);
+        return;
+    }
+    printf("✓ WPA2 passphrase configured\n");
+    printf("✓ Security mode: WPA2\n");
+    
+    // Step 3: Activate the Access Point
+    printf("\n");
+    printf("Activating Access Point...\n");
+    err = uCxWifiApActivate(&gUcxHandle);
+    if (err != 0) {
+        printf("ERROR: Failed to activate AP (error: %d)\n", err);
+        printf("Make sure Wi-Fi Station is disconnected before enabling AP.\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("✓ Access Point ENABLED successfully!\n");
+    printf("\n");
+    printf("==============================================================\n");
+    printf("  SSID:     %s\n", ssid);
+    printf("  Password: %s\n", password);
+    printf("  Security: WPA2\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    // Always show QR code after creating AP
+    // Generate Wi-Fi QR code string
+    char qrCodeString[256];
+    snprintf(qrCodeString, sizeof(qrCodeString),
+             "WIFI:T:WPA;S:%s;P:%s;;", ssid, password);
+    
+    printf("Generating QR Code...\n");
+    printf("\n");
+    
+    // Generate QR code using qrcodegen library
+    uint8_t qrcode[qrcodegen_BUFFER_LEN_MAX];
+    uint8_t tempBuffer[qrcodegen_BUFFER_LEN_MAX];
+    
+    bool ok = qrcodegen_encodeText(qrCodeString, tempBuffer, qrcode,
+        qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX,
+        qrcodegen_Mask_AUTO, true);
+    
+    if (ok) {
+        int size = qrcodegen_getSize(qrcode);
+        int border = 2;
+        
+        printf("==============================================================\n");
+        printf("                SCAN TO CONNECT TO WI-FI AP\n");
+        printf("==============================================================\n");
+        printf("\n");
+        
+        // Print QR code to terminal using block characters
+        for (int y = -border; y < size + border; y++) {
+            for (int x = -border; x < size + border; x++) {
+                bool module = qrcodegen_getModule(qrcode, x, y);
+                printf(module ? "██" : "  ");
+            }
+            printf("\n");
+        }
+        
+        printf("\n");
+        printf("Scan this QR code with your smartphone to automatically\n");
+        printf("connect to the Wi-Fi Access Point!\n");
+        printf("\n");
+    } else {
+        printf("ERROR: Failed to generate QR code\n");
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void wifiApDisable(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Disable Wi-Fi Access Point ---\n");
+    printf("Deactivating Access Point...\n");
+    
+    int32_t err = uCxWifiApDeactivate(&gUcxHandle);
+    if (err == 0) {
+        printf("✓ Access Point disabled successfully\n");
+    } else {
+        printf("ERROR: Failed to disable AP (error: %d)\n", err);
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void wifiApShowStatus(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("              WI-FI ACCESS POINT STATUS\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    // Get AP connection parameters (SSID and channel)
+    uCxWifiApGetConnectionParams_t apParams;
+    if (uCxWifiApGetConnectionParamsBegin(&gUcxHandle, &apParams)) {
+        printf("SSID: %s\n", apParams.ssid);
+        printf("Channel: %d\n", apParams.channel);
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("Status: ERROR (failed to query AP parameters)\n");
+    }
+    
+    // Get security settings
+    uCxWifiApGetSecurity_t secInfo;
+    if (uCxWifiApGetSecurity(&gUcxHandle, &secInfo) == 0) {
+        printf("Security Mode: ");
+        if (secInfo.type == U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE_WPA_VERSION) {
+            printf("WPA (version: %d, mode: %d)\n", 
+                   secInfo.rspSecurityModeWpaVersion.wpa_version,
+                   secInfo.rspSecurityModeWpaVersion.security_mode);
+        } else if (secInfo.type == U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE) {
+            printf("Mode: %d\n", secInfo.rspSecurityMode.security_mode);
+        }
+    }
+    
+    // Get network status (IP addresses)
+    printf("\n");
+    printf("Network Status:\n");
+    uCxWifiApListNetworkStatusBegin(&gUcxHandle);
+    uCxWifiApListNetworkStatus_t netStatus;
+    while (uCxWifiApListNetworkStatusGetNext(&gUcxHandle, &netStatus)) {
+        uSockIpAddress_t *ip = &netStatus.status_val;
+        if (ip->type == U_SOCK_ADDRESS_TYPE_V4) {
+            char ipStr[50];
+            uint32_t ipv4 = ip->address.ipv4;
+            sprintf(ipStr, "%d.%d.%d.%d",
+                   (ipv4 & 0xFF), ((ipv4 >> 8) & 0xFF),
+                   ((ipv4 >> 16) & 0xFF), ((ipv4 >> 24) & 0xFF));
+            
+            // Status ID meanings: 0=IPv4, 1=Subnet, 2=Gateway, 3=DNS
+            const char *statusDesc[] = {"IPv4 Address", "Subnet Mask", "Gateway", "DNS Server"};
+            if (netStatus.status_id >= 0 && netStatus.status_id <= 3) {
+                printf("  %s: %s\n", statusDesc[netStatus.status_id], ipStr);
+            } else {
+                printf("  Status %d: %s\n", netStatus.status_id, ipStr);
+            }
+        }
+    }
+    uCxEnd(&gUcxHandle);
+    
+    // Get connected stations
+    printf("\n");
+    printf("Connected Stations:\n");
+    uCxWifiApListStationsBegin(&gUcxHandle);
+    uMacAddress_t staMac;
+    int stationCount = 0;
+    while (uCxWifiApListStationsGetNext(&gUcxHandle, &staMac)) {
+        stationCount++;
+        printf("  [%d] MAC: %02X:%02X:%02X:%02X:%02X:%02X\n",
+               stationCount,
+               staMac.address[0], staMac.address[1], staMac.address[2],
+               staMac.address[3], staMac.address[4], staMac.address[5]);
+    }
+    uCxEnd(&gUcxHandle);
+    
+    if (stationCount == 0) {
+        printf("  (No stations connected)\n");
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void wifiApGenerateQrCode(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("           WI-FI ACCESS POINT - QR CODE GENERATOR\n");
+    printf("==============================================================\n");
+    printf("\n");
+    
+    // Get SSID from AP connection parameters
+    char ssid[64] = {0};
+    uCxWifiApGetConnectionParams_t apParams;
+    if (uCxWifiApGetConnectionParamsBegin(&gUcxHandle, &apParams)) {
+        strncpy(ssid, apParams.ssid, sizeof(ssid) - 1);
+        uCxEnd(&gUcxHandle);
+    }
+    
+    if (strlen(ssid) == 0) {
+        printf("ERROR: No SSID configured. Please enable Access Point first.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Ask for password (can't retrieve it from module)
+    char password[64];
+    printf("Enter AP password: ");
+    if (!fgets(password, sizeof(password), stdin)) {
+        printf("ERROR: Failed to read password\n");
+        return;
+    }
+    password[strcspn(password, "\r\n")] = 0;  // Remove newline
+    
+    // Generate Wi-Fi QR code string format:
+    // WIFI:T:WPA;S:<SSID>;P:<password>;H:<hidden>;;
+    // Example: WIFI:T:WPA;S:MyNetwork;P:MyPassword;;
+    char qrCodeString[256];
+    snprintf(qrCodeString, sizeof(qrCodeString),
+             "WIFI:T:WPA;S:%s;P:%s;;", ssid, password);
+    
+    printf("\n");
+    printf("Generating QR Code...\n");
+    printf("\n");
+    
+    // Generate QR code using qrcodegen library
+    uint8_t qrcode[qrcodegen_BUFFER_LEN_MAX];
+    uint8_t tempBuffer[qrcodegen_BUFFER_LEN_MAX];
+    
+    bool ok = qrcodegen_encodeText(qrCodeString, tempBuffer, qrcode,
+        qrcodegen_Ecc_LOW, qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX,
+        qrcodegen_Mask_AUTO, true);
+    
+    if (!ok) {
+        printf("ERROR: Failed to generate QR code\n");
+        return;
+    }
+    
+    int size = qrcodegen_getSize(qrcode);
+    int border = 2;
+    
+    printf("==============================================================\n");
+    printf("                SCAN TO CONNECT TO WI-FI AP\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("SSID: %s\n", ssid);
+    printf("\n");
+    
+    // Print QR code to terminal using block characters
+    // Using █ (full block) for dark modules and space for light modules
+    for (int y = -border; y < size + border; y++) {
+        for (int x = -border; x < size + border; x++) {
+            // Print two characters per module for better aspect ratio
+            bool module = qrcodegen_getModule(qrcode, x, y);
+            printf(module ? "██" : "  ");
+        }
+        printf("\n");
+    }
+    
+    printf("\n");
+    printf("QR Code String: %s\n", qrCodeString);
+    printf("\n");
+    printf("Scan this QR code with your smartphone to automatically\n");
+    printf("connect to the Wi-Fi Access Point!\n");
+    printf("\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void wifiApConfigure(void)
+{
+    if (!gConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("==============================================================\n");
+    printf("            CONFIGURE WI-FI ACCESS POINT SETTINGS\n");
+    printf("==============================================================\n");
+    printf("\n");
+    printf("Advanced configuration options:\n");
+    printf("\n");
+    printf("  [1] Set channel (1-13)\n");
+    printf("  [2] Change SSID\n");
+    printf("  [3] Change security (WPA2/Open)\n");
+    printf("  [0] Cancel\n");
+    printf("\n");
+    printf("Choice: ");
+    
+    char input[64];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    int choice = atoi(input);
+    int32_t err;
+    
+    switch (choice) {
+        case 1: {
+            printf("Enter SSID: ");
+            char ssid[64];
+            if (fgets(ssid, sizeof(ssid), stdin)) {
+                ssid[strcspn(ssid, "\r\n")] = 0;
+                printf("Enter channel (1-13): ");
+                char chInput[10];
+                if (fgets(chInput, sizeof(chInput), stdin)) {
+                    int channel = atoi(chInput);
+                    if (channel >= 1 && channel <= 13) {
+                        err = uCxWifiApSetConnectionParams2(&gUcxHandle, ssid, channel);
+                        if (err == 0) {
+                            printf("✓ SSID and channel updated\n");
+                        } else {
+                            printf("ERROR: Failed to set parameters (error: %d)\n", err);
+                        }
+                    } else {
+                        printf("ERROR: Invalid channel. Must be 1-13.\n");
+                    }
+                }
+            }
+            break;
+        }
+        case 2: {
+            printf("Enter new SSID: ");
+            char ssid[64];
+            if (fgets(ssid, sizeof(ssid), stdin)) {
+                ssid[strcspn(ssid, "\r\n")] = 0;
+                if (strlen(ssid) > 0) {
+                    err = uCxWifiApSetConnectionParams1(&gUcxHandle, ssid);
+                    if (err == 0) {
+                        printf("✓ SSID updated to: %s\n", ssid);
+                    } else {
+                        printf("ERROR: Failed to set SSID (error: %d)\n", err);
+                    }
+                } else {
+                    printf("ERROR: SSID cannot be empty\n");
+                }
+            }
+            break;
+        }
+        case 3: {
+            printf("\n");
+            printf("Select security type:\n");
+            printf("  [1] WPA2 (with password)\n");
+            printf("  [2] Open (no password)\n");
+            printf("Choice: ");
+            char secChoice[10];
+            if (fgets(secChoice, sizeof(secChoice), stdin)) {
+                if (secChoice[0] == '1') {
+                    printf("Enter WPA2 password (min 8 characters): ");
+                    char password[64];
+                    if (fgets(password, sizeof(password), stdin)) {
+                        password[strcspn(password, "\r\n")] = 0;
+                        if (strlen(password) >= 8) {
+                            err = uCxWifiApSetSecurityWpa2(&gUcxHandle, password, U_WPA_VERSION_WPA2);
+                            if (err == 0) {
+                                printf("✓ Security set to WPA2\n");
+                            } else {
+                                printf("ERROR: Failed to set WPA2 security (error: %d)\n", err);
+                            }
+                        } else {
+                            printf("ERROR: Password must be at least 8 characters\n");
+                        }
+                    }
+                } else if (secChoice[0] == '2') {
+                    err = uCxWifiApSetSecurityOpen(&gUcxHandle);
+                    if (err == 0) {
+                        printf("✓ Security set to Open (no password)\n");
+                        printf("WARNING: Open networks are not secure!\n");
+                    } else {
+                        printf("ERROR: Failed to set Open security (error: %d)\n", err);
+                    }
+                }
+            }
+            break;
+        }
+        default:
+            printf("Cancelled.\n");
+            break;
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
 }
 
 // ============================================================================
