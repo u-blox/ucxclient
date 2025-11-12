@@ -5739,16 +5739,13 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
         uCxEnd(&gUcxHandle);
     }
     
-    // Step 3: Check IP address using AT+UWSNST?
-    uCxWifiStationListNetworkStatus_t networkStatus;
-    bool ipFound = false;
+    // Step 3: Check IP address using AT+UWSNST (IPv4 only)
     char ipStr[50] = {0};
+    uSockIpAddress_t ipAddr;
     
-    uCxWifiStationListNetworkStatusBegin(&gUcxHandle);
-    while (uCxWifiStationListNetworkStatusGetNext(&gUcxHandle, &networkStatus)) {
-        // Status ID 0 = IPv4 address
-        if (networkStatus.status_id == 0 && networkStatus.status_val.type == U_SOCK_ADDRESS_TYPE_V4) {
-            uint32_t ipv4 = networkStatus.status_val.address.ipv4;
+    if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
+        if (ipAddr.type == U_SOCK_ADDRESS_TYPE_V4) {
+            uint32_t ipv4 = ipAddr.address.ipv4;
             snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", 
                      (ipv4 >> 24) & 0xFF,
                      (ipv4 >> 16) & 0xFF,
@@ -5763,12 +5760,11 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
             if (verbose) {
                 printf("✓ IP address: %s\n", ipStr);
             }
-            ipFound = true;
-            break;
+        } else {
+            printf("ERROR: Unexpected IP address type (not IPv4)\n");
+            return false;
         }
-    }
-    
-    if (!ipFound) {
+    } else {
         printf("ERROR: Could not read IP address from network status\n");
         printf("Please ensure Wi-Fi is connected with valid IP configuration.\n");
         return false;
@@ -5873,7 +5869,7 @@ static void httpGetExample(void)
     char host[256];
     char path[512];
     char filename[256];
-    char response[2048];
+    //char response[2048];
     int32_t sessionId = 0;
     int32_t err;
     
@@ -6018,7 +6014,7 @@ static void httpPostExample(void)
     char path[512];
     char dataSource[256];
     char postData[4096];
-    char response[2048];
+    //char response[2048];
     int32_t sessionId = 0;
     int32_t err;
     int32_t dataLen = 0;
@@ -6312,49 +6308,85 @@ static void ntpTimeExample(void)
     }
     printf("✓ NTP server configured\n");
     
-    // Step 5: Wait for synchronization with polling (max 120 seconds)
+    // Step 5: Wait for synchronization with aggressive polling (max 120 seconds)
+    // Strategy: Start with 2-second intervals, then back off to 5 seconds after 10 seconds
     printf("\n");
     printf("Waiting for NTP synchronization (max 120 seconds, press Ctrl+C to cancel)...\n");
     
     bool timeSynced = false;
-    int maxAttempts = 24;  // 24 attempts × 5 seconds = 120 seconds max
+    int totalWaitTime = 0;
+    int maxWaitTime = 120;  // 120 seconds max
+    int attempt = 0;
+    DWORD startTicks = GetTickCount();  // Get start time in milliseconds
     
-    for (int attempt = 0; attempt < maxAttempts && !timeSynced; attempt++) {
+    while (totalWaitTime < maxWaitTime && !timeSynced) {
         if (attempt == 0) {
             printf("Checking");
         } else {
-            printf("\nWaiting 5 more seconds");
-        }
-        
-        // Wait 5 seconds with progress dots
-        for (int i = 0; i < 5; i++) {
-            printf(".");
-            fflush(stdout);
-            Sleep(1000);
+            // Aggressive 2-second polling for first 10 seconds, then 5-second intervals
+            int waitInterval = (totalWaitTime < 10) ? 2 : 5;
+            printf("\nWaiting %d more seconds", waitInterval);
+            
+            // Wait with progress dots
+            for (int i = 0; i < waitInterval; i++) {
+                printf(".");
+                fflush(stdout);
+                Sleep(1000);
+            }
+            totalWaitTime += waitInterval;
         }
         
         // Try to read system time
+        uint64_t testTime = 0;
         uByteArray_t testTimeData;
-        if (uCxSystemGetUnixTimeBegin(&gUcxHandle, &testTimeData)) {
-            if (testTimeData.length >= 4) {
-                // Check if time is reasonable (not zero and not very old)
-                uint64_t testTime = 0;
-                for (int i = 0; i < testTimeData.length && i < 8; i++) {
-                    testTime |= ((uint64_t)testTimeData.pData[i]) << (i * 8);
-                }
+        uint8_t timeBuffer[32];
+        testTimeData.pData = timeBuffer;
+        testTimeData.length = 0;
+        
+        bool gotResponse = uCxSystemGetUnixTimeBegin(&gUcxHandle, &testTimeData);
+        
+        // Always call uCxEnd() to complete the AT command sequence
+        int32_t endResult = uCxEnd(&gUcxHandle);
+        
+        if (gotResponse && endResult == 0) {
+            if (testTimeData.length == 4) {
+                // Data is 4 bytes in big-endian format (network byte order)
+                uint8_t *bytes = testTimeData.pData;
+                testTime = ((uint64_t)bytes[0] << 24) |
+                          ((uint64_t)bytes[1] << 16) |
+                          ((uint64_t)bytes[2] << 8) |
+                          ((uint64_t)bytes[3]);
                 
-                // Unix time should be > 1600000000 (Sep 2020) for valid NTP sync
+                // Distinguish between system uptime and Unix timestamp:
+                // - System uptime: < 315360000 (10 years in seconds, would be year 1980)
+                // - Unix timestamp: > 1600000000 (Sep 2020, reasonable minimum for NTP sync)
                 if (testTime > 1600000000) {
                     timeSynced = true;
                     printf(" ✓\n");
+                    
+                    // Calculate precise elapsed time in seconds with 0.1s resolution
+                    DWORD elapsedMs = GetTickCount() - startTicks;
+                    double elapsedSec = elapsedMs / 1000.0;
+                    printf("NTP synchronized in %.1f seconds\n", elapsedSec);
+                } else if (testTime > 0 && testTime < 315360000) {
+                    // This is system uptime, not NTP time yet
+                    printf(" (uptime: %llu sec)", testTime);
                 }
+            } else {
+                printf(" (invalid length: %d)", testTimeData.length);
             }
+        } else {
+            printf(" (gotResponse=%d or endResult=%d failed)", gotResponse, endResult);
         }
-        uCxEnd(&gUcxHandle);
         
-        if (!timeSynced && attempt < maxAttempts - 1) {
-            printf(" (not yet synced, attempt %d/%d)", attempt + 1, maxAttempts);
+        if (!timeSynced && testTime == 0) {
+            printf(" (no response)");
+        } else if (!timeSynced && testTime >= 315360000 && testTime <= 1600000000) {
+            // Time is between 1980 and 2020 - unusual, but not uptime
+            printf(" (unusual time: %llu)", testTime);
         }
+        
+        attempt++;
     }
     
     if (!timeSynced) {
@@ -6370,17 +6402,24 @@ static void ntpTimeExample(void)
     printf("\n");
     printf("Reading system time...\n");
     uByteArray_t unixTimeData;
-    if (uCxSystemGetUnixTimeBegin(&gUcxHandle, &unixTimeData)) {
-        // Convert byte array to uint64_t
-        // The time is stored as hex bytes (little-endian or big-endian depending on module)
+    uint8_t timeBuffer2[32];
+    unixTimeData.pData = timeBuffer2;
+    unixTimeData.length = 0;
+    
+    bool gotTime = uCxSystemGetUnixTimeBegin(&gUcxHandle, &unixTimeData);
+    int32_t endResult2 = uCxEnd(&gUcxHandle);
+    
+    if (gotTime && endResult2 == 0) {
+        // The module returns time as 4 bytes in big-endian format
         uint64_t unixTime = 0;
         
-        if (unixTimeData.length >= 4) {
-            // Assume 4-byte (32-bit) or 8-byte (64-bit) Unix timestamp
-            // Most systems use little-endian format
-            for (int i = 0; i < unixTimeData.length && i < 8; i++) {
-                unixTime |= ((uint64_t)unixTimeData.pData[i]) << (i * 8);
-            }
+        if (unixTimeData.length == 4) {
+            // Convert 4 bytes (big-endian) to uint64_t
+            uint8_t *bytes = unixTimeData.pData;
+            unixTime = ((uint64_t)bytes[0] << 24) |
+                      ((uint64_t)bytes[1] << 16) |
+                      ((uint64_t)bytes[2] << 8) |
+                      ((uint64_t)bytes[3]);
             
             char timeString[128];
             unixTimeToString(unixTime, timeString, sizeof(timeString));
@@ -11688,7 +11727,8 @@ static void wifiConnect(void)
         
         // Get IP address using WiFi Station Network Status (AT+UWSNST)
         uSockIpAddress_t ipAddr;
-        char ipStr[40];  // Allow for IPv6
+        char ipStr[40];  // Allow for IPv6 - stores the actual IP address
+        char subnetStr[40] = "";  // Store subnet mask
         char gatewayStr[40] = "";  // Store gateway for ping test
         
         if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
@@ -11698,8 +11738,8 @@ static void wifiConnect(void)
         }
         
         if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_SUBNET, &ipAddr) == 0) {
-            if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
-                printf("Subnet mask: %s\n", ipStr);
+            if (uCxIpAddressToString(&ipAddr, subnetStr, sizeof(subnetStr)) > 0) {
+                printf("Subnet mask: %s\n", subnetStr);
             }
         }
         

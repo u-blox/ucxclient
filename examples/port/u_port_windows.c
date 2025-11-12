@@ -761,6 +761,10 @@ static int32_t uartWrite(uCxAtClient_t *pClient, void *pStreamHandle, const void
     if (!WriteFile(pCtx->hComPort, pData, (DWORD)length, &dwBytesWritten, NULL)) {
         DWORD dwError = GetLastError();
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "WriteFile failed, error: %lu", dwError);
+        if (dwError == ERROR_ACCESS_DENIED) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                "COM port access denied - port may be in use by another application or device disconnected");
+        }
         return -1;
     }
 #endif
@@ -927,6 +931,10 @@ static int32_t uartRead(uCxAtClient_t *pClient, void *pStreamHandle, void *pData
         DWORD dwError = GetLastError();
         if (dwError != ERROR_TIMEOUT) {
             U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "ReadFile failed, error: %lu", dwError);
+            if (dwError == ERROR_ACCESS_DENIED) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, 
+                    "COM port access denied - port may be in use by another application or device disconnected");
+            }
         }
         return -1;
     }
