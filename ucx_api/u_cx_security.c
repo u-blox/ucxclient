@@ -73,11 +73,11 @@ bool uCxSecurityReadAllCertificatesDetailsBegin(uCxHandle_t * puCxHandle, const 
     {
         case 0:
             pSecurityReadAllCertificatesDetailsRsp->type = U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_BYTES;
-            ret = uCxAtUtilParseParamsF(pParamsLine, "dh", &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdBytes.certificate_detail_id, &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdBytes.hex_value, U_CX_AT_UTIL_PARAM_LAST);
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dh", &pSecurityReadAllCertificatesDetailsRsp->rsp.CertificateDetailIdBytes.certificate_detail_id, &pSecurityReadAllCertificatesDetailsRsp->rsp.CertificateDetailIdBytes.hex_value, U_CX_AT_UTIL_PARAM_LAST);
             break;
         case 1:
             pSecurityReadAllCertificatesDetailsRsp->type = U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_INT;
-            ret = uCxAtUtilParseParamsF(pParamsLine, "dd", &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdInt.certificate_detail_id, &pSecurityReadAllCertificatesDetailsRsp->rspCertificateDetailIdInt.int_value, U_CX_AT_UTIL_PARAM_LAST);
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dd", &pSecurityReadAllCertificatesDetailsRsp->rsp.CertificateDetailIdInt.certificate_detail_id, &pSecurityReadAllCertificatesDetailsRsp->rsp.CertificateDetailIdInt.int_value, U_CX_AT_UTIL_PARAM_LAST);
             break;
         default:
             return false;
@@ -106,11 +106,11 @@ bool uCxSecurityReadCertificatesDetailsBegin(uCxHandle_t * puCxHandle, const cha
     {
         case 0:
             pSecurityReadCertificatesDetailsRsp->type = U_CX_SECURITY_READ_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_BYTES;
-            ret = uCxAtUtilParseParamsF(pParamsLine, "dh", &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdBytes.certificate_detail_id, &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdBytes.hex_value, U_CX_AT_UTIL_PARAM_LAST);
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dh", &pSecurityReadCertificatesDetailsRsp->rsp.CertificateDetailIdBytes.certificate_detail_id, &pSecurityReadCertificatesDetailsRsp->rsp.CertificateDetailIdBytes.hex_value, U_CX_AT_UTIL_PARAM_LAST);
             break;
         case 1:
             pSecurityReadCertificatesDetailsRsp->type = U_CX_SECURITY_READ_CERTIFICATES_DETAILS_RSP_TYPE_CERTIFICATE_DETAIL_ID_INT;
-            ret = uCxAtUtilParseParamsF(pParamsLine, "dd", &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdInt.certificate_detail_id, &pSecurityReadCertificatesDetailsRsp->rspCertificateDetailIdInt.int_value, U_CX_AT_UTIL_PARAM_LAST);
+            ret = uCxAtUtilParseParamsF(pParamsLine, "dd", &pSecurityReadCertificatesDetailsRsp->rsp.CertificateDetailIdInt.certificate_detail_id, &pSecurityReadCertificatesDetailsRsp->rsp.CertificateDetailIdInt.int_value, U_CX_AT_UTIL_PARAM_LAST);
             break;
         default:
             return false;

@@ -53,7 +53,7 @@ typedef struct
  * @param      enable:     Enable/disable NTP client
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxNetworkTimeSetNtpClientStatus(uCxHandle_t * puCxHandle, uEnable_t enable);
+int32_t uCxNetworkTimeSetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t enable);
 
 /**
  * Read NTP client status
@@ -65,7 +65,7 @@ int32_t uCxNetworkTimeSetNtpClientStatus(uCxHandle_t * puCxHandle, uEnable_t ena
  * @param[out] pEnable:    Enable/disable NTP client
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxNetworkTimeGetNtpClientStatus(uCxHandle_t * puCxHandle, uEnable_t * pEnable);
+int32_t uCxNetworkTimeGetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t * pEnable);
 
 /**
  * Set NTP servers

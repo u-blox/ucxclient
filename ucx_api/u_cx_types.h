@@ -59,8 +59,7 @@ typedef enum
     U_BT_MODE_PERIPHERAL = 2,        /**< Bluetooth Low Energy Peripheral.
                                           In this mode, initiating connections, discovery and other functions associated with
                                           the Central role is not possible. */
-    U_BT_MODE_CENTRAL_PERIPHERAL = 3 /**< Bluetooth Low Energy Simultaneous Central and Peripheral. This is the factory default for
-                                          NORA-W36. */
+    U_BT_MODE_CENTRAL_PERIPHERAL = 3 /**< Bluetooth Low Energy Simultaneous Central and Peripheral. This is the factory default. */
 } uBtMode_t;
 
 typedef enum
@@ -104,7 +103,7 @@ typedef enum
     U_PROPERTY_ID_TX_PHY = 8,                /**< TX Phy used in this connection
                                                   Bit 0: 1 Mbps
                                                   Bit 1: 2 Mbps
-                                                  Bit 2: reserved for future use */
+                                                  Bit 2: Coded */
     U_PROPERTY_ID_RX_PHY = 9                 /**< RX Phy used in this connection
                                                   Bit 0: 1 Mbps
                                                   Bit 1: 2 Mbps
@@ -134,13 +133,12 @@ typedef enum
 
 typedef enum
 {
-    U_BT_SECURITY_MODE_NONE,                                    /**< Security Disabled. */
-    U_BT_SECURITY_MODE_UNAUTHENTICATED = 1,                     /**< Allow unauthenticated bonding. */
-    U_BT_SECURITY_MODE_AUTHENTICATED = 2,                       /**< Only allow authenticated bonding. */
-    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION = 3,     /**< Only allow authenticated bonding with encrypted Bluetooth link. Fallback to simple pairing
-                                                                     if the remote side does not support secure connections. */
-    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION_ONLY = 4 /**< Only allow authenticated bonding with encrypted Bluetooth link. Strictly uses secure
-                                                                     connections. */
+    U_BT_SECURITY_MODE_NONE,                                    /**< Security not required. No encryption enforced. */
+    U_BT_SECURITY_MODE_UNAUTHENTICATED = 1,                     /**< Require at least unauthenticated bonding. */
+    U_BT_SECURITY_MODE_AUTHENTICATED = 2,                       /**< Require authenticated bonding. No secure connections. */
+    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION = 3,     /**< Require authenticated bonding. Support secure connections. Fallback to simple pairing if
+                                                                     the remote side does not support secure connections. */
+    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION_ONLY = 4 /**< Require authenticated bonding. Strictly uses secure connections. */
 } uBtSecurityMode_t;
 
 typedef enum
@@ -433,6 +431,11 @@ typedef enum
 
 typedef enum
 {
+    U_WAKEUP_MODE_WAKEUP_GPIO /**< Wakeup by pulling the module wakeup pin low. */
+} uWakeupMode_t;
+
+typedef enum
+{
     U_IPERF_ACTION_START = 1, /**< Start iperf */
     U_IPERF_ACTION_STOP = 2   /**< Stop iperf */
 } uIperfAction_t;
@@ -489,6 +492,7 @@ typedef enum
  * ---------------------------------------------------------- */
 
 struct uCxHandle;
+typedef void (*uSTARTUP_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEBTC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLeAddress_t *bd_addr);
 typedef void (*uUEBTDC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
 typedef void (*uUEBTB_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBondStatus_t bond_status);
@@ -511,7 +515,6 @@ typedef void (*uUEWLU_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMac
 typedef void (*uUEWLD_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, int32_t reason);
 typedef void (*uUEWSNU_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWSND_t)(struct uCxHandle *puCxHandle);
-typedef void (*uSTARTUP_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWSRSI_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWSRSF_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEWSRSC_t)(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMacAddress_t *bssid, int32_t channel);
@@ -547,6 +550,7 @@ typedef void (*uUEDGI_t)(struct uCxHandle *puCxHandle, const char * iperf_output
 
 typedef struct
 {
+    uSTARTUP_t STARTUP;
     uUEBTC_t UEBTC;
     uUEBTDC_t UEBTDC;
     uUEBTB_t UEBTB;
@@ -569,7 +573,6 @@ typedef struct
     uUEWLD_t UEWLD;
     uUEWSNU_t UEWSNU;
     uUEWSND_t UEWSND;
-    uSTARTUP_t STARTUP;
     uUEWSRSI_t UEWSRSI;
     uUEWSRSF_t UEWSRSF;
     uUEWSRSC_t UEWSRSC;

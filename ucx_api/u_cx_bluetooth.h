@@ -72,7 +72,7 @@ typedef struct
     int32_t advertisement_interval_maximum; /**< Advertising interval maximum (must be >= Advertising interval minimum. 
                                                   Default: 2000.
                                                   Calculation: advertisement_interval_maximum * 0.625 ms) */
-} uCxBluetoothGetAdvertismentLegacyConfiguration_t;
+} uCxBluetoothGetLegacyAdvertisementConfig_t;
 
 typedef struct
 {
@@ -295,7 +295,7 @@ bool uCxBluetoothDiscovery3GetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscove
  * @param[in]  puCxHandle: uCX API handle
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetBgDiscoveryDefault(uCxHandle_t * puCxHandle);
+int32_t uCxBluetoothBgDiscoveryDefaultStart(uCxHandle_t * puCxHandle);
 
 /**
  * Start background discovery
@@ -307,7 +307,7 @@ int32_t uCxBluetoothSetBgDiscoveryDefault(uCxHandle_t * puCxHandle);
  * @param      discovery_type: 
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetBgDiscovery1(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type);
+int32_t uCxBluetoothBgDiscoveryStart1(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type);
 
 /**
  * Start background discovery
@@ -320,7 +320,7 @@ int32_t uCxBluetoothSetBgDiscovery1(uCxHandle_t * puCxHandle, uDiscoveryType_t d
  * @param      discovery_mode: 
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetBgDiscovery2(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode);
+int32_t uCxBluetoothBgDiscoveryStart2(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode);
 
 /**
  * Start background discovery
@@ -334,7 +334,7 @@ int32_t uCxBluetoothSetBgDiscovery2(uCxHandle_t * puCxHandle, uDiscoveryType_t d
  * @param      output_events:  
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetBgDiscovery3(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode, uOutputEvents_t output_events);
+int32_t uCxBluetoothBgDiscoveryStart3(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode, uOutputEvents_t output_events);
 
 /**
  * Stop background discovery
@@ -345,7 +345,7 @@ int32_t uCxBluetoothSetBgDiscovery3(uCxHandle_t * puCxHandle, uDiscoveryType_t d
  * @param[in]  puCxHandle: uCX API handle
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothStopBgDiscovery(uCxHandle_t * puCxHandle);
+int32_t uCxBluetoothBgDiscoveryStop(uCxHandle_t * puCxHandle);
 
 /**
  * Returns the current RSSI for a specified Bluetooth connection.
@@ -358,7 +358,7 @@ int32_t uCxBluetoothStopBgDiscovery(uCxHandle_t * puCxHandle);
  * @param[out] pRssi:       Received signal strength in dBm.
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxBluetoothRssi(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t * pRssi);
+int32_t uCxBluetoothGetRssi(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t * pRssi);
 
 /**
  * List all Bluetooth low energy ACL connections.
@@ -449,7 +449,7 @@ int32_t uCxBluetoothGetAdvertiseInformation(uCxHandle_t * puCxHandle, uCxBluetoo
  * @param      adv_data_len: length of adv_data
  * @return                   0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetAdvertiseData(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len);
+int32_t uCxBluetoothSetLegacyAdvertiseData(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len);
 
 /**
  * Read custom advertising data.
@@ -464,7 +464,7 @@ int32_t uCxBluetoothSetAdvertiseData(uCxHandle_t * puCxHandle, const uint8_t * a
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxBluetoothGetAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * pAdvData);
+bool uCxBluetoothGetLegacyAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * pAdvData);
 
 /**
  * Clear the custom legacy advertise data.
@@ -475,7 +475,7 @@ bool uCxBluetoothGetAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * 
  * @param[in]  puCxHandle: uCX API handle
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothClearAdvertiseDataLegacy(uCxHandle_t * puCxHandle);
+int32_t uCxBluetoothClearLegacyAdvertiseData(uCxHandle_t * puCxHandle);
 
 /**
  * Write custom scan response data.
@@ -517,10 +517,10 @@ bool uCxBluetoothGetScanResponseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t
  * @param[in]  puCxHandle: uCX API handle
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothClearScanData(uCxHandle_t * puCxHandle);
+int32_t uCxBluetoothClearScanResponseData(uCxHandle_t * puCxHandle);
 
 /**
- * Start legacy advertisements if not started.
+ * Start legacy advertisement if not started.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -531,10 +531,10 @@ int32_t uCxBluetoothClearScanData(uCxHandle_t * puCxHandle);
  * @param[in]  puCxHandle: uCX API handle
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetLegacyAdvertisements(uCxHandle_t * puCxHandle);
+int32_t uCxBluetoothLegacyAdvertisementStart(uCxHandle_t * puCxHandle);
 
 /**
- * Stop legacy advertisements if started.
+ * Stop legacy advertisement if started.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -804,7 +804,7 @@ int32_t uCxBluetoothGetPreferredRxPhy(uCxHandle_t * puCxHandle, int32_t * pPrefe
  *                                              Calculation: advertisement_interval_maximum * 0.625 ms)
  * @return                                     0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetAdvertismentLegacyConfiguration(uCxHandle_t * puCxHandle, int32_t advertisement_interval_minimum, int32_t advertisement_interval_maximum);
+int32_t uCxBluetoothSetLegacyAdvertisementConfig(uCxHandle_t * puCxHandle, int32_t advertisement_interval_minimum, int32_t advertisement_interval_maximum);
 
 /**
  * Read advertisement parameters for legacy advertisements
@@ -812,11 +812,11 @@ int32_t uCxBluetoothSetAdvertismentLegacyConfiguration(uCxHandle_t * puCxHandle,
  * Output AT command:
  * > AT+UBTALS?
  *
- * @param[in]  puCxHandle:                                      uCX API handle
- * @param[out] pBluetoothGetAdvertismentLegacyConfigurationRsp: Please see \ref uCxBluetoothGetAdvertismentLegacyConfiguration_t
- * @return                                                      0 on success, negative value on error.
+ * @param[in]  puCxHandle:                                uCX API handle
+ * @param[out] pBluetoothGetLegacyAdvertisementConfigRsp: Please see \ref uCxBluetoothGetLegacyAdvertisementConfig_t
+ * @return                                                0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetAdvertismentLegacyConfiguration(uCxHandle_t * puCxHandle, uCxBluetoothGetAdvertismentLegacyConfiguration_t * pBluetoothGetAdvertismentLegacyConfigurationRsp);
+int32_t uCxBluetoothGetLegacyAdvertisementConfig(uCxHandle_t * puCxHandle, uCxBluetoothGetLegacyAdvertisementConfig_t * pBluetoothGetLegacyAdvertisementConfigRsp);
 
 /**
  * Write scan interval.

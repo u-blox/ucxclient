@@ -39,13 +39,13 @@ typedef struct {
         {
             int32_t certificate_detail_id;
             uByteArray_t hex_value;        /**< Hex value */
-        } rspCertificateDetailIdBytes;
+        } CertificateDetailIdBytes;
         struct
         {
             int32_t certificate_detail_id;
             int32_t int_value;             /**< Integer value */
-        } rspCertificateDetailIdInt;
-    };
+        } CertificateDetailIdInt;
+    } rsp;
 } uCxSecurityReadAllCertificatesDetails_t;
 
 typedef enum
@@ -61,13 +61,13 @@ typedef struct {
         {
             int32_t certificate_detail_id;
             uByteArray_t hex_value;        /**< Hex value */
-        } rspCertificateDetailIdBytes;
+        } CertificateDetailIdBytes;
         struct
         {
             int32_t certificate_detail_id;
             int32_t int_value;             /**< Integer value */
-        } rspCertificateDetailIdInt;
-    };
+        } CertificateDetailIdInt;
+    } rsp;
 } uCxSecurityReadCertificatesDetails_t;
 
 

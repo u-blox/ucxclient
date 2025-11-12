@@ -28,12 +28,12 @@ extern "C" {
  * ---------------------------------------------------------- */
 typedef enum
 {
-    U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION_STR_STR_STR,
-    U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION
-} uCxMqttGetTlsConfigRspType_t;
+    U_CX_MQTT_GET_TLS_RSP_TYPE_TLS_VERSION_STR_STR_STR,
+    U_CX_MQTT_GET_TLS_RSP_TYPE_TLS_VERSION
+} uCxMqttGetTLSRspType_t;
 
 typedef struct {
-    uCxMqttGetTlsConfigRspType_t type;
+    uCxMqttGetTLSRspType_t type;
     union {
         struct
         {
@@ -41,13 +41,13 @@ typedef struct {
             const char * ca_name;          /**< Name of the certificate authority (CA) certificate to use */
             const char * client_cert_name; /**< Name of the client certificate to use */
             const char * client_key_name;  /**< Name of the private key for client certificate */
-        } rspTlsVersionStrStrStr;
+        } TlsVersionStrStrStr;
         struct
         {
             int32_t tls_version; /**< TLS version to use */
-        } rspTlsVersion;
-    };
-} uCxMqttGetTlsConfig_t;
+        } TlsVersion;
+    } rsp;
+} uCxMqttGetTLS_t;
 
 
 typedef struct
@@ -296,7 +296,7 @@ bool uCxMqttGetLastWillAndTestamentBegin(uCxHandle_t * puCxHandle, int32_t mqtt_
  * @param      tls_version: TLS version to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxMqttSetTlsConfig2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version);
+int32_t uCxMqttSetTLS2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version);
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
@@ -313,7 +313,7 @@ int32_t uCxMqttSetTlsConfig2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
  * @param      ca_name:     Name of the certificate authority (CA) certificate to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxMqttSetTlsConfig3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name);
+int32_t uCxMqttSetTLS3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name);
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
@@ -332,7 +332,7 @@ int32_t uCxMqttSetTlsConfig3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
  * @param      client_key_name:  Name of the private key for client certificate
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxMqttSetTlsConfig5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+int32_t uCxMqttSetTLS5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
 /**
  * Get TLS config
@@ -340,15 +340,15 @@ int32_t uCxMqttSetTlsConfig5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
  * Output AT command:
  * > AT+UMQTLS=<mqtt_id>
  *
- * @param[in]  puCxHandle:           uCX API handle
- * @param      mqtt_id:              MQTT Config ID
- * @param[out] pMqttGetTlsConfigRsp: Please see \ref uCxMqttGetTlsConfig_t
- * @return                           true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param      mqtt_id:        MQTT Config ID
+ * @param[out] pMqttGetTLSRsp: Please see \ref uCxMqttGetTLS_t
+ * @return                     true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxMqttGetTlsConfigBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTlsConfig_t * pMqttGetTlsConfigRsp);
+bool uCxMqttGetTLSBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTLS_t * pMqttGetTLSRsp);
 
 /**
  * Disconnect the MQTT client from the broker.

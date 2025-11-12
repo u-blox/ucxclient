@@ -43,11 +43,11 @@ typedef struct {
         {
             int32_t security_mode; /**< The current security mode. */
             int32_t wpa_threshold; /**< Lowest WPA version to connect to */
-        } rspSecurityModeWpaThreshold;
+        } SecurityModeWpaThreshold;
         struct
         {
             int32_t security_mode; /**< The current security mode. */
-        } rspSecurityMode;
+        } SecurityMode;
         struct
         {
             int32_t security_mode;         /**< The current security mode. */
@@ -55,7 +55,7 @@ typedef struct {
             const char * client_cert_name; /**< Name of the client certificate to use */
             const char * client_key_name;  /**< Name of the private key for client certificate */
             const char * identity;         /**< Identity for EAP-TLS */
-        } rspSecurityModeStrStrStrStr;
+        } SecurityModeStrStrStrStr;
         struct
         {
             int32_t security_mode;         /**< The current security mode. */
@@ -64,21 +64,21 @@ typedef struct {
             const char * client_cert_name; /**< Name of the client certificate to use */
             const char * client_key_name;  /**< Name of the private key for client certificate */
             const char * identity;         /**< Identity for EAP-TLS */
-        } rspSecurityModeTlsVersionStrStrStrStr;
+        } SecurityModeTlsVersionStrStrStrStr;
         struct
         {
             int32_t security_mode; /**< The current security mode. */
             const char * username; /**< User name for PEAP authentication. */
             const char * ca_name;  /**< Name of the certificate authority (CA) certificate to use */
-        } rspSecurityModeStrStr;
+        } SecurityModeStrStr;
         struct
         {
             int32_t security_mode; /**< The current security mode. */
             int32_t tls_version;   /**< TLS version to use */
             const char * username; /**< User name for PEAP authentication. */
             const char * ca_name;  /**< Name of the certificate authority (CA) certificate to use */
-        } rspSecurityModeTlsVersionStrStr;
-    };
+        } SecurityModeTlsVersionStrStr;
+    } rsp;
 } uCxWifiStationGetSecurity_t;
 
 typedef enum
@@ -93,7 +93,7 @@ typedef struct {
         struct
         {
             int32_t ip_mode; /**< IP assignment */
-        } rspIpMode;
+        } IpMode;
         struct
         {
             int32_t ip_mode;              /**< IP assignment */
@@ -102,8 +102,8 @@ typedef struct {
             uSockIpAddress_t gateway;     /**< IPv4 gateway address */
             uSockIpAddress_t prim_dns;    /**< IPv4 primary dns address */
             uSockIpAddress_t sec_dns;     /**< IPv4 secondary dns address */
-        } rspIpModeIpIpIpIpIp;
-    };
+        } IpModeIpIpIpIpIp;
+    } rsp;
 } uCxWifiStationGetIpConfig_t;
 
 typedef enum
@@ -120,18 +120,18 @@ typedef struct {
         {
             int32_t wifi_status_id;
             const char * ssid;      /**< SSID */
-        } rspWifiStatusIdStr;
+        } WifiStatusIdStr;
         struct
         {
             int32_t wifi_status_id;
             uMacAddress_t bssid;    /**< BSSID of the connected access point */
-        } rspWifiStatusIdMac;
+        } WifiStatusIdMac;
         struct
         {
             int32_t wifi_status_id;
             int32_t int_val;        /**< RSSI, Connection status  or Channel */
-        } rspWifiStatusIdInt;
-    };
+        } WifiStatusIdInt;
+    } rsp;
 } uCxWifiStationStatus_t;
 
 typedef enum
@@ -147,12 +147,12 @@ typedef struct {
         {
             int32_t security_mode; /**< The current security mode. */
             int32_t wpa_version;
-        } rspSecurityModeWpaVersion;
+        } SecurityModeWpaVersion;
         struct
         {
             int32_t security_mode; /**< The current security mode. */
-        } rspSecurityMode;
-    };
+        } SecurityMode;
+    } rsp;
 } uCxWifiApGetSecurity_t;
 
 
@@ -240,16 +240,36 @@ bool uCxWifiGetHostnameBegin(uCxHandle_t * puCxHandle, const char ** ppHostName)
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UWSSE=<wlan_handle>,<ca_name>,<client_cert_name>,<client_key_name>
+ * > AT+UWSSE=<wlan_handle>,<tls_version>,<ca_name>,<client_cert_name>,<client_key_name>
  *
  * @param[in]  puCxHandle:       uCX API handle
  * @param      wlan_handle:      Handle to use for Wi-Fi config and connection
+ * @param      tls_version:      TLS version to use
  * @param      ca_name:          Name of the certificate authority (CA) certificate to use
  * @param      client_cert_name: Name of the client certificate to use
  * @param      client_key_name:  Name of the private key for client certificate
  * @return                       0 on success, negative value on error.
  */
 int32_t uCxWifiStationSetSecurityEnterprise5(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+
+/**
+ * Set the EAP-TLS connection parameters to use.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UWSSE=<wlan_handle>,<tls_version>,<ca_name>,<client_cert_name>,<client_key_name>,<identity>
+ *
+ * @param[in]  puCxHandle:       uCX API handle
+ * @param      wlan_handle:      Handle to use for Wi-Fi config and connection
+ * @param      tls_version:      TLS version to use
+ * @param      ca_name:          Name of the certificate authority (CA) certificate to use
+ * @param      client_cert_name: Name of the client certificate to use
+ * @param      client_key_name:  Name of the private key for client certificate
+ * @param      identity:         Identity for EAP-TLS
+ * @return                       0 on success, negative value on error.
+ */
 int32_t uCxWifiStationSetSecurityEnterprise6(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name, const char * identity);
 
 /**
@@ -275,10 +295,11 @@ bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handl
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UWSSP=<wlan_handle>,<peap_user>,<peap_password>
+ * > AT+UWSSP=<wlan_handle>,<tls_version>,<peap_user>,<peap_password>
  *
  * @param[in]  puCxHandle:    uCX API handle
  * @param      wlan_handle:   Handle to use for Wi-Fi config and connection
+ * @param      tls_version:   TLS version to use
  * @param      peap_user:     User name for PEAP authentication. Could be either only username or username@domain. Use @
  *                            as separator
  * @param      peap_password: Password for PEAP authentication.
@@ -293,10 +314,11 @@ int32_t uCxWifiStationSetSecurityPeap4(uCxHandle_t * puCxHandle, int32_t wlan_ha
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UWSSP=<wlan_handle>,<peap_user>,<peap_password>,<ca_name>
+ * > AT+UWSSP=<wlan_handle>,<tls_version>,<peap_user>,<peap_password>,<ca_name>
  *
  * @param[in]  puCxHandle:    uCX API handle
  * @param      wlan_handle:   Handle to use for Wi-Fi config and connection
+ * @param      tls_version:   TLS version to use
  * @param      peap_user:     User name for PEAP authentication. Could be either only username or username@domain. Use @
  *                            as separator
  * @param      peap_password: Password for PEAP authentication.
@@ -471,9 +493,6 @@ int32_t uCxWifiStationConnect(uCxHandle_t * puCxHandle, int32_t wlan_handle);
 
 /**
  * Disconnect from Wi-Fi network
- * 
- * Notes:
- * Can be stored using AT&W.
  * 
  * Output AT command:
  * > AT+UWSDC
@@ -843,7 +862,7 @@ int32_t uCxWifiGetWifiRoaming(uCxHandle_t * puCxHandle, uRoaming_t * pRoaming);
  * @param      roaming_scanning_threshold: Threshold in dBm where background scanning for roaming is started
  * @return                                 0 on success, negative value on error.
  */
-int32_t uCxWifiSetRoamingBackgroundScanThreshold(uCxHandle_t * puCxHandle, int32_t roaming_scanning_threshold);
+int32_t uCxWifiStationSetRoamingBGScanThreshold(uCxHandle_t * puCxHandle, int32_t roaming_scanning_threshold);
 
 /**
  * Read Connection Interval minium.
@@ -855,7 +874,7 @@ int32_t uCxWifiSetRoamingBackgroundScanThreshold(uCxHandle_t * puCxHandle, int32
  * @param[out] pRoamingScanningThreshold: Threshold in dBm where background scanning for roaming is started
  * @return                                0 on success, negative value on error.
  */
-int32_t uCxWifiGetRoamingBackgroundScanThreshold(uCxHandle_t * puCxHandle, int32_t * pRoamingScanningThreshold);
+int32_t uCxWifiStationGetRoamingBGScanThreshold(uCxHandle_t * puCxHandle, int32_t * pRoamingScanningThreshold);
 
 /**
  * Write the roaming switch limit.
@@ -870,7 +889,7 @@ int32_t uCxWifiGetRoamingBackgroundScanThreshold(uCxHandle_t * puCxHandle, int32
  * @param      roaming_switch_limit: Switch limit
  * @return                           0 on success, negative value on error.
  */
-int32_t uCxWifiSetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t roaming_switch_limit);
+int32_t uCxWifiStationSetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t roaming_switch_limit);
 
 /**
  * Read roaming switch limit.
@@ -882,7 +901,7 @@ int32_t uCxWifiSetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t roaming_s
  * @param[out] pRoamingSwitchLimit: Switch limit
  * @return                          0 on success, negative value on error.
  */
-int32_t uCxWifiGetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t * pRoamingSwitchLimit);
+int32_t uCxWifiStationGetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t * pRoamingSwitchLimit);
 
 /**
  * Write the interval in milliseconds to trigger roaming background scan.
@@ -897,7 +916,7 @@ int32_t uCxWifiGetRoamingSwitchLimit(uCxHandle_t * puCxHandle, int32_t * pRoamin
  * @param      roaming_scan_interval: Scan interval
  * @return                            0 on success, negative value on error.
  */
-int32_t uCxWifiSetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t roaming_scan_interval);
+int32_t uCxWifiStationSetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t roaming_scan_interval);
 
 /**
  * Read roaming scan interval
@@ -909,7 +928,7 @@ int32_t uCxWifiSetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t roaming_
  * @param[out] pRoamingScanInterval: Scan interval
  * @return                           0 on success, negative value on error.
  */
-int32_t uCxWifiGetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t * pRoamingScanInterval);
+int32_t uCxWifiStationGetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t * pRoamingScanInterval);
 
 /**
  * Set aggressive roaming to enabled or disabled. When this option is disabled (default), roaming will perform a connection
@@ -927,7 +946,7 @@ int32_t uCxWifiGetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t * pRoami
  * @param      roaming_aggressive: 
  * @return                         0 on success, negative value on error.
  */
-int32_t uCxWifiSetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t roaming_aggressive);
+int32_t uCxWifiStationSetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t roaming_aggressive);
 
 /**
  * Get aggressive roaming enabled or disabled.
@@ -939,7 +958,7 @@ int32_t uCxWifiSetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive
  * @param[out] pRoamingAggressive: 
  * @return                         0 on success, negative value on error.
  */
-int32_t uCxWifiGetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t * pRoamingAggressive);
+int32_t uCxWifiStationGetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t * pRoamingAggressive);
 
 /**
  * Write the delay time roaming waits before performing handover.
@@ -954,7 +973,7 @@ int32_t uCxWifiGetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive
  * @param      roaming_delay_time: Roaming delay
  * @return                         0 on success, negative value on error.
  */
-int32_t uCxWifiSetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t roaming_delay_time);
+int32_t uCxWifiStationSetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t roaming_delay_time);
 
 /**
  * Read roaming delay time.
@@ -966,7 +985,7 @@ int32_t uCxWifiSetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t roaming_delay
  * @param[out] pRoamingDelayTime: Roaming delay
  * @return                        0 on success, negative value on error.
  */
-int32_t uCxWifiGetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t * pRoamingDelayTime);
+int32_t uCxWifiStationGetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t * pRoamingDelayTime);
 
 /**
  * Set whether to perform roaming on all channels. If set to false the wifi station will only scan the channel used in the
@@ -983,7 +1002,7 @@ int32_t uCxWifiGetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t * pRoamingDel
  * @param      roaming_all_channels: Roaming on all channels or current channel
  * @return                           0 on success, negative value on error.
  */
-int32_t uCxWifiSetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t roaming_all_channels);
+int32_t uCxWifiStationSetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t roaming_all_channels);
 
 /**
  * Read whether to perform roaming on all channels.
@@ -995,7 +1014,7 @@ int32_t uCxWifiSetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChanne
  * @param[out] pRoamingAllChannels: Roaming on all channels or current channel
  * @return                          0 on success, negative value on error.
  */
-int32_t uCxWifiGetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t * pRoamingAllChannels);
+int32_t uCxWifiStationGetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t * pRoamingAllChannels);
 
 /**
  * Register LinkUp event callback

@@ -193,6 +193,16 @@ int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGreetingMode_t gre
  */
 bool uCxGeneralGetGreetingTextBegin(uCxHandle_t * puCxHandle, uCxGeneralGetGreetingText_t * pGeneralGetGreetingTextRsp);
 
+/**
+ * Register Startup event callback
+ * 
+ * Indicates the startup of the device and that it is ready to receive commands.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxGeneralRegisterStartup(uCxHandle_t * puCxHandle, uSTARTUP_t callback);
+
 
 #ifdef __cplusplus
 }

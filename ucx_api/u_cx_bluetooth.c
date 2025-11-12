@@ -119,37 +119,37 @@ bool uCxBluetoothDiscovery3GetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscove
     return ret >= 0;
 }
 
-int32_t uCxBluetoothSetBgDiscoveryDefault(uCxHandle_t * puCxHandle)
+int32_t uCxBluetoothBgDiscoveryDefaultStart(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTBGD", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothSetBgDiscovery1(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type)
+int32_t uCxBluetoothBgDiscoveryStart1(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTBGD=", "d", discovery_type, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothSetBgDiscovery2(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode)
+int32_t uCxBluetoothBgDiscoveryStart2(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTBGD=", "dd", discovery_type, discovery_mode, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothSetBgDiscovery3(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode, uOutputEvents_t output_events)
+int32_t uCxBluetoothBgDiscoveryStart3(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode, uOutputEvents_t output_events)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTBGD=", "ddd", discovery_type, discovery_mode, output_events, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothStopBgDiscovery(uCxHandle_t * puCxHandle)
+int32_t uCxBluetoothBgDiscoveryStop(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTBGDS", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothRssi(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t * pRssi)
+int32_t uCxBluetoothGetRssi(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t * pRssi)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
@@ -225,13 +225,13 @@ int32_t uCxBluetoothGetAdvertiseInformation(uCxHandle_t * puCxHandle, uCxBluetoo
     return ret;
 }
 
-int32_t uCxBluetoothSetAdvertiseData(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len)
+int32_t uCxBluetoothSetLegacyAdvertiseData(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTADL=", "h", adv_data, adv_data_len, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxBluetoothGetAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * pAdvData)
+bool uCxBluetoothGetLegacyAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * pAdvData)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
@@ -240,7 +240,7 @@ bool uCxBluetoothGetAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * 
     return ret >= 0;
 }
 
-int32_t uCxBluetoothClearAdvertiseDataLegacy(uCxHandle_t * puCxHandle)
+int32_t uCxBluetoothClearLegacyAdvertiseData(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTADLC", "", U_CX_AT_UTIL_PARAM_LAST);
@@ -261,13 +261,13 @@ bool uCxBluetoothGetScanResponseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t
     return ret >= 0;
 }
 
-int32_t uCxBluetoothClearScanData(uCxHandle_t * puCxHandle)
+int32_t uCxBluetoothClearScanResponseData(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTASDC", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothSetLegacyAdvertisements(uCxHandle_t * puCxHandle)
+int32_t uCxBluetoothLegacyAdvertisementStart(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTAL", "", U_CX_AT_UTIL_PARAM_LAST);
@@ -429,18 +429,18 @@ int32_t uCxBluetoothGetPreferredRxPhy(uCxHandle_t * puCxHandle, int32_t * pPrefe
     return ret;
 }
 
-int32_t uCxBluetoothSetAdvertismentLegacyConfiguration(uCxHandle_t * puCxHandle, int32_t advertisement_interval_minimum, int32_t advertisement_interval_maximum)
+int32_t uCxBluetoothSetLegacyAdvertisementConfig(uCxHandle_t * puCxHandle, int32_t advertisement_interval_minimum, int32_t advertisement_interval_maximum)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTALS=", "dd", advertisement_interval_minimum, advertisement_interval_maximum, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothGetAdvertismentLegacyConfiguration(uCxHandle_t * puCxHandle, uCxBluetoothGetAdvertismentLegacyConfiguration_t * pBluetoothGetAdvertismentLegacyConfigurationRsp)
+int32_t uCxBluetoothGetLegacyAdvertisementConfig(uCxHandle_t * puCxHandle, uCxBluetoothGetLegacyAdvertisementConfig_t * pBluetoothGetLegacyAdvertisementConfigRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UBTALS?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTALS:", NULL, NULL, "dd", &pBluetoothGetAdvertismentLegacyConfigurationRsp->advertisement_interval_minimum, &pBluetoothGetAdvertismentLegacyConfigurationRsp->advertisement_interval_maximum, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTALS:", NULL, NULL, "dd", &pBluetoothGetLegacyAdvertisementConfigRsp->advertisement_interval_minimum, &pBluetoothGetLegacyAdvertisementConfigRsp->advertisement_interval_maximum, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);

@@ -14,13 +14,13 @@
 #include "u_cx_at_client.h"
 #include "u_cx_network_time.h"
 
-int32_t uCxNetworkTimeSetNtpClientStatus(uCxHandle_t * puCxHandle, uEnable_t enable)
+int32_t uCxNetworkTimeSetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t enable)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UNTE=", "d", enable, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxNetworkTimeGetNtpClientStatus(uCxHandle_t * puCxHandle, uEnable_t * pEnable)
+int32_t uCxNetworkTimeGetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t * pEnable)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;

@@ -102,25 +102,25 @@ bool uCxMqttGetLastWillAndTestamentBegin(uCxHandle_t * puCxHandle, int32_t mqtt_
     return ret >= 0;
 }
 
-int32_t uCxMqttSetTlsConfig2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version)
+int32_t uCxMqttSetTLS2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQTLS=", "dd", mqtt_id, tls_version, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxMqttSetTlsConfig3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name)
+int32_t uCxMqttSetTLS3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQTLS=", "dds", mqtt_id, tls_version, ca_name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxMqttSetTlsConfig5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name)
+int32_t uCxMqttSetTLS5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQTLS=", "ddsss", mqtt_id, tls_version, ca_name, client_cert_name, client_key_name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxMqttGetTlsConfigBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTlsConfig_t * pMqttGetTlsConfigRsp)
+bool uCxMqttGetTLSBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTLS_t * pMqttGetTLSRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     char *pParamsLine;
@@ -143,12 +143,12 @@ bool uCxMqttGetTlsConfigBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqtt
         case 2:
         case 3:
         case 4:
-            pMqttGetTlsConfigRsp->type = U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION_STR_STR_STR;
-            ret = uCxAtUtilParseParamsF(pParamsLine, "-dsss", &pMqttGetTlsConfigRsp->rspTlsVersionStrStrStr.tls_version, &pMqttGetTlsConfigRsp->rspTlsVersionStrStrStr.ca_name, &pMqttGetTlsConfigRsp->rspTlsVersionStrStrStr.client_cert_name, &pMqttGetTlsConfigRsp->rspTlsVersionStrStrStr.client_key_name, U_CX_AT_UTIL_PARAM_LAST);
+            pMqttGetTLSRsp->type = U_CX_MQTT_GET_TLS_RSP_TYPE_TLS_VERSION_STR_STR_STR;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-dsss", &pMqttGetTLSRsp->rsp.TlsVersionStrStrStr.tls_version, &pMqttGetTLSRsp->rsp.TlsVersionStrStrStr.ca_name, &pMqttGetTLSRsp->rsp.TlsVersionStrStrStr.client_cert_name, &pMqttGetTLSRsp->rsp.TlsVersionStrStrStr.client_key_name, U_CX_AT_UTIL_PARAM_LAST);
             break;
         case 0:
-            pMqttGetTlsConfigRsp->type = U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION;
-            ret = uCxAtUtilParseParamsF(pParamsLine, "-d", &pMqttGetTlsConfigRsp->rspTlsVersion.tls_version, U_CX_AT_UTIL_PARAM_LAST);
+            pMqttGetTLSRsp->type = U_CX_MQTT_GET_TLS_RSP_TYPE_TLS_VERSION;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "-d", &pMqttGetTLSRsp->rsp.TlsVersion.tls_version, U_CX_AT_UTIL_PARAM_LAST);
             break;
         default:
             return false;

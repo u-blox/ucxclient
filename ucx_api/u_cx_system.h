@@ -80,7 +80,7 @@ int32_t uCxSystemStoreConfiguration(uCxHandle_t * puCxHandle);
  * @param      interface_id: 
  * @param[out] pAddress:     MAC address of the interface id. If the address is set to 000000000000, the local address
  *                           will be restored to factory-programmed value. The least significant bit of the first octet
- *                           of the <address> must be 0.
+ *                           of the address must be 0.
  * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * pAddress);
@@ -98,7 +98,7 @@ int32_t uCxSystemGetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interf
  * @param      interface_id: 
  * @param      address:      MAC address of the interface id. If the address is set to 000000000000, the local address
  *                           will be restored to factory-programmed value. The least significant bit of the first octet
- *                           of the <address> must be 0.
+ *                           of the address must be 0.
  * @return                   0 on success, negative value on error.
  */
 int32_t uCxSystemSetLocalAddress(uCxHandle_t * puCxHandle, uInterfaceId_t interface_id, uMacAddress_t * address);
@@ -137,7 +137,8 @@ int32_t uCxSystemDefaultSettings(uCxHandle_t * puCxHandle);
 
 /**
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
- * unsupported.
+ * unsupported. If the flow_control parameter is omitted then no flow control will be used. If change_after_confirm is not
+ * provided the baudrate will be changed only after a store and reboot.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -153,7 +154,8 @@ int32_t uCxSystemSetUartSettings1(uCxHandle_t * puCxHandle, int32_t baud_rate);
 
 /**
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
- * unsupported.
+ * unsupported. If the flow_control parameter is omitted then no flow control will be used. If change_after_confirm is not
+ * provided the baudrate will be changed only after a store and reboot.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -171,7 +173,8 @@ int32_t uCxSystemSetUartSettings2(uCxHandle_t * puCxHandle, int32_t baud_rate, i
 
 /**
  * Configure new UART settings that will be used after restart. Baudrates above 4000000 bps can be set, but are
- * unsupported.
+ * unsupported. If the flow_control parameter is omitted then no flow control will be used. If change_after_confirm is not
+ * provided the baudrate will be changed only after a store and reboot.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -455,15 +458,6 @@ int32_t uCxSystemSetEscSequenceSettings(uCxHandle_t * puCxHandle, int32_t pre_ti
  * @return                                       0 on success, negative value on error.
  */
 int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSystemGetEscSequenceSettings_t * pSystemGetEscSequenceSettingsRsp);
-
-/**
- * Register callback for +STARTUP URC.
- * This URC is sent by the module after a reboot.
- * 
- * @param[in]  puCxHandle: uCX API handle
- * @param      callback:   Callback function
- */
-void uCxSystemRegisterStartup(uCxHandle_t * puCxHandle, uSTARTUP_t callback);
 
 
 #ifdef __cplusplus

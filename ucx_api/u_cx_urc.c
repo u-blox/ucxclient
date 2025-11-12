@@ -18,6 +18,16 @@
  * PARSER FUNCTIONS
  * ---------------------------------------------------------- */
 
+static int32_t parseSTARTUP(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.STARTUP) {
+        puCxHandle->callbacks.STARTUP(puCxHandle);
+    }
+    return ret;
+}
+
 static int32_t parseUEBTC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
     (void)paramsLength;
@@ -116,6 +126,7 @@ static int32_t parseUEBTBGD(uCxHandle_t * puCxHandle, char * pParams, size_t par
     }
     return ret;
 }
+
 static int32_t parseUEBTGCN(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
     (void)paramsLength;
@@ -278,16 +289,6 @@ static int32_t parseUEWSND(uCxHandle_t * puCxHandle, char * pParams, size_t para
     int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
     if ((ret >= 0) && puCxHandle->callbacks.UEWSND) {
         puCxHandle->callbacks.UEWSND(puCxHandle);
-    }
-    return ret;
-}
-
-static int32_t parseSTARTUP(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
-{
-    (void)paramsLength;
-    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
-    if ((ret >= 0) && puCxHandle->callbacks.STARTUP) {
-        puCxHandle->callbacks.STARTUP(puCxHandle);
     }
     return ret;
 }
@@ -622,6 +623,9 @@ static int32_t parseUEDGI(uCxHandle_t * puCxHandle, char * pParams, size_t param
  * ---------------------------------------------------------- */
 int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pParams, size_t paramsLength)
 {
+    if (strcmp(pUrcName, "+STARTUP") == 0) {
+        return parseSTARTUP(puCxHandle, pParams, paramsLength);
+    }
     if (strcmp(pUrcName, "+UEBTC") == 0) {
         return parseUEBTC(puCxHandle, pParams, paramsLength);
     }
@@ -771,9 +775,6 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
     }
     if (strcmp(pUrcName, "+UEDGI") == 0) {
         return parseUEDGI(puCxHandle, pParams, paramsLength);
-    }
-    if (strcmp(pUrcName, "+STARTUP") == 0) {
-        return parseSTARTUP(puCxHandle, pParams, paramsLength);
     }
     return -1;
 }

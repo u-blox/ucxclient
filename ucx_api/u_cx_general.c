@@ -94,3 +94,8 @@ bool uCxGeneralGetGreetingTextBegin(uCxHandle_t * puCxHandle, uCxGeneralGetGreet
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+CSGT:", NULL, NULL, "ds", &pGeneralGetGreetingTextRsp->greeting_mode, &pGeneralGetGreetingTextRsp->text, U_CX_AT_UTIL_PARAM_LAST);
     return ret >= 0;
 }
+
+void uCxGeneralRegisterStartup(uCxHandle_t * puCxHandle, uSTARTUP_t callback)
+{
+    puCxHandle->callbacks.STARTUP = callback;
+}
