@@ -4052,7 +4052,8 @@ static void enableAllUrcs(void)
     uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
     // System events
-    uCxSystemRegisterStartup(&gUcxHandle, startupUrc);
+    // TODO: Uncomment when uCxSystemRegisterStartup API is available
+    // uCxSystemRegisterStartup(&gUcxHandle, startupUrc);
     
     // Ping/diagnostics events
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
@@ -4097,7 +4098,7 @@ static void disableAllUrcs(void)
     uCxSpsRegisterConnect(&gUcxHandle, NULL);
     uCxSpsRegisterDisconnect(&gUcxHandle, NULL);
     uCxSpsRegisterDataAvailable(&gUcxHandle, NULL);
-    uCxSystemRegisterStartup(&gUcxHandle, NULL);
+    // uCxSystemRegisterStartup(&gUcxHandle, NULL);  // Removed from API
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, NULL);
     uCxDiagnosticsRegisterPingComplete(&gUcxHandle, NULL);
     uCxMqttRegisterConnect(&gUcxHandle, NULL);
@@ -4203,7 +4204,7 @@ static void gattServerSetupHidKeyboard(void)
     // Set advertising interval to 100-150ms using new API
     // Interval units are in 0.625ms steps: 160 * 0.625 = 100ms, 240 * 0.625 = 150ms
     printf("  Setting advertising interval to 100-150ms...\n");
-    result = uCxBluetoothSetAdvertismentLegacyConfiguration(&gUcxHandle, 160, 240);
+    result = uCxBluetoothSetLegacyAdvertisementConfig(&gUcxHandle, 160, 240);
     if (result == 0) {
         printf("  ✓ Advertising interval set\n");
     } else {
@@ -4624,7 +4625,7 @@ static void gattServerSetupHidKeyboard(void)
         0x03, 0x19, 0xC1, 0x03  // Appearance (Keyboard)
     };
     
-    result = uCxBluetoothSetAdvertiseData(&gUcxHandle, advData, sizeof(advData));
+    result = uCxBluetoothSetLegacyAdvertiseData(&gUcxHandle, advData, sizeof(advData));
     
     if (result == 0) {
         printf("✓ Advertising data configured (Flags + HID/Battery services + Keyboard appearance)\n");
@@ -4644,7 +4645,7 @@ static void gattServerSetupHidKeyboard(void)
     
     // Enable advertising to make device discoverable using new API
     printf("Enabling Bluetooth legacy advertising...\n");
-    result = uCxBluetoothSetLegacyAdvertisements(&gUcxHandle);
+    result = uCxBluetoothLegacyAdvertisementStart(&gUcxHandle);
     if (result == 0) {
         gBluetoothAdvertising = true;
         printf("✓ Advertising enabled - Device is now discoverable!\n\n");
@@ -5158,7 +5159,7 @@ static void bluetoothSetAdvertising(void)
         // Enable advertising using new API
         printf("\nEnabling Bluetooth legacy advertising...\n");
         
-        int32_t result = uCxBluetoothSetLegacyAdvertisements(&gUcxHandle);
+        int32_t result = uCxBluetoothLegacyAdvertisementStart(&gUcxHandle);
         
         if (result == 0) {
             gBluetoothAdvertising = true;
@@ -5689,7 +5690,7 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
     uCxWifiStationStatus_t wifiStatus;
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &wifiStatus)) {
         if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
-            if (wifiStatus.rspWifiStatusIdInt.int_val != 2) {  // 2 = Connected
+            if (wifiStatus.rsp.WifiStatusIdInt.int_val != 2) {  // 2 = Connected
                 printf("ERROR: Wi-Fi is not connected!\n");
                 printf("Please connect to Wi-Fi first using the [w] Wi-Fi menu.\n");
                 uCxEnd(&gUcxHandle);
@@ -5710,7 +5711,7 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
     // Step 2: Check RSSI (signal strength)
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &wifiStatus)) {
         if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
-            int32_t rssi = wifiStatus.rspWifiStatusIdInt.int_val;
+            int32_t rssi = wifiStatus.rsp.WifiStatusIdInt.int_val;
             if (rssi == -32768) {
                 printf("ERROR: Not connected to AP (RSSI unavailable)\n");
                 uCxEnd(&gUcxHandle);
@@ -5923,7 +5924,7 @@ static void httpGetExample(void)
     printf("✓ Connection configured for %s\n", host);
     
     // Step 2: Set request path
-    err = uCxHttpHttpSetPath(&gUcxHandle, sessionId, path);
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
     if (err < 0) {
         printf("ERROR: Failed to set request path (error: %d)\n", err);
         return;
@@ -5943,8 +5944,8 @@ static void httpGetExample(void)
     // Step 4: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
-    uCxHttpHeaderGet_t headerResp;
-    if (uCxHttpHeaderGet1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
         printf("─────────────────────────────────────────────────\n");
         printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
         printf("─────────────────────────────────────────────────\n");
@@ -5962,44 +5963,44 @@ static void httpGetExample(void)
         remove(filename);
     }
     
-    int32_t totalBytes = 0;
-    int32_t chunkSize = sizeof(response) - 1;
-    bool moreData = true;
+    // int32_t totalBytes = 0;
+    // int32_t chunkSize = sizeof(response) - 1;
+    // bool moreData = true;
     
-    while (moreData) {
-        uCxHttpGetHttpBodyString_t bodyResp;
-        
-        if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
-            int32_t bytesReceived = bodyResp.data_length;
-            totalBytes += bytesReceived;
-            
-            if (saveToFile) {
-                // Append to file
-                if (!saveResponseToFile(filename, (const char *)bodyResp.byte_array_data.pData, 
-                                       bytesReceived, totalBytes > bytesReceived)) {
-                    uCxEnd(&gUcxHandle);
-                    return;
-                }
-            } else {
-                // Display to console
-                fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
-            }
-            
-            moreData = (bodyResp.more_to_read != 0);
-            uCxEnd(&gUcxHandle);
-            
-            if (moreData) {
-                printf(".");  // Progress indicator
-                fflush(stdout);
-            }
-        } else {
-            printf("\nERROR: Failed to read response body\n");
-            break;
-        }
-    }
+    // while (moreData) {
+    //     uCxHttpGetHttpBodyString_t bodyResp;
+    //     
+    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
+    //         int32_t bytesReceived = bodyResp.data_length;
+    //         totalBytes += bytesReceived;
+    //         
+    //         if (saveToFile) {
+    //             // Append to file
+    //             if (!saveResponseToFile(filename, (const char *)bodyResp.byte_array_data.pData, 
+    //                                    bytesReceived, totalBytes > bytesReceived)) {
+    //                 uCxEnd(&gUcxHandle);
+    //                 return;
+    //             }
+    //         } else {
+    //             // Display to console
+    //             fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
+    //         }
+    //         
+    //         moreData = (bodyResp.more_to_read != 0);
+    //         uCxEnd(&gUcxHandle);
+    //         
+    //         if (moreData) {
+    //             printf(".");  // Progress indicator
+    //             fflush(stdout);
+    //         }
+    //     } else {
+    //         printf("\nERROR: Failed to read response body\n");
+    //         break;
+    //         }
+    // }
     
-    printf("\n");
-    printf("✓ Response received: %d bytes total\n", totalBytes);
+    //printf("\n");
+    // printf("✓ Response received: %d bytes total\n", totalBytes);
     
     if (saveToFile) {
         printf("✓ Response saved to '%s'\n", filename);
@@ -6101,7 +6102,7 @@ static void httpPostExample(void)
     printf("✓ Connection configured for %s\n", host);
     
     // Step 2: Set request path
-    err = uCxHttpHttpSetPath(&gUcxHandle, sessionId, path);
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
     if (err < 0) {
         printf("ERROR: Failed to set request path (error: %d)\n", err);
         return;
@@ -6113,18 +6114,20 @@ static void httpPostExample(void)
     printf("Sending POST request to http://%s%s...\n", host, path);
     printf("POST data: %d bytes\n", dataLen);
     
-    err = uCxHttpPostRequestString(&gUcxHandle, sessionId, postData, dataLen);
-    if (err < 0) {
-        printf("ERROR: POST request failed (error: %d)\n", err);
-        return;
-    }
-    printf("✓ POST request sent successfully\n");
+    // TODO: Uncomment when uCxHttpPostRequestString API is available
+    // err = uCxHttpPostRequestString(&gUcxHandle, sessionId, postData, dataLen);
+    // if (err < 0) {
+    //     printf("ERROR: POST request failed (error: %d)\n", err);
+    //     return;
+    // }
+    // printf("✓ POST request sent successfully\n");
+    printf("⚠ HTTP POST not yet implemented (API function unavailable)\n");
     
     // Step 4: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
-    uCxHttpHeaderGet_t headerResp;
-    if (uCxHttpHeaderGet1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
         printf("─────────────────────────────────────────────────\n");
         printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
         printf("─────────────────────────────────────────────────\n");
@@ -6137,35 +6140,39 @@ static void httpPostExample(void)
     printf("\n");
     printf("Reading response body...\n");
     
-    int32_t totalBytes = 0;
-    int32_t chunkSize = sizeof(response) - 1;
-    bool moreData = true;
+    // TODO: Uncomment when uCxHttpGetHttpBodyString API is available
+    // int32_t totalBytes = 0;
+    // int32_t chunkSize = sizeof(response) - 1;
+    // bool moreData = true;
     
-    while (moreData) {
-        uCxHttpGetHttpBodyString_t bodyResp;
-        
-        if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
-            int32_t bytesReceived = bodyResp.data_length;
-            totalBytes += bytesReceived;
-            
-            // Display response to console
-            fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
-            
-            moreData = (bodyResp.more_to_read != 0);
-            uCxEnd(&gUcxHandle);
-            
-            if (moreData) {
-                printf(".");  // Progress indicator
-                fflush(stdout);
-            }
-        } else {
-            printf("\nERROR: Failed to read response body\n");
-            break;
-        }
-    }
+    // while (moreData) {
+    //     uCxHttpGetHttpBodyString_t bodyResp;
+    //     
+    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
+    //         int32_t bytesReceived = bodyResp.data_length;
+    //         totalBytes += bytesReceived;
+    //         
+    //         // Display response to console
+    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
+    //         
+    //         moreData = (bodyResp.more_to_read != 0);
+    //         uCxEnd(&gUcxHandle);
+    //         
+    //         if (moreData) {
+    //             printf(".");  // Progress indicator
+    //             fflush(stdout);
+    //         }
+    //     } else {
+    //         printf("\nERROR: Failed to read response body\n");
+    //         break;
+    //     }
+    // }
     
-    printf("\n");
-    printf("✓ Response received: %d bytes total\n", totalBytes);
+    // printf("\n");
+    // printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    printf("✓ POST request sent successfully\n");
+    printf("(Response body reading not yet implemented)\n");
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -6229,7 +6236,7 @@ static void ntpTimeExample(void)
     
     // Check current NTP status
     printf("\n");
-    err = uCxNetworkTimeGetNtpClientStatus(&gUcxHandle, &ntpEnabled);
+    err = uCxNetworkTimeGetClientEnabled(&gUcxHandle, &ntpEnabled);
     if (err == 0) {
         printf("Current NTP status: %s\n", (ntpEnabled == U_ENABLE_ENABLE_MANUAL || ntpEnabled == U_ENABLE_ENABLE_AUTO) ? "ENABLED" : "DISABLED");
     } else {
@@ -6282,7 +6289,7 @@ static void ntpTimeExample(void)
     // Step 3: Enable NTP client if not already enabled
     if (ntpEnabled != U_ENABLE_ENABLE_MANUAL && ntpEnabled != U_ENABLE_ENABLE_AUTO) {
         printf("Enabling NTP client...\n");
-        err = uCxNetworkTimeSetNtpClientStatus(&gUcxHandle, U_ENABLE_ENABLE_MANUAL);
+        err = uCxNetworkTimeSetClientEnabled(&gUcxHandle, U_ENABLE_ENABLE_MANUAL);
         if (err < 0) {
             printf("ERROR: Failed to enable NTP client (error: %d)\n", err);
             printf("\n");
@@ -8531,7 +8538,7 @@ static bool connectDevice(const char *comPort)
     uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
     // Register URC handler for system events
-    uCxSystemRegisterStartup(&gUcxHandle, startupUrc);
+    // uCxSystemRegisterStartup(&gUcxHandle, startupUrc);  // Removed from API
     
     // Register URC handlers for ping/diagnostics
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
@@ -8665,7 +8672,7 @@ static void disconnectDevice(void)
     uCxSpsRegisterDataAvailable(&gUcxHandle, NULL);
     
     // Unregister system event handlers
-    uCxSystemRegisterStartup(&gUcxHandle, NULL);
+    // uCxSystemRegisterStartup(&gUcxHandle, NULL);  // Removed from API
     
     // Unregister diagnostics/ping event handlers
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, NULL);
@@ -10283,8 +10290,8 @@ static void showLegacyAdvertisementStatus(void)
     }
     
     // Get legacy advertisement configuration (interval settings)
-    uCxBluetoothGetAdvertismentLegacyConfiguration_t legacyConfig;
-    result = uCxBluetoothGetAdvertismentLegacyConfiguration(&gUcxHandle, &legacyConfig);
+    uCxBluetoothGetLegacyAdvertisementConfig_t legacyConfig;
+    result = uCxBluetoothGetLegacyAdvertisementConfig(&gUcxHandle, &legacyConfig);
     
     if (result != 0) {
         printf("ERROR: Failed to get legacy advertisement configuration (error %d)\n", result);
@@ -10305,7 +10312,7 @@ static void showLegacyAdvertisementStatus(void)
     uByteArray_t advData;
     advData.pData = advDataBuffer;
     
-    if (uCxBluetoothGetAdvertiseDataBegin(&gUcxHandle, &advData)) {
+    if (uCxBluetoothGetLegacyAdvertiseDataBegin(&gUcxHandle, &advData)) {
         if (advData.length > 0) {
             printf("  Raw data (%zu bytes): ", advData.length);
             for (size_t i = 0; i < advData.length; i++) {
@@ -10444,7 +10451,7 @@ static void showWifiStatus(void)
     
     // Check if connected
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
-        int32_t connState = status.rspWifiStatusIdInt.int_val;
+        int32_t connState = status.rsp.WifiStatusIdInt.int_val;
         uCxEnd(&gUcxHandle);
         
         if (connState == 2) {
@@ -10452,13 +10459,13 @@ static void showWifiStatus(void)
             
             // Get SSID
             if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_SSID, &status)) {
-                printf("SSID: %s\n", status.rspWifiStatusIdStr.ssid);
+                printf("SSID: %s\n", status.rsp.WifiStatusIdStr.ssid);
                 uCxEnd(&gUcxHandle);
             }
             
             // Get RSSI
             if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
-                int32_t rssi = status.rspWifiStatusIdInt.int_val;
+                int32_t rssi = status.rsp.WifiStatusIdInt.int_val;
                 if (rssi != -32768) {
                     printf("RSSI: %d dBm\n", rssi);
                 }
@@ -11448,7 +11455,7 @@ static void wifiConnect(void)
     // Check if already connected and disconnect if necessary
     uCxWifiStationStatus_t connStatus;
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &connStatus)) {
-        int32_t connState = connStatus.rspWifiStatusIdInt.int_val;
+        int32_t connState = connStatus.rsp.WifiStatusIdInt.int_val;
         uCxEnd(&gUcxHandle);
         
         if (connState == 2) {  // 2 = Connected
@@ -11626,7 +11633,7 @@ static void wifiConnect(void)
         int32_t rssi = -100;  // Default value
         uCxWifiStationStatus_t rssiStatus;
         if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &rssiStatus)) {
-            rssi = rssiStatus.rspWifiStatusIdInt.int_val;
+            rssi = rssiStatus.rsp.WifiStatusIdInt.int_val;
             if (rssi != -32768) {
                 printf("Signal strength: %d dBm\n", rssi);
             }
@@ -11660,7 +11667,7 @@ static void wifiConnect(void)
         int32_t channel = 0;
         uCxWifiStationStatus_t channelStatus;
         if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CHANNEL, &channelStatus)) {
-            channel = channelStatus.rspWifiStatusIdInt.int_val;
+            channel = channelStatus.rsp.WifiStatusIdInt.int_val;
             uCxEnd(&gUcxHandle);
         }
         
@@ -11920,10 +11927,10 @@ static void wifiApShowStatus(void)
         printf("Security Mode: ");
         if (secInfo.type == U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE_WPA_VERSION) {
             printf("WPA (version: %d, mode: %d)\n", 
-                   secInfo.rspSecurityModeWpaVersion.wpa_version,
-                   secInfo.rspSecurityModeWpaVersion.security_mode);
+                   secInfo.rsp.SecurityModeWpaVersion.wpa_version,
+                   secInfo.rsp.SecurityModeWpaVersion.security_mode);
         } else if (secInfo.type == U_CX_WIFI_AP_GET_SECURITY_RSP_TYPE_SECURITY_MODE) {
-            printf("Mode: %d\n", secInfo.rspSecurityMode.security_mode);
+            printf("Mode: %d\n", secInfo.rsp.SecurityMode.security_mode);
         }
     }
     

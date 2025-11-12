@@ -43,7 +43,7 @@
 typedef struct {
     uint16_t strLineLen;  // String length excluding null term
     uint16_t payloadSize; // Binary payload length (0 if none)
-    uint8_t data[0];       // Layout is {strLineLen}{null term}{payloadSize}
+    uint8_t data[];       // Layout is {strLineLen}{null term}{payloadSize}
 } uUrcEntry_t;
 
 typedef struct uCxAtUrcQueue {

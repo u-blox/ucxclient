@@ -26,10 +26,10 @@ if errorlevel 1 (
 )
 
 REM Check if DLL exists
-if not exist "build\Release\ucxclient_windows.dll" (
-    if not exist "build\Debug\ucxclient_windows.dll" (
+if not exist "build\Release\ucxclient_dll.dll" (
+    if not exist "build\Debug\ucxclient_dll.dll" (
         echo.
-        echo WARNING: ucxclient_windows.dll not found!
+        echo WARNING: ucxclient_dll.dll not found!
         echo You need to build the library first.
         echo.
         echo Run: build_windows.cmd

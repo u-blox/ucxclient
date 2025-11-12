@@ -77,21 +77,21 @@ if errorlevel 1 (
 
 REM Check if DLL was created
 set DLL_FOUND=0
-if exist "Release\ucxclient_windows.dll" (
-    echo SUCCESS: Found Release\ucxclient_windows.dll
+if exist "Release\ucxclient_dll.dll" (
+    echo SUCCESS: Found Release\ucxclient_dll.dll
     set DLL_FOUND=1
 )
-if exist "Debug\ucxclient_windows.dll" (
-    echo SUCCESS: Found Debug\ucxclient_windows.dll
+if exist "Debug\ucxclient_dll.dll" (
+    echo SUCCESS: Found Debug\ucxclient_dll.dll
     set DLL_FOUND=1
 )
-if exist "ucxclient_windows.dll" (
-    echo SUCCESS: Found ucxclient_windows.dll
+if exist "ucxclient_dll.dll" (
+    echo SUCCESS: Found ucxclient_dll.dll
     set DLL_FOUND=1
 )
 
 if %DLL_FOUND% == 0 (
-    echo ERROR: ucxclient_windows.dll not found after build!
+    echo ERROR: ucxclient_dll.dll not found after build!
     echo Please check the build output for errors.
     pause
     exit /b 1

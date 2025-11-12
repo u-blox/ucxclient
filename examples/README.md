@@ -77,7 +77,7 @@ After building, you'll find:
 - `build\Debug\windows_app.exe` - Interactive menu-driven application
 - `build\Debug\windows_basic.exe` - Simple test application
 - `build\Debug\http_example_windows.exe` - HTTP example for Windows
-- `build\Debug\ucxclient_windows.dll` - Shared library
+- `build\Debug\ucxclient_dll.dll` - Shared library for Python integration
 
 ### FreeRTOS Port
 

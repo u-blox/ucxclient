@@ -17,7 +17,7 @@ from tkinter import messagebox
 def get_library_name():
     """Get the platform-specific library name"""
     if sys.platform == "win32":
-        return "ucxclient_windows.dll"
+        return "ucxclient_dll.dll"
     elif sys.platform == "linux" or sys.platform == "linux2":
         return "libucxclient.so"
     elif sys.platform == "darwin":

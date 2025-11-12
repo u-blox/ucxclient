@@ -77,7 +77,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(http_example_windows PRIVATE /W4)
+  target_compile_options(http_example_windows PRIVATE /W4 /wd4200)
   target_compile_definitions(http_example_windows PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -96,7 +96,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(ucxclient_basic_wifi PRIVATE /W4)
+  target_compile_options(ucxclient_basic_wifi PRIVATE /W4 /wd4200)
   target_compile_definitions(ucxclient_basic_wifi PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -117,7 +117,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(ucxclient_win64 PRIVATE /W4 /FS)
+  target_compile_options(ucxclient_win64 PRIVATE /W4 /FS /wd4200)
   target_compile_definitions(ucxclient_win64 PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -134,7 +134,7 @@ if(WIN32)
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(firmware_update PRIVATE /W4 /FS)
+  target_compile_options(firmware_update PRIVATE /W4 /FS /wd4200)
   target_compile_definitions(firmware_update PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
@@ -145,22 +145,22 @@ if(WIN32)
   target_link_libraries(firmware_update PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Windows shared library for Python integration
-  add_library(ucxclient_windows SHARED
+  add_library(ucxclient_dll SHARED
     examples/port/u_port_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(ucxclient_windows PRIVATE /W4)
-  target_compile_definitions(ucxclient_windows PRIVATE
+  target_compile_options(ucxclient_dll PRIVATE /W4 /wd4200)
+  target_compile_definitions(ucxclient_dll PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
   )
-  target_include_directories(ucxclient_windows PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
-  target_link_libraries(ucxclient_windows PRIVATE setupapi ${FTDI_LIBRARY})
+  target_include_directories(ucxclient_dll PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(ucxclient_dll PRIVATE setupapi ${FTDI_LIBRARY})
   
   # Export all symbols for Python ctypes
-  set_target_properties(ucxclient_windows PROPERTIES
+  set_target_properties(ucxclient_dll PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS TRUE
   )
   
