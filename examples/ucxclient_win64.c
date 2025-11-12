@@ -6365,11 +6365,12 @@ static void ntpTimeExample(void)
             printf("\n");
         }
         
-        uCxEnd(&gUcxHandle);
     } else {
         printf("ERROR: Failed to read system time\n");
         printf("NOTE: Make sure Wi-Fi is connected and NTP server is reachable\n");
     }
+    // Always call uCxEnd() to complete the command sequence
+    uCxEnd(&gUcxHandle);
     
     // Step 7: Show configured NTP servers
     printf("\n");
@@ -6383,10 +6384,11 @@ static void ntpTimeExample(void)
             printf(" (NOT REACHABLE ✗)");
         }
         printf("\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("  (No servers configured or query failed)\n");
     }
+    // Always call uCxEnd() to complete the command sequence
+    uCxEnd(&gUcxHandle);
     
     printf("\n");
     printf("Press Enter to continue...");
