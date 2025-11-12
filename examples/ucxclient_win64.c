@@ -6312,15 +6312,59 @@ static void ntpTimeExample(void)
     }
     printf("✓ NTP server configured\n");
     
-    // Step 5: Wait for synchronization (NTP sync can take a few seconds)
+    // Step 5: Wait for synchronization with polling (max 120 seconds)
     printf("\n");
-    printf("Waiting for NTP synchronization");
-    for (int i = 0; i < 5; i++) {
-        printf(".");
-        fflush(stdout);
-        Sleep(1000);  // Wait 1 second
+    printf("Waiting for NTP synchronization (max 120 seconds, press Ctrl+C to cancel)...\n");
+    
+    bool timeSynced = false;
+    int maxAttempts = 24;  // 24 attempts × 5 seconds = 120 seconds max
+    
+    for (int attempt = 0; attempt < maxAttempts && !timeSynced; attempt++) {
+        if (attempt == 0) {
+            printf("Checking");
+        } else {
+            printf("\nWaiting 5 more seconds");
+        }
+        
+        // Wait 5 seconds with progress dots
+        for (int i = 0; i < 5; i++) {
+            printf(".");
+            fflush(stdout);
+            Sleep(1000);
+        }
+        
+        // Try to read system time
+        uByteArray_t testTimeData;
+        if (uCxSystemGetUnixTimeBegin(&gUcxHandle, &testTimeData)) {
+            if (testTimeData.length >= 4) {
+                // Check if time is reasonable (not zero and not very old)
+                uint64_t testTime = 0;
+                for (int i = 0; i < testTimeData.length && i < 8; i++) {
+                    testTime |= ((uint64_t)testTimeData.pData[i]) << (i * 8);
+                }
+                
+                // Unix time should be > 1600000000 (Sep 2020) for valid NTP sync
+                if (testTime > 1600000000) {
+                    timeSynced = true;
+                    printf(" ✓\n");
+                }
+            }
+        }
+        uCxEnd(&gUcxHandle);
+        
+        if (!timeSynced && attempt < maxAttempts - 1) {
+            printf(" (not yet synced, attempt %d/%d)", attempt + 1, maxAttempts);
+        }
     }
-    printf("\n");
+    
+    if (!timeSynced) {
+        printf("\n\nWARNING: NTP synchronization timeout after 120 seconds.\n");
+        printf("Time may not be synchronized. Possible reasons:\n");
+        printf("  - NTP server is unreachable\n");
+        printf("  - Firewall blocking NTP traffic (UDP port 123)\n");
+        printf("  - Internet connectivity issues\n");
+        printf("\nAttempting to read system time anyway...\n");
+    }
     
     // Step 6: Read the synchronized time
     printf("\n");
