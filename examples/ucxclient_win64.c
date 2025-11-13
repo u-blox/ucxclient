@@ -6500,6 +6500,56 @@ static void externalIpDetectionExample(void)
     getchar();
 }
 
+// Generate and display Google Maps QR code for a location
+static void generateLocationQRCode(double lat, double lng)
+{
+    char url[256];
+    snprintf(url, sizeof(url), "https://www.google.com/maps?q=%.7f,%.7f", lat, lng);
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("Google Maps Link:\n");
+    printf("  %s\n", url);
+    printf("─────────────────────────────────────────────────\n");
+    
+    // Generate QR code
+    uint8_t qrcode[qrcodegen_BUFFER_LEN_MAX];
+    uint8_t temp[qrcodegen_BUFFER_LEN_MAX];
+    
+    bool ok = qrcodegen_encodeText(
+        url, temp, qrcode,
+        qrcodegen_Ecc_MEDIUM,
+        qrcodegen_VERSION_MIN,
+        qrcodegen_VERSION_MAX,
+        qrcodegen_Mask_AUTO, true
+    );
+    
+    if (!ok) {
+        printf("ERROR: Failed to generate QR code\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("Scan this QR code to open location in Google Maps:\n");
+    printf("\n");
+    
+    int size = qrcodegen_getSize(qrcode);
+    int border = 2;
+    
+    for (int y = -border; y < size + border; y++) {
+        printf("  ");  // Left margin
+        for (int x = -border; x < size + border; x++) {
+            // Use block characters for better visibility
+            printf(qrcodegen_getModule(qrcode, x, y) ? "██" : "  ");
+        }
+        printf("\n");
+    }
+    
+    printf("\n");
+    printf("Tip: Open your phone's camera app and point it at the QR code\n");
+    printf("     to quickly navigate to this location in Google Maps.\n");
+}
+
 static void wifiPositioningExample(void)
 {
     int32_t sessionId = 0;
@@ -6723,6 +6773,30 @@ static void wifiPositioningExample(void)
     // 
     // printf("\n─────────────────────────────────────────────────\n");
     // printf("✓ Response received: %d bytes total\n", totalBytes);
+    //
+    // // Parse JSON response to extract latitude and longitude
+    // // Simple parsing example (in production, use a JSON library)
+    // // Example response: {"location":{"lat":55.7174228,"lng":13.2137795},"accuracy":2}
+    // 
+    // double lat = 0.0, lng = 0.0;
+    // int accuracy = 0;
+    // 
+    // // TODO: Parse JSON properly when response body reading is available
+    // // For now, this is a placeholder showing how it would work:
+    // // sscanf(jsonBuffer, "...parse lat/lng...", &lat, &lng);
+    // 
+    // if (lat != 0.0 && lng != 0.0) {
+    //     printf("\n");
+    //     printf("─────────────────────────────────────────────────\n");
+    //     printf("POSITION DETERMINED\n");
+    //     printf("─────────────────────────────────────────────────\n");
+    //     printf("  Latitude:  %.7f\n", lat);
+    //     printf("  Longitude: %.7f\n", lng);
+    //     printf("  Accuracy:  %d meters\n", accuracy);
+    //     
+    //     // Generate Google Maps link and QR code
+    //     generateLocationQRCode(lat, lng);
+    // }
     
     printf("(Response body reading not yet implemented)\n");
     printf("\n");
@@ -6743,11 +6817,27 @@ static void wifiPositioningExample(void)
     printf("    - room:             Room name\n");
     printf("  - logId:              Log entry identifier\n");
     printf("\n");
+    
+    // Show example of what the output will look like when implemented
+    printf("Example output when response is received:\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("POSITION DETERMINED\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("  Latitude:  55.7174228\n");
+    printf("  Longitude: 13.2137795\n");
+    printf("  Accuracy:  2 meters\n");
+    printf("\n");
+    printf("  Google Maps link and QR code will be displayed here.\n");
+    printf("  You can scan the QR code with your phone to navigate.\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
     printf("API Documentation: https://portal.combain.com/api/#combain-location-api\n");
     printf("\n");
     printf("Note: Accuracy depends on Wi-Fi AP database coverage in your area.\n");
     printf("      Send as many APs as possible for best results.\n");
     printf("      Indoor positioning requires building data in Combain's database.\n");
+    printf("      Once HTTP body reading is implemented, the QR code will be\n");
+    printf("      automatically generated and displayed above.\n");
     
     printf("\n");
     printf("Press Enter to continue...");
