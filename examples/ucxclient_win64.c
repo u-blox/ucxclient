@@ -231,6 +231,7 @@ static int gWifiChannel = 0;                       // Wi-Fi channel (1-13)
 static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
+static char gCombainApiKey[128] = "";         // Combain API key (obfuscated in settings)
 
 // WiFi Profile Management (up to 10 saved networks)
 typedef struct {
@@ -6648,13 +6649,59 @@ static void wifiPositioningExample(void)
     printf("─────────────────────────────────────────────────\n");
     printf("\n");
     
-    // Step 2: Send POST request to Combain API
+    // Step 2: Check for Combain API key
     // API: https://portal.combain.com/api/#combain-location-api
     // Endpoint: https://apiv2.combain.com?key=YOUR_API_KEY&id=DEVICE_ID
     
+    // Check if we have a saved API key
+    if (strlen(gCombainApiKey) == 0) {
+        printf("─────────────────────────────────────────────────────────────\n");
+        printf("COMBAIN API KEY REQUIRED\n");
+        printf("─────────────────────────────────────────────────────────────\n");
+        printf("\n");
+        printf("This example requires a Combain API key to access the\n");
+        printf("Wi-Fi positioning service.\n");
+        printf("\n");
+        printf("Get your free API key at: https://portal.combain.com\n");
+        printf("\n");
+        printf("Enter your Combain API key (or press Enter to cancel): ");
+        
+        char apiKeyInput[128];
+        if (fgets(apiKeyInput, sizeof(apiKeyInput), stdin) != NULL) {
+            // Remove trailing newline
+            apiKeyInput[strcspn(apiKeyInput, "\r\n")] = '\0';
+            
+            if (strlen(apiKeyInput) > 0) {
+                strncpy(gCombainApiKey, apiKeyInput, sizeof(gCombainApiKey) - 1);
+                gCombainApiKey[sizeof(gCombainApiKey) - 1] = '\0';
+                
+                // Save to settings file
+                saveSettings();
+                printf("✓ API key saved to settings (obfuscated)\n");
+                printf("\n");
+            } else {
+                printf("Cancelled. No API key provided.\n");
+                printf("\n");
+                printf("Press Enter to continue...");
+                getchar();
+                return;
+            }
+        } else {
+            printf("ERROR: Failed to read API key\n");
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+    } else {
+        printf("✓ Using saved Combain API key from settings\n");
+        printf("\n");
+    }
+    
+    // Prepare POST request to Combain API
     const char *host = "apiv2.combain.com";
     char path[256];
-    snprintf(path, sizeof(path), "/?key=8c87310c40e1714289ee&id=ucxclient_win64");
+    snprintf(path, sizeof(path), "/?key=%s&id=ucxclient_win64", gCombainApiKey);
     
     printf("Configuring HTTP connection to Combain...\n");
     
@@ -9733,6 +9780,13 @@ static void loadSettings(void)
                 strncpy(gRemoteAddress, line + 15, sizeof(gRemoteAddress) - 1);
                 gRemoteAddress[sizeof(gRemoteAddress) - 1] = '\0';
             }
+            else if (strncmp(line, "combain_api_key=", 16) == 0) {
+                // Deobfuscate Combain API key
+                deobfuscatePassword(line + 16, gCombainApiKey, sizeof(gCombainApiKey));
+                if (strlen(gCombainApiKey) > 0) {
+                    printf("Loaded Combain API key from settings\n");
+                }
+            }
             else if (strncmp(line, "firmware_path_", 14) == 0) {
                 // Dynamic firmware path: firmware_path_<PRODUCT>=<path>
                 // e.g., "firmware_path_NORA-W36=/path/to/firmware.bin"
@@ -9775,6 +9829,13 @@ static void saveSettings(void)
         fprintf(f, "last_port=%s\n", gComPort);
         fprintf(f, "last_device=%s\n", gLastDeviceModel);
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
+        
+        // Save Combain API key (obfuscated)
+        if (strlen(gCombainApiKey) > 0) {
+            char obfuscatedApiKey[256];
+            obfuscatePassword(gCombainApiKey, obfuscatedApiKey, sizeof(obfuscatedApiKey));
+            fprintf(f, "combain_api_key=%s\n", obfuscatedApiKey);
+        }
         
         // Save WiFi profiles (up to 10)
         fprintf(f, "wifi_profile_count=%d\n", gWifiProfileCount);
