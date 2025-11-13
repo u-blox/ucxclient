@@ -521,6 +521,7 @@ static void socketConnect(void);
 static void socketSendData(void);
 static void socketReadData(void);
 static void socketClose(void);
+static void socketCloseByHandle(void);
 static void socketListStatus(void);
 static void spsEnableService(void);
 static void spsConnect(void);
@@ -2306,27 +2307,92 @@ static void socketReadData(void)
 static void socketClose(void)
 {
     if (!gUcxConnected) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        printf("ERROR: Not connected to device\n");
         return;
     }
     
     if (gCurrentSocket < 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No socket to close");
+        printf("\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("ERROR: No socket created in this session\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("\nThis command closes the socket created in this session.\n");
+        printf("Current session socket: None\n");
+        printf("\nTo close sockets from previous sessions:\n");
+        printf("  1. Use option [7] to list all sockets\n");
+        printf("  2. Use option [8] to close any socket by handle\n");
+        printf("─────────────────────────────────────────────────\n");
         return;
     }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Close Socket ---");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Closing socket %d...", gCurrentSocket);
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("CLOSE SOCKET\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("Closing socket %d...\n", gCurrentSocket);
     
     int32_t result = uCxSocketClose(&gUcxHandle, gCurrentSocket);
     
     if (result == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully closed socket");
+        printf("✓ Socket %d closed successfully\n", gCurrentSocket);
         gCurrentSocket = -1;
     } else {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to close socket (code %d)", result);
+        printf("✗ Failed to close socket (error code: %d)\n", result);
     }
+    
+    printf("─────────────────────────────────────────────────\n");
+}
+
+static void socketCloseByHandle(void)
+{
+    char input[64];
+    int socketHandle;
+    
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("CLOSE SOCKET BY HANDLE\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\nEnter socket handle to close (0-9): ");
+    
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    input[strcspn(input, "\n")] = 0;
+    socketHandle = atoi(input);
+    
+    if (socketHandle < 0 || socketHandle > 9) {
+        printf("ERROR: Invalid socket handle (must be 0-9)\n");
+        printf("─────────────────────────────────────────────────\n");
+        return;
+    }
+    
+    printf("\nClosing socket %d...\n", socketHandle);
+    
+    int32_t result = uCxSocketClose(&gUcxHandle, socketHandle);
+    
+    if (result == 0) {
+        printf("✓ Socket %d closed successfully\n", socketHandle);
+        
+        // If we just closed our current session socket, clear it
+        if (socketHandle == gCurrentSocket) {
+            gCurrentSocket = -1;
+        }
+    } else {
+        printf("✗ Failed to close socket (error code: %d)\n", result);
+        printf("\nPossible reasons:\n");
+        printf("  - Socket %d does not exist\n", socketHandle);
+        printf("  - Socket is already closed\n");
+        printf("  - Invalid socket handle\n");
+    }
+    
+    printf("─────────────────────────────────────────────────\n");
 }
 
 static void socketListStatus(void)
@@ -2336,8 +2402,10 @@ static void socketListStatus(void)
         return;
     }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Socket Status ---");
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("SOCKET STATUS\n");
+    printf("─────────────────────────────────────────────────\n");
     
     uCxSocketListStatusBegin(&gUcxHandle);
     
@@ -2346,23 +2414,37 @@ static void socketListStatus(void)
     
     while (uCxSocketListStatusGetNext(&gUcxHandle, &status)) {
         count++;
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket %d: Protocol=%s, Status=%s",
+        const char *marker = (status.socket_handle == gCurrentSocket) ? " ← Current" : "";
+        printf("Socket %d: %s, %s%s\n",
                status.socket_handle,
                status.protocol == U_PROTOCOL_TCP ? "TCP" : "UDP",
                status.socket_status == 0 ? "Not Connected" :
-               status.socket_status == 1 ? "Listening" : "Connected");
+               status.socket_status == 1 ? "Listening" : "Connected",
+               marker);
     }
     
     uCxEnd(&gUcxHandle);
     
     if (count == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "  No sockets");
+        printf("No sockets open\n");
+    } else {
+        printf("\nTotal: %d socket%s\n", count, count > 1 ? "s" : "");
     }
     
     if (gCurrentSocket >= 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Current socket: %d", gCurrentSocket);
+        printf("\nCurrent session socket: %d\n", gCurrentSocket);
+        printf("(This socket can be used with Send/Read/Close commands)\n");
+    } else {
+        printf("\nNo socket created in this session\n");
+        printf("Use [1] or [2] to create a new socket\n");
+        
+        if (count > 0) {
+            printf("\nNote: Socket(s) listed above were created outside this session.\n");
+            printf("      Use option [8] to close any socket by handle.\n");
+        }
     }
+    
+    printf("─────────────────────────────────────────────────\n");
 }
 
 // ----------------------------------------------------------------
@@ -8706,8 +8788,9 @@ static void printMenu(void)
             printf("  [3] Connect socket\n");
             printf("  [4] Send data\n");
             printf("  [5] Read data\n");
-            printf("  [6] Close socket\n");
+            printf("  [6] Close socket (current session)\n");
             printf("  [7] List sockets\n");
+            printf("  [8] Close socket by handle (any socket)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -9386,6 +9469,9 @@ static void handleUserInput(void)
                     break;
                 case 7:
                     socketListStatus();
+                    break;
+                case 8:
+                    socketCloseByHandle();
                     break;
                 case 0:
                     gMenuState = MENU_WIFI_FUNCTIONS;
