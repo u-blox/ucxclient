@@ -11841,23 +11841,48 @@ static void showBluetoothStatus(void)
         return;
     }
     
-    printf("\n--- Bluetooth Status ---\n");
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("BLUETOOTH STATUS\n");
+    printf("─────────────────────────────────────────────────\n");
     
     // Get Bluetooth mode
     uBtMode_t btMode;
     int32_t result = uCxBluetoothGetMode(&gUcxHandle, &btMode);
     
     if (result == 0) {
-        printf("Bluetooth Mode: ");
+        printf("Mode: ");
         switch (btMode) {
             case 0: printf("Disabled\n"); break;
-            case 1: printf("Central\n"); break;
-            case 2: printf("Peripheral\n"); break;
-            case 3: printf("Central + Peripheral\n"); break;
+            case 1: printf("Enabled (Central only)\n"); break;
+            case 2: printf("Enabled (Peripheral only)\n"); break;
+            case 3: printf("Enabled (Central + Peripheral)\n"); break;
             default: printf("Unknown (%d)\n", btMode); break;
         }
         
         if (btMode != 0) {
+            // Get advertising information
+            uCxBluetoothGetAdvertiseInformation_t advInfo;
+            if (uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo) == 0) {
+                printf("\nAdvertising Status:\n");
+                printf("  Legacy Advertising:   %s\n", 
+                       advInfo.legacy_advertisement ? "Enabled" : "Disabled");
+                printf("  Directed Advertising: %s\n", 
+                       advInfo.directed_advertisement ? "Enabled" : "Disabled");
+                
+                // Show legacy advertising configuration if enabled
+                if (advInfo.legacy_advertisement) {
+                    uCxBluetoothGetLegacyAdvertisementConfig_t legacyConfig;
+                    if (uCxBluetoothGetLegacyAdvertisementConfig(&gUcxHandle, &legacyConfig) == 0) {
+                        printf("  Legacy Adv Interval:  %d-%d ms (%.1f-%.1f ms)\n",
+                               legacyConfig.advertisement_interval_minimum,
+                               legacyConfig.advertisement_interval_maximum,
+                               legacyConfig.advertisement_interval_minimum * 0.625,
+                               legacyConfig.advertisement_interval_maximum * 0.625);
+                    }
+                }
+            }
+            
             // List active connections
             printf("\nActive Connections:\n");
             
@@ -11868,7 +11893,7 @@ static void showBluetoothStatus(void)
             
             while (uCxBluetoothListConnectionsGetNext(&gUcxHandle, &conn)) {
                 connCount++;
-                printf("  Handle %d: %02X:%02X:%02X:%02X:%02X:%02X (%s)\n",
+                printf("  [%d] %02X:%02X:%02X:%02X:%02X:%02X (%s)\n",
                        conn.conn_handle,
                        conn.bd_addr.address[0],
                        conn.bd_addr.address[1],
@@ -11880,13 +11905,18 @@ static void showBluetoothStatus(void)
             }
             
             if (connCount == 0) {
-                printf("  No devices connected\n");
+                printf("  No active connections\n");
+            } else {
+                printf("\nTotal: %d connection%s\n", connCount, connCount > 1 ? "s" : "");
             }
             
             uCxEnd(&gUcxHandle);
         }
+        
+        printf("─────────────────────────────────────────────────\n");
     } else {
         printf("ERROR: Failed to get Bluetooth mode (code %d)\n", result);
+        printf("─────────────────────────────────────────────────\n");
     }
 }
 
