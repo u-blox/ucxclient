@@ -276,6 +276,10 @@ static volatile int32_t gPingAvgTime = 0;
 static volatile int32_t gPingTimes[MAX_PING_TIMES];
 static volatile int32_t gPingCount = 0;
 
+// iPerf state tracking
+static volatile bool gIperfRunning = false;
+static char gIperfOutputBuffer[1024] = "";
+
 // Reboot timing
 static volatile ULONGLONG gStartupTimestamp = 0;
 static volatile ULONGLONG gLastStartupConfigTime = 0;
@@ -297,6 +301,7 @@ typedef enum {
     MENU_MQTT,
     MENU_HTTP,
     MENU_LOCATION,
+    MENU_DIAGNOSTICS,
     MENU_SECURITY_TLS,
     MENU_FIRMWARE_UPDATE,
     MENU_API_LIST,
@@ -556,13 +561,23 @@ static void wifiFunctionsMenu(void);
 static void socketMenu(void);
 static void mqttMenu(void);
 static void httpMenu(void);
+static void diagnosticsMenu(void);
 static void securityTlsMenu(void);
 static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi, int32_t channel);
 
-// URC handlers for ping
+// Diagnostics functions
+static void pingExample(void);
+static void iperfClientExample(void);
+static void iperfServerExample(void);
+static void iperfStopExample(void);
+static void dnsLookupExample(void);
+static void testConnectivityWrapper(void);
+
+// URC handlers for ping and iperf
 static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time);
 static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_packets, 
                            int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
+static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_output);
 
 // ============================================================================
 // BLUETOOTH HELPER FUNCTIONS
@@ -1771,6 +1786,30 @@ static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_pa
                    "Ping complete: %d/%d packets, avg %d ms", 
                    received_packets, transmitted_packets, avg_response_time);
     signalEvent(URC_FLAG_PING_COMPLETE);
+}
+
+static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_output)
+{
+    (void)puCxHandle;
+    
+    // Display the iPerf output line
+    printf("%s\n", iperf_output);
+    
+    // Check if this indicates test completion or error
+    if (strstr(iperf_output, "Server Report:") || 
+        strstr(iperf_output, "Client connecting") ||
+        strstr(iperf_output, "ERROR") ||
+        strstr(iperf_output, "failed")) {
+        // Store in buffer for later reference if needed
+        strncat(gIperfOutputBuffer, iperf_output, 
+                sizeof(gIperfOutputBuffer) - strlen(gIperfOutputBuffer) - 2);
+        strcat(gIperfOutputBuffer, "\n");
+    }
+    
+    // Check for completion indicators
+    if (strstr(iperf_output, "Server Report:") || strstr(iperf_output, "Completed")) {
+        gIperfRunning = false;
+    }
 }
 
 static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id)
@@ -4042,6 +4081,7 @@ static void enableAllUrcs(void)
     // Ping/diagnostics events
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
     uCxDiagnosticsRegisterPingComplete(&gUcxHandle, pingCompleteUrc);
+    uCxDiagnosticsRegisterIperfOutput(&gUcxHandle, iperfOutputUrc);
     
     // MQTT events
     uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
@@ -6892,6 +6932,528 @@ static void wifiPositioningExample(void)
 }
 
 // ----------------------------------------------------------------
+// Network Diagnostics Functions
+// ----------------------------------------------------------------
+
+static void pingExample(void)
+{
+    char input[256];
+    char hostname[128];
+    int count = 4;
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("PING TEST (ICMP Echo Request)\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, false)) {
+        return;
+    }
+    
+    // Get destination hostname or IP
+    printf("Enter destination (hostname or IP address): ");
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\n")] = 0;
+    
+    if (strlen(input) == 0) {
+        strncpy(hostname, "8.8.8.8", sizeof(hostname));
+        printf("Using default: %s (Google DNS)\n", hostname);
+    } else {
+        strncpy(hostname, input, sizeof(hostname) - 1);
+        hostname[sizeof(hostname) - 1] = '\0';
+    }
+    
+    // Get ping count
+    printf("Enter number of pings (1-10, 0 for continuous, default=4): ");
+    if (fgets(input, sizeof(input), stdin)) {
+        input[strcspn(input, "\n")] = 0;
+        if (strlen(input) > 0) {
+            count = atoi(input);
+            if (count < 0 || count > 10) {
+                printf("Invalid count, using default (4)\n");
+                count = 4;
+            }
+        }
+    }
+    
+    printf("\n");
+    printf("Pinging %s with %d requests", hostname, count);
+    if (count == 0) {
+        printf(" (continuous - this feature may not be supported by all modules)");
+    }
+    printf("...\n");
+    printf("\n");
+    
+    // Reset ping statistics
+    gPingSuccess = 0;
+    gPingFailed = 0;
+    gPingAvgTime = 0;
+    gPingCount = 0;
+    memset(gPingTimes, 0, sizeof(gPingTimes));
+    
+    // Start ping (using uCxDiagnosticsPing2 for custom count)
+    int32_t result = uCxDiagnosticsPing2(&gUcxHandle, hostname, count);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to start ping (error code: %d)\n", result);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Wait for ping complete event (timeout after count * 2 seconds + 5)
+    int32_t timeoutMs = (count > 0 ? count * 2000 : 10000) + 5000;
+    
+    printf("Waiting for ping responses");
+    if (count == 0) {
+        printf(" (press Ctrl+C to stop)");
+    }
+    printf("...\n");
+    printf("\n");
+    
+    if (waitEvent(URC_FLAG_PING_COMPLETE, timeoutMs / 1000)) {
+        printf("\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("PING RESULTS\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("  Destination:  %s\n", hostname);
+        printf("  Sent:         %d packets\n", gPingSuccess + gPingFailed);
+        printf("  Received:     %d packets\n", gPingSuccess);
+        printf("  Lost:         %d packets", gPingFailed);
+        if (gPingSuccess + gPingFailed > 0) {
+            printf(" (%.1f%% loss)", (float)gPingFailed / (gPingSuccess + gPingFailed) * 100.0f);
+        }
+        printf("\n");
+        
+        if (gPingSuccess > 0) {
+            printf("  Average RTT:  %d ms\n", gPingAvgTime);
+            
+            // Show individual ping times
+            if (gPingCount > 0) {
+                printf("\n");
+                printf("Individual Response Times:\n");
+                for (int i = 0; i < gPingCount && i < MAX_PING_TIMES; i++) {
+                    printf("  Ping #%d: %d ms\n", i + 1, gPingTimes[i]);
+                }
+            }
+        }
+        
+        printf("─────────────────────────────────────────────────\n");
+    } else {
+        printf("\n");
+        printf("WARNING: Ping timeout - no response received\n");
+        printf("─────────────────────────────────────────────────\n");
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void iperfClientExample(void)
+{
+    char input[256];
+    char serverIp[64];
+    int port = 5001;
+    int protocol = 1;  // TCP
+    int duration = 10;
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("iPERF2 CLIENT (Network Throughput Test)\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    if (gIperfRunning) {
+        printf("ERROR: An iPerf test is already running!\n");
+        printf("Use option [4] to stop it first.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, false)) {
+        return;
+    }
+    
+    // Get server IP
+    printf("Enter iPerf server IP address: ");
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\n")] = 0;
+    
+    if (strlen(input) == 0) {
+        printf("ERROR: Server IP is required\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    strncpy(serverIp, input, sizeof(serverIp) - 1);
+    serverIp[sizeof(serverIp) - 1] = '\0';
+    
+    // Get port
+    printf("Enter port (default=5001): ");
+    if (fgets(input, sizeof(input), stdin)) {
+        input[strcspn(input, "\n")] = 0;
+        if (strlen(input) > 0) {
+            port = atoi(input);
+            if (port <= 0 || port > 65535) {
+                printf("Invalid port, using default (5001)\n");
+                port = 5001;
+            }
+        }
+    }
+    
+    // Get protocol
+    printf("Select protocol:\n");
+    printf("  [1] TCP (reliable, default)\n");
+    printf("  [2] UDP (faster, supports bandwidth limit)\n");
+    printf("Enter choice (default=1): ");
+    if (fgets(input, sizeof(input), stdin)) {
+        input[strcspn(input, "\n")] = 0;
+        if (strlen(input) > 0) {
+            protocol = atoi(input);
+            if (protocol != 1 && protocol != 2) {
+                printf("Invalid protocol, using TCP\n");
+                protocol = 1;
+            }
+        }
+    }
+    
+    // Get duration
+    printf("Enter test duration in seconds (default=10): ");
+    if (fgets(input, sizeof(input), stdin)) {
+        input[strcspn(input, "\n")] = 0;
+        if (strlen(input) > 0) {
+            duration = atoi(input);
+            if (duration <= 0 || duration > 300) {
+                printf("Invalid duration, using default (10)\n");
+                duration = 10;
+            }
+        }
+    }
+    
+    printf("\n");
+    printf("Starting iPerf2 client test...\n");
+    printf("  Server:    %s:%d\n", serverIp, port);
+    printf("  Protocol:  %s\n", protocol == 1 ? "TCP" : "UDP");
+    printf("  Duration:  %d seconds\n", duration);
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Convert IP string to uSockIpAddress_t structure
+    uSockIpAddress_t ipAddr;
+    if (uCxStringToIpAddress(serverIp, &ipAddr) != 0) {
+        printf("ERROR: Invalid IP address format: %s\n", serverIp);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Clear output buffer
+    gIperfOutputBuffer[0] = '\0';
+    gIperfRunning = true;
+    
+    // Start iPerf test
+    // Using uCxDiagnosticsIperf7: action, protocol, role, port, report_interval, time_boundary, ip_addr
+    int32_t result = uCxDiagnosticsIperf7(&gUcxHandle, U_IPERF_ACTION_START, 
+                                          protocol, U_ROLE_CLIENT, 
+                                          port, 1, duration, &ipAddr);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to start iPerf test (error code: %d)\n", result);
+        gIperfRunning = false;
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("iPerf test started. Output will appear below:\n");
+    printf("(Test will run for %d seconds)\n", duration);
+    printf("─────────────────────────────────────────────────\n");
+    
+    // Wait for test to complete (duration + 10 second buffer)
+    Sleep((duration + 10) * 1000);
+    
+    if (gIperfRunning) {
+        printf("\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("Test may still be running. Use [4] to stop if needed.\n");
+        printf("─────────────────────────────────────────────────\n");
+    } else {
+        printf("\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("Test completed.\n");
+        printf("─────────────────────────────────────────────────\n");
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void iperfServerExample(void)
+{
+    char input[256];
+    int port = 5001;
+    int protocol = 1;  // TCP
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("iPERF2 SERVER (Listen for Throughput Tests)\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    if (gIperfRunning) {
+        printf("ERROR: An iPerf test is already running!\n");
+        printf("Use option [4] to stop it first.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, false)) {
+        return;
+    }
+    
+    // Get port
+    printf("Enter listen port (default=5001): ");
+    if (fgets(input, sizeof(input), stdin)) {
+        input[strcspn(input, "\n")] = 0;
+        if (strlen(input) > 0) {
+            port = atoi(input);
+            if (port <= 0 || port > 65535) {
+                printf("Invalid port, using default (5001)\n");
+                port = 5001;
+            }
+        }
+    }
+    
+    // Get protocol
+    printf("Select protocol:\n");
+    printf("  [1] TCP (reliable, default)\n");
+    printf("  [2] UDP (faster)\n");
+    printf("Enter choice (default=1): ");
+    if (fgets(input, sizeof(input), stdin)) {
+        input[strcspn(input, "\n")] = 0;
+        if (strlen(input) > 0) {
+            protocol = atoi(input);
+            if (protocol != 1 && protocol != 2) {
+                printf("Invalid protocol, using TCP\n");
+                protocol = 1;
+            }
+        }
+    }
+    
+    printf("\n");
+    printf("Starting iPerf2 server...\n");
+    printf("  Port:      %d\n", port);
+    printf("  Protocol:  %s\n", protocol == 1 ? "TCP" : "UDP");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Clear output buffer
+    gIperfOutputBuffer[0] = '\0';
+    gIperfRunning = true;
+    
+    // Start iPerf server
+    // Using uCxDiagnosticsIperf5: action, protocol, role, port, report_interval
+    int32_t result = uCxDiagnosticsIperf5(&gUcxHandle, U_IPERF_ACTION_START, 
+                                          protocol, U_ROLE_SERVER, 
+                                          port, 1);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to start iPerf server (error code: %d)\n", result);
+        gIperfRunning = false;
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("iPerf server is now listening on port %d\n", port);
+    printf("Use option [4] to stop the server when done.\n");
+    printf("\n");
+    printf("You can now run an iPerf client from another device:\n");
+    printf("  Example: iperf -c <module-ip> -p %d\n", port);
+    printf("─────────────────────────────────────────────────\n");
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void iperfStopExample(void)
+{
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("STOP iPERF TEST\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    if (!gIperfRunning) {
+        printf("No iPerf test is currently running.\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Stopping iPerf test...\n");
+    
+    // Stop iPerf using STOP action
+    int32_t result = uCxDiagnosticsIperf2(&gUcxHandle, U_IPERF_ACTION_STOP, U_PROTOCOL_TYPE_TCP);
+    
+    if (result == 0) {
+        gIperfRunning = false;
+        printf("iPerf test stopped successfully.\n");
+    } else {
+        printf("WARNING: Stop command sent, but may have failed (error: %d)\n", result);
+        gIperfRunning = false;  // Reset flag anyway
+    }
+    
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void dnsLookupExample(void)
+{
+    char input[256];
+    char hostname[128];
+    uSockIpAddress_t ipAddress;
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("DNS LOOKUP (Resolve Hostname to IP Address)\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, false)) {
+        return;
+    }
+    
+    // Get hostname
+    printf("Enter hostname to lookup (e.g., google.com): ");
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\n")] = 0;
+    
+    if (strlen(input) == 0) {
+        strncpy(hostname, "google.com", sizeof(hostname));
+        printf("Using default: %s\n", hostname);
+    } else {
+        strncpy(hostname, input, sizeof(hostname) - 1);
+        hostname[sizeof(hostname) - 1] = '\0';
+    }
+    
+    printf("\n");
+    printf("Looking up %s...\n", hostname);
+    
+    // Perform DNS lookup using socket API
+    int32_t result = uCxSocketGetHostByName(&gUcxHandle, hostname, &ipAddress);
+    
+    if (result == 0) {
+        // Convert IP address to string for display
+        char ipStr[64];
+        uCxIpAddressToString(&ipAddress, ipStr, sizeof(ipStr));
+        
+        printf("\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("DNS LOOKUP SUCCESSFUL\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("  Hostname:     %s\n", hostname);
+        printf("  IP Address:   %s\n", ipStr);
+        printf("  Address Type: %s\n", ipAddress.type == U_SOCK_ADDRESS_TYPE_V4 ? "IPv4" : "IPv6");
+        printf("─────────────────────────────────────────────────\n");
+    } else {
+        printf("\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("DNS LOOKUP FAILED\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("  Hostname:  %s\n", hostname);
+        printf("  Error:     Could not resolve (error code: %d)\n", result);
+        printf("\n");
+        printf("Possible causes:\n");
+        printf("  - Hostname does not exist\n");
+        printf("  - DNS server not reachable\n");
+        printf("  - No internet connectivity\n");
+        printf("  - DNS timeout\n");
+        printf("─────────────────────────────────────────────────\n");
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+// Wrapper for testConnectivity that retrieves current Wi-Fi information
+static void testConnectivityWrapper(void)
+{
+    char gateway[64] = "";
+    char ssid[64] = "Unknown";
+    int32_t rssi = 0;
+    int32_t channel = 0;
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, false)) {
+        return;
+    }
+    
+    // Try to get SSID
+    uCxWifiStationStatus_t wifiStatus;
+    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_SSID, &wifiStatus)) {
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_STR) {
+            strncpy(ssid, wifiStatus.rsp.WifiStatusIdStr.ssid, sizeof(ssid) - 1);
+            ssid[sizeof(ssid) - 1] = '\0';
+        }
+        uCxEnd(&gUcxHandle);
+    }
+    
+    // Try to get RSSI
+    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &wifiStatus)) {
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
+            rssi = wifiStatus.rsp.WifiStatusIdInt.int_val;
+        }
+        uCxEnd(&gUcxHandle);
+    }
+    
+    // Try to get channel
+    if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CHANNEL, &wifiStatus)) {
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
+            channel = wifiStatus.rsp.WifiStatusIdInt.int_val;
+        }
+        uCxEnd(&gUcxHandle);
+    }
+    
+    // Note: Gateway IP is retrieved internally by testConnectivity function
+    // We pass empty string and let it get the gateway itself
+    
+    // Call the actual connectivity test
+    testConnectivity(gateway, ssid, rssi, channel);
+}
+
+// ----------------------------------------------------------------
 // NTP (Network Time Protocol) Helper Functions
 // ----------------------------------------------------------------
 
@@ -8023,6 +8585,7 @@ static void printMenu(void)
                     printf("  [w]     Wi-Fi Station - Scan, connect, status\n");
                     printf("  [o]     Wi-Fi Access Point - Enable, QR code\n");
                     printf("  [n]     Network - Sockets, MQTT, HTTP\n");
+                    printf("  [d]     Network Diagnostics - Ping, iPerf, DNS lookup\n");
                     printf("  [x]     Security - TLS and certificates\n");
                 } else {
                     printf("Wi-Fi FEATURES\n");
@@ -8198,6 +8761,27 @@ static void printMenu(void)
             printf("  [2] IP Geolocation (find country from IP address)\n");
             printf("  [3] Wi-Fi Positioning (locate using Wi-Fi scan)\n");
             printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_DIAGNOSTICS:
+            printf("\n");
+            printf("              NETWORK DIAGNOSTICS (Testing & Troubleshooting)\n");
+            printf("\n");
+            printf("\n");
+            printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("\n");
+            printf("  [1] Ping Test (ICMP echo to host/IP)\n");
+            printf("  [2] iPerf2 Client (throughput test to server)\n");
+            printf("  [3] iPerf2 Server (listen for incoming tests)\n");
+            printf("  [4] Stop iPerf Test (abort running test)\n");
+            printf("  [5] DNS Lookup (resolve hostname to IP)\n");
+            printf("  [6] Connectivity Test (gateway + internet check)\n");
+            printf("\n");
+            if (gIperfRunning) {
+                printf("STATUS: iPerf test is currently running\n");
+                printf("\n");
+            }
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -8595,7 +9179,17 @@ static void handleUserInput(void)
                         gMenuState = MENU_WIFI_FUNCTIONS;
                     }
                     break;
-                case 12:  // Also accept 'l' or 'L' - Toggle UCX logging
+                case 13:  // Also accept 'd' or 'D' - Network Diagnostics
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_DIAGNOSTICS;
+                    }
+                    break;
+                case 12:  // Also accept 'c' or 'C' - List API commands
+                    gMenuState = MENU_API_LIST;
+                    break;
+                case 21:  // Also accept 'l' or 'L' - Toggle UCX logging
                     if (uCxLogIsEnabled()) {
                         uCxLogDisable();
                         printf("UCX logging DISABLED\n");
@@ -8604,9 +9198,6 @@ static void handleUserInput(void)
                         printf("UCX logging ENABLED\n");
                         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Logging re-enabled from menu");
                     }
-                    break;
-                case 13:  // Also accept 'c' or 'C' - List API commands
-                    gMenuState = MENU_API_LIST;
                     break;
                 case 16:  // Also accept 'f' or 'F' - Firmware update
                     if (!gUcxConnected) {
@@ -8873,6 +9464,35 @@ static void handleUserInput(void)
                     break;
                 case 3:
                     wifiPositioningExample();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_DIAGNOSTICS:
+            switch (choice) {
+                case 1:
+                    pingExample();
+                    break;
+                case 2:
+                    iperfClientExample();
+                    break;
+                case 3:
+                    iperfServerExample();
+                    break;
+                case 4:
+                    iperfStopExample();
+                    break;
+                case 5:
+                    dnsLookupExample();
+                    break;
+                case 6:
+                    testConnectivityWrapper();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
