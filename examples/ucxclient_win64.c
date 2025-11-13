@@ -216,6 +216,137 @@ static int32_t gBatteryCccdHandle = -1;            // Battery Level CCCD handle
 static bool gHidNotificationsEnabled = false;      // HID notifications enabled
 static bool gUseBootKeyboard = false;              // True if Boot Keyboard CCCD enabled, false for Regular Keyboard
 
+// GATT Client notification tracking - handles discovered from remote servers
+static int gHeartRateValueHandle = -1;             // Heart Rate Measurement (0x2A37)
+static int gUartTxValueHandle = -1;                // UART TX from server (Notify)
+
+// GATT Client - Current Time Service (CTS)
+static int gCtsClientServiceIndex      = -1;
+static int gCtsClientTimeCharIndex     = -1;
+static int gCtsClientTimeValueHandle   = -1;
+static int gCtsClientTimeCccdHandle    = -1;
+
+// GATT Client - Environmental Sensing Service (ESS)
+static int gEssClientServiceIndex       = -1;
+static int gEssClientTempCharIndex      = -1;
+static int gEssClientTempValueHandle    = -1;
+static int gEssClientTempCccdHandle     = -1;
+static int gEssClientHumCharIndex       = -1;
+static int gEssClientHumValueHandle     = -1;
+static int gEssClientHumCccdHandle      = -1;
+
+// GATT Client - Location & Navigation Service (LNS)
+static int gLnsClientServiceIndex  = -1;
+static int gLnsClientLocCharIndex  = -1;
+static int gLnsClientLocValueHandle = -1;
+static int gLnsClientLocCccdHandle  = -1;
+
+// GATT Client - UART Service (NUS-style)
+static int gUartClientServiceIndex = -1;
+static int gUartClientTxCharIndex  = -1;
+static int gUartClientTxValueHandle = -1;
+static int gUartClientTxCccdHandle  = -1;
+static int gUartClientRxCharIndex  = -1;
+static int gUartClientRxValueHandle = -1;
+
+// GATT Client - u-blox Serial Port Service (SPS)
+static int gSpsClientServiceIndex = -1;
+static int gSpsClientFifoCharIndex  = -1;
+static int gSpsClientFifoValueHandle = -1;
+static int gSpsClientFifoCccdHandle  = -1;
+static int gSpsClientCreditsCharIndex  = -1;
+static int gSpsClientCreditsValueHandle = -1;
+static int gSpsClientCreditsCccdHandle   = -1;
+static int gSpsClientLocalCredits = 10;   // Credits available to send
+static int gSpsClientRemoteCredits = 0;  // Credits received from remote
+static bool gSpsClientFlowControlEnabled = false; // Credit-based flow control
+
+// GATT Client - Battery Service (BAS)
+static int gBasClientServiceIndex = -1;
+static int gBasClientCharIndex    = -1;
+static int gBasClientValueHandle  = -1;
+static int gBasClientCccdHandle   = -1;
+
+// GATT Client - Device Information Service (DIS)
+static int gDisClientServiceIndex = -1;
+static int gDisClientCharCount = 0;
+static struct {
+    uint16_t uuid;
+    int32_t  handle;
+} gDisClientChars[8];
+
+// DIS characteristic UUIDs
+static const uint16_t kDisCharUuids[] = {
+    0x2A29, // Manufacturer Name
+    0x2A24, // Model Number
+    0x2A25, // Serial Number
+    0x2A26, // Firmware Revision
+    0x2A27, // Hardware Revision
+    0x2A28, // Software Revision
+    0x2A23  // System ID
+};
+static const int kDisCharUuidCount = sizeof(kDisCharUuids) / sizeof(kDisCharUuids[0]);
+
+// GATT Server - Location & Navigation Service
+static int32_t gLnsServerServiceHandle = -1;
+static int32_t gLnsServerLocSpeedHandle = -1;
+
+// GATT Server - UART Service (NUS-style)
+static int32_t gUartServerServiceHandle = -1;
+static int32_t gUartServerTxHandle = -1;
+static int32_t gUartServerRxHandle = -1;
+
+// GATT Server - Serial Port Service (SPS - u-blox)
+static int32_t gSpsServerServiceHandle = -1;
+static int32_t gSpsServerFifoHandle = -1;
+static int32_t gSpsServerFifoCccdHandle = -1;
+static int32_t gSpsServerCreditsHandle = -1;
+static int32_t gSpsServerCreditsCccdHandle = -1;
+static bool gSpsServerFifoNotifyEnabled = false;
+static bool gSpsServerCreditsNotifyEnabled = false;
+static bool gSpsServerFlowControlActive = false;
+static int gSpsServerRemoteCredits = 0;  // Credits received from client
+
+// GATT Server - Environmental Sensing Service
+static int32_t gEnvServerServiceHandle = -1;
+static int32_t gEnvServerTempHandle = -1;
+static int32_t gEnvServerHumHandle = -1;
+
+// GATT Server - Current Time Service (CTS Server)
+static int32_t gCtsServerServiceHandle    = -1;
+static int32_t gCtsServerTimeValueHandle  = -1;
+static int32_t gCtsServerTimeCccdHandle   = -1;
+static bool gCtsServerNotificationsEnabled = false;
+static ULONGLONG gCtsServerLastTick = 0;
+
+// 128-bit UUIDs for UART service & chars (Nordic-like)
+static const uint8_t kUartServiceUuid[16] = {
+    0x6E,0x40,0x00,0x01,0xB5,0xA3,0xF3,0x93,
+    0xE0,0xA9,0xE5,0x0E,0x24,0xDC,0xCA,0x9E
+};
+static const uint8_t kUartTxCharUuid[16] = {
+    0x6E,0x40,0x00,0x03,0xB5,0xA3,0xF3,0x93,
+    0xE0,0xA9,0xE5,0x0E,0x24,0xDC,0xCA,0x9E
+};
+static const uint8_t kUartRxCharUuid[16] = {
+    0x6E,0x40,0x00,0x02,0xB5,0xA3,0xF3,0x93,
+    0xE0,0xA9,0xE5,0x0E,0x24,0xDC,0xCA,0x9E
+};
+
+// 128-bit UUIDs for u-blox SPS service & characteristics
+static const uint8_t kSpsServiceUuid[16] = {
+    0x24,0x56,0xe1,0xb9,0x26,0xe2,0x8f,0x83,
+    0xe7,0x44,0xf3,0x4f,0x01,0xe9,0xd7,0x01
+};
+static const uint8_t kSpsFifoCharUuid[16] = {
+    0x24,0x56,0xe1,0xb9,0x26,0xe2,0x8f,0x83,
+    0xe7,0x44,0xf3,0x4f,0x03,0xe9,0xd7,0x01
+};
+static const uint8_t kSpsCreditsCharUuid[16] = {
+    0x24,0x56,0xe1,0xb9,0x26,0xe2,0x8f,0x83,
+    0xe7,0x44,0xf3,0x4f,0x04,0xe9,0xd7,0x01
+};
+
 // Bluetooth state tracking
 static bool gBluetoothAdvertising = false;         // Advertising/discoverable state
 static char gBluetoothLocalAddress[18] = "";       // Local BT address (XX:XX:XX:XX:XX:XX)
@@ -539,6 +670,15 @@ static void gattServerSetCharacteristic(void);
 static void gattServerSendNotification(void);
 static void gattServerSetupHeartbeat(void);
 static void gattServerSetupHidKeyboard(void);
+static void gattServerSetupBatteryOnly(void);
+static void gattServerSetupEnvSensing(void);
+static void gattServerSetupUartService(void);
+static void gattServerSetupSpsService(void);
+static void gattServerSetupLocationService(void);
+static void gattClientReadCurrentTime(void);
+static void gattServerSetupCtsService(void);
+static void ctsNotifyIfEnabled(void);
+static size_t ctsBuildTimePayload(uint8_t out[10]);
 static void gattServerSendKeyPress(void);
 static void gattServerSendMediaControl(void);
 static void gattServerSendHelloWorld(void);
@@ -557,6 +697,45 @@ static void gattServerSendKeyPress(void);
 static void gattServerSendMediaControl(void);
 static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uOptions_t options);
 static DWORD WINAPI heartbeatThread(LPVOID lpParam);
+static void gattClientNotificationUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
+static void handleHeartRateNotification(int connHandle, const uint8_t *data, size_t len);
+static void handleUartRxNotification(int connHandle, const uint8_t *data, size_t len);
+static void ctsParseAndPrint(const uint8_t *data, size_t len);
+static bool gattClientFindCtsHandles(void);
+static void gattClientReadCtsTime(void);
+static void gattClientSubscribeCts(void);
+static void gattClientCtsExample(void);
+static void essParseTemperature(const uint8_t *data, size_t len);
+static void essParseHumidity(const uint8_t *data, size_t len);
+static bool gattClientFindEssHandles(void);
+static void gattClientReadEssValues(void);
+static void gattClientSubscribeEss(void);
+static void gattClientEssExample(void);
+static void lnsParseLocation(const uint8_t *data, size_t len);
+static bool gattClientFindLnsHandles(void);
+static void gattClientReadLns(void);
+static void gattClientSubscribeLns(void);
+static void gattClientLnsExample(void);
+static void uartParseRxData(const uint8_t *data, size_t len);
+static bool gattClientFindUartHandles(void);
+static void gattClientSubscribeUart(void);
+static void gattClientUartSend(const char *msg);
+static void gattClientUartExample(void);
+static void spsParseFifoData(const uint8_t *data, size_t len);
+static void spsParseCredits(const uint8_t *data, size_t len);
+static bool gattClientFindSpsHandles(void);
+static void gattClientSubscribeSps(bool enableFlowControl);
+static void gattClientSpsSend(const char *msg);
+static void gattClientSpsSendCredits(int8_t credits);
+static void gattClientSpsExample(void);
+static void basParseBatteryLevel(const uint8_t *data, size_t len);
+static bool gattClientFindBasHandles(void);
+static void gattClientReadBattery(void);
+static void gattClientSubscribeBattery(void);
+static void gattClientBasExample(void);
+static bool gattClientFindDisHandles(void);
+static void disReadAndPrint(uint16_t uuid, int32_t handle);
+static void gattClientDisExample(void);
 static void bluetoothFunctionsMenu(void);
 static void wifiFunctionsMenu(void);
 static void socketMenu(void);
@@ -2583,6 +2762,67 @@ static void spsReadData(void)
 // GATT CLIENT OPERATIONS
 // ============================================================================
 
+// ----------------------------------------------------------------
+// GATT Helper Functions
+// ----------------------------------------------------------------
+
+// Helper: match 16-bit service UUID in stored services (big-endian in gGattServices)
+static int findServiceByUuid16(uint16_t uuid16)
+{
+    for (int i = 0; i < gGattServiceCount; i++) {
+        if (gGattServices[i].uuidLength == 2) {
+            uint16_t sUuid = (gGattServices[i].uuid[0] << 8) | gGattServices[i].uuid[1];
+            if (sUuid == uuid16) {
+                return i; // index into gGattServices
+            }
+        }
+    }
+    return -1;
+}
+
+// Helper: match 16-bit characteristic inside a given service
+static int findCharByUuid16InService(int serviceIndex, uint16_t uuid16)
+{
+    if (serviceIndex < 0 || serviceIndex >= gGattServiceCount) {
+        return -1;
+    }
+
+    GattService_t *svc = &gGattServices[serviceIndex];
+
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+        if (ch->connHandle != svc->connHandle) {
+            continue;
+        }
+        if (ch->valueHandle < svc->startHandle || ch->valueHandle > svc->endHandle) {
+            continue;
+        }
+        if (ch->uuidLength == 2) {
+            uint16_t cUuid = (ch->uuid[0] << 8) | ch->uuid[1];
+            if (cUuid == uuid16) {
+                return i; // index into gGattCharacteristics
+            }
+        }
+    }
+    return -1;
+}
+
+// Helper: match 128-bit service UUID
+static int findServiceByUuid128(const uint8_t uuid[16])
+{
+    for (int i = 0; i < gGattServiceCount; i++) {
+        if (gGattServices[i].uuidLength == 16 &&
+            memcmp(gGattServices[i].uuid, uuid, 16) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// ----------------------------------------------------------------
+// GATT Connection Management
+// ----------------------------------------------------------------
+
 // Sync connection handle only (no discovery) - for GATT Server
 static void syncGattConnectionOnly(void)
 {
@@ -4005,6 +4245,21 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
         return;
     }
     
+    // Check if this is a CCCD write for CTS (Current Time Service)
+    if (gCtsServerTimeCccdHandle > 0 && value_handle == gCtsServerTimeCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[CTS] Notifications ENABLED\n");
+                gCtsServerNotificationsEnabled = true;
+            } else {
+                printf("\n[CTS] Notifications DISABLED\n");
+                gCtsServerNotificationsEnabled = false;
+            }
+        }
+        return;
+    }
+    
     // Unknown CCCD write - log it for debugging
     if (value->length >= 2) {
         uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
@@ -4055,6 +4310,106 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                 }
             }
         }
+    }
+    
+    // Handle UART RX writes
+    if (gUartServerRxHandle > 0 && value_handle == gUartServerRxHandle) {
+        printf("\n[UART RX] Data from conn=%d: ", conn_handle);
+        for (size_t i = 0; i < value->length; i++) {
+            uint8_t b = value->pData[i];
+            if (b >= 32 && b <= 126) putchar(b);
+            else printf("\\x%02X", b);
+        }
+        printf("\n");
+        return;
+    }
+
+    // Handle SPS FIFO CCCD writes
+    if (gSpsServerFifoCccdHandle > 0 && value_handle == gSpsServerFifoCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[SPS FIFO] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gSpsServerFifoNotifyEnabled = true;
+            } else {
+                printf("\n[SPS FIFO] Client disabled notifications\n");
+                gSpsServerFifoNotifyEnabled = false;
+            }
+        }
+        return;
+    }
+
+    // Handle SPS Credits CCCD writes
+    if (gSpsServerCreditsCccdHandle > 0 && value_handle == gSpsServerCreditsCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[SPS Credits] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gSpsServerCreditsNotifyEnabled = true;
+            } else {
+                printf("\n[SPS Credits] Client disabled notifications\n");
+                gSpsServerCreditsNotifyEnabled = false;
+            }
+        }
+        return;
+    }
+
+    // Handle SPS FIFO data writes
+    if (gSpsServerFifoHandle > 0 && value_handle == gSpsServerFifoHandle) {
+        printf("\n[SPS FIFO RX] Data from conn=%d: ", conn_handle);
+        for (size_t i = 0; i < value->length; i++) {
+            uint8_t b = value->pData[i];
+            if (b >= 32 && b <= 126) putchar(b);
+            else printf("\\x%02X", b);
+        }
+        printf("\n");
+        
+        // If flow control active, send credits back
+        if (gSpsServerFlowControlActive && gSpsServerCreditsNotifyEnabled) {
+            int8_t credits = 1;  // Give 1 credit per received message
+            int32_t result = uCxGattServerSendNotification(&gUcxHandle, conn_handle,
+                                                           gSpsServerCreditsHandle, 
+                                                           (uint8_t*)&credits, 1);
+            if (result == 0) {
+                printf("[SPS] Sent 1 credit to client\n");
+            }
+        }
+        return;
+    }
+
+    // Handle SPS Credits writes
+    if (gSpsServerCreditsHandle > 0 && value_handle == gSpsServerCreditsHandle) {
+        if (value->length >= 1) {
+            int8_t credits = (int8_t)value->pData[0];
+            
+            if (credits == -1) {
+                printf("\n[SPS Credits] Client DISCONNECTED flow control (credits=-1)\n");
+                gSpsServerFlowControlActive = false;
+                gSpsServerRemoteCredits = 0;
+            } else if (credits > 0) {
+                gSpsServerRemoteCredits += credits;
+                printf("\n[SPS Credits] Received %d credits (total: %d)\n", 
+                       credits, gSpsServerRemoteCredits);
+                
+                // First credit received = flow control activated
+                if (!gSpsServerFlowControlActive) {
+                    printf("[SPS] Flow control ACTIVATED\n");
+                    gSpsServerFlowControlActive = true;
+                    
+                    // Send credits back to establish bidirectional flow control
+                    if (gSpsServerCreditsNotifyEnabled) {
+                        int8_t responseCredits = 10;
+                        int32_t result = uCxGattServerSendNotification(&gUcxHandle, conn_handle,
+                                                                       gSpsServerCreditsHandle,
+                                                                       (uint8_t*)&responseCredits, 1);
+                        if (result == 0) {
+                            printf("[SPS] Sent %d credits to client (accepting flow control)\n", responseCredits);
+                        }
+                    }
+                }
+            }
+        }
+        return;
     }
 }
 
@@ -4128,6 +4483,1283 @@ static DWORD WINAPI heartbeatThread(LPVOID lpParam)
 }
 
 // ----------------------------------------------------------------
+// GATT Client Notification Handlers
+// ----------------------------------------------------------------
+
+// Wrapper to adapt UCX URC signature to our central dispatcher
+// Central notification/indication dispatcher - called from UCX URC callbacks
+// Handles both GATT notifications and indications from remote GATT servers
+static void gattClientNotificationUrc(struct uCxHandle *puCxHandle,
+                                      int32_t conn_handle,
+                                      int32_t value_handle,
+                                      uByteArray_t *hex_data)
+{
+    (void)puCxHandle;  // Unused
+    
+    printf("\n[GATT Notify/Indicate] conn=%d handle=0x%04X len=%zu\n",
+           conn_handle, value_handle, hex_data->length);
+
+    // HEART RATE ---------------------------------------------------
+    if (value_handle == gHeartRateValueHandle) {
+        handleHeartRateNotification(conn_handle, hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // UART RX ------------------------------------------------------
+    if (value_handle == gUartTxValueHandle) {
+        handleUartRxNotification(conn_handle, hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // CURRENT TIME SERVICE (CTS) -----------------------------------
+    if (value_handle == gCtsClientTimeValueHandle) {
+        ctsParseAndPrint(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // ENVIRONMENTAL SENSING (ESS) - Temperature --------------------
+    if (value_handle == gEssClientTempValueHandle) {
+        essParseTemperature(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // ENVIRONMENTAL SENSING (ESS) - Humidity -----------------------
+    if (value_handle == gEssClientHumValueHandle) {
+        essParseHumidity(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // LOCATION & NAVIGATION SERVICE (LNS) --------------------------
+    if (value_handle == gLnsClientLocValueHandle) {
+        lnsParseLocation(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // UART SERVICE (NUS) - TX (Notify) -----------------------------
+    if (value_handle == gUartClientTxValueHandle) {
+        uartParseRxData(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // SERIAL PORT SERVICE (SPS) - FIFO (Notify/Indicate) -----------
+    if (value_handle == gSpsClientFifoValueHandle) {
+        spsParseFifoData(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // SERIAL PORT SERVICE (SPS) - Credits (Notify/Indicate) --------
+    if (value_handle == gSpsClientCreditsValueHandle) {
+        spsParseCredits(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // BATTERY SERVICE (BAS) - Battery Level ------------------------
+    if (value_handle == gBasClientValueHandle) {
+        basParseBatteryLevel(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // Unknown characteristic ---------------------------------------
+    printf("[GATT Notify] Unknown notification source (handle=0x%04X)\n",
+           value_handle);
+
+    printf("Data:");
+    for (size_t i = 0; i < hex_data->length; i++)
+        printf(" %02X", hex_data->pData[i]);
+    printf("\n");
+}
+
+// Handle Heart Rate Measurement notifications (0x2A37)
+static void handleHeartRateNotification(int connHandle, const uint8_t *data, size_t len)
+{
+    (void)connHandle;
+    
+    if (len < 2) {
+        printf("[Heart Rate] Invalid data length: %zu\n", len);
+        return;
+    }
+    
+    uint8_t flags = data[0];
+    bool is16bit = (flags & 0x01) != 0;
+    
+    uint16_t bpm;
+    if (is16bit && len >= 3) {
+        bpm = data[1] | (data[2] << 8);
+    } else {
+        bpm = data[1];
+    }
+    
+    printf("[Heart Rate] BPM: %u\n", bpm);
+}
+
+// Handle UART RX notifications (data from server TX characteristic)
+static void handleUartRxNotification(int connHandle, const uint8_t *data, size_t len)
+{
+    (void)connHandle;
+    
+    printf("[UART RX] Received %zu bytes: ", len);
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] >= 32 && data[i] < 127) {
+            printf("%c", data[i]);
+        } else {
+            printf("[0x%02X]", data[i]);
+        }
+    }
+    printf("\n");
+}
+
+// ----------------------------------------------------------------
+// CTS (Current Time Service) Client Functions
+// ----------------------------------------------------------------
+
+// Parse and display CTS time packet
+static void ctsParseAndPrint(const uint8_t *data, size_t len)
+{
+    if (len < 10) {
+        printf("[CTS] Invalid time packet (%zu bytes)\n", len);
+        return;
+    }
+
+    uint16_t year   = data[0] | (data[1] << 8);
+    uint8_t  month  = data[2];
+    uint8_t  day    = data[3];
+    uint8_t  hour   = data[4];
+    uint8_t  minute = data[5];
+    uint8_t  second = data[6];
+    uint8_t  dow    = data[7];   // 1 = Monday … 7 = Sunday
+
+    printf("[CTS] %04u-%02u-%02u  %02u:%02u:%02u  (DoW=%u)\n",
+           year, month, day, hour, minute, second, dow);
+}
+
+// Find CTS service and characteristic handles
+static bool gattClientFindCtsHandles()
+{
+    gCtsClientServiceIndex    = -1;
+    gCtsClientTimeCharIndex   = -1;
+    gCtsClientTimeValueHandle = -1;
+    gCtsClientTimeCccdHandle  = -1;
+
+    // 1) Look for service 0x1805
+    gCtsClientServiceIndex = findServiceByUuid16(0x1805);
+    if (gCtsClientServiceIndex < 0) {
+        printf("[CTS] Service 0x1805 not found.\n");
+        return false;
+    }
+
+    // 2) Look for characteristic 0x2A2B
+    gCtsClientTimeCharIndex = findCharByUuid16InService(gCtsClientServiceIndex, 0x2A2B);
+    if (gCtsClientTimeCharIndex < 0) {
+        printf("[CTS] Characteristic 0x2A2B not found.\n");
+        return false;
+    }
+
+    gCtsClientTimeValueHandle = gGattCharacteristics[gCtsClientTimeCharIndex].valueHandle;
+
+    // 3) CCCD is valueHandle + 1 (typical)
+    gCtsClientTimeCccdHandle = gCtsClientTimeValueHandle + 1;
+
+    printf("[CTS] Found time value handle=0x%04X  CCCD=0x%04X\n",
+           gCtsClientTimeValueHandle, gCtsClientTimeCccdHandle);
+
+    return true;
+}
+
+// Read current time once
+static void gattClientReadCtsTime()
+{
+    if (gCtsClientTimeValueHandle < 0) {
+        printf("[CTS] Value handle not set.\n");
+        return;
+    }
+
+    uint8_t buf[20];
+    uByteArray_t value = { .pData = buf, .length = 0 };
+
+    int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                       gCurrentGattConnHandle,
+                                       gCtsClientTimeValueHandle,
+                                       &value);
+
+    if (r < 0) {
+        printf("[CTS] Read failed (%d)\n", r);
+        return;
+    }
+
+    printf("[CTS] Read %zu bytes\n", value.length);
+    ctsParseAndPrint(value.pData, value.length);
+
+    uCxEnd(&gUcxHandle);
+}
+
+// Subscribe to time notifications
+static void gattClientSubscribeCts()
+{
+    if (gCtsClientTimeCccdHandle < 0) {
+        printf("[CTS] CCCD handle invalid\n");
+        return;
+    }
+
+    uint8_t enableNotify[2] = {0x01, 0x00};
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gCtsClientTimeCccdHandle,
+                                        enableNotify,
+                                        sizeof(enableNotify));
+    if (r < 0) {
+        printf("[CTS] Failed to write CCCD (%d)\n", r);
+        return;
+    }
+
+    printf("[CTS] Notifications ENABLED\n\n");
+}
+
+// Complete CTS client example (discover, read, subscribe)
+static void gattClientCtsExample()
+{
+    printf("\n--- GATT Client: Current Time Service (CTS) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection.\n");
+        return;
+    }
+
+    // 1. Discover services + chars
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // 2. Locate CTS
+    if (!gattClientFindCtsHandles()) {
+        return;
+    }
+
+    // 3. Read once
+    gattClientReadCtsTime();
+
+    // 4. Subscribe to updates
+    gattClientSubscribeCts();
+
+    printf("CTS Client running. Time will update automatically.\n\n");
+}
+
+// ----------------------------------------------------------------
+// ESS (Environmental Sensing Service) Client Functions
+// ----------------------------------------------------------------
+
+// Parse temperature notification (0x2A6E)
+static void essParseTemperature(const uint8_t *data, size_t len)
+{
+    if (len < 2) {
+        printf("[ESS] Invalid temperature packet\n");
+        return;
+    }
+
+    int16_t raw = data[0] | (data[1] << 8);
+    float tempC = raw / 100.0f;
+
+    printf("[ESS] Temperature: %.2f °C\n", tempC);
+}
+
+// Parse humidity notification (0x2A6F)
+static void essParseHumidity(const uint8_t *data, size_t len)
+{
+    if (len < 2) {
+        printf("[ESS] Invalid humidity packet\n");
+        return;
+    }
+
+    uint16_t raw = data[0] | (data[1] << 8);
+    float hum = raw / 100.0f;
+
+    printf("[ESS] Humidity: %.2f %%\n", hum);
+}
+
+// Find ESS service and characteristic handles
+static bool gattClientFindEssHandles()
+{
+    gEssClientServiceIndex    = -1;
+    gEssClientTempValueHandle = -1;
+    gEssClientHumValueHandle  = -1;
+
+    // 1) Service 0x181A
+    gEssClientServiceIndex = findServiceByUuid16(0x181A);
+    if (gEssClientServiceIndex < 0) {
+        printf("[ESS] Service 0x181A not found.\n");
+        return false;
+    }
+
+    // 2) Temp characteristic 0x2A6E
+    gEssClientTempCharIndex = findCharByUuid16InService(gEssClientServiceIndex, 0x2A6E);
+    if (gEssClientTempCharIndex >= 0) {
+        gEssClientTempValueHandle = gGattCharacteristics[gEssClientTempCharIndex].valueHandle;
+        gEssClientTempCccdHandle = gEssClientTempValueHandle + 1;
+        printf("[ESS] Temp: handle=0x%04X, CCCD=0x%04X\n",
+               gEssClientTempValueHandle, gEssClientTempCccdHandle);
+    }
+
+    // 3) Humidity characteristic 0x2A6F
+    gEssClientHumCharIndex = findCharByUuid16InService(gEssClientServiceIndex, 0x2A6F);
+    if (gEssClientHumCharIndex >= 0) {
+        gEssClientHumValueHandle = gGattCharacteristics[gEssClientHumCharIndex].valueHandle;
+        gEssClientHumCccdHandle = gEssClientHumValueHandle + 1;
+        printf("[ESS] Hum:  handle=0x%04X, CCCD=0x%04X\n",
+               gEssClientHumValueHandle, gEssClientHumCccdHandle);
+    }
+
+    if (gEssClientTempValueHandle < 0 && gEssClientHumValueHandle < 0) {
+        printf("[ESS] No valid characteristics found.\n");
+        return false;
+    }
+
+    return true;
+}
+
+// Read temperature and humidity once
+static void gattClientReadEssValues()
+{
+    uint8_t buf[20];
+    uByteArray_t value = { .pData = buf, .length = 0 };
+
+    // Temperature
+    if (gEssClientTempValueHandle > 0) {
+        int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                           gCurrentGattConnHandle,
+                                           gEssClientTempValueHandle,
+                                           &value);
+
+        if (r >= 0) {
+            essParseTemperature(buf, value.length);
+            uCxEnd(&gUcxHandle);
+        }
+    }
+
+    // Humidity
+    if (gEssClientHumValueHandle > 0) {
+        value.length = 0;
+        int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                           gCurrentGattConnHandle,
+                                           gEssClientHumValueHandle,
+                                           &value);
+
+        if (r >= 0) {
+            essParseHumidity(buf, value.length);
+            uCxEnd(&gUcxHandle);
+        }
+    }
+}
+
+// Subscribe to ESS notifications
+static void gattClientSubscribeEss()
+{
+    uint8_t notifyEnable[2] = {0x01, 0x00};
+
+    if (gEssClientTempCccdHandle > 0) {
+        uCxGattClientWriteNoRsp(&gUcxHandle,
+                                gCurrentGattConnHandle,
+                                gEssClientTempCccdHandle,
+                                notifyEnable, 2);
+        printf("[ESS] Temperature notifications ENABLED\n");
+    }
+
+    if (gEssClientHumCccdHandle > 0) {
+        uCxGattClientWriteNoRsp(&gUcxHandle,
+                                gCurrentGattConnHandle,
+                                gEssClientHumCccdHandle,
+                                notifyEnable, 2);
+        printf("[ESS] Humidity notifications ENABLED\n");
+    }
+}
+
+// Complete ESS client example
+static void gattClientEssExample()
+{
+    printf("\n--- GATT Client: Environmental Sensing Service (ESS) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection.\n");
+        return;
+    }
+
+    // Step 1: Discover everything
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // Step 2: Find Temperature/Humidity
+    if (!gattClientFindEssHandles())
+        return;
+
+    // Step 3: Read once
+    gattClientReadEssValues();
+
+    // Step 4: Subscribe to notifications
+    gattClientSubscribeEss();
+
+    printf("ESS Client running...\n");
+    printf("Live Temperature + Humidity will appear as notifications.\n\n");
+}
+
+// ----------------------------------------------------------------
+// LNS (Location & Navigation Service) Client Functions
+// ----------------------------------------------------------------
+
+// Parse LNS location notification (0x2A67)
+static void lnsParseLocation(const uint8_t *data, size_t len)
+{
+    if (len < 10) {
+        printf("[LNS] Invalid packet (%zu bytes)\n", len);
+        return;
+    }
+
+    uint16_t flags = data[0] | (data[1] << 8);
+
+    int32_t latRaw = data[2] | (data[3] << 8) |
+                     (data[4] << 16) | (data[5] << 24);
+
+    int32_t lonRaw = data[6] | (data[7] << 8) |
+                     (data[8] << 16) | (data[9] << 24);
+
+    double lat = latRaw / 1e7;
+    double lon = lonRaw / 1e7;
+
+    printf("[LNS] Lat=%.7f  Lon=%.7f  (flags=0x%04X)\n", lat, lon, flags);
+}
+
+// Find LNS service and characteristic handles
+static bool gattClientFindLnsHandles()
+{
+    gLnsClientServiceIndex   = -1;
+    gLnsClientLocCharIndex   = -1;
+    gLnsClientLocValueHandle = -1;
+
+    // 1) Find LNS service (0x1819)
+    gLnsClientServiceIndex = findServiceByUuid16(0x1819);
+    if (gLnsClientServiceIndex < 0) {
+        printf("[LNS] Service 0x1819 not found.\n");
+        return false;
+    }
+
+    // 2) Find Location and Speed (0x2A67)
+    gLnsClientLocCharIndex = findCharByUuid16InService(gLnsClientServiceIndex, 0x2A67);
+    if (gLnsClientLocCharIndex < 0) {
+        printf("[LNS] Characteristic 0x2A67 not found.\n");
+        return false;
+    }
+
+    gLnsClientLocValueHandle = gGattCharacteristics[gLnsClientLocCharIndex].valueHandle;
+    gLnsClientLocCccdHandle = gLnsClientLocValueHandle + 1;
+
+    printf("[LNS] Location+Speed handle=0x%04X  CCCD=0x%04X\n",
+           gLnsClientLocValueHandle, gLnsClientLocCccdHandle);
+
+    return true;
+}
+
+// Read LNS location once
+static void gattClientReadLns()
+{
+    if (gLnsClientLocValueHandle < 0) {
+        printf("[LNS] Value handle not valid.\n");
+        return;
+    }
+
+    uint8_t buf[32];
+    uByteArray_t value = { .pData = buf, .length = 0 };
+
+    int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                       gCurrentGattConnHandle,
+                                       gLnsClientLocValueHandle,
+                                       &value);
+
+    if (r < 0) {
+        printf("[LNS] Read error (%d)\n", r);
+        return;
+    }
+
+    printf("[LNS] Read %zu bytes\n", value.length);
+    lnsParseLocation(value.pData, value.length);
+
+    uCxEnd(&gUcxHandle);
+}
+
+// Subscribe to LNS notifications
+static void gattClientSubscribeLns()
+{
+    if (gLnsClientLocCccdHandle < 0) {
+        printf("[LNS] CCCD invalid\n");
+        return;
+    }
+
+    uint8_t enableNotify[2] = {0x01, 0x00};
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gLnsClientLocCccdHandle,
+                                        enableNotify,
+                                        sizeof(enableNotify));
+
+    if (r < 0) {
+        printf("[LNS] Could not enable notifications (%d)\n", r);
+        return;
+    }
+
+    printf("[LNS] Notifications ENABLED\n\n");
+}
+
+// Complete LNS client example
+static void gattClientLnsExample()
+{
+    printf("\n--- GATT Client: Location and Navigation (LNS) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    // 1) Discover services & characteristics
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // 2) Find handles
+    if (!gattClientFindLnsHandles())
+        return;
+
+    // 3) Read once
+    gattClientReadLns();
+
+    // 4) Subscribe
+    gattClientSubscribeLns();
+
+    printf("LNS Client running.\n");
+    printf("Latitude / Longitude updates will appear automatically.\n\n");
+}
+
+// ============================================================================
+// GATT CLIENT - UART SERVICE (NUS-STYLE)
+// ============================================================================
+
+// Parse incoming UART TX (Notify) data from remote server
+static void uartParseRxData(const uint8_t *data, size_t len)
+{
+    printf("[UART RX] %.*s\n", (int)len, data);
+}
+
+// Discover UART service and TX/RX characteristic handles
+static bool gattClientFindUartHandles(void)
+{
+    gUartClientServiceIndex = -1;
+    gUartClientTxValueHandle = -1;
+    gUartClientRxValueHandle = -1;
+
+    // 1) Find the 128-bit NUS service
+    gUartClientServiceIndex = findServiceByUuid128(kUartServiceUuid);
+    if (gUartClientServiceIndex < 0) {
+        printf("[UART] Service not found (UUID: 6E400001-...)\n");
+        return false;
+    }
+
+    printf("[UART] Found service at index %d\n", gUartClientServiceIndex);
+
+    // 2) Find TX (Notify) characteristic
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+
+        if (ch->connHandle != gGattServices[gUartClientServiceIndex].connHandle)
+            continue;
+
+        if (ch->uuidLength == 16 &&
+            memcmp(ch->uuid, kUartTxCharUuid, 16) == 0)
+        {
+            gUartClientTxCharIndex   = i;
+            gUartClientTxValueHandle = ch->valueHandle;
+            gUartClientTxCccdHandle  = ch->valueHandle + 1;
+
+            printf("[UART] TX Notify handle=0x%04X CCCD=0x%04X\n",
+                   gUartClientTxValueHandle, gUartClientTxCccdHandle);
+        }
+    }
+
+    // 3) Find RX (WriteNoRsp) characteristic
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+
+        if (ch->connHandle != gGattServices[gUartClientServiceIndex].connHandle)
+            continue;
+
+        if (ch->uuidLength == 16 &&
+            memcmp(ch->uuid, kUartRxCharUuid, 16) == 0)
+        {
+            gUartClientRxCharIndex   = i;
+            gUartClientRxValueHandle = ch->valueHandle;
+
+            printf("[UART] RX Write handle=0x%04X\n",
+                   gUartClientRxValueHandle);
+        }
+    }
+
+    if (gUartClientTxValueHandle < 0 || gUartClientRxValueHandle < 0) {
+        printf("[UART] Missing TX or RX characteristic\n");
+        return false;
+    }
+
+    return true;
+}
+
+// Subscribe to UART TX notifications (enable CCCD)
+static void gattClientSubscribeUart(void)
+{
+    if (gUartClientTxCccdHandle < 0) {
+        printf("[UART] No valid TX CCCD handle\n");
+        return;
+    }
+
+    uint8_t cccd[2] = {0x01, 0x00};  // Enable notifications
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gUartClientTxCccdHandle,
+                                        cccd, 2);
+
+    if (r < 0) {
+        printf("[UART] Failed to enable notifications (error %d)\n", r);
+        return;
+    }
+
+    printf("[UART] Notifications ENABLED\n");
+}
+
+// Send data to remote UART server (Write Without Response)
+static void gattClientUartSend(const char *msg)
+{
+    if (gUartClientRxValueHandle < 0) {
+        printf("[UART] RX handle invalid\n");
+        return;
+    }
+
+    size_t len = strlen(msg);
+
+    printf("[UART TX] Sending: %s\n", msg);
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gUartClientRxValueHandle,
+                                        (const uint8_t *)msg,
+                                        (int32_t)len);
+    if (r < 0) {
+        printf("[UART] Send failed (error %d)\n", r);
+        return;
+    }
+}
+
+// Complete UART client example with interactive send loop
+static void gattClientUartExample(void)
+{
+    printf("\n--- GATT Client: UART Service (NUS-style) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    // 1. Discover services/characteristics
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // 2. Find UART handles
+    if (!gattClientFindUartHandles())
+        return;
+
+    // 3. Subscribe to TX notifications
+    gattClientSubscribeUart();
+
+    printf("[UART] Client ready\n");
+    printf("Incoming data will appear as [UART RX] messages\n\n");
+
+    // 4. Interactive send loop
+    while (1) {
+        char msg[256];
+        printf("Enter text to send (or 'exit'): ");
+        fflush(stdout);
+
+        if (!fgets(msg, sizeof(msg), stdin))
+            break;
+
+        msg[strcspn(msg, "\r\n")] = 0;  // Strip newline
+
+        if (strcmp(msg, "exit") == 0)
+            break;
+
+        if (strlen(msg) > 0) {
+            gattClientUartSend(msg);
+        }
+    }
+
+    printf("[UART] Client finished\n");
+}
+
+// ============================================================================
+// GATT CLIENT - SERIAL PORT SERVICE (SPS - u-blox)
+// ============================================================================
+
+// Parse SPS FIFO data notification (similar to UART RX)
+static void spsParseFifoData(const uint8_t *data, size_t len)
+{
+    if (len == 0) {
+        return;
+    }
+
+    printf("[SPS FIFO RX] ");
+    for (size_t i = 0; i < len; i++) {
+        if (data[i] >= 32 && data[i] < 127) {
+            putchar(data[i]);
+        } else {
+            printf("\\x%02X", data[i]);
+        }
+    }
+    printf("\n");
+}
+
+// Parse SPS credits notification
+static void spsParseCredits(const uint8_t *data, size_t len)
+{
+    if (len < 1) {
+        printf("[SPS] Invalid credits packet\n");
+        return;
+    }
+
+    int8_t credits = (int8_t)data[0];
+    
+    if (credits == -1) {
+        printf("[SPS] Flow control DISCONNECTED (credits=-1)\n");
+        gSpsClientFlowControlEnabled = false;
+        gSpsClientRemoteCredits = 0;
+        return;
+    }
+
+    gSpsClientRemoteCredits += credits;
+    printf("[SPS] Credits received: %d (total remote credits: %d)\n", 
+           credits, gSpsClientRemoteCredits);
+}
+
+// Discover SPS service and FIFO/Credits characteristic handles
+static bool gattClientFindSpsHandles(void)
+{
+    gSpsClientServiceIndex = -1;
+    gSpsClientFifoValueHandle = -1;
+    gSpsClientCreditsValueHandle = -1;
+
+    // 1) Find the 128-bit SPS service (0x2456e1b9...01e9d701)
+    gSpsClientServiceIndex = findServiceByUuid128(kSpsServiceUuid);
+    if (gSpsClientServiceIndex < 0) {
+        printf("[SPS] Service not found (UUID: 2456e1b9-...)\n");
+        return false;
+    }
+
+    printf("[SPS] Found service at index %d\n", gSpsClientServiceIndex);
+
+    // 2) Find FIFO characteristic (0x2456e1b9...03e9d701)
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+
+        if (ch->connHandle != gGattServices[gSpsClientServiceIndex].connHandle)
+            continue;
+
+        if (ch->uuidLength == 16 &&
+            memcmp(ch->uuid, kSpsFifoCharUuid, 16) == 0)
+        {
+            gSpsClientFifoCharIndex   = i;
+            gSpsClientFifoValueHandle = ch->valueHandle;
+            gSpsClientFifoCccdHandle  = ch->valueHandle + 1;
+
+            printf("[SPS] FIFO handle=0x%04X CCCD=0x%04X\n",
+                   gSpsClientFifoValueHandle, gSpsClientFifoCccdHandle);
+        }
+    }
+
+    // 3) Find Credits characteristic (0x2456e1b9...04e9d701) - MANDATORY per spec
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+
+        if (ch->connHandle != gGattServices[gSpsClientServiceIndex].connHandle)
+            continue;
+
+        if (ch->uuidLength == 16 &&
+            memcmp(ch->uuid, kSpsCreditsCharUuid, 16) == 0)
+        {
+            gSpsClientCreditsCharIndex   = i;
+            gSpsClientCreditsValueHandle = ch->valueHandle;
+            gSpsClientCreditsCccdHandle  = ch->valueHandle + 1;
+
+            printf("[SPS] Credits handle=0x%04X CCCD=0x%04X\n",
+                   gSpsClientCreditsValueHandle, gSpsClientCreditsCccdHandle);
+        }
+    }
+
+    if (gSpsClientFifoValueHandle < 0) {
+        printf("[SPS] Missing FIFO characteristic\n");
+        return false;
+    }
+
+    if (gSpsClientCreditsValueHandle < 0) {
+        printf("[SPS] Missing Credits characteristic (MANDATORY)\n");
+        return false;
+    }
+
+    return true;
+}
+
+// Subscribe to SPS FIFO and Credits notifications
+static void gattClientSubscribeSps(bool enableFlowControl)
+{
+    gSpsClientFlowControlEnabled = enableFlowControl;
+
+    if (gSpsClientFifoCccdHandle < 0 || gSpsClientCreditsCccdHandle < 0) {
+        printf("[SPS] Invalid CCCD handles\n");
+        return;
+    }
+
+    uint8_t cccd[2] = {0x01, 0x00};  // Enable notifications
+
+    // Enable FIFO notifications
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gSpsClientFifoCccdHandle,
+                                        cccd, 2);
+    if (r < 0) {
+        printf("[SPS] Failed to enable FIFO notifications (error %d)\n", r);
+        return;
+    }
+    printf("[SPS] FIFO notifications ENABLED\n");
+
+    // Enable Credits notifications
+    r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                gCurrentGattConnHandle,
+                                gSpsClientCreditsCccdHandle,
+                                cccd, 2);
+    if (r < 0) {
+        printf("[SPS] Failed to enable Credits notifications (error %d)\n", r);
+        return;
+    }
+    printf("[SPS] Credits notifications ENABLED\n");
+
+    // If flow control enabled, send initial credits to remote device
+    if (enableFlowControl) {
+        gSpsClientLocalCredits = 10;
+        gSpsClientRemoteCredits = 0;
+        printf("[SPS] Flow control ENABLED - sending initial credits\n");
+        gattClientSpsSendCredits((int8_t)gSpsClientLocalCredits);
+    } else {
+        printf("[SPS] Flow control DISABLED\n");
+    }
+}
+
+// Send data to remote SPS server (Write Without Response to FIFO)
+static void gattClientSpsSend(const char *msg)
+{
+    if (gSpsClientFifoValueHandle < 0) {
+        printf("[SPS] FIFO handle invalid\n");
+        return;
+    }
+
+    size_t len = strlen(msg);
+
+    // Check flow control credits
+    if (gSpsClientFlowControlEnabled) {
+        if (gSpsClientRemoteCredits <= 0) {
+            printf("[SPS] No credits available! Cannot send (credits=%d)\n", 
+                   gSpsClientRemoteCredits);
+            return;
+        }
+        gSpsClientRemoteCredits--;
+        printf("[SPS TX] Sending (credits remaining: %d): %s\n", 
+               gSpsClientRemoteCredits, msg);
+    } else {
+        printf("[SPS TX] Sending: %s\n", msg);
+    }
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gSpsClientFifoValueHandle,
+                                        (const uint8_t *)msg,
+                                        (int32_t)len);
+    if (r < 0) {
+        printf("[SPS] Send failed (error %d)\n", r);
+        if (gSpsClientFlowControlEnabled) {
+            gSpsClientRemoteCredits++;  // Restore credit on failure
+        }
+        return;
+    }
+}
+
+// Send credits to remote SPS server
+static void gattClientSpsSendCredits(int8_t credits)
+{
+    if (gSpsClientCreditsValueHandle < 0) {
+        printf("[SPS] Credits handle invalid\n");
+        return;
+    }
+
+    uint8_t creditByte = (uint8_t)credits;
+    
+    printf("[SPS] Sending %d credits to remote device\n", credits);
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gSpsClientCreditsValueHandle,
+                                        &creditByte, 1);
+    if (r < 0) {
+        printf("[SPS] Failed to send credits (error %d)\n", r);
+        return;
+    }
+}
+
+// Complete SPS client example with interactive send loop
+static void gattClientSpsExample(void)
+{
+    printf("\n--- GATT Client: u-blox Serial Port Service (SPS) ---\n");
+    printf("This demonstrates SPS works similarly to NUS (Nordic UART Service)\n");
+    printf("Key differences:\n");
+    printf("  - SPS uses u-blox UUIDs (2456e1b9-...)\n");
+    printf("  - SPS includes mandatory Credits characteristic for flow control\n");
+    printf("  - FIFO characteristic handles bidirectional data\n\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    // 1. Discover services/characteristics
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // 2. Find SPS handles
+    if (!gattClientFindSpsHandles())
+        return;
+
+    // 3. Ask user about flow control
+    char flowChoice[16];
+    printf("\nEnable credit-based flow control? (y/n): ");
+    fflush(stdout);
+    if (fgets(flowChoice, sizeof(flowChoice), stdin)) {
+        flowChoice[strcspn(flowChoice, "\r\n")] = 0;
+    }
+    bool enableFlow = (flowChoice[0] == 'y' || flowChoice[0] == 'Y');
+
+    // 4. Subscribe to FIFO and Credits notifications
+    gattClientSubscribeSps(enableFlow);
+
+    printf("\n[SPS] Client ready\n");
+    printf("Incoming data will appear as [SPS FIFO RX] messages\n");
+    if (gSpsClientFlowControlEnabled) {
+        printf("Credits will be displayed as [SPS] Credits messages\n");
+    }
+    printf("\n");
+
+    // 5. Interactive send loop
+    while (1) {
+        char msg[256];
+        
+        if (gSpsClientFlowControlEnabled) {
+            printf("Enter text to send (or 'exit', 'credits <n>'): ");
+        } else {
+            printf("Enter text to send (or 'exit'): ");
+        }
+        fflush(stdout);
+
+        if (!fgets(msg, sizeof(msg), stdin))
+            break;
+
+        msg[strcspn(msg, "\r\n")] = 0;  // Strip newline
+
+        if (strcmp(msg, "exit") == 0)
+            break;
+
+        // Handle credits command
+        if (strncmp(msg, "credits ", 8) == 0) {
+            if (gSpsClientFlowControlEnabled) {
+                int credits = atoi(msg + 8);
+                if (credits > 0 && credits <= 127) {
+                    gattClientSpsSendCredits((int8_t)credits);
+                } else {
+                    printf("[SPS] Invalid credits value (use 1-127)\n");
+                }
+            } else {
+                printf("[SPS] Flow control not enabled\n");
+            }
+            continue;
+        }
+
+        if (strlen(msg) > 0) {
+            gattClientSpsSend(msg);
+        }
+    }
+
+    printf("[SPS] Client finished\n");
+}
+
+// ============================================================================
+// GATT CLIENT - BATTERY SERVICE (BAS)
+// ============================================================================
+
+// Parse battery level notification (1 byte: 0-100%)
+static void basParseBatteryLevel(const uint8_t *data, size_t len)
+{
+    if (len < 1) {
+        printf("[BAS] Invalid battery packet\n");
+        return;
+    }
+
+    int level = data[0];
+    if (level > 100) level = 100;
+
+    printf("[BAS] Battery Level: %d %%\n", level);
+}
+
+// Discover Battery Service and Battery Level characteristic
+static bool gattClientFindBasHandles(void)
+{
+    gBasClientServiceIndex = -1;
+    gBasClientValueHandle  = -1;
+
+    // 1) Battery Service 0x180F
+    gBasClientServiceIndex = findServiceByUuid16(0x180F);
+    if (gBasClientServiceIndex < 0) {
+        printf("[BAS] Service 0x180F not found\n");
+        return false;
+    }
+
+    printf("[BAS] Found service at index %d\n", gBasClientServiceIndex);
+
+    // 2) Battery Level 0x2A19
+    gBasClientCharIndex = findCharByUuid16InService(gBasClientServiceIndex, 0x2A19);
+    if (gBasClientCharIndex < 0) {
+        printf("[BAS] Characteristic 0x2A19 not found\n");
+        return false;
+    }
+
+    gBasClientValueHandle = gGattCharacteristics[gBasClientCharIndex].valueHandle;
+    gBasClientCccdHandle  = gBasClientValueHandle + 1; // Standard CCCD location
+
+    printf("[BAS] Battery Level handle=0x%04X  CCCD=0x%04X\n",
+           gBasClientValueHandle, gBasClientCccdHandle);
+
+    return true;
+}
+
+// Read battery level once
+static void gattClientReadBattery(void)
+{
+    if (gBasClientValueHandle < 0) {
+        printf("[BAS] Value handle invalid\n");
+        return;
+    }
+
+    uint8_t buf[8];
+    uByteArray_t value = { .pData = buf, .length = 0 };
+
+    int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                       gCurrentGattConnHandle,
+                                       gBasClientValueHandle,
+                                       &value);
+    if (r < 0) {
+        printf("[BAS] Read failed (error %d)\n", r);
+        return;
+    }
+
+    printf("[BAS] Read %zu bytes\n", value.length);
+
+    basParseBatteryLevel(value.pData, value.length);
+
+    uCxEnd(&gUcxHandle);
+}
+
+// Subscribe to battery level notifications
+static void gattClientSubscribeBattery(void)
+{
+    if (gBasClientCccdHandle < 0) {
+        printf("[BAS] CCCD handle invalid\n");
+        return;
+    }
+
+    uint8_t cccd[2] = {0x01, 0x00}; // Enable notifications
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gBasClientCccdHandle,
+                                        cccd, 2);
+
+    if (r < 0) {
+        printf("[BAS] Failed to enable notifications (error %d)\n", r);
+        return;
+    }
+
+    printf("[BAS] Notifications ENABLED\n");
+}
+
+// Complete Battery Service client example
+static void gattClientBasExample(void)
+{
+    printf("\n--- GATT Client: Battery Service (BAS) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    // 1) Discover services and characteristics
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // 2) Locate Battery Service + Battery Level
+    if (!gattClientFindBasHandles())
+        return;
+
+    // 3) Read battery once
+    gattClientReadBattery();
+
+    // 4) Subscribe to continuous notifications
+    gattClientSubscribeBattery();
+
+    printf("BAS Client running.\n");
+    printf("Battery %% updates will appear automatically.\n\n");
+}
+
+// ============================================================================
+// GATT CLIENT - DEVICE INFORMATION SERVICE (DIS)
+// ============================================================================
+
+// Discover DIS service and all available characteristics
+static bool gattClientFindDisHandles(void)
+{
+    gDisClientServiceIndex = -1;
+    gDisClientCharCount = 0;
+
+    // 1) Find service 0x180A
+    gDisClientServiceIndex = findServiceByUuid16(0x180A);
+    if (gDisClientServiceIndex < 0) {
+        printf("[DIS] Service 0x180A not found\n");
+        return false;
+    }
+
+    printf("[DIS] Found Device Information Service\n");
+
+    // 2) Look for each characteristic
+    for (int i = 0; i < kDisCharUuidCount; i++) {
+        uint16_t uuid = kDisCharUuids[i];
+        int chIndex = findCharByUuid16InService(gDisClientServiceIndex, uuid);
+
+        if (chIndex >= 0) {
+            gDisClientChars[gDisClientCharCount].uuid   = uuid;
+            gDisClientChars[gDisClientCharCount].handle =
+                gGattCharacteristics[chIndex].valueHandle;
+
+            const char *charName = "Unknown";
+            switch (uuid) {
+                case 0x2A29: charName = "Manufacturer Name"; break;
+                case 0x2A24: charName = "Model Number"; break;
+                case 0x2A25: charName = "Serial Number"; break;
+                case 0x2A26: charName = "Firmware Revision"; break;
+                case 0x2A27: charName = "Hardware Revision"; break;
+                case 0x2A28: charName = "Software Revision"; break;
+                case 0x2A23: charName = "System ID"; break;
+            }
+
+            printf("[DIS]   Found %s (0x%04X) at handle 0x%04X\n",
+                   charName, uuid, gDisClientChars[gDisClientCharCount].handle);
+
+            gDisClientCharCount++;
+        }
+    }
+
+    if (gDisClientCharCount == 0) {
+        printf("[DIS] No valid DIS characteristics found\n");
+        return false;
+    }
+
+    return true;
+}
+
+// Read and print a single DIS characteristic
+static void disReadAndPrint(uint16_t uuid, int32_t handle)
+{
+    uint8_t buf[64];
+    uByteArray_t value = { .pData = buf, .length = 0 };
+
+    int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                       gCurrentGattConnHandle,
+                                       handle,
+                                       &value);
+
+    if (r < 0) {
+        printf("[DIS] Read 0x%04X failed (error %d)\n", uuid, r);
+        return;
+    }
+
+    // Get friendly name
+    const char *charName = "Unknown";
+    switch (uuid) {
+        case 0x2A29: charName = "Manufacturer"; break;
+        case 0x2A24: charName = "Model Number"; break;
+        case 0x2A25: charName = "Serial Number"; break;
+        case 0x2A26: charName = "Firmware Rev"; break;
+        case 0x2A27: charName = "Hardware Rev"; break;
+        case 0x2A28: charName = "Software Rev"; break;
+        case 0x2A23: charName = "System ID"; break;
+    }
+
+    printf("[DIS] %-15s: ", charName);
+
+    // Print ASCII for string characteristics
+    if (uuid != 0x2A23) {  // System ID is binary
+        for (size_t i = 0; i < value.length; i++) {
+            uint8_t c = value.pData[i];
+            if (c >= 32 && c <= 126)
+                putchar(c);
+            else
+                printf("\\x%02X", c);
+        }
+    } else {
+        // System ID is 8 bytes: [0-4]=Manufacturer, [5-7]=Organizationally Unique
+        for (size_t i = 0; i < value.length; i++) {
+            printf("%02X", value.pData[i]);
+            if (i < value.length - 1) printf(":");
+        }
+    }
+
+    printf("\n");
+
+    uCxEnd(&gUcxHandle);
+}
+
+// Complete DIS client example
+static void gattClientDisExample(void)
+{
+    printf("\n--- GATT Client: Device Information Service (DIS) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    // Step 1: Discover everything
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // Step 2: Find DIS service + chars
+    if (!gattClientFindDisHandles())
+        return;
+
+    printf("\nReading device information:\n");
+
+    // Step 3: Read each characteristic
+    for (int i = 0; i < gDisClientCharCount; i++) {
+        disReadAndPrint(gDisClientChars[i].uuid, gDisClientChars[i].handle);
+    }
+
+    printf("\nDIS Client finished. All available device info retrieved.\n\n");
+}
+
+// ----------------------------------------------------------------
 // URC Management Functions
 // ----------------------------------------------------------------
 
@@ -4181,6 +5813,10 @@ static void enableAllUrcs(void)
     
     // GATT Server events
     uCxGattServerRegisterNotification(&gUcxHandle, gattServerCharWriteUrc);
+    
+    // GATT Client events (notifications and indications)
+    uCxGattClientRegisterNotification(&gUcxHandle, gattClientNotificationUrc);
+    uCxGattClientRegisterIndication(&gUcxHandle, gattClientNotificationUrc);  // Use same handler
 }
 
 static void disableAllUrcs(void)
@@ -4218,6 +5854,8 @@ static void disableAllUrcs(void)
     uCxBluetoothRegisterPasskeyRequest(&gUcxHandle, NULL);
     uCxBluetoothRegisterPhyUpdate(&gUcxHandle, NULL);
     uCxGattServerRegisterNotification(&gUcxHandle, NULL);
+    uCxGattClientRegisterNotification(&gUcxHandle, NULL);
+    uCxGattClientRegisterIndication(&gUcxHandle, NULL);
 }
 
 // ============================================================================
@@ -4780,6 +6418,533 @@ static void gattServerSetupHidKeyboard(void)
     printf("  - Use [a] to send 'Hello World' test\n\n");
     
     gGattServerServiceHandle = gHidServiceHandle;
+}
+
+// Setup Battery Service only (simple example)
+static void gattServerSetupBatteryOnly(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+
+    printf("\n--- GATT Server: Battery Service Example ---\n");
+
+    // 1) Define Battery Service 0x180F
+    uint8_t svcUuid[] = {0x18, 0x0F};   // 0x180F, big-endian
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle, svcUuid, 2, &gBatteryServiceHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to define Battery Service (code %d)\n", result);
+        return;
+    }
+    printf("✓ Battery Service defined (handle=%d)\n", gBatteryServiceHandle);
+
+    // 2) Add Battery Level characteristic 0x2A19, Read + Notify
+    uint8_t charUuid[] = {0x2A, 0x19};  // 0x2A19
+    uint8_t props[]    = {0x12};        // Read (0x02) + Notify (0x10)
+    uint8_t initial    = 100;
+
+    uCxGattServerCharDefine_t rsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      charUuid, 2,
+                                      props, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_NONE,
+                                      &initial, 1,
+                                      1,               // add CCCD
+                                      &rsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add Battery Level characteristic (code %d)\n", result);
+        return;
+    }
+
+    gBatteryLevelHandle = rsp.value_handle;
+    gBatteryCccdHandle  = rsp.cccd_handle;
+
+    printf("✓ Battery Level characteristic created (val_handle=%d, cccd_handle=%d)\n",
+           gBatteryLevelHandle, gBatteryCccdHandle);
+
+    // 3) Activate service
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to activate Battery Service (code %d)\n", result);
+        return;
+    }
+
+    printf("✓ Battery Service activated\n");
+    printf("NOTE: CCCD writes are handled in gattServerCharWriteUrc() already.\n");
+    printf("      When notifications are enabled, you can call:\n");
+    printf("        uCxGattServerSendNotification(..., gBatteryLevelHandle, &level, 1);\n\n");
+}
+
+// Setup Environmental Sensing Service (Temperature + Humidity)
+static void gattServerSetupEnvSensing(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+
+    printf("\n--- GATT Server: Environmental Sensing ---\n");
+
+    // 1) Define ESS service 0x181A
+    uint8_t svcUuid[] = {0x18, 0x1A};   // 0x181A
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle, svcUuid, 2, &gEnvServerServiceHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to define Environmental Sensing service (code %d)\n", result);
+        return;
+    }
+    printf("✓ ESS defined (handle=%d)\n", gEnvServerServiceHandle);
+
+    uint8_t propsReadNotify[] = {0x12}; // Read + Notify
+
+    // 2) Temperature characteristic (0x2A6E), in 0.01°C units, e.g. 23.45°C
+    uint8_t tempUuid[] = {0x2A, 0x6E};
+    int16_t tempValue  = 2345; // 23.45°C
+
+    uCxGattServerCharDefine_t tempRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      tempUuid, 2,
+                                      propsReadNotify, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_NONE,
+                                      (uint8_t *)&tempValue, sizeof(tempValue),
+                                      1,
+                                      &tempRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add Temperature characteristic (code %d)\n", result);
+        return;
+    }
+
+    gEnvServerTempHandle = tempRsp.value_handle;
+    printf("✓ Temperature characteristic created (handle=%d, CCCD=%d)\n",
+           gEnvServerTempHandle, tempRsp.cccd_handle);
+
+    // 3) Humidity characteristic (0x2A6F), in 0.01%% units, e.g. 45.00%%
+    uint8_t humUuid[] = {0x2A, 0x6F};
+    uint16_t humValue = 4500; // 45.00%
+
+    uCxGattServerCharDefine_t humRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      humUuid, 2,
+                                      propsReadNotify, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_NONE,
+                                      (uint8_t *)&humValue, sizeof(humValue),
+                                      1,
+                                      &humRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add Humidity characteristic (code %d)\n", result);
+        return;
+    }
+
+    gEnvServerHumHandle = humRsp.value_handle;
+    printf("✓ Humidity characteristic created (handle=%d, CCCD=%d)\n",
+           gEnvServerHumHandle, humRsp.cccd_handle);
+
+    // 4) Activate service
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to activate ESS (code %d)\n", result);
+        return;
+    }
+
+    printf("✓ ESS activated\n");
+    printf("You can now read Temperature/Humidity or subscribe to notifications.\n\n");
+}
+
+// Setup Custom UART Service (NUS-style)
+static void gattServerSetupUartService(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+
+    printf("\n--- GATT Server: Custom UART Service ---\n");
+
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle,
+                                                (uint8_t *)kUartServiceUuid, 16,
+                                                &gUartServerServiceHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to define UART service (code %d)\n", result);
+        return;
+    }
+    printf("✓ UART service handle=%d\n", gUartServerServiceHandle);
+
+    // Properties
+    uint8_t propsNotify[]   = {0x10}; // Notify
+    uint8_t propsWriteNoRsp[] = {0x04}; // WriteWithoutResponse
+
+    // TX characteristic (Notify from server)
+    uint8_t initTx[1] = {0x00};
+    uCxGattServerCharDefine_t txRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      (uint8_t *)kUartTxCharUuid, 16,
+                                      propsNotify, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_NONE,
+                                      initTx, sizeof(initTx),
+                                      1,  // CCCD
+                                      &txRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add UART TX characteristic (code %d)\n", result);
+        return;
+    }
+    gUartServerTxHandle = txRsp.value_handle;
+    printf("✓ UART TX characteristic handle=%d, CCCD=%d\n",
+           gUartServerTxHandle, txRsp.cccd_handle);
+
+    // RX characteristic (Write Without Response from client)
+    uint8_t initRx[1] = {0x00};
+    uCxGattServerCharDefine_t rxRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      (uint8_t *)kUartRxCharUuid, 16,
+                                      propsWriteNoRsp, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      initRx, sizeof(initRx),
+                                      0,      // no CCCD
+                                      &rxRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add UART RX characteristic (code %d)\n", result);
+        return;
+    }
+    gUartServerRxHandle = rxRsp.value_handle;
+    printf("✓ UART RX characteristic handle=%d\n", gUartServerRxHandle);
+
+    // Activate
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to activate UART service (code %d)\n", result);
+        return;
+    }
+
+    printf("✓ UART service activated\n");
+    printf("Use gattServerCharWriteUrc() to print RX data when client writes.\n");
+    printf("Use uCxGattServerSendNotification(..., gUartServerTxHandle, data, len) to send TX data.\n\n");
+}
+
+// Setup u-blox Serial Port Service (SPS)
+static void gattServerSetupSpsService(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+
+    printf("\n--- GATT Server: u-blox Serial Port Service (SPS) ---\n");
+    printf("This is similar to NUS but includes optional credit-based flow control\n\n");
+
+    // Define SPS service (128-bit UUID)
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle,
+                                                (uint8_t *)kSpsServiceUuid, 16,
+                                                &gSpsServerServiceHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to define SPS service (code %d)\n", result);
+        return;
+    }
+    printf("✓ SPS service handle=%d\n", gSpsServerServiceHandle);
+
+    // Properties for FIFO: Notify + Indication + Write + WriteNoRsp
+    uint8_t propsFifo[] = {0x1C}; // 0x10 (Notify) | 0x04 (WriteNoRsp) | 0x08 (Write)
+    
+    // Properties for Credits: Notify + Indication + Write + WriteNoRsp
+    uint8_t propsCredits[] = {0x1C}; // Same as FIFO
+
+    // FIFO characteristic (handles bidirectional data)
+    uint8_t initFifo[1] = {0x00};
+    uCxGattServerCharDefine_t fifoRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      (uint8_t *)kSpsFifoCharUuid, 16,
+                                      propsFifo, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      initFifo, sizeof(initFifo),
+                                      1,  // CCCD for notifications
+                                      &fifoRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add SPS FIFO characteristic (code %d)\n", result);
+        return;
+    }
+    gSpsServerFifoHandle = fifoRsp.value_handle;
+    gSpsServerFifoCccdHandle = fifoRsp.cccd_handle;
+    printf("✓ SPS FIFO characteristic handle=%d, CCCD=%d\n",
+           gSpsServerFifoHandle, gSpsServerFifoCccdHandle);
+
+    // Credits characteristic (MANDATORY for flow control)
+    uint8_t initCredits[1] = {0x00};
+    uCxGattServerCharDefine_t creditsRsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      (uint8_t *)kSpsCreditsCharUuid, 16,
+                                      propsCredits, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      initCredits, sizeof(initCredits),
+                                      1,  // CCCD for notifications
+                                      &creditsRsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add SPS Credits characteristic (code %d)\n", result);
+        return;
+    }
+    gSpsServerCreditsHandle = creditsRsp.value_handle;
+    gSpsServerCreditsCccdHandle = creditsRsp.cccd_handle;
+    printf("✓ SPS Credits characteristic handle=%d, CCCD=%d\n",
+           gSpsServerCreditsHandle, gSpsServerCreditsCccdHandle);
+
+    // Activate service
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to activate SPS service (code %d)\n", result);
+        return;
+    }
+
+    printf("✓ SPS service activated\n\n");
+    printf("USAGE:\n");
+    printf("  • Client writes to FIFO handle for data → displayed in console\n");
+    printf("  • Client writes to Credits handle → enables flow control\n");
+    printf("  • Server sends via: uCxGattServerSendNotification(..., gSpsServerFifoHandle, data, len)\n");
+    printf("  • Optional: Send credits via: uCxGattServerSendNotification(..., gSpsServerCreditsHandle, &credits, 1)\n");
+    printf("\nFlow Control:\n");
+    printf("  • Disabled by default (works like NUS)\n");
+    printf("  • Enabled when client sends credits > 0\n");
+    printf("  • Disabled when client sends credits = -1 (0xFF)\n\n");
+}
+
+// Setup Location & Navigation Service
+static void gattServerSetupLocationService(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+
+    printf("\n--- GATT Server: Location & Navigation (LNS) ---\n");
+
+    // Service 0x1819
+    uint8_t svcUuid[] = {0x18, 0x19};
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle, svcUuid, 2, &gLnsServerServiceHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to define LNS (code %d)\n", result);
+        return;
+    }
+    printf("✓ LNS defined (handle=%d)\n", gLnsServerServiceHandle);
+
+    // Char 0x2A67: Location and Speed (very simplified payload)
+    uint8_t charUuid[] = {0x2A, 0x67};
+    uint8_t props[]    = {0x12}; // Read + Notify
+
+    // Minimal example flags + latitude/longitude as 1e-7 degrees (like GNSS)
+    // Using pragma pack for MSVC compatibility
+    #pragma pack(push, 1)
+    struct {
+        uint16_t flags;
+        int32_t  latitude;   // 1e-7 degrees
+        int32_t  longitude;  // 1e-7 degrees
+    } loc;
+    #pragma pack(pop)
+    
+    loc.flags = 0x0003;           // "position present"
+    loc.latitude = 557174228;     // ≈ 55.7174228°
+    loc.longitude = 132137795;    // ≈ 13.2137795°
+
+    uCxGattServerCharDefine_t rsp;
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      charUuid, 2,
+                                      props, 1,
+                                      U_SECURITY_READ_NONE,
+                                      U_SECURITY_WRITE_NONE,
+                                      (uint8_t *)&loc, sizeof(loc),
+                                      1,
+                                      &rsp);
+    if (result != 0) {
+        printf("ERROR: Failed to add Location and Speed characteristic (code %d)\n", result);
+        return;
+    }
+
+    gLnsServerLocSpeedHandle = rsp.value_handle;
+    printf("✓ Location+Speed characteristic handle=%d, CCCD=%d\n",
+           gLnsServerLocSpeedHandle, rsp.cccd_handle);
+
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to activate LNS (code %d)\n", result);
+        return;
+    }
+
+    printf("✓ LNS activated\n\n");
+}
+
+// GATT Client: Read Current Time Service
+static void gattClientReadCurrentTime(void)
+{
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    printf("\n--- GATT Client: Current Time Service ---\n");
+
+    // 0x1805 / 0x2A2B
+    int svcIndex = findServiceByUuid16(0x1805);
+    if (svcIndex < 0) {
+        printf("CTS service (0x1805) not found. Did you discover services?\n");
+        return;
+    }
+
+    int chIndex = findCharByUuid16InService(svcIndex, 0x2A2B);
+    if (chIndex < 0) {
+        printf("Current Time characteristic (0x2A2B) not found.\n");
+        return;
+    }
+
+    int32_t charHandle = gGattCharacteristics[chIndex].valueHandle;
+
+    uint8_t buf[32];
+    uByteArray_t value;
+    value.pData = buf;
+
+    int32_t result = uCxGattClientReadBegin(&gUcxHandle,
+                                           gCurrentGattConnHandle,
+                                           charHandle,
+                                           &value);
+    if (result < 0) {
+        printf("ERROR: Read failed (code %d)\n", result);
+        return;
+    }
+
+    printf("CTS raw (%d bytes):", (int)value.length);
+    for (size_t i = 0; i < value.length; i++) {
+        printf(" %02X", value.pData[i]);
+    }
+    printf("\n");
+
+    uCxEnd(&gUcxHandle);
+
+    if (value.length >= 7) {
+        uint16_t year   = value.pData[0] | (value.pData[1] << 8);
+        uint8_t  month  = value.pData[2];
+        uint8_t  day    = value.pData[3];
+        uint8_t  hour   = value.pData[4];
+        uint8_t  minute = value.pData[5];
+        uint8_t  second = value.pData[6];
+
+        printf("Decoded time: %04u-%02u-%02u %02u:%02u:%02u\n",
+               year, month, day, hour, minute, second);
+    }
+}
+
+// Build CTS time payload from Windows system time
+static size_t ctsBuildTimePayload(uint8_t out[10])
+{
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+
+    uint16_t year = (uint16_t)t.wYear;
+
+    out[0] = year & 0xFF;
+    out[1] = (year >> 8) & 0xFF;
+    out[2] = (uint8_t)t.wMonth;
+    out[3] = (uint8_t)t.wDay;
+    out[4] = (uint8_t)t.wHour;
+    out[5] = (uint8_t)t.wMinute;
+    out[6] = (uint8_t)t.wSecond;
+
+    // Day of week: Windows: Sunday=0 → BLE: Monday=1..Sunday=7
+    uint8_t dow = (uint8_t)t.wDayOfWeek;
+    if (dow == 0) dow = 7;
+    out[7] = dow;
+
+    out[8] = 0;    // Fractions256
+    out[9] = 1;    // Adjust Reason: 1 = manual time update
+
+    return 10;
+}
+
+// Setup CTS GATT Server
+static void gattServerSetupCtsService(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+
+    printf("\n--- GATT Server: Current Time Service (CTS) ---\n");
+
+    // Service UUID 0x1805
+    uint8_t svcUuid[] = {0x18, 0x05};
+
+    int32_t result =
+        uCxGattServerServiceDefine(&gUcxHandle, svcUuid, 2, &gCtsServerServiceHandle);
+
+    if (result != 0) {
+        printf("ERROR: Cannot define CTS service (code %d)\n", result);
+        return;
+    }
+
+    printf("✓ CTS Service defined (handle=%d)\n", gCtsServerServiceHandle);
+
+    // Characteristic UUID 0x2A2B
+    uint8_t charUuid[] = {0x2A, 0x2B};
+    uint8_t props[]    = {0x12};   // Read + Notify
+
+    uint8_t initPayload[10];
+    ctsBuildTimePayload(initPayload);
+
+    uCxGattServerCharDefine_t rsp;
+
+    result = uCxGattServerCharDefine6(&gUcxHandle,
+                                      charUuid, 2,          // UUID
+                                      props, 1,             // Properties
+                                      U_SECURITY_READ_NONE, // Read
+                                      U_SECURITY_WRITE_NONE,// Write
+                                      initPayload, 10,
+                                      1,                    // add CCCD
+                                      &rsp);
+
+    if (result != 0) {
+        printf("ERROR: Cannot add Current Time characteristic (code %d)\n", result);
+        return;
+    }
+
+    gCtsServerTimeValueHandle = rsp.value_handle;
+    gCtsServerTimeCccdHandle  = rsp.cccd_handle;
+
+    printf("✓ Time characteristic (handle=%d, CCCD=%d)\n",
+           gCtsServerTimeValueHandle, gCtsServerTimeCccdHandle);
+
+    // Activate service
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Cannot activate CTS service (code %d)\n", result);
+        return;
+    }
+
+    printf("✓ CTS activated — device now serves accurate time\n\n");
+}
+
+// Notify CTS time if client has enabled notifications
+static void ctsNotifyIfEnabled()
+{
+    if (gCtsServerTimeValueHandle <= 0 || gCurrentGattConnHandle < 0)
+        return;
+
+    // Check if CCCD is enabled
+    if (!gCtsServerNotificationsEnabled)
+        return;
+
+    uint8_t payload[10];
+    ctsBuildTimePayload(payload);
+
+    uCxGattServerSendNotification(&gUcxHandle,
+                                  gCurrentGattConnHandle,
+                                  gCtsServerTimeValueHandle,
+                                  payload, 10);
+
+    // Optional: Show or update dashboard time
+    printf("[CTS] Notify: %04u-%02u-%02u %02u:%02u:%02u\n",
+           payload[0] | (payload[1] << 8),
+           payload[2], payload[3], payload[4], payload[5], payload[6]);
 }
 
 // Send a keyboard key press via HID
@@ -8415,6 +10580,13 @@ int main(int argc, char *argv[])
     
     // Main menu loop
     while (gMenuState != MENU_EXIT) {
+        // Periodic tasks: CTS time notifications
+        ULONGLONG now = GetTickCount64();
+        if (now - gCtsServerLastTick >= 1000) {
+            gCtsServerLastTick = now;
+            ctsNotifyIfEnabled();
+        }
+        
         printMenu();
         handleUserInput();
     }
@@ -8908,11 +11080,24 @@ static void printMenu(void)
             
         case MENU_GATT_EXAMPLES:
             printf("\n");
-            printf("                      GATT EXAMPLES\n");
+            printf("                GATT SERVER EXAMPLES\n");
+            printf("       (This Device Provides Services to Remote Clients)\n");
             printf("\n");
             printf("\n");
-            printf("  [1] GATT Server Heartbeat example\n");
-            printf("  [2] HID over GATT (HOGP)\n");
+            printf("GATT SERVER EXAMPLES\n");
+            printf("  [1] Heart Rate Service - Heartbeat notifications\n");
+            printf("  [2] HID Keyboard + Media + Battery - Full HID device\n");
+            printf("  [3] Battery Service only - Simple battery reporting\n");
+            printf("  [4] Environmental Sensing - Temperature + Humidity\n");
+            printf("  [5] UART Service (NUS) - Bidirectional text data\n");
+            printf("  [6] Serial Port Service (SPS) - u-blox, like NUS + credits\n");
+            printf("  [7] Location & Navigation (LNS) - GPS coordinates\n");
+            printf("  [8] Current Time Service (CTS) - Broadcast PC time\n");
+            printf("\n");
+            printf("GATT CLIENT EXAMPLES\n");
+            printf("  [9] Read Current Time - Connect to remote CTS server\n");
+            printf("\n");
+            printf("NOTE: For more client examples, use [g] GATT Client menu\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -8934,7 +11119,7 @@ static void printMenu(void)
             
         case MENU_GATT_CLIENT:
             printf("\n");
-            printf("                      GATT CLIENT\n");
+            printf("         GATT CLIENT (Connect to Remote GATT Servers)\n");
             printf("\n");
             printf("\n");
             if (gCurrentGattConnHandle != -1) {
@@ -8944,11 +11129,21 @@ static void printMenu(void)
                 printf("NOTE: Use Bluetooth menu to connect first\n");
             }
             printf("\n");
+            printf("GENERIC OPERATIONS\n");
             printf("  [1] Discover services\n");
             printf("  [2] Discover characteristics\n");
             printf("  [3] Read characteristic\n");
             printf("  [4] Write characteristic\n");
             printf("  [5] Subscribe to notifications\n");
+            printf("\n");
+            printf("SERVICE-SPECIFIC CLIENT EXAMPLES\n");
+            printf("  [c] Current Time Service (CTS) - read + subscribe to time\n");
+            printf("  [e] Environmental Sensing (ESS) - temp + humidity\n");
+            printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
+            printf("  [u] UART Service (NUS) - bidirectional text data\n");
+            printf("  [s] Serial Port Service (SPS) - u-blox, like NUS + credits\n");
+            printf("  [b] Battery Service (BAS) - battery percentage\n");
+            printf("  [d] Device Information Service (DIS) - device details\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -8958,7 +11153,7 @@ static void printMenu(void)
             syncGattConnectionOnly();
             
             printf("\n");
-            printf("                      GATT SERVER\n");
+            printf("         GATT SERVER (Provide Services to Remote Clients)\n");
             printf("\n");
             printf("\n");
             if (gCurrentGattConnHandle != -1) {
@@ -8967,13 +11162,21 @@ static void printMenu(void)
                 printf("CONNECTION: No active connection\n");
             }
             printf("\n");
-            printf("GATT SERVER OPERATIONS\n");
+            printf("GENERIC OPERATIONS\n");
             printf("  [1] Add service\n");
             printf("  [2] Add characteristic\n");
             printf("  [3] Set characteristic value\n");
             printf("  [4] Send notification\n");
             printf("\n");
-            printf("NOTE: For examples (Heartbeat, HID), use main menu option [9]\n");
+            printf("SERVICE-SPECIFIC SERVER EXAMPLES\n");
+            printf("  See main menu option [9] for complete examples:\n");
+            printf("  - Heart Rate Service (Heartbeat)\n");
+            printf("  - HID Keyboard + Media + Battery\n");
+            printf("  - Environmental Sensing (Temp + Humidity)\n");
+            printf("  - UART Service (NUS)\n");
+            printf("  - Serial Port Service (SPS - u-blox)\n");
+            printf("  - Location & Navigation Service (LNS)\n");
+            printf("  - Current Time Service (CTS)\n");
             printf("\n");
             printf("  [0] Back to Bluetooth Functions  [q] Quit\n");
             break;
@@ -9656,6 +11859,27 @@ static void handleUserInput(void)
                 case 2:
                     gMenuState = MENU_HID;  // HID menu
                     break;
+                case 3:
+                    gattServerSetupBatteryOnly();  // Battery Service example
+                    break;
+                case 4:
+                    gattServerSetupEnvSensing();  // Environmental Sensing
+                    break;
+                case 5:
+                    gattServerSetupUartService();  // UART Service
+                    break;
+                case 6:
+                    gattServerSetupSpsService();  // Serial Port Service (SPS)
+                    break;
+                case 7:
+                    gattServerSetupLocationService();  // Location & Navigation
+                    break;
+                case 8:
+                    gattServerSetupCtsService();  // Current Time Service (Server)
+                    break;
+                case 9:
+                    gattClientReadCurrentTime();  // Read Current Time (Client)
+                    break;
                 case 0:
                     gMenuState = MENU_MAIN;
                     break;
@@ -9709,6 +11933,38 @@ static void handleUserInput(void)
                     gMenuState = MENU_BLUETOOTH_FUNCTIONS;
                     break;
                 default:
+                    // Handle letter commands
+                    if (strlen(input) > 0) {
+                        char firstChar = (char)tolower(input[0]);
+                        if (firstChar == 'c') {
+                            gattClientCtsExample();
+                            break;
+                        }
+                        if (firstChar == 'e') {
+                            gattClientEssExample();
+                            break;
+                        }
+                        if (firstChar == 'l') {
+                            gattClientLnsExample();
+                            break;
+                        }
+                        if (firstChar == 'u') {
+                            gattClientUartExample();
+                            break;
+                        }
+                        if (firstChar == 's') {
+                            gattClientSpsExample();
+                            break;
+                        }
+                        if (firstChar == 'b') {
+                            gattClientBasExample();
+                            break;
+                        }
+                        if (firstChar == 'd') {
+                            gattClientDisExample();
+                            break;
+                        }
+                    }
                     printf("Invalid choice!\n");
                     break;
             }
