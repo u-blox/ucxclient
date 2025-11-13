@@ -7446,8 +7446,16 @@ static void testConnectivityWrapper(void)
         uCxEnd(&gUcxHandle);
     }
     
-    // Note: Gateway IP is retrieved internally by testConnectivity function
-    // We pass empty string and let it get the gateway itself
+    // Get gateway IP address
+    uSockIpAddress_t gatewayAddr;
+    if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &gatewayAddr) == 0) {
+        uCxIpAddressToString(&gatewayAddr, gateway, sizeof(gateway));
+    }
+    
+    // If we still don't have a gateway, use a default
+    if (strlen(gateway) == 0) {
+        strncpy(gateway, "192.168.1.1", sizeof(gateway) - 1);
+    }
     
     // Call the actual connectivity test
     testConnectivity(gateway, ssid, rssi, channel);
