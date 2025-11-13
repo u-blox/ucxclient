@@ -7076,7 +7076,7 @@ static void pingExample(void)
     gPingFailed = 0;
     gPingAvgTime = 0;
     gPingCount = 0;
-    memset(gPingTimes, 0, sizeof(gPingTimes));
+    memset((void*)gPingTimes, 0, sizeof(gPingTimes));
     
     // Start ping (using uCxDiagnosticsPing2 for custom count)
     int32_t result = uCxDiagnosticsPing2(&gUcxHandle, hostname, count);
