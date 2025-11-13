@@ -13463,10 +13463,18 @@ static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortS
 static char* selectComPortFromList(const char *recommendedPort)
 {
     char input[64];
+    char currentRecommendedPort[32] = "";
+    char currentRecommendedDevice[64] = "";
+    
+    // Copy initial recommendation
+    if (recommendedPort && recommendedPort[0] != '\0') {
+        strncpy(currentRecommendedPort, recommendedPort, sizeof(currentRecommendedPort) - 1);
+        currentRecommendedPort[sizeof(currentRecommendedPort) - 1] = '\0';
+    }
     
     while (1) {
-        if (recommendedPort && recommendedPort[0] != '\0') {
-            printf("\nEnter COM port name, 'r' to refresh, or press Enter to use recommended [%s]: ", recommendedPort);
+        if (currentRecommendedPort[0] != '\0') {
+            printf("\nEnter COM port name, 'r' to refresh, or press Enter to use recommended [%s]: ", currentRecommendedPort);
         } else {
             printf("\nEnter COM port name, 'r' to refresh, or press Enter to use last saved port: ");
         }
@@ -13479,8 +13487,10 @@ static char* selectComPortFromList(const char *recommendedPort)
             // Check for refresh command
             if (strlen(input) == 1 && (input[0] == 'r' || input[0] == 'R')) {
                 printf("\nRefreshing COM port list...\n\n");
-                listAvailableComPorts(NULL, 0, NULL, 0);  // Re-scan and display ports
-                continue;  // Ask again
+                // Re-scan and update recommendation
+                listAvailableComPorts(currentRecommendedPort, sizeof(currentRecommendedPort),
+                                     currentRecommendedDevice, sizeof(currentRecommendedDevice));
+                continue;  // Ask again with updated recommendation
             }
             
             // If user entered something, use it
@@ -13495,10 +13505,10 @@ static char* selectComPortFromList(const char *recommendedPort)
             }
             
             // User pressed Enter without input - use recommended port if available
-            if (recommendedPort && recommendedPort[0] != '\0') {
-                char *result = (char*)malloc(strlen(recommendedPort) + 1);
+            if (currentRecommendedPort[0] != '\0') {
+                char *result = (char*)malloc(strlen(currentRecommendedPort) + 1);
                 if (result) {
-                    strcpy(result, recommendedPort);
+                    strcpy(result, currentRecommendedPort);
                     return result;
                 } else {
                     U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for COM port string");
