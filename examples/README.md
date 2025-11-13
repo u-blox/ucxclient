@@ -6,7 +6,8 @@ This directory contains application examples of how to use ucxclient. The exampl
 | -------------------- | ----------- | ---- |
 | http_example.c       | Example of doing a HTTP GET request using the uCx API. | Linux (POSIX) |
 | http_example_no_os.c | Same example as http_example.c but illustrating how it could be done on a bare-metal system with no OS. | No OS (bare-metal) |
-| windows_app.c        | Interactive Windows console application with menu-driven interface for Bluetooth, Wi-Fi, Socket, and SPS operations. | Windows |
+| ucxclient_win64.c    | **Comprehensive Windows console application** with menu-driven interface for Bluetooth, Wi-Fi, HTTP, Location Services, Network operations, and more. | Windows |
+| windows_app.c        | Legacy Windows console application (superseded by ucxclient_win64). | Windows |
 | windows_basic.c      | Simple Windows test application for basic AT command validation. | Windows |
 
 ## Available Ports
@@ -74,7 +75,8 @@ start build\ucxclient.sln
 #### Windows Executables
 
 After building, you'll find:
-- `build\Debug\windows_app.exe` - Interactive menu-driven application
+- `build\Release\ucxclient_win64.exe` - **Comprehensive application with Location Services** (Recommended)
+- `build\Debug\windows_app.exe` - Legacy interactive menu-driven application
 - `build\Debug\windows_basic.exe` - Simple test application
 - `build\Debug\http_example_windows.exe` - HTTP example for Windows
 - `build\Debug\ucxclient_dll.dll` - Shared library for Python integration
@@ -270,6 +272,162 @@ Choice: 7
 
 Choice: 3
 ```
+
+### Windows: ucxclient_win64.exe (Recommended)
+
+The **ucxclient_win64** is a comprehensive Windows console application with an enhanced menu system and extensive feature set.
+
+#### Quick Start
+
+**Using the launcher (recommended):**
+```powershell
+.\launch_ucxclient_win64.cmd
+```
+The launcher automatically:
+- Checks build status and rebuilds if needed
+- Detects available COM ports
+- Auto-connects to the last used device
+- Provides color-coded status messages
+
+**Direct execution:**
+```powershell
+.\build\Release\ucxclient_win64.exe [COM_PORT]
+```
+
+#### Features
+
+**Bluetooth Operations:**
+- Device scanning and pairing
+- Connection management with multiple devices
+- GATT Client/Server operations
+- Serial Port Service (SPS)
+- HID over GATT (keyboard/mouse)
+- Service discovery and characteristics
+
+**Wi-Fi Operations:**
+- Network scanning with detailed information
+- Profile management (save/load credentials)
+- Connection with automatic reconnect
+- Status monitoring (signal strength, IP, gateway)
+- Access Point mode with QR code generation
+- Network connectivity testing (ping)
+
+**HTTP Client Examples:**
+- HTTP GET with file save option
+- HTTP POST with data or file upload
+- Response header and body reading
+- Connection parameter configuration
+
+**Location Services Examples:**
+- External IP Detection (ipify.org API)
+- IP Geolocation (ip-api.com) - Country, city, ISP, coordinates
+- Wi-Fi Positioning (Combain API) - Indoor/outdoor positioning using access points
+
+**Network Operations:**
+- Socket client/server (TCP/UDP)
+- MQTT publish/subscribe
+- TLS/SSL certificate management
+- NTP time synchronization
+
+**Developer Tools:**
+- Interactive AT Terminal with command history
+- Real-time AT command logging
+- API command reference with GitHub integration
+- Firmware update via XMODEM
+- URC (Unsolicited Result Code) monitoring
+
+#### Menu Structure
+
+```
+Main Menu
+├── [w] Wi-Fi Station
+│   ├── Scan networks
+│   ├── Connect/Disconnect
+│   ├── Profile management
+│   └── Status monitoring
+├── [o] Wi-Fi Access Point
+│   ├── Enable/Disable AP
+│   ├── QR code generation
+│   └── AP configuration
+├── [b] Bluetooth
+│   ├── Scan devices
+│   ├── Pairing
+│   └── Connection management
+├── [s] Serial Port Service (SPS)
+├── [g] GATT Client/Server
+├── [n] Network
+│   ├── Sockets (TCP/UDP)
+│   ├── MQTT
+│   └── HTTP
+├── [x] Security/TLS
+│   └── Certificate management
+├── [e] GATT Examples
+│   ├── Heartbeat service
+│   └── HID over GATT
+├── [p] HTTP Examples
+│   ├── GET request
+│   └── POST request
+├── [k] Location Examples ⭐ NEW
+│   ├── External IP Detection
+│   ├── IP Geolocation
+│   └── Wi-Fi Positioning
+├── [y] NTP Examples
+│   └── Time synchronization
+├── [f] Firmware Update
+├── [t] AT Terminal
+└── [l] Toggle Logging
+```
+
+#### Settings Persistence
+
+The application automatically saves and restores:
+- Last used COM port and device model
+- Wi-Fi network profiles (SSID, password, security settings)
+- Recent connection addresses
+- Logging preferences
+
+Settings stored in: `ucxclient_win64_settings.ini`
+
+#### Example: Location Services
+
+The Location Examples menu (`[k]`) provides three positioning methods:
+
+**1. External IP Detection:**
+```
+Uses ipify.org API to retrieve your public IP address
+- No authentication required
+- Simple JSON response
+- Useful for NAT/firewall detection
+```
+
+**2. IP Geolocation:**
+```
+Uses ip-api.com to determine location from IP
+- Country, region, city
+- ISP and organization
+- Latitude/longitude coordinates
+- Timezone information
+- Free tier: 45 requests/minute
+```
+
+**3. Wi-Fi Positioning:**
+```
+Uses Combain Positioning Service with Wi-Fi scan
+- Performs Wi-Fi scan to collect nearby access points
+- Sends MAC addresses, SSIDs, and signal strengths
+- Returns outdoor position (lat/lon, accuracy)
+- Indoor positioning if building data available
+- No GPS hardware required
+```
+
+Example flow:
+1. Connect to Wi-Fi network
+2. Press `[k]` for Location menu
+3. Choose `[3]` for Wi-Fi Positioning
+4. App scans access points automatically
+5. Builds JSON payload with scan results
+6. Sends to Combain API
+7. Displays position and accuracy
 
 ### Windows: windows_basic.exe
 

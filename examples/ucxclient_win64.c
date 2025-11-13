@@ -140,7 +140,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 // Global handles
 static uCxAtClient_t gUcxAtClient;
 static uCxHandle_t gUcxHandle;
-static bool gConnected = false;
+static bool gUcxConnected = false;  // UCX client connection status (COM port)
 
 // Socket tracking
 static int32_t gCurrentSocket = -1;
@@ -263,6 +263,10 @@ static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0"
 static U_CX_MUTEX_HANDLE gUrcMutex;
 static volatile uint32_t gUrcEventFlags = 0;
 
+// Passkey entry request tracking (set by URC, handled in main loop)
+static volatile bool gPasskeyRequestPending = false;
+static uBtLeAddress_t gPasskeyRequestAddress;
+
 // Ping test results
 static volatile int32_t gPingSuccess = 0;
 static volatile int32_t gPingFailed = 0;
@@ -291,6 +295,7 @@ typedef enum {
     MENU_HID,
     MENU_MQTT,
     MENU_HTTP,
+    MENU_LOCATION,
     MENU_SECURITY_TLS,
     MENU_FIRMWARE_UPDATE,
     MENU_API_LIST,
@@ -340,9 +345,9 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattServerMenu()                 GATT server submenu
 //
 // DEVICE CONNECTION & MANAGEMENT
-//   - connectDevice()                  Connect to UCX device via COM port
+//   - ucxclientConnect()               Connect to UCX device via COM port
 //   - quickConnectToLastDevice()       Auto-connect to last device
-//   - disconnectDevice()               Disconnect and cleanup
+//   - ucxclientDisconnect()            Disconnect and cleanup
 //   - listAvailableComPorts()          Enumerate COM ports with device info
 //   - selectComPortFromList()          Interactive COM port selection
 //   - initFtd2xxLibrary()              Load FTDI D2XX DLL
@@ -441,9 +446,10 @@ static void printWelcomeGuide(void);
 static void printHelp(void);
 static void printMenu(void);
 static void handleUserInput(void);
-static bool connectDevice(const char *comPort);
+static bool ucxclientConnect(const char *comPort);
 static bool quickConnectToLastDevice(void);
-static void disconnectDevice(void);
+static void ucxclientDisconnect(void);
+static void moduleStartupInit(void);
 static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize, 
                                    char *recommendedDevice, size_t recommendedDeviceSize);
 static char* selectComPortFromList(const char *recommendedPort);
@@ -972,9 +978,9 @@ static bool extractZipFile(const char *zipPath, const char *destFolder)
 
 static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t pathSize)
 {
-    printf("\n==============================================================\n");
-    printf("           Download Firmware from GitHub\n");
-    printf("==============================================================\n\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("Download Firmware from GitHub\n");
+    printf("─────────────────────────────────────────────────────────────\n\n");
     
     // Fetch available products from GitHub repository
     printf("Fetching available products from GitHub...\n");
@@ -1725,44 +1731,14 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
 
 static void startupUrc(struct uCxHandle *puCxHandle)
 {
-     // Record timestamp when STARTUP is received
+    // Record timestamp when STARTUP is received
     ULONGLONG currentTime = GetTickCount64();
     gStartupTimestamp = currentTime;
-
-    signalEvent(URC_FLAG_STARTUP);
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
     
-    // Prevent rapid reconfiguration (debounce within 2 seconds)
-    if (gLastStartupConfigTime > 0 && (currentTime - gLastStartupConfigTime) < 2000) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, 
-                       "Skipping reconfiguration - too soon after last STARTUP (%.1f seconds ago)",
-                       (currentTime - gLastStartupConfigTime) / 1000.0);
-        signalEvent(URC_FLAG_STARTUP);
-        return;
-    }
-    
-    // Module has restarted - need to reconfigure echo and error codes
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Reconfiguring module after restart...");
-    gLastStartupConfigTime = currentTime;
-    
-    // Turn off echo
-    int32_t result = uCxSystemSetEchoOff(puCxHandle);
-    if (result != 0) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, 
-                       "Warning: Failed to disable echo after restart (error %d)", result);
-    }
-    
-    // Enable extended error codes
-    result = uCxSystemSetExtendedError(puCxHandle, U_EXTENDED_ERRORS_ON);
-    if (result != 0) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, puCxHandle->pAtClient->instance, 
-                       "Warning: Failed to enable extended errors after restart (error %d)", result);
-    }
-    
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Module reconfiguration complete");
-    
-    
+    // Signal the event to wake up any waiting code
+    signalEvent(URC_FLAG_STARTUP);
 }
 
 static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time)
@@ -1801,10 +1777,12 @@ static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_i
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "MQTT connected: client %d", mqtt_client_id);
     
-    printf("\n*** MQTT Connection Established ***\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("MQTT CONNECTION ESTABLISHED\n");
+    printf("─────────────────────────────────────────────────\n");
     printf("Client ID: %d\n", mqtt_client_id);
-    printf("Status: Connected to broker\n");
-    printf("***********************************\n\n");
+    printf("Status:    Connected to broker\n");
+    printf("─────────────────────────────────────────────────\n");
     
     signalEvent(URC_FLAG_MQTT_CONNECTED);
 }
@@ -1815,7 +1793,9 @@ static void mqttDataAvailableUrc(struct uCxHandle *puCxHandle, int32_t mqtt_clie
                    "MQTT data received: %d bytes on client %d", number_bytes, mqtt_client_id);
     
     // Read the MQTT data immediately
-    printf("\n*** MQTT Message Received ***\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("MQTT MESSAGE RECEIVED\n");
+    printf("─────────────────────────────────────────────────\n");
     printf("Client ID: %d\n", mqtt_client_id);
     printf("Data size: %d bytes\n", number_bytes);
     
@@ -1857,6 +1837,7 @@ static void mqttDataAvailableUrc(struct uCxHandle *puCxHandle, int32_t mqtt_clie
     } else {
         printf("ERROR: Failed to read MQTT message (error %d)\n", bytesRead);
     }
+    printf("─────────────────────────────────────────────────\n");
     
     printf("*****************************\n\n");
     
@@ -1868,10 +1849,12 @@ static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLe
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "Bluetooth connected: handle %d", conn_handle);
     
-    printf("\n*** Bluetooth Connection Established ***\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("BLUETOOTH CONNECTION ESTABLISHED\n");
+    printf("─────────────────────────────────────────────────\n");
     printf("Connection handle: %d\n", conn_handle);
     if (bd_addr) {
-        printf("Device address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+        printf("Device address:    %02X:%02X:%02X:%02X:%02X:%02X\n",
                bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
                bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
         
@@ -2027,6 +2010,7 @@ static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLe
     // }
     
     // printf("GATT discovery complete! You can now read/write characteristics.\n\n");
+    printf("─────────────────────────────────────────────────\n");
     
     signalEvent(URC_FLAG_BT_CONNECTED);
 }
@@ -2036,8 +2020,11 @@ static void btDisconnected(struct uCxHandle *puCxHandle, int32_t conn_handle)
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "Bluetooth disconnected: handle %d", conn_handle);
     
-    printf("\n*** Bluetooth Disconnected ***\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("BLUETOOTH DISCONNECTED\n");
+    printf("─────────────────────────────────────────────────\n");
     printf("Connection handle: %d\n", conn_handle);
+    printf("─────────────────────────────────────────────────\n");
     
     // Remove from tracked connections
     for (int i = 0; i < gBtConnectionCount; i++) {
@@ -2085,7 +2072,7 @@ static void btDisconnected(struct uCxHandle *puCxHandle, int32_t conn_handle)
 
 static void socketCreateTcp(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2107,7 +2094,7 @@ static void socketCreateTcp(void)
 
 static void socketCreateUdp(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2129,7 +2116,7 @@ static void socketCreateUdp(void)
 
 static void socketConnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2196,7 +2183,7 @@ static void socketConnect(void)
 
 static void socketSendData(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2231,7 +2218,7 @@ static void socketSendData(void)
 
 static void socketReadData(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2278,7 +2265,7 @@ static void socketReadData(void)
 
 static void socketClose(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2304,7 +2291,7 @@ static void socketClose(void)
 
 static void socketListStatus(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2345,7 +2332,7 @@ static void socketListStatus(void)
 
 static void spsEnableService(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2364,7 +2351,7 @@ static void spsEnableService(void)
 
 static void spsConnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2391,7 +2378,7 @@ static void spsConnect(void)
 
 static void spsSendData(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2425,7 +2412,7 @@ static void spsSendData(void)
 
 static void spsReadData(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2724,7 +2711,7 @@ static uint16_t getExpectedUnitForCharacteristic(uint16_t charUuid)
 
 static void gattClientDiscoverServices(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2812,7 +2799,7 @@ static void gattClientDiscoverServices(void)
 
 static void gattClientDiscoverCharacteristics(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -2956,7 +2943,7 @@ static void gattClientDiscoverCharacteristics(void)
 
 static void gattClientReadCharacteristic(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -3199,7 +3186,7 @@ static void gattClientReadCharacteristic(void)
 
 static void gattClientWriteCharacteristic(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -3427,7 +3414,7 @@ static void gattClientWriteCharacteristic(void)
 
 static void gattServerAddService(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -3476,7 +3463,7 @@ static void gattServerAddService(void)
 
 static void gattServerSetCharacteristic(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
         return;
     }
@@ -3528,7 +3515,7 @@ static void gattServerSetCharacteristic(void)
 
 static void gattServerAddCharacteristic(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -3634,7 +3621,7 @@ static void gattServerAddCharacteristic(void)
 
 static void gattServerSendNotification(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -3699,14 +3686,14 @@ static void gattServerSendNotification(void)
 
 static void gattServerSetupHeartbeat(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
-    printf("\n========================================\n");
-    printf("  GATT Server: Heartbeat Service Setup\n");
-    printf("========================================\n\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("GATT Server: Heartbeat Service Setup\n");
+    printf("─────────────────────────────────────────────────\n\n");
     
     printf("This will create a Heart Rate Service (0x180D) with:\n");
     printf("  - Heart Rate Measurement characteristic (0x2A37)\n");
@@ -3777,9 +3764,9 @@ static void gattServerSetupHeartbeat(void)
         printf("Step 4: Initial value set to %d BPM\n\n", gHeartbeatCounter);
     }
     
-    printf("========================================\n");
-    printf("  Heartbeat Service Ready!\n");
-    printf("========================================\n\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("Heartbeat Service Ready!\n");
+    printf("─────────────────────────────────────────────────\n\n");
     
     printf("Next steps:\n");
     printf("  1. Connect a GATT client (phone app, etc.)\n");
@@ -4024,9 +4011,7 @@ static DWORD WINAPI heartbeatThread(LPVOID lpParam)
 
 static void enableAllUrcs(void)
 {
-    if (!gConnected) {
-        return;
-    }
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "*** enableAllUrcs() called ***");
     
     // Wi-Fi link and network events
     uCxWifiRegisterLinkUp(&gUcxHandle, linkUpUrc);
@@ -4051,9 +4036,7 @@ static void enableAllUrcs(void)
     uCxSpsRegisterDisconnect(&gUcxHandle, spsDisconnected);
     uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
     
-    // System events
-    // TODO: Uncomment when uCxSystemRegisterStartup API is available
-    // uCxSystemRegisterStartup(&gUcxHandle, startupUrc);
+    // System events (STARTUP now uses callback structure, set during uCxInit)
     
     // Ping/diagnostics events
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
@@ -4069,6 +4052,7 @@ static void enableAllUrcs(void)
     uCxBluetoothRegisterBondStatus(&gUcxHandle, bluetoothPairUrc);
     uCxBluetoothRegisterUserConfirmation(&gUcxHandle, bluetoothUserConfirmationUrc);
     uCxBluetoothRegisterPasskeyEntry(&gUcxHandle, bluetoothPasskeyDisplayUrc);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Registering PasskeyRequest URC handler at %p", (void*)bluetoothPasskeyRequestUrc);
     uCxBluetoothRegisterPasskeyRequest(&gUcxHandle, bluetoothPasskeyRequestUrc);
     uCxBluetoothRegisterPhyUpdate(&gUcxHandle, bluetoothPhyUpdateUrc);
     
@@ -4078,7 +4062,7 @@ static void enableAllUrcs(void)
 
 static void disableAllUrcs(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         return;
     }
     
@@ -4163,15 +4147,14 @@ static const uint8_t gHidInfo[] = {0x11, 0x01, 0x00, 0x03};
 // Setup complete HID over GATT service structure
 static void gattServerSetupHidKeyboard(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
-    printf("\n");
-    printf("========================================\n");
-    printf("  HID over GATT (HoG) Setup\n");
-    printf("========================================\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("HID over GATT (HoG) Setup\n");
+    printf("─────────────────────────────────────────────────\n");
     printf("Profile: Keyboard + Media Control\n\n");
     
     // STEP 0: Configure Bluetooth settings BEFORE creating GATT services
@@ -4194,9 +4177,9 @@ static void gattServerSetupHidKeyboard(void)
         printf("  ✓ Security mode set\n");
     }
     
-    // Set IO capabilities
-    printf("  Setting IO capabilities to NoInputNoOutput...\n");
-    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, U_IO_CAPABILITIES_NO_INPUT_NO_OUTPUT);
+    // Set IO capabilities - use KeyboardOnly for HID keyboards to enable passkey entry (MITM protection)
+    printf("  Setting IO capabilities to KeyboardOnly...\n");
+    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, U_IO_CAPABILITIES_KEYBOARD_ONLY);
     if (result == 0) {
         printf("  ✓ IO capabilities set\n");
     }
@@ -4558,9 +4541,9 @@ static void gattServerSetupHidKeyboard(void)
         printf("✓ Battery Service activated!\n\n");
     }
     
-    printf("========================================\n");
-    printf("  HID Keyboard + Battery Services Ready!\n");
-    printf("========================================\n\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("HID Keyboard + Battery Services Ready!\n");
+    printf("─────────────────────────────────────────────────\n\n");
     
     // Bond management - Check existing bonds
     printf("Checking existing bonds...\n");
@@ -4572,26 +4555,32 @@ static void gattServerSetupHidKeyboard(void)
     }
     result = uCxEnd(&gUcxHandle);
     if (result == 0) {
-        printf("✓ Found %d bonded device(s)\n\n", bondCount);
+        printf("✓ Found %d bonded device(s)\n", bondCount);
     } else {
-        printf("✓ Bond list checked\n\n");
+        printf("✓ Bond list checked\n");
     }
     
-    // Ask user if they want to clear bonds
-    printf("Do you want to clear existing bonds? (y/n): ");
-    int clearBonds = getchar();
-    getchar(); // consume newline
-    printf("\n");
+    // Only ask to clear bonds if there are any
+    bool clearBonds = false;
+    if (bondCount > 0) {
+        printf("\nDo you want to clear existing bonds? (y/n): ");
+        int clearInput = getchar();
+        getchar(); // consume newline
+        printf("\n");
+        clearBonds = (clearInput == 'y' || clearInput == 'Y');
+    } else {
+        printf("No existing bonds to clear.\n\n");
+    }
     
-    if (clearBonds == 'y' || clearBonds == 'Y') {
+    if (clearBonds) {
         printf("Clearing all Bluetooth bonds...\n");
         result = uCxBluetoothUnbondAll(&gUcxHandle);
         if (result == 0) {
             printf("✓ All bonds cleared - ready for fresh pairing\n\n");
             
-            printf("========================================\n");
-            printf("    CRITICAL STEP REQUIRED\n");
-            printf("========================================\n\n");
+            printf("\n─────────────────────────────────────────────────\n");
+            printf("CRITICAL STEP REQUIRED\n");
+            printf("─────────────────────────────────────────────────\n\n");
             printf("You MUST also remove this device from your\n");
             printf("iPhone/Windows Bluetooth settings:\n\n");
             printf("iPhone:\n");
@@ -4652,9 +4641,9 @@ static void gattServerSetupHidKeyboard(void)
     } else {
         printf("WARNING: Failed to enable advertising (code %d)\n\n", result);
     }
-        printf("========================================\n");
-    printf("  Device Ready for Pairing!\n");
-    printf("========================================\n\n");
+        printf("\n─────────────────────────────────────────────────\n");
+    printf("Device Ready for Pairing!\n");
+    printf("─────────────────────────────────────────────────\n\n");
     
     printf("Next steps:\n");
     printf("  1. Scan for Bluetooth devices on your phone/PC\n");
@@ -4673,7 +4662,7 @@ static void gattServerSetupHidKeyboard(void)
 // Send a keyboard key press via HID
 static void gattServerSendKeyPress(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -4689,9 +4678,9 @@ static void gattServerSendKeyPress(void)
     }
     
     if (!gHidNotificationsEnabled) {
-        printf("\n========================================\n");
-        printf("  HID Notifications Not Yet Enabled\n");
-        printf("========================================\n");
+        printf("\n─────────────────────────────────────────────────\n");
+        printf("HID NOTIFICATIONS NOT YET ENABLED\n");
+        printf("─────────────────────────────────────────────────\n");
         printf("The client (Windows/phone) has connected but hasn't\n");
         printf("enabled notifications on the HID Input Report yet.\n\n");
         printf("This is normal - the client first enables Service Changed\n");
@@ -4700,7 +4689,7 @@ static void gattServerSendKeyPress(void)
         printf("Please wait a few seconds and try again.\n");
         printf("You'll see '[HID Keyboard] Client enabled notifications'\n");
         printf("when it's ready.\n");
-        printf("========================================\n");
+        printf("─────────────────────────────────────────────────\n");
         return;
     }
     
@@ -4802,7 +4791,7 @@ static void gattServerSendKeyPress(void)
 // Send media control command via HID
 static void gattServerSendMediaControl(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -4889,7 +4878,7 @@ static void gattServerSendMediaControl(void)
 // Send "Hello World" as keyboard key presses
 static void gattServerSendHelloWorld(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -4905,9 +4894,9 @@ static void gattServerSendHelloWorld(void)
     }
     
     if (!gHidNotificationsEnabled) {
-        printf("\n========================================\n");
-        printf("  HID Notifications Not Yet Enabled\n");
-        printf("========================================\n");
+        printf("\n─────────────────────────────────────────────────\n");
+        printf("HID NOTIFICATIONS NOT YET ENABLED\n");
+        printf("─────────────────────────────────────────────────\n");
         printf("The client (Windows/phone) has connected but hasn't\n");
         printf("enabled notifications on the HID Input Report yet.\n\n");
         printf("This is normal - the client first enables Service Changed\n");
@@ -4916,7 +4905,7 @@ static void gattServerSendHelloWorld(void)
         printf("Please wait a few seconds and try again.\n");
         printf("You'll see '[HID Keyboard] Client enabled notifications'\n");
         printf("when it's ready.\n");
-        printf("========================================\n");
+        printf("─────────────────────────────────────────────────\n");
         return;
     }
     
@@ -4998,9 +4987,12 @@ static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_ad
              bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
     
     if (bond_status == U_BOND_STATUS_BONDING_SUCCEEDED) {
-        printf("\n*** PAIRING SUCCESS ***\n");
+        printf("\n─────────────────────────────────────────────────\n");
+        printf("PAIRING SUCCESS\n");
+        printf("─────────────────────────────────────────────────\n");
         printf("Device: %s\n", addrStr);
-        printf("Type: %d\n", bd_addr->type);
+        printf("Type:   %d\n", bd_addr->type);
+        printf("─────────────────────────────────────────────────\n");
         strncpy(gBluetoothPairedDevice, addrStr, sizeof(gBluetoothPairedDevice) - 1);
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Paired with device: %s", addrStr);
         
@@ -5022,9 +5014,12 @@ static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_ad
         // }
         
     } else {
-        printf("\n*** PAIRING FAILED ***\n");
+        printf("\n─────────────────────────────────────────────────\n");
+        printf("PAIRING FAILED\n");
+        printf("─────────────────────────────────────────────────\n");
         printf("Device: %s\n", addrStr);
         printf("Status: %d\n", bond_status);
+        printf("─────────────────────────────────────────────────\n");
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Pairing failed for device: %s, status: %d", addrStr, bond_status);
     }
 }
@@ -5039,11 +5034,12 @@ static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddr
              bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
              bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
     
-    printf("\n╔══════════════════════════════════════════╗\n");
-    printf("║       BLUETOOTH PAIRING REQUEST         ║\n");
-    printf("╚══════════════════════════════════════════╝\n\n");
-    printf("Device: %s\n", addrStr);
-    printf("Pairing Code: %06d\n\n", numeric_value);
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("BLUETOOTH PAIRING REQUEST\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("Device:       %s\n", addrStr);
+    printf("Pairing Code: %06d\n", numeric_value);
+    printf("─────────────────────────────────────────────────\n");
     printf("Verify this code matches on both devices.\n");
     printf("Accept pairing? (y/n): ");
     fflush(stdout);
@@ -5075,37 +5071,70 @@ static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddres
              bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
              bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
     
-    printf("\n╔══════════════════════════════════════════╗\n");
-    printf("║     BLUETOOTH PAIRING - ENTER CODE      ║\n");
-    printf("╚══════════════════════════════════════════╝\n\n");
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("BLUETOOTH PAIRING - ENTER CODE\n");
+    printf("─────────────────────────────────────────────────\n");
     printf("Device: %s\n", addrStr);
-    printf("\nEnter this code on the remote device:\n\n");
-    printf("        >>> %06d <<<\n\n", passkey);
+    printf("\nEnter this code on the remote device:\n");
+    printf(">>> %06d <<<\n", passkey);
+    printf("─────────────────────────────────────────────────\n");
     printf("Waiting for remote device to confirm...\n");
 }
 
 // URC handler for passkey request during pairing (KeyboardOnly)
 static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr)
 {
-    (void)puCxHandle;
-    
+    (void)puCxHandle; 
+
     char addrStr[18];
     snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
              bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
              bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
-    
-    printf("\n╔══════════════════════════════════════════╗\n");
-    printf("║    BLUETOOTH PAIRING - CODE REQUIRED    ║\n");
-    printf("╚══════════════════════════════════════════╝\n\n");
+
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("BLUETOOTH PAIRING - PASSKEY ENTRY\n");
+    printf("─────────────────────────────────────────────────\n");
     printf("Device: %s\n", addrStr);
-    printf("\nEnter the pairing code shown on the remote device.\n");
+    printf("\nThe remote device (Windows) is displaying a 6-digit passkey.\n");
+    printf("You have 30 seconds to enter the passkey.\n");
     printf("Passkey (6 digits): ");
     fflush(stdout);
     
-    int32_t passkey = 0;
-    if (scanf("%d", &passkey) == 1) {
-        getchar(); // consume newline
-        
+    // Non-blocking input with 30 second timeout
+    char passkeyStr[16] = {0};
+    int idx = 0;
+    time_t startTime = time(NULL);
+    bool gotInput = false;
+    
+    while (difftime(time(NULL), startTime) < 30 && idx < 6) {
+        if (_kbhit()) {
+            int ch = _getch();
+            if (ch >= '0' && ch <= '9') {
+                passkeyStr[idx++] = (char)ch;
+                printf("*"); // Show asterisk for security
+                fflush(stdout);
+                if (idx == 6) {
+                    gotInput = true;
+                    break;
+                }
+            } else if (ch == '\r' || ch == '\n') {
+                if (idx > 0) {
+                    gotInput = true;
+                    break;
+                }
+            } else if (ch == 8 && idx > 0) { // Backspace
+                idx--;
+                printf("\b \b"); // Erase character
+                fflush(stdout);
+            }
+        }
+        Sleep(50); // Small delay to avoid busy-wait
+    }
+    
+    printf("\n");
+    
+    if (gotInput && idx >= 6) {
+        int32_t passkey = atoi(passkeyStr);
         int32_t result = uCxBluetoothUserPasskeyEntry3(&gUcxHandle, bd_addr, U_YES_NO_YES, passkey);
         if (result == 0) {
             printf("✓ Passkey sent - waiting for pairing completion...\n");
@@ -5113,8 +5142,7 @@ static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddres
             printf("ERROR: Failed to send passkey (code %d)\n", result);
         }
     } else {
-        printf("ERROR: Invalid passkey\n");
-        getchar(); // clear input
+        printf("ERROR: Passkey entry timeout or invalid\n");
         uCxBluetoothUserPasskeyEntry2(&gUcxHandle, bd_addr, U_YES_NO_NO);
     }
 }
@@ -5135,7 +5163,7 @@ static void bluetoothPhyUpdateUrc(struct uCxHandle *puCxHandle, int32_t conn_han
 // Enable/disable Bluetooth advertising (discoverable mode)
 static void bluetoothSetAdvertising(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -5186,15 +5214,14 @@ static void bluetoothSetAdvertising(void)
 // Configure Bluetooth pairing settings
 static void bluetoothSetPairing(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
-    printf("\n");
-    printf("==============================================================\n");
-    printf("            BLUETOOTH PAIRING CONFIGURATION\n");
-    printf("==============================================================\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("BLUETOOTH PAIRING CONFIGURATION\n");
+    printf("─────────────────────────────────────────────────────────────\n\n");
     
     // Step 1: Pairing Mode
     printf("\n[1/3] Pairing Mode:\n");
@@ -5295,9 +5322,9 @@ static void bluetoothSetPairing(void)
     
     // Apply settings
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("Applying configuration...\n");
-    printf("==============================================================\n");
+    printf("\n");
     
     // Set pairing mode
     int32_t result = uCxBluetoothSetPairingMode(&gUcxHandle, pairingMode);
@@ -5331,16 +5358,14 @@ static void bluetoothSetPairing(void)
 // List all bonded (paired) devices
 static void bluetoothListBondedDevices(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
-    printf("\n");
-    printf("==============================================================\n");
-    printf("                   BONDED DEVICES LIST\n");
-    printf("==============================================================\n");
-    printf("\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("BONDED DEVICES LIST\n");
+    printf("─────────────────────────────────────────────────────────────\n\n");
     
     uCxBluetoothListBondedDevicesBegin(&gUcxHandle);
     uBtLeAddress_t bondedAddr;
@@ -5390,15 +5415,14 @@ static void bluetoothListBondedDevices(void)
 // Show current Bluetooth status
 static void bluetoothShowStatus(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
-    printf("\n");
-    printf("==============================================================\n");
-    printf("                   BLUETOOTH STATUS\n");
-    printf("==============================================================\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("BLUETOOTH STATUS\n");
+    printf("─────────────────────────────────────────────────────────────\n\n");
     
     // Display status based on tracked state
     printf("Advertising:       %s\n", gBluetoothAdvertising ? "ENABLED (Discoverable)" : "DISABLED");
@@ -5429,7 +5453,7 @@ static void bluetoothShowStatus(void)
         printf("  (none)\n");
     }
     
-    printf("==============================================================\n");
+    printf("\n");
 }
 
 // ============================================================================
@@ -5442,7 +5466,7 @@ static void bluetoothShowStatus(void)
 
 static void mqttConnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -5496,7 +5520,7 @@ static void mqttConnect(void)
 
 static void mqttDisconnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -5515,7 +5539,7 @@ static void mqttDisconnect(void)
 
 static void mqttSubscribe(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -5567,7 +5591,7 @@ static void mqttSubscribe(void)
 
 static void mqttUnsubscribe(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -5602,7 +5626,7 @@ static void mqttUnsubscribe(void)
 
 static void mqttPublish(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -6175,6 +6199,561 @@ static void httpPostExample(void)
     getchar();
 }
 
+static void ipGeolocationExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("IP GEOLOCATION\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Getting IP geolocation information...\n");
+    printf("\n");
+    
+    // API: https://ip-api.com/docs/api:json
+    // Endpoint: http://ip-api.com/json/
+    // Returns: JSON with country, city, ISP, lat/lon, etc.
+    
+    const char *host = "ip-api.com";
+    const char *path = "/json/";
+    
+    printf("Configuring HTTP connection...\n");
+    
+    // Step 1: Set connection parameters
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Connection configured for %s\n", host);
+    
+    // Step 2: Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Request path set to %s\n", path);
+    
+    // Step 3: Send GET request
+    printf("\n");
+    printf("Sending GET request to http://%s%s...\n", host, path);
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ GET request sent successfully\n");
+    
+    // Step 4: Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Step 5: Read response body (JSON data)
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    // Note: Response body reading not yet implemented
+    // Expected JSON response format from ip-api.com:
+    // {
+    //   "status": "success",
+    //   "country": "United States",
+    //   "countryCode": "US",
+    //   "region": "CA",
+    //   "regionName": "California",
+    //   "city": "Mountain View",
+    //   "zip": "94043",
+    //   "lat": 37.4192,
+    //   "lon": -122.0574,
+    //   "timezone": "America/Los_Angeles",
+    //   "isp": "Google LLC",
+    //   "org": "Google Cloud",
+    //   "as": "AS15169 Google LLC",
+    //   "query": "35.192.x.x"
+    // }
+    
+    // int32_t totalBytes = 0;
+    // int32_t chunkSize = 2048;
+    // bool moreData = true;
+    // 
+    // while (moreData) {
+    //     uCxHttpGetHttpBodyString_t bodyResp;
+    //     
+    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
+    //         int32_t bytesReceived = bodyResp.data_length;
+    //         totalBytes += bytesReceived;
+    //         
+    //         // Display JSON response
+    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
+    //         
+    //         moreData = (bodyResp.more_to_read != 0);
+    //         uCxEnd(&gUcxHandle);
+    //     } else {
+    //         printf("\nERROR: Failed to read response body\n");
+    //         break;
+    //     }
+    // }
+    // 
+    // printf("\n");
+    // printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    printf("(Response body reading not yet implemented)\n");
+    printf("\n");
+    
+    printf("Expected JSON Response Fields:\n");
+    printf("  - status:      Success/fail indicator\n");
+    printf("  - country:     Country name\n");
+    printf("  - countryCode: Two-letter country code (e.g., US, SE, DE)\n");
+    printf("  - region:      Region/state code\n");
+    printf("  - regionName:  Region/state full name\n");
+    printf("  - city:        City name\n");
+    printf("  - zip:         Zip/postal code\n");
+    printf("  - lat:         Latitude coordinate\n");
+    printf("  - lon:         Longitude coordinate\n");
+    printf("  - timezone:    Timezone identifier (e.g., America/Los_Angeles)\n");
+    printf("  - isp:         Internet Service Provider\n");
+    printf("  - org:         Organization name\n");
+    printf("  - as:          Autonomous system info\n");
+    printf("  - query:       IP address used for lookup\n");
+    printf("\n");
+    printf("API Documentation: https://ip-api.com/docs/api:json\n");
+    printf("\n");
+    printf("Other available API formats:\n");
+    printf("  - JSON:    http://ip-api.com/json/\n");
+    printf("  - XML:     http://ip-api.com/xml/\n");
+    printf("  - CSV:     http://ip-api.com/csv/\n");
+    printf("  - Newline: http://ip-api.com/line/\n");
+    printf("  - PHP:     http://ip-api.com/php/\n");
+    printf("\n");
+    printf("Note: Free tier is limited to 45 requests per minute\n");
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void externalIpDetectionExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("EXTERNAL IP DETECTION\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Detecting external IP address...\n");
+    printf("\n");
+    
+    // API: https://www.ipify.org/
+    // Endpoints:
+    //   - Plain text: https://api.ipify.org (or http://api.ipify.org)
+    //   - JSON:       https://api.ipify.org?format=json
+    //   - JSONP:      https://api.ipify.org?format=jsonp
+    //
+    // This is a simple, free API that returns your public IP address
+    // No rate limiting, no authentication required
+    
+    const char *host = "api.ipify.org";
+    const char *path = "/?format=json";
+    
+    printf("Configuring HTTP connection...\n");
+    
+    // Step 1: Set connection parameters
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Connection configured for %s\n", host);
+    
+    // Step 2: Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Request path set to %s\n", path);
+    
+    // Step 3: Send GET request
+    printf("\n");
+    printf("Sending GET request to http://%s%s...\n", host, path);
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ GET request sent successfully\n");
+    
+    // Step 4: Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Step 5: Read response body (JSON data)
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    // Expected JSON response format from ipify.org:
+    // {"ip":"123.45.67.89"}
+    //
+    // This is a minimal response containing just your external IP address
+    
+    // int32_t totalBytes = 0;
+    // int32_t chunkSize = 256;  // Response is very small
+    // bool moreData = true;
+    // 
+    // while (moreData) {
+    //     uCxHttpGetHttpBodyString_t bodyResp;
+    //     
+    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
+    //         int32_t bytesReceived = bodyResp.data_length;
+    //         totalBytes += bytesReceived;
+    //         
+    //         // Display JSON response
+    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
+    //         
+    //         moreData = (bodyResp.more_to_read != 0);
+    //         uCxEnd(&gUcxHandle);
+    //     } else {
+    //         printf("\nERROR: Failed to read response body\n");
+    //         break;
+    //     }
+    // }
+    // 
+    // printf("\n");
+    // printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    printf("(Response body reading not yet implemented)\n");
+    printf("\n");
+    
+    printf("Expected JSON Response Format:\n");
+    printf("  {\"ip\":\"123.45.67.89\"}\n");
+    printf("\n");
+    printf("The 'ip' field contains your public/external IP address\n");
+    printf("as seen from the internet.\n");
+    printf("\n");
+    printf("API Documentation: https://www.ipify.org/\n");
+    printf("\n");
+    printf("Available formats:\n");
+    printf("  - JSON (recommended): http://api.ipify.org?format=json\n");
+    printf("  - Plain text:         http://api.ipify.org\n");
+    printf("  - JSONP:              http://api.ipify.org?format=jsonp\n");
+    printf("\n");
+    printf("Note: Free API with no rate limits or authentication required\n");
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void wifiPositioningExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    char postData[4096];
+    int dataLen = 0;
+    
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("WI-FI POSITIONING (Combain)\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Performing Wi-Fi scan to collect access point data...\n");
+    printf("\n");
+    
+    // Step 1: Perform Wi-Fi scan
+    printf("Initiating Wi-Fi scan...\n");
+    uCxWifiStationScanDefaultBegin(&gUcxHandle);
+    
+    // Collect scan results
+    uCxWifiStationScanDefault_t scanResult;
+    int apCount = 0;
+    char macStr[18];
+    
+    // Build JSON payload for Combain API
+    strcpy(postData, "{\n    \"wifiAccessPoints\": [");
+    dataLen = (int)strlen(postData);
+    
+    printf("Collecting access point data...\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    
+    while (uCxWifiStationScanDefaultGetNext(&gUcxHandle, &scanResult)) {
+        // Convert MAC address to string format (XX:XX:XX:XX:XX:XX)
+        snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
+                 scanResult.bssid.address[0], scanResult.bssid.address[1],
+                 scanResult.bssid.address[2], scanResult.bssid.address[3],
+                 scanResult.bssid.address[4], scanResult.bssid.address[5]);
+        
+        printf("  AP %2d: %-32s  MAC: %s  RSSI: %3d dBm  CH: %2d\n",
+               apCount + 1, scanResult.ssid, macStr, scanResult.rssi, scanResult.channel);
+        
+        // Add to JSON array (add comma if not first entry)
+        if (apCount > 0) {
+            dataLen += snprintf(postData + dataLen, sizeof(postData) - dataLen, ",");
+        }
+        
+        // Add access point entry to JSON
+        dataLen += snprintf(postData + dataLen, sizeof(postData) - dataLen,
+                           "\n        {\n"
+                           "            \"macAddress\": \"%s\",\n"
+                           "            \"ssid\": \"%s\",\n"
+                           "            \"signalStrength\": %d\n"
+                           "        }",
+                           macStr, scanResult.ssid, scanResult.rssi);
+        
+        apCount++;
+        
+        // Prevent buffer overflow
+        if (dataLen >= sizeof(postData) - 200) {
+            printf("WARNING: Buffer limit reached, truncating AP list\n");
+            break;
+        }
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("✓ Scan complete: %d access points found\n", apCount);
+    printf("\n");
+    
+    if (apCount == 0) {
+        printf("ERROR: No access points found. Cannot determine position.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Complete JSON payload
+    dataLen += snprintf(postData + dataLen, sizeof(postData) - dataLen,
+                       "\n    ],\n"
+                       "    \"indoor\": 1\n"
+                       "}");
+    
+    printf("JSON Payload (%d bytes):\n", dataLen);
+    printf("─────────────────────────────────────────────────\n");
+    printf("%s\n", postData);
+    printf("─────────────────────────────────────────────────\n");
+    printf("\n");
+    
+    // Step 2: Send POST request to Combain API
+    // API: https://portal.combain.com/api/#combain-location-api
+    // Endpoint: https://apiv2.combain.com?key=YOUR_API_KEY&id=DEVICE_ID
+    
+    const char *host = "apiv2.combain.com";
+    char path[256];
+    snprintf(path, sizeof(path), "/?key=8c87310c40e1714289ee&id=ucxclient_win64");
+    
+    printf("Configuring HTTP connection to Combain...\n");
+    
+    // Set connection parameters
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Connection configured for %s\n", host);
+    
+    // Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Request path set to %s\n", path);
+    
+    // Note: Header setting functions not yet available
+    // err = uCxHttpSetRequestHeader2(&gUcxHandle, sessionId, "Content-Type: application/json");
+    // if (err < 0) {
+    //     printf("ERROR: Failed to set Content-Type header (error: %d)\n", err);
+    //     printf("\n");
+    //     printf("Press Enter to continue...");
+    //     getchar();
+    //     return;
+    // }
+    // printf("✓ Content-Type header set\n");
+    
+    // Send POST request with JSON data
+    printf("\n");
+    printf("Sending POST request to https://%s%s...\n", host, path);
+    printf("POST data: %d bytes\n", dataLen);
+    
+    uCxHttpPostRequest_t postResp;
+    err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)postData, dataLen, &postResp);
+    if (err < 0) {
+        printf("ERROR: POST request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ POST request sent successfully\n");
+    printf("  Session ID: %d\n", postResp.session_id);
+    printf("  Written Length: %d bytes\n", postResp.written_length);
+    
+    // Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Read response body (JSON location data)
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    // Expected JSON response format from Combain:
+    // {
+    //     "location": {
+    //         "lat": 55.7174228,
+    //         "lng": 13.2137795
+    //     },
+    //     "accuracy": 2,
+    //     "state": "...",
+    //     "indoor": {
+    //         "buildingModelId": 135432394,
+    //         "buildingId": 172119,
+    //         "building": "Combain Office",
+    //         "floorIndex": 13,
+    //         "floorLabel": "14",
+    //         "roomIndex": 1000000000017996,
+    //         "room": "Le Kitchen"
+    //     },
+    //     "logId": 300000528485206
+    // }
+    
+    // int32_t totalBytes = 0;
+    // int32_t chunkSize = 2048;
+    // bool moreData = true;
+    // 
+    // printf("Position Data:\n");
+    // printf("─────────────────────────────────────────────────\n");
+    // 
+    // while (moreData) {
+    //     uCxHttpGetHttpBodyString_t bodyResp;
+    //     
+    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
+    //         int32_t bytesReceived = bodyResp.data_length;
+    //         totalBytes += bytesReceived;
+    //         
+    //         // Display JSON response
+    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
+    //         
+    //         moreData = (bodyResp.more_to_read != 0);
+    //         uCxEnd(&gUcxHandle);
+    //     } else {
+    //         printf("\nERROR: Failed to read response body\n");
+    //         break;
+    //     }
+    // }
+    // 
+    // printf("\n─────────────────────────────────────────────────\n");
+    // printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    printf("(Response body reading not yet implemented)\n");
+    printf("\n");
+    
+    printf("Expected JSON Response Fields:\n");
+    printf("  location:\n");
+    printf("    - lat:              Latitude coordinate\n");
+    printf("    - lng:              Longitude coordinate\n");
+    printf("  - accuracy:           Accuracy in meters\n");
+    printf("  - state:              State data for subsequent requests\n");
+    printf("  indoor (if available):\n");
+    printf("    - buildingModelId:  Building model identifier\n");
+    printf("    - buildingId:       Building identifier\n");
+    printf("    - building:         Building name\n");
+    printf("    - floorIndex:       Floor index (0-based)\n");
+    printf("    - floorLabel:       Floor label (e.g., \"14\")\n");
+    printf("    - roomIndex:        Room identifier\n");
+    printf("    - room:             Room name\n");
+    printf("  - logId:              Log entry identifier\n");
+    printf("\n");
+    printf("API Documentation: https://portal.combain.com/api/#combain-location-api\n");
+    printf("\n");
+    printf("Note: Accuracy depends on Wi-Fi AP database coverage in your area.\n");
+    printf("      Send as many APs as possible for best results.\n");
+    printf("      Indoor positioning requires building data in Combain's database.\n");
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
 // ----------------------------------------------------------------
 // NTP (Network Time Protocol) Helper Functions
 // ----------------------------------------------------------------
@@ -6373,7 +6952,7 @@ static void ntpTimeExample(void)
                     printf(" (uptime: %llu sec)", testTime);
                 }
             } else {
-                printf(" (invalid length: %d)", testTimeData.length);
+                printf(" (invalid length: %zd)", testTimeData.length);
             }
         } else {
             printf(" (gotResponse=%d or endResult=%d failed)", gotResponse, endResult);
@@ -6489,15 +7068,15 @@ static void httpMenu(void)
 
 static void tlsSetVersion(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                   SET TLS VERSION\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("NOTE: TLS version configuration is managed through server\n");
     printf("      certificate selection and connection parameters.\n");
@@ -6510,7 +7089,7 @@ static void tlsSetVersion(void)
     printf("  - Configure certificate validation (AT+USECVAL)\n");
     printf("  - Enable/disable TLS extensions (AT+USECEXT)\n");
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -6518,15 +7097,15 @@ static void tlsSetVersion(void)
 
 static void tlsShowConfig(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                TLS CONFIGURATION STATUS\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     printf("TLS Version: TLS 1.2 (auto-negotiated)\n");
@@ -6559,7 +7138,7 @@ static void tlsShowConfig(void)
     printf("      configured per connection. Use certificate management\n");
     printf("      options to upload and configure certificates.\n");
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -6567,15 +7146,15 @@ static void tlsShowConfig(void)
 
 static void tlsListCertificates(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                  CERTIFICATE LIST\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     // List certificates using AT+USECL command
@@ -6623,7 +7202,7 @@ static void tlsListCertificates(void)
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -6631,15 +7210,15 @@ static void tlsListCertificates(void)
 
 static void tlsShowCertificateDetails(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("              CERTIFICATE DETAILS\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     char certName[128];
@@ -6674,7 +7253,7 @@ static void tlsShowCertificateDetails(void)
     printf("For detailed certificate inspection, use OpenSSL tools:\n");
     printf("  openssl x509 -in cert.pem -text -noout\n");
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -6682,15 +7261,15 @@ static void tlsShowCertificateDetails(void)
 
 static void tlsUploadCertificate(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                 UPLOAD CERTIFICATE\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Select certificate type:\n");
     printf("  [1] CA Certificate (root or intermediate)\n");
@@ -6849,7 +7428,7 @@ static void tlsUploadCertificate(void)
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -6857,15 +7436,15 @@ static void tlsUploadCertificate(void)
 
 static void tlsDeleteCertificate(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                DELETE CERTIFICATE\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     char certName[128];
@@ -6930,7 +7509,7 @@ static void tlsDeleteCertificate(void)
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -7033,7 +7612,7 @@ int main(int argc, char *argv[])
     
     // Try to auto-connect
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Attempting to connect to %s...", gComPort);
-    if (connectDevice(gComPort)) {
+    if (ucxclientConnect(gComPort)) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connected successfully!");
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
         saveSettings();  // Save successful port
@@ -7052,8 +7631,8 @@ int main(int argc, char *argv[])
     }
     
     // Cleanup
-    if (gConnected) {
-        disconnectDevice();
+    if (gUcxConnected) {
+        ucxclientDisconnect();
     }
     
     // Free API commands if loaded
@@ -7071,9 +7650,9 @@ int main(int argc, char *argv[])
 static void printHeader(void)
 {
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "========================================");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "  u-connectXpress ucxclient App v%s", APP_VERSION);
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "========================================");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "─────────────────────────────────────────────────────────────");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "u-connectXpress ucxclient App v%s", APP_VERSION);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "─────────────────────────────────────────────────────────────");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Simple C application for NORA-B26 and NORA-W36");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "NOTE: UCX Logging is %s", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
@@ -7085,9 +7664,9 @@ static void printHeader(void)
 static void printWelcomeGuide(void)
 {
     printf("\n");
-    printf("=========================================================\n");
-    printf("            WELCOME - Getting Started Guide             \n");
-    printf("=========================================================\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("WELCOME - Getting Started Guide\n");
+    printf("─────────────────────────────────────────────────────────────\n");
     printf("\n");
     printf("This is a simple example application to help you get\n");
     printf("started with u-connectXpress modules (NORA-B26/NORA-W36).\n");
@@ -7125,9 +7704,9 @@ static void printWelcomeGuide(void)
 static void printHelp(void)
 {
     printf("\n");
-    printf("=========================================================\n");
-    printf("                    HELP & TIPS                          \n");
-    printf("=========================================================\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("HELP & TIPS\n");
+    printf("─────────────────────────────────────────────────────────────\n");
     printf("\n");
     printf("QUICK ACTIONS:\n");
     printf("  [c] Connect      - Select and connect to your UCX device\n");
@@ -7229,12 +7808,12 @@ static void printMenu(void)
     switch (gMenuState) {
         case MENU_MAIN:
             printf("\n");
-            printf("==============================================================\n");
-            printf("             u-blox UCX Client - Main Menu\n");
-            printf("==============================================================\n");
+            printf("─────────────────────────────────────────────────────────────\n");
+            printf("u-blox UCX Client - Main Menu\n");
+            printf("─────────────────────────────────────────────────────────────\n");
             
             // === STATUS DASHBOARD ===
-            if (gConnected) {
+            if (gUcxConnected) {
                 printf("\n✓ CONNECTED");
                 if (gDeviceModel[0] != '\0') {
                     printf("  |  %s", gDeviceModel);
@@ -7265,12 +7844,12 @@ static void printMenu(void)
                 printf("\n");
             }
             
-            printf("==============================================================\n");
+            printf("─────────────────────────────────────────────────────────────\n");
             printf("\n");
             
             // === QUICK ACTIONS (always visible) ===
             printf("QUICK ACTIONS\n");
-            if (!gConnected) {
+            if (!gUcxConnected) {
                 if (gComPort[0] != '\0') {
                     printf("  [ENTER] Quick connect to %s\n", gComPort);
                     printf("  [1]     Connect to different device\n");
@@ -7286,7 +7865,7 @@ static void printMenu(void)
             }
             printf("\n");
             
-            if (gConnected) {
+            if (gUcxConnected) {
                 // === BLUETOOTH FEATURES (only when connected) ===
                 printf("BLUETOOTH FEATURES\n");
                 
@@ -7324,6 +7903,7 @@ static void printMenu(void)
                 printf("  [e]     GATT Examples (Heartbeat, HID)\n");
                 printf("  [p]     HTTP Examples (GET, POST)\n");
                 printf("  [y]     NTP Examples (Time Sync)\n");
+                printf("  [k]     Location Examples (IP Geolocation, Wi-Fi Positioning)\n");
                 printf("\n");
             }
             
@@ -7338,10 +7918,10 @@ static void printMenu(void)
             printf("\n");
             
             printf("  [q]     Quit application\n");
-            printf("==============================================================\n");
+            printf("\n");
             
             // Contextual hint
-            if (!gConnected) {
+            if (!gUcxConnected) {
                 printf("Tip: Connect a device to unlock all features\n");
             } else {
                 printf("Tip: Press [h] for help, [t] for AT terminal\n");
@@ -7349,9 +7929,9 @@ static void printMenu(void)
             break;
             
         case MENU_BLUETOOTH:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                      BLUETOOTH MENU\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             if (gBtConnectionCount > 0) {
                 printf("STATUS: %d active connection(s)\n", gBtConnectionCount);
@@ -7372,9 +7952,9 @@ static void printMenu(void)
             break;
             
         case MENU_WIFI:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                  WI-FI STATION MENU\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             if (gWifiProfileCount > 0) {
                 printf("SAVED PROFILES: %d\n", gWifiProfileCount);
@@ -7393,9 +7973,9 @@ static void printMenu(void)
             break;
             
         case MENU_WIFI_AP:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                  WI-FI ACCESS POINT MENU\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("  [1] Enable Access Point\n");
             printf("  [2] Disable Access Point\n");
@@ -7407,9 +7987,9 @@ static void printMenu(void)
             break;
             
         case MENU_SOCKET:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                    SOCKET MENU (TCP/UDP)\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
@@ -7425,9 +8005,9 @@ static void printMenu(void)
             break;
             
         case MENU_SPS:
-            printf("==============================================================\n");
+            printf("\n");
             printf("           SPS MENU (Bluetooth Serial Port Service)\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("NOTE: Requires active Bluetooth connection\n");
             printf("\n");
@@ -7440,9 +8020,9 @@ static void printMenu(void)
             break;
             
         case MENU_MQTT:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                 MQTT MENU (Publish/Subscribe)\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
@@ -7458,9 +8038,9 @@ static void printMenu(void)
             break;
             
         case MENU_HTTP:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                  HTTP CLIENT MENU (REST API)\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
@@ -7470,10 +8050,24 @@ static void printMenu(void)
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
+        case MENU_LOCATION:
+            printf("\n");
+            printf("              LOCATION EXAMPLES (IP & Wi-Fi Based)\n");
+            printf("\n");
+            printf("\n");
+            printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("\n");
+            printf("  [1] External IP Detection (find your public IP)\n");
+            printf("  [2] IP Geolocation (find country from IP address)\n");
+            printf("  [3] Wi-Fi Positioning (locate using Wi-Fi scan)\n");
+            printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
         case MENU_SECURITY_TLS:
-            printf("==============================================================\n");
+            printf("\n");
             printf("           SECURITY/TLS MENU (Certificates & Encryption)\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("TLS CONFIGURATION\n");
             printf("  [1] Set TLS version (1.2 / 1.3)\n");
@@ -7489,9 +8083,9 @@ static void printMenu(void)
             break;
             
         case MENU_BLUETOOTH_FUNCTIONS:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                   BLUETOOTH FUNCTIONS\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("  [1] SPS (Serial Port Service)\n");
             printf("  [2] GATT Client\n");
@@ -7501,9 +8095,9 @@ static void printMenu(void)
             break;
             
         case MENU_GATT_EXAMPLES:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                      GATT EXAMPLES\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("  [1] GATT Server Heartbeat example\n");
             printf("  [2] HID over GATT (HOGP)\n");
@@ -7512,9 +8106,9 @@ static void printMenu(void)
             break;
             
         case MENU_WIFI_FUNCTIONS:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                     WI-FI FUNCTIONS\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
@@ -7527,9 +8121,9 @@ static void printMenu(void)
             break;
             
         case MENU_GATT_CLIENT:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                      GATT CLIENT\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             if (gCurrentGattConnHandle != -1) {
                 printf("CONNECTION: Handle %d\n", gCurrentGattConnHandle);
@@ -7551,9 +8145,9 @@ static void printMenu(void)
             // Sync GATT connection state before showing menu (no discovery for server!)
             syncGattConnectionOnly();
             
-            printf("==============================================================\n");
+            printf("\n");
             printf("                      GATT SERVER\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             if (gCurrentGattConnHandle != -1) {
                 printf("CONNECTION: Handle %d\n", gCurrentGattConnHandle);
@@ -7576,9 +8170,9 @@ static void printMenu(void)
             // Sync GATT connection state
             syncGattConnectionOnly();
             
-            printf("==============================================================\n");
+            printf("\n");
             printf("                    HID OVER GATT (HOGP)\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             if (gCurrentGattConnHandle != -1) {
                 printf("CONNECTION: Handle %d\n", gCurrentGattConnHandle);
@@ -7605,9 +8199,9 @@ static void printMenu(void)
             break;
             
         case MENU_FIRMWARE_UPDATE:
-            printf("==============================================================\n");
+            printf("\n");
             printf("                  FIRMWARE UPDATE (XMODEM)\n");
-            printf("==============================================================\n");
+            printf("\n");
             printf("\n");
             printf("This will update the module firmware via XMODEM protocol.\n");
             printf("The module will reboot after a successful update.\n");
@@ -7650,7 +8244,7 @@ static void handleUserInput(void)
     input[strcspn(input, "\n")] = 0;
     
     // Handle ENTER key (empty input) for quick connect
-    if (strlen(input) == 0 && gMenuState == MENU_MAIN && !gConnected && gComPort[0] != '\0') {
+    if (strlen(input) == 0 && gMenuState == MENU_MAIN && !gUcxConnected && gComPort[0] != '\0') {
         quickConnectToLastDevice();
         return;
     }
@@ -7716,6 +8310,8 @@ static void handleUserInput(void)
                 choice = 15;  // HTTP Examples (GET, POST)
             } else if (firstChar == 'y') {
                 choice = 17;  // NTP Examples (Time Sync)
+            } else if (firstChar == 'k') {
+                choice = 19;  // Location Examples
             } else if (firstChar == 'a') {
                 choice = 3;   // AT command test
             } else if (firstChar == 'i') {
@@ -7737,7 +8333,7 @@ static void handleUserInput(void)
             switch (choice) {
                 case 1: {
                     // If we have saved settings, offer quick connect
-                    if (gComPort[0] != '\0' && !gConnected) {
+                    if (gComPort[0] != '\0' && !gUcxConnected) {
                         printf("Quick connect to last device (%s", gComPort);
                         if (gLastDeviceModel[0] != '\0') {
                             printf(" - %s", gLastDeviceModel);
@@ -7765,7 +8361,7 @@ static void handleUserInput(void)
                                     input[i] = (char)toupper(input[i]);
                                 }
                                 strncpy(gComPort, input, sizeof(gComPort) - 1);
-                                if (connectDevice(gComPort)) {
+                                if (ucxclientConnect(gComPort)) {
                                     saveSettings();
                                 }
                             } else {
@@ -7776,80 +8372,87 @@ static void handleUserInput(void)
                     break;
                 }
                 case 2:
-                    disconnectDevice();
+                    ucxclientDisconnect();
                     break;
                 case 3:
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeAtTest();
                     }
                     break;
                 case 4:
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeAti9();
                     }
                     break;
                 case 5:
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeModuleReboot();
                     }
                     break;
                 case 6:
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         showLegacyAdvertisementStatus();
                     }
                     break;
                 case 7:
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_BLUETOOTH;
                     }
                     break;
                 case 8:
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_BLUETOOTH_FUNCTIONS;
                     }
                     break;
                 case 9:
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_GATT_EXAMPLES;
                     }
                     break;
                 case 15:  // HTTP Examples (GET, POST)
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_HTTP;
                     }
                     break;
                 case 17:  // NTP Examples (Time Sync)
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         ntpTimeExample();
                     }
                     break;
+                case 19:  // Location Examples
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_LOCATION;
+                    }
+                    break;
                 case 23:  // Also accept 'w' or 'W' - Wi-Fi (scan, connect, disconnect, status)
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_WIFI;
                     }
                     break;
                 case 24:  // Also accept 'x' or 'X' - Wi-Fi functions
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_WIFI_FUNCTIONS;
@@ -7869,42 +8472,42 @@ static void handleUserInput(void)
                     gMenuState = MENU_API_LIST;
                     break;
                 case 16:  // Also accept 'f' or 'F' - Firmware update
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_FIRMWARE_UPDATE;
                     }
                     break;
                 case 50:  // Also accept 's' or 'S' - SPS (Serial Port Service)
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_SPS;
                     }
                     break;
                 case 51:  // Also accept 'g' or 'G' - GATT functions
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_BLUETOOTH_FUNCTIONS;
                     }
                     break;
                 case 52:  // Also accept 't' or 'T' - AT Terminal
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeAtTerminal();
                     }
                     break;
                 case 60:  // Also accept 'o' or 'O' - Wi-Fi Access Point
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_WIFI_AP;
                     }
                     break;
                 case 61:  // Also accept 'x' or 'X' - Security/TLS
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_SECURITY_TLS;
@@ -8123,6 +8726,26 @@ static void handleUserInput(void)
             }
             break;
             
+        case MENU_LOCATION:
+            switch (choice) {
+                case 1:
+                    externalIpDetectionExample();
+                    break;
+                case 2:
+                    ipGeolocationExample();
+                    break;
+                case 3:
+                    wifiPositioningExample();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
         case MENU_SECURITY_TLS:
             switch (choice) {
                 case 1:
@@ -8285,7 +8908,7 @@ static void handleUserInput(void)
                     // Disable HID by rebooting
                     printf("\nRebooting device to reset GATT services...\n");
                     uCxSystemReboot(&gUcxHandle);
-                    gConnected = false;
+                    gUcxConnected = false;
                     gCurrentGattConnHandle = -1;
                     gHeartbeatServiceHandle = -1;
                     gHidServiceHandle = -1;
@@ -8334,7 +8957,7 @@ static void handleUserInput(void)
                     fclose(testFile);
                     
                     // Check if device is connected
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Device not connected. Please connect first.\n");
                         break;
                     }
@@ -8411,7 +9034,7 @@ static void handleUserInput(void)
                         }
                         
                         // Connection is still active
-                        gConnected = true;
+                        gUcxConnected = true;
                         
                         printf("\nFirmware update complete!\n");
                         if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
@@ -8434,7 +9057,7 @@ static void handleUserInput(void)
                     // Download firmware from GitHub and update
                     
                     // Check if device is connected
-                    if (!gConnected) {
+                    if (!gUcxConnected) {
                         printf("ERROR: Device not connected. Please connect first.\n");
                         break;
                     }
@@ -8513,7 +9136,7 @@ static void handleUserInput(void)
                             uCxEnd(&gUcxHandle);
                         }
                         
-                        gConnected = true;
+                        gUcxConnected = true;
                         
                         printf("\nFirmware update complete!\n");
                         if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
@@ -8572,90 +9195,27 @@ static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred,
 // DEVICE CONNECTION & MANAGEMENT
 // ============================================================================
 
-static bool connectDevice(const char *comPort)
+// Common module initialization function
+// Called after initial connection and after +STARTUP events
+static void moduleStartupInit(void)
 {
-    if (gConnected) {
-        printf("Already connected. Disconnect first.\n");
-        return false;
+    int32_t result;
+    
+    // Configure module settings
+    printf("Disabling echo...\n");
+    result = uCxSystemSetEchoOff(&gUcxHandle);
+    if (result == 0) {
+        printf("Echo disabled.\n");
+    } else {
+        printf("Warning: Failed to disable echo (error %d)\n", result);
     }
     
-    printf("Connecting to %s...\n", comPort);
-    
-    // Initialize AT client (like windows_basic.c)
-    uPortAtInit(&gUcxAtClient);
-    
-    // Open COM port
-    if (!uPortAtOpen(&gUcxAtClient, comPort, 115200, false)) {
-        printf("ERROR: Failed to open %s\n", comPort);
-        return false;
-    }
-    
-    printf("COM port opened successfully\n");
-    
-    
-    // Initialize UCX handle
-    uCxInit(&gUcxAtClient, &gUcxHandle);
-    
-    // Create mutex for URC event handling
-    U_CX_MUTEX_CREATE(gUrcMutex);
-    
-    // Register URC handlers for Wi-Fi link and network events
-    uCxWifiRegisterLinkUp(&gUcxHandle, linkUpUrc);
-    uCxWifiRegisterLinkDown(&gUcxHandle, linkDownUrc);
-    uCxWifiRegisterStationNetworkUp(&gUcxHandle, networkUpUrc);
-    uCxWifiRegisterStationNetworkDown(&gUcxHandle, networkDownUrc);
-    
-    // Register URC handlers for Wi-Fi Access Point events
-    uCxWifiRegisterApNetworkUp(&gUcxHandle, apNetworkUpUrc);
-    uCxWifiRegisterApNetworkDown(&gUcxHandle, apNetworkDownUrc);
-    uCxWifiRegisterApUp(&gUcxHandle, apUpUrc);
-    uCxWifiRegisterApDown(&gUcxHandle, apDownUrc);
-    uCxWifiRegisterApStationAssociated(&gUcxHandle, apStationAssociatedUrc);
-    uCxWifiRegisterApStationDisassociated(&gUcxHandle, apStationDisassociatedUrc);
-    
-    // Register URC handlers for socket events
-    uCxSocketRegisterConnect(&gUcxHandle, sockConnected);
-    uCxSocketRegisterDataAvailable(&gUcxHandle, socketDataAvailable);
-    
-    // Register URC handlers for SPS events
-    uCxSpsRegisterConnect(&gUcxHandle, spsConnected);
-    uCxSpsRegisterDisconnect(&gUcxHandle, spsDisconnected);
-    uCxSpsRegisterDataAvailable(&gUcxHandle, spsDataAvailable);
-    
-    // Register URC handler for system events
-    // uCxSystemRegisterStartup(&gUcxHandle, startupUrc);  // Removed from API
-    
-    // Register URC handlers for ping/diagnostics
-    uCxDiagnosticsRegisterPingResponse(&gUcxHandle, pingResponseUrc);
-    uCxDiagnosticsRegisterPingComplete(&gUcxHandle, pingCompleteUrc);
-    
-    // Register URC handlers for MQTT events
-    uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
-    uCxMqttRegisterDataAvailable(&gUcxHandle, mqttDataAvailableUrc);
-    
-    // Register URC handlers for Bluetooth events
-    uCxBluetoothRegisterConnect(&gUcxHandle, btConnected);
-    uCxBluetoothRegisterDisconnect(&gUcxHandle, btDisconnected);
-    uCxBluetoothRegisterBondStatus(&gUcxHandle, bluetoothPairUrc);
-    
-    // Register URC handlers for GATT Server events
-    uCxGattServerRegisterNotification(&gUcxHandle, gattServerCharWriteUrc);
-    uCxGattServerRegisterReadAttribute(&gUcxHandle, gattServerCharReadUrc);
-    
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
-
-    // Turn off echo to avoid "Unexpected data" warnings
-    printf("Disabling AT echo...\n");
-    int32_t result = uCxSystemSetEchoOff(&gUcxHandle);
-    if (result != 0) {
-        printf("Warning: Failed to disable echo (error %d), continuing anyway...\n", result);
-    }
-    
-    // Enable extended error codes for better error diagnostics
     printf("Enabling extended error codes...\n");
     result = uCxSystemSetExtendedError(&gUcxHandle, U_EXTENDED_ERRORS_ON);
-    if (result != 0) {
-        printf("Warning: Failed to enable extended error codes (error %d), continuing anyway...\n", result);
+    if (result == 0) {
+        printf("Extended errors enabled.\n");
+    } else {
+        printf("Warning: Failed to enable extended errors (error %d)\n", result);
     }
     
     // Read device information
@@ -8704,26 +9264,58 @@ static bool connectDevice(const char *comPort)
         gDeviceFirmware[0] = '\0';
     }
     
-    // AT+GSN - Serial number
-    const char *serialNumber = NULL;
-    if (uCxGeneralGetSerialNumberBegin(&gUcxHandle, &serialNumber) && serialNumber != NULL) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Serial Number:    %s", serialNumber);
-        uCxEnd(&gUcxHandle);
-    } else {
-        uCxEnd(&gUcxHandle);
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Serial Number:    (not available)");
-    }
-    
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "-------------------");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+}
+
+static bool ucxclientConnect(const char *comPort)
+{
+    if (gUcxConnected) {
+        printf("Already connected. Disconnect first.\n");
+        return false;
+    }
     
-    gConnected = true;
+    printf("Connecting to %s...\n", comPort);
+    
+    // Initialize AT client (like windows_basic.c)
+    uPortAtInit(&gUcxAtClient);
+    
+    // Open COM port
+    if (!uPortAtOpen(&gUcxAtClient, comPort, 115200, false)) {
+        printf("ERROR: Failed to open %s\n", comPort);
+        return false;
+    }
+    
+    printf("COM port opened successfully\n");
+    
+    
+    // Initialize UCX handle
+    uCxInit(&gUcxAtClient, &gUcxHandle);
+    
+    // Set startup callback (new API uses callback structure)
+    gUcxHandle.callbacks.STARTUP = startupUrc;
+    
+    // Create mutex for URC event handling
+    U_CX_MUTEX_CREATE(gUrcMutex);
+    
+    // Register all URC handlers
+    enableAllUrcs();
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
+
+    // Perform common module initialization (echo, extended errors, device info)
+    moduleStartupInit();
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connected successfully!");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    
+    gUcxConnected = true;
     return true;
 }
 
-static void disconnectDevice(void)
+static void ucxclientDisconnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("Not connected.\n");
         return;
     }
@@ -8801,7 +9393,7 @@ static void disconnectDevice(void)
     gBtConnectionCount = 0;
     memset(gBtConnections, 0, sizeof(gBtConnections));
     
-    gConnected = false;
+    gUcxConnected = false;
     printf("Disconnected.\n");
 }
 
@@ -8820,7 +9412,7 @@ static bool quickConnectToLastDevice(void)
     }
     printf("\n");
     
-    if (connectDevice(gComPort)) {
+    if (ucxclientConnect(gComPort)) {
         printf("\nQuick connect successful!\n");
         
         // If Wi-Fi profiles saved and this is a W3x device, offer to connect
@@ -9751,41 +10343,54 @@ static char* selectComPortFromList(const char *recommendedPort)
 {
     char input[64];
     
-    if (recommendedPort && recommendedPort[0] != '\0') {
-        printf("\nEnter COM port name or press Enter to use recommended [%s]: ", recommendedPort);
-    } else {
-        printf("\nEnter COM port name (e.g., COM31) or press Enter to use last saved port: ");
-    }
-    
-    if (fgets(input, sizeof(input), stdin)) {
-        // Remove trailing newline
-        char *end = strchr(input, '\n');
-        if (end) *end = '\0';
-        
-        // If user entered something, use it
-        if (strlen(input) > 0) {
-            char *result = (char*)malloc(strlen(input) + 1);
-            if (result) {
-                strcpy(result, input);
-                return result;
-            } else {
-                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for COM port string");
-            }
-        }
-        
-        // User pressed Enter without input - use recommended port if available
+    while (1) {
         if (recommendedPort && recommendedPort[0] != '\0') {
-            char *result = (char*)malloc(strlen(recommendedPort) + 1);
-            if (result) {
-                strcpy(result, recommendedPort);
-                return result;
-            } else {
-                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for COM port string");
-            }
+            printf("\nEnter COM port name, 'r' to refresh, or press Enter to use recommended [%s]: ", recommendedPort);
+        } else {
+            printf("\nEnter COM port name, 'r' to refresh, or press Enter to use last saved port: ");
         }
+        
+        if (fgets(input, sizeof(input), stdin)) {
+            // Remove trailing newline
+            char *end = strchr(input, '\n');
+            if (end) *end = '\0';
+            
+            // Check for refresh command
+            if (strlen(input) == 1 && (input[0] == 'r' || input[0] == 'R')) {
+                printf("\nRefreshing COM port list...\n\n");
+                listAvailableComPorts(NULL, 0, NULL, 0);  // Re-scan and display ports
+                continue;  // Ask again
+            }
+            
+            // If user entered something, use it
+            if (strlen(input) > 0) {
+                char *result = (char*)malloc(strlen(input) + 1);
+                if (result) {
+                    strcpy(result, input);
+                    return result;
+                } else {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for COM port string");
+                }
+            }
+            
+            // User pressed Enter without input - use recommended port if available
+            if (recommendedPort && recommendedPort[0] != '\0') {
+                char *result = (char*)malloc(strlen(recommendedPort) + 1);
+                if (result) {
+                    strcpy(result, recommendedPort);
+                    return result;
+                } else {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to allocate memory for COM port string");
+                }
+            }
+            
+            // No recommendation and user pressed Enter - return NULL
+            return NULL;
+        }
+        
+        // fgets failed
+        return NULL;
     }
-    
-    return NULL;  // No recommendation and user pressed Enter without input
 }
 
 // ============================================================================
@@ -10050,7 +10655,7 @@ static void listAllApiCommands(void)
         printf("  uCxSpsRead()                                    - Read SPS data\n");
         printf("\n");
         
-        printf("=========================================================\n");
+        printf("\n");
     }
 }
 
@@ -10060,7 +10665,7 @@ static void listAllApiCommands(void)
 
 static void executeAtTest(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -10068,7 +10673,7 @@ static void executeAtTest(void)
     printf("\n--- AT Test ---\n");
     if (uCxLogIsEnabled()) {
         printf(">>> WATCH BELOW FOR AT TRAFFIC <<<\n");
-        printf("===================================\n");
+        printf("\n");
         // Test if logging works at all
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Starting AT test - logging is enabled");
     }
@@ -10077,7 +10682,7 @@ static void executeAtTest(void)
     int32_t result = uCxGeneralAttention(&gUcxHandle);
     
     if (uCxLogIsEnabled()) {
-        printf("===================================\n");
+        printf("\n");
     }
     
     if (result == 0) {
@@ -10089,7 +10694,7 @@ static void executeAtTest(void)
 
 static void executeAtTerminal(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -10099,9 +10704,9 @@ static void executeAtTerminal(void)
     disableAllUrcs();
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                    AT COMMAND TERMINAL\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Interactive AT command terminal using UCX API.\n");
     printf("Commands are sent via uCxAtClientExecSimpleCmd() API.\n");
@@ -10115,7 +10720,7 @@ static void executeAtTerminal(void)
     printf("  Type 'quit', 'exit', or 'q' to exit terminal\n");
     printf("  Type 'help' for more info, 'history' to see past commands\n");
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     
     // Command history (simple circular buffer)
     #define MAX_HISTORY 20
@@ -10215,14 +10820,14 @@ static void executeAtTerminal(void)
 
 static void executeAti9(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n--- ATI9 Device Information ---\n");
     if (uCxLogIsEnabled()) {
-        printf("===================================\n");
+        printf("\n");
     }
     
     // Use uCxGeneralGetIdentInfoBegin to get device info
@@ -10230,7 +10835,7 @@ static void executeAti9(void)
     
     if (uCxGeneralGetIdentInfoBegin(&gUcxHandle, &info)) {
         if (uCxLogIsEnabled()) {
-            printf("===================================\n");
+            printf("\n");
         }
         printf("Application Version: %s\n", info.application_version);
         printf("Unique Identifier:   %s\n", info.unique_identifier);
@@ -10239,7 +10844,7 @@ static void executeAti9(void)
         uCxEnd(&gUcxHandle);
     } else {
         if (uCxLogIsEnabled()) {
-            printf("===================================\n");
+            printf("\n");
         }
         printf("ERROR: Failed to get device information\n");
     }
@@ -10247,7 +10852,7 @@ static void executeAti9(void)
 
 static void executeModuleReboot(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -10292,14 +10897,8 @@ static void executeModuleReboot(void)
             printf("Module has rebooted successfully.\n");
             printf("Reboot time: %llu ms (%.2f seconds)\n", elapsedMs, elapsedMs / 1000.0);
             
-            // Disable echo again after reboot
-            printf("Disabling echo...\n");
-            result = uCxSystemSetEchoOff(&gUcxHandle);
-            if (result == 0) {
-                printf("Echo disabled.\n");
-            } else {
-                printf("Warning: Failed to disable echo (error %d)\n", result);
-            }
+            // Reconfigure module after reboot using common initialization
+            moduleStartupInit();
         } else {
             printf(" timeout!\n");
             printf("Module may have shut down completely (no +STARTUP received).\n");
@@ -10319,14 +10918,8 @@ static void executeModuleReboot(void)
             printf("Module has rebooted successfully.\n");
             printf("Reboot time: %llu ms (%.2f seconds)\n", elapsedMs, elapsedMs / 1000.0);
             
-            // Try to disable echo again after reboot
-            printf("Disabling echo...\n");
-            result = uCxSystemSetEchoOff(&gUcxHandle);
-            if (result == 0) {
-                printf("Echo disabled.\n");
-            } else {
-                printf("Warning: Failed to disable echo (error %d)\n", result);
-            }
+            // Reconfigure module after reboot using common initialization
+            moduleStartupInit();
         } else {
             printf(" timeout!\n");
             printf("Module may have shut down completely (no +STARTUP received).\n");
@@ -10338,7 +10931,7 @@ static void executeModuleReboot(void)
 
 static void showLegacyAdvertisementStatus(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -10464,7 +11057,7 @@ static void showLegacyAdvertisementStatus(void)
 
 static void showBluetoothStatus(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -10524,7 +11117,7 @@ static void showBluetoothStatus(void)
 
 static void showWifiStatus(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -10884,7 +11477,7 @@ static void decodeAdvertisingData(const uint8_t *data, size_t dataLen)
 
 static void bluetoothScan(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11014,7 +11607,7 @@ static void bluetoothScan(void)
 
 static void bluetoothConnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11070,7 +11663,7 @@ static void bluetoothConnect(void)
 
 static void bluetoothDisconnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11143,7 +11736,7 @@ static void bluetoothDisconnect(void)
 
 static void bluetoothSyncConnections(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         return;
     }
     
@@ -11177,7 +11770,7 @@ static void bluetoothSyncConnections(void)
 
 static void wifiScan(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11258,7 +11851,7 @@ static void wifiScan(void)
         // Display channel usage summary
         printf("\n==============================================================\n");
         printf("                   CHANNEL USAGE SUMMARY\n");
-        printf("==============================================================\n");
+        printf("\n");
         
         // 2.4 GHz Band
         printf("\n2.4 GHz Band (Channels 1-14):\n");
@@ -11389,7 +11982,7 @@ static void wifiScan(void)
             printf("No 5 GHz networks detected\n");
         }
         
-        printf("==============================================================\n");
+        printf("\n");
     }
 }
 
@@ -11470,9 +12063,9 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
     
     // Display connection summary
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                   CONNECTION SUMMARY\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("Network:           %s\n", ssid);
     printf("Channel:           %d\n", channel);
     
@@ -11511,7 +12104,7 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
     }
     
     // Overall assessment
-    printf("==============================================================\n");
+    printf("\n");
     const char *overall;
     if (localSuccess && internetSuccess && rssi >= -70 && localPingAvg < 50 && internetPingAvg < 100) {
         overall = "EXCELLENT - Ready for all applications";
@@ -11525,12 +12118,12 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
         overall = "POOR - Connection not stable";
     }
     printf("Overall:           %s\n", overall);
-    printf("==============================================================\n");
+    printf("\n");
 }
 
 static void wifiConnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11798,7 +12391,7 @@ static void wifiConnect(void)
 
 static void wifiDisconnect(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11829,7 +12422,7 @@ static void wifiDisconnect(void)
 
 static void wifiApEnable(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11839,9 +12432,9 @@ static void wifiApEnable(void)
     int32_t err;
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("                  ENABLE WI-FI ACCESS POINT\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     // Get SSID
@@ -11907,11 +12500,11 @@ static void wifiApEnable(void)
     printf("\n");
     printf("✓ Access Point ENABLED successfully!\n");
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("  SSID:     %s\n", ssid);
     printf("  Password: %s\n", password);
     printf("  Security: WPA2\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     // Always show QR code after creating AP
@@ -11935,9 +12528,9 @@ static void wifiApEnable(void)
         int size = qrcodegen_getSize(qrcode);
         int border = 2;
         
-        printf("==============================================================\n");
+        printf("\n");
         printf("                SCAN TO CONNECT TO WI-FI AP\n");
-        printf("==============================================================\n");
+        printf("\n");
         printf("\n");
         
         // Print QR code to terminal using block characters
@@ -11964,7 +12557,7 @@ static void wifiApEnable(void)
 
 static void wifiApDisable(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
@@ -11986,15 +12579,15 @@ static void wifiApDisable(void)
 
 static void wifiApShowStatus(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("              WI-FI ACCESS POINT STATUS\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     // Get AP connection parameters (SSID and channel)
@@ -12065,7 +12658,7 @@ static void wifiApShowStatus(void)
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -12073,15 +12666,15 @@ static void wifiApShowStatus(void)
 
 static void wifiApGenerateQrCode(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("           WI-FI ACCESS POINT - QR CODE GENERATOR\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     
     // Get SSID from AP connection parameters
@@ -12136,9 +12729,9 @@ static void wifiApGenerateQrCode(void)
     int size = qrcodegen_getSize(qrcode);
     int border = 2;
     
-    printf("==============================================================\n");
+    printf("\n");
     printf("                SCAN TO CONNECT TO WI-FI AP\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("SSID: %s\n", ssid);
     printf("\n");
@@ -12160,7 +12753,7 @@ static void wifiApGenerateQrCode(void)
     printf("Scan this QR code with your smartphone to automatically\n");
     printf("connect to the Wi-Fi Access Point!\n");
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -12168,15 +12761,15 @@ static void wifiApGenerateQrCode(void)
 
 static void wifiApConfigure(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
     
     printf("\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("            CONFIGURE WI-FI ACCESS POINT SETTINGS\n");
-    printf("==============================================================\n");
+    printf("\n");
     printf("\n");
     printf("Advanced configuration options:\n");
     printf("\n");
@@ -12431,7 +13024,7 @@ static void wifiSaveProfile(const char *name, const char *ssid, const char *pass
 // Manage WiFi profiles (add, edit, delete, select)
 static void wifiManageProfiles(void)
 {
-    if (!gConnected) {
+    if (!gUcxConnected) {
         printf("ERROR: Not connected to device\n");
         return;
     }
