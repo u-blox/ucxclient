@@ -11173,8 +11173,9 @@ static void printWelcomeGuide(void)
     printf("BLUETOOTH OPERATIONS (NORA-B26 and NORA-W36):\n");
     printf("  - [b] Bluetooth - Scan, connect, pair, status\n");
     printf("  - [s] SPS - Serial Port Service data transfer\n");
-    printf("  - [g] GATT - Client/Server operations\n");
-    printf("  - [e] GATT Examples - Heartbeat, HID Keyboard\n");
+    printf("  - [u] Bluetooth Functions - GATT Client/Server operations\n");
+    printf("  - [e] GATT Server Examples - 9 profiles\n");
+    printf("  - [g] GATT Client Examples - 8 demos\n");
     printf("\n");
     printf("WI-FI OPERATIONS (NORA-W36 only):\n");
     printf("  - [w] Wi-Fi Station - Scan, connect, disconnect, status\n");
@@ -11218,9 +11219,14 @@ static void printHelp(void)
     printf("  [s] Serial Port Service (SPS)\n");
     printf("      - Enable SPS for wireless serial data transfer\n");
     printf("      - Send/receive data over Bluetooth\n");
-    printf("  [g] GATT Client/Server\n");
+    printf("  [u] Bluetooth Functions\n");
     printf("      - GATT Client: Discover and interact with remote services\n");
     printf("      - GATT Server: Host custom services and characteristics\n");
+    printf("  [e] GATT Server Examples - 9 profiles\n");
+    printf("      - Heart Rate, HID, Automation IO, Battery, ESS, NUS, SPS, LNS, CTS\n");
+    printf("  [g] GATT Client Examples - 8 demos\n");
+    printf("      - Discover and interact with remote GATT servers\n");
+    printf("      - CTS, ESS, LNS, NUS, SPS, BAS, DIS, AIO clients\n");
     printf("\n");
     printf("Wi-Fi FEATURES (NORA-W36 only):\n");
     printf("  [w] Wi-Fi Station - Scan, connect, disconnect, status\n");
@@ -11249,9 +11255,9 @@ static void printHelp(void)
     printf("      - Verify firmware after update\n");
     printf("\n");
     printf("EXAMPLES:\n");
-    printf("  [e] GATT Examples - Heartbeat service and HID keyboard\n");
-    printf("      - GATT Server Heartbeat: Send periodic notifications\n");
-    printf("      - HID over GATT: Bluetooth keyboard and media controls\n");
+    printf("  [e] GATT Examples - Server & Client demonstrations\n");
+    printf("      - GATT Server: 9 profiles (Heart Rate, HID, AIO, Battery, ESS, NUS, SPS, LNS, CTS)\n");
+    printf("      - GATT Client: 8 examples (CTS, ESS, LNS, NUS, SPS, BAS, DIS, AIO)\n");
     printf("  [p] HTTP Examples - REST API operations\n");
     printf("      - HTTP GET request with optional file save\n");
     printf("      - HTTP POST request with text or file data\n");
@@ -11369,7 +11375,9 @@ static void printMenu(void)
                            gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
                 }
                 printf("  [s]     Serial Port Service (SPS)\n");
-                printf("  [g]     GATT Client/Server\n");
+                printf("  [u]     Bluetooth Functions (SPS, GATT Client, GATT Server)\n");
+                printf("  [e]     GATT Server Examples (9 profiles)\n");
+                printf("  [g]     GATT Client Examples (8 demos)\n");
                 printf("\n");
                 
                 // === Wi-Fi FEATURES (only for W3x modules) ===
@@ -11394,7 +11402,8 @@ static void printMenu(void)
                 
                 // === EXAMPLES ===
                 printf("EXAMPLES\n");
-                printf("  [e]     GATT Examples (Heartbeat, HID)\n");
+                printf("  [e]     GATT Server Examples (9 profiles)\n");
+                printf("  [g]     GATT Client Examples (8 demos)\n");
                 printf("  [p]     HTTP Examples (GET, POST)\n");
                 printf("  [y]     NTP Examples (Time Sync)\n");
                 printf("  [k]     Location Examples (IP Geolocation, Wi-Fi Positioning)\n");
@@ -11612,11 +11621,15 @@ static void printMenu(void)
             
         case MENU_GATT_EXAMPLES:
             printf("\n");
-            printf("                GATT SERVER EXAMPLES\n");
-            printf("       (This Device Provides Services to Remote Clients)\n");
+            printf("══════════════════════════════════════════════════════════════\n");
+            printf("                    GATT EXAMPLES MENU\n");
+            printf("══════════════════════════════════════════════════════════════\n");
             printf("\n");
+            printf("┌─────────────────────────────────────────────────────────────┐\n");
+            printf("│  GATT SERVER EXAMPLES (9 Profiles)                         │\n");
+            printf("│  This device provides services to remote BLE clients       │\n");
+            printf("└─────────────────────────────────────────────────────────────┘\n");
             printf("\n");
-            printf("GATT SERVER EXAMPLES\n");
             printf("  [h] Heart Rate Service - Heartbeat notifications\n");
             printf("  [k] HID Keyboard + Media + Battery - Full HID device\n");
             printf("  [b] Battery Service only - Simple battery reporting\n");
@@ -11627,10 +11640,15 @@ static void printMenu(void)
             printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
             printf("\n");
-            printf("GATT CLIENT EXAMPLES\n");
-            printf("  [t] Read Current Time - Connect to remote CTS server\n");
+            printf("┌─────────────────────────────────────────────────────────────┐\n");
+            printf("│  GATT CLIENT EXAMPLES (8 Demos)                            │\n");
+            printf("│  This device connects to and reads from remote servers     │\n");
+            printf("└─────────────────────────────────────────────────────────────┘\n");
             printf("\n");
-            printf("NOTE: For more client examples, use [g] GATT Client menu\n");
+            printf("  [t] Current Time Service Client - Read time from CTS server\n");
+            printf("\n");
+            printf("  NOTE: For all client examples, use [g] GATT Client menu\n");
+            printf("        (ESS, LNS, NUS, SPS, BAS, DIS, AIO clients available)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -11843,8 +11861,10 @@ static void handleUserInput(void)
                 choice = 7;   // Bluetooth menu
             } else if (firstChar == 's') {
                 choice = 50;  // SPS (Serial Port Service)
+            } else if (firstChar == 'u') {
+                choice = 8;   // Bluetooth Functions (GATT Client/Server)
             } else if (firstChar == 'g') {
-                choice = 51;  // GATT functions
+                choice = 51;  // GATT Client Examples
             } else if (firstChar == 't') {
                 choice = 52;  // AT Terminal (interactive)
             } else if (firstChar == 'l') {
@@ -12041,11 +12061,13 @@ static void handleUserInput(void)
                         gMenuState = MENU_SPS;
                     }
                     break;
-                case 51:  // Also accept 'g' or 'G' - GATT functions
+                case 51:  // Also accept 'g' or 'G' - GATT Client Examples
                     if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
-                        gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                        bluetoothSyncConnections();  // Sync BT connections first
+                        syncGattConnection();        // Then sync GATT connection handle
+                        gMenuState = MENU_GATT_CLIENT;
                     }
                     break;
                 case 52:  // Also accept 't' or 'T' - AT Terminal
