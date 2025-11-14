@@ -724,7 +724,7 @@ static void bluetoothSetAdvertising(void);
 static void bluetoothShowStatus(void);
 static void bluetoothSetPairing(void);
 static void bluetoothListBondedDevices(void);
-static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBondStatus_t bond_status);
+static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBtBondStatus_t bond_status);
 static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
 static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t passkey);
 static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr);
@@ -733,7 +733,7 @@ static void gattServerSetupHeartbeat(void);
 static void gattServerSetupHidKeyboard(void);
 static void gattServerSendKeyPress(void);
 static void gattServerSendMediaControl(void);
-static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uOptions_t options);
+static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uGattServerOptions_t options);
 static DWORD WINAPI heartbeatThread(LPVOID lpParam);
 static DWORD WINAPI gattNotificationThread(LPVOID lpParam);
 static void gattClientNotificationUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
@@ -799,7 +799,7 @@ static void dnsLookupExample(void);
 static void testConnectivityWrapper(void);
 
 // URC handlers for ping and iperf
-static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time);
+static void pingResponseUrc(struct uCxHandle *puCxHandle, uDiagPingResponse_t ping_response, int32_t response_time);
 static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_packets, 
                            int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_output);
@@ -2004,10 +2004,10 @@ static void startupUrc(struct uCxHandle *puCxHandle)
     signalEvent(URC_FLAG_STARTUP);
 }
 
-static void pingResponseUrc(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time)
+static void pingResponseUrc(struct uCxHandle *puCxHandle, uDiagPingResponse_t ping_response, int32_t response_time)
 {
     (void)puCxHandle;
-    if (ping_response == U_PING_RESPONSE_TRUE) {
+    if (ping_response == U_DIAG_PING_RESPONSE_TRUE) {
         gPingSuccess++;
         // Store individual ping time
         if (gPingCount < MAX_PING_TIMES) {
@@ -2384,7 +2384,7 @@ static void socketCreateTcp(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Create TCP Socket ---");
     
     int32_t socketHandle = -1;
-    int32_t result = uCxSocketCreate1(&gUcxHandle, U_PROTOCOL_TCP, &socketHandle);
+    int32_t result = uCxSocketCreate1(&gUcxHandle, U_SOCKET_PROTOCOL_TCP, &socketHandle);
     
     if (result == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully created TCP socket");
@@ -2406,7 +2406,7 @@ static void socketCreateUdp(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Create UDP Socket ---");
     
     int32_t socketHandle = -1;
-    int32_t result = uCxSocketCreate1(&gUcxHandle, U_PROTOCOL_UDP, &socketHandle);
+    int32_t result = uCxSocketCreate1(&gUcxHandle, U_SOCKET_PROTOCOL_UDP, &socketHandle);
     
     if (result == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully created UDP socket");
@@ -2679,9 +2679,9 @@ static void socketListStatus(void)
         const char *marker = (status.socket_handle == gCurrentSocket) ? " ← Current" : "";
         printf("Socket %d: %s, %s%s\n",
                status.socket_handle,
-               status.protocol == U_PROTOCOL_TCP ? "TCP" : "UDP",
-               status.socket_status == 0 ? "Not Connected" :
-               status.socket_status == 1 ? "Listening" : "Connected",
+               status.protocol == U_SOCKET_PROTOCOL_TCP ? "TCP" : "UDP",
+               status.status == 0 ? "Not Connected" :
+               status.status == 1 ? "Listening" : "Connected",
                marker);
     }
     
@@ -2724,7 +2724,7 @@ static void spsEnableService(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Enable SPS Service ---");
     
-    int32_t result = uCxSpsSetServiceEnable(&gUcxHandle, U_SPS_SERVICE_OPTION_ENABLE_SPS_SERVICE);
+    int32_t result = uCxSpsSetServiceEnable(&gUcxHandle, U_SPS_SERVICE_OPTION_ENABLE);
     
     if (result == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully enabled SPS service");
@@ -4040,7 +4040,7 @@ static void gattServerAddCharacteristic(void)
     
     int32_t result = uCxGattServerCharDefine6(&gUcxHandle, uuid, uuidLen,
                                               propBytes, 1, // properties as byte array
-                                              U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE, // no security
+                                              U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE, // no security
                                               defaultValue, 1, // default value
                                               20, // max 20 bytes
                                               &response);
@@ -4193,7 +4193,7 @@ static void gattServerSetupHeartbeat(void)
     uCxGattServerCharDefine_t charResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, charUuid, 2,
                                       propBytes, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       defaultValue, 2,
                                       20, // max_length: Allow up to 20 bytes for Heart Rate Measurement
                                       &charResponse);
@@ -4250,7 +4250,7 @@ static void gattServerSetupHeartbeat(void)
 
 // GATT Server URC handler - called when client writes to a characteristic
 static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, 
-                                   int32_t value_handle, uByteArray_t *value, uOptions_t options)
+                                   int32_t value_handle, uByteArray_t *value, uGattServerOptions_t options)
 {
     (void)puCxHandle;
     (void)options;
@@ -6579,7 +6579,7 @@ static void gattServerSetupHidKeyboard(void)
     
     // Set IO capabilities - use KeyboardOnly for HID keyboards to enable passkey entry (MITM protection)
     printf("  Setting IO capabilities to KeyboardOnly...\n");
-    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, U_IO_CAPABILITIES_KEYBOARD_ONLY);
+    result = uCxBluetoothSetIoCapabilities(&gUcxHandle, U_BT_IO_CAP_KEYBOARD_ONLY);
     if (result == 0) {
         printf("  ✓ IO capabilities set\n");
     }
@@ -6597,16 +6597,16 @@ static void gattServerSetupHidKeyboard(void)
     // Display Device Information Service (built-in, pre-configured in module)
     printf("  Reading Device Information Service...\n");
     uCxBluetoothListDeviceInfoServiceCharsBegin(&gUcxHandle);
-    uCxBluetoothListDeviceInfoServiceChars_t disChar;
+    uCxBtListDeviceInfoServiceChars_t disChar;
     while (uCxBluetoothListDeviceInfoServiceCharsGetNext(&gUcxHandle, &disChar)) {
         const char *charName = "";
-        switch (disChar.characteristic_id) {
-            case U_CHARACTERISTIC_ID_MANUFACTURER_NAME: charName = "Manufacturer"; break;
-            case U_CHARACTERISTIC_ID_MODEL_NAME: charName = "Model"; break;
-            case U_CHARACTERISTIC_ID_FIRMWARE_REVISION: charName = "Firmware"; break;
-            case U_CHARACTERISTIC_ID_SOFTWARE_REVISION: charName = "Software"; break;
+        switch (disChar.char_id) {
+            case U_BT_CHAR_ID_MANUFACTURER_NAME: charName = "Manufacturer"; break;
+            case U_BT_CHAR_ID_MODEL_NAME: charName = "Model"; break;
+            case U_BT_CHAR_ID_FIRMWARE_REVISION: charName = "Firmware"; break;
+            case U_BT_CHAR_ID_SOFTWARE_REVISION: charName = "Software"; break;
         }
-        printf("    %s: %s\n", charName, disChar.characteristic_value);
+        printf("    %s: %s\n", charName, disChar.char_value);
     }
     uCxEnd(&gUcxHandle);
     printf("  ✓ Device Information Service ready\n\n");
@@ -6632,7 +6632,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t infoResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, hidInfoUuid, 2,
                                       propRead, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       (uint8_t*)gHidInfo, sizeof(gHidInfo),
                                       sizeof(gHidInfo),
                                       &infoResponse);
@@ -6654,7 +6654,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t protoResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, protoModeUuid, 2,
                                       propReadWriteNoResp, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       protoModeValue, 1,
                                       1,
                                       &protoResponse);
@@ -6673,7 +6673,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t mapResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, reportMapUuid, 2,
                                       propRead, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       (uint8_t*)gHidReportMapKeyboard, sizeof(gHidReportMapKeyboard),
                                       sizeof(gHidReportMapKeyboard),
                                       &mapResponse);
@@ -6690,7 +6690,7 @@ static void gattServerSetupHidKeyboard(void)
         
         int32_t extReportRefHandle;
         result = uCxGattServerDescriptorDefine4(&gUcxHandle, extReportRefUuid, 2,
-                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                                 batteryLevelCharUuid, 2,
                                                 &extReportRefHandle);
         
@@ -6713,7 +6713,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t bootKbdResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdInputUuid, 2,
                                       propNotify, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       emptyBootKbdReport, 8,
                                       8,
                                       &bootKbdResponse);
@@ -6732,7 +6732,7 @@ static void gattServerSetupHidKeyboard(void)
         
         int32_t reportRefHandle;
         result = uCxGattServerDescriptorDefine4(&gUcxHandle, reportRefUuid, 2,
-                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                                 reportRefValue, 2,
                                                 &reportRefHandle);
         
@@ -6756,7 +6756,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t bootKbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdOutputUuid, 2,
                                       propWriteWoResp, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       emptyBootKbdOutput, 1,
                                       1,
                                       &bootKbdOutResponse);
@@ -6773,7 +6773,7 @@ static void gattServerSetupHidKeyboard(void)
         int32_t bootOutDescHandle;
         result = uCxGattServerDescriptorDefine4(&gUcxHandle,
                                                 reportRefUuid, 2,
-                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                                 bootOutReportRefValue, 2,
                                                 &bootOutDescHandle);
         
@@ -6796,7 +6796,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t kbdResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, reportUuid, 2,
                                       propReadNotify, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       emptyKbdReport, 9,
                                       9,
                                       &kbdResponse);
@@ -6817,7 +6817,7 @@ static void gattServerSetupHidKeyboard(void)
         int32_t kbdDescHandle;
         result = uCxGattServerDescriptorDefine4(&gUcxHandle,
                                                 reportRefUuid, 2,
-                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                                 kbdReportRefValue, 2,
                                                 &kbdDescHandle);
         
@@ -6839,7 +6839,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t kbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, kbdOutputUuid, 2,
                                       propReadWriteWWR, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       ledOutputValue, 1,
                                       1,
                                       &kbdOutResponse);
@@ -6856,7 +6856,7 @@ static void gattServerSetupHidKeyboard(void)
         int32_t kbdOutDescHandle;
         result = uCxGattServerDescriptorDefine4(&gUcxHandle,
                                                 reportRefUuid, 2,
-                                                U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                                U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                                 kbdOutReportRefValue, 2,
                                                 &kbdOutDescHandle);
         
@@ -6879,7 +6879,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t cpResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, controlPointUuid, 2,
                                       propWriteNoResp, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       cpValue, 1,
                                       1,
                                       &cpResponse);
@@ -6916,7 +6916,7 @@ static void gattServerSetupHidKeyboard(void)
         uCxGattServerCharDefine_t batResponse;
         result = uCxGattServerCharDefine6(&gUcxHandle, batteryLevelUuid, 2,
                                           propReadNotify, 1,
-                                          U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                          U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                           batValue, 1,
                                           1,
                                           &batResponse);
@@ -7029,7 +7029,7 @@ static void gattServerSetupHidKeyboard(void)
     
     // Enable pairing mode
     printf("Enabling pairing mode...\n");
-    result = uCxBluetoothSetPairingMode(&gUcxHandle, U_PAIRING_MODE_PAIRING_MODE_ENABLE);
+    result = uCxBluetoothSetPairingMode(&gUcxHandle, U_BT_PAIRING_MODE_ENABLE);
     if (result == 0) {
         printf("✓ Pairing mode enabled\n");
     } else {
@@ -7161,7 +7161,7 @@ static void gattServerSetupAutomationIo(void)
     uCxGattServerCharDefine_t digitalResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, digitalUuid, 2,
                                       propReadWriteNotify, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       digitalValue, 1,
                                       1,
                                       &digitalResponse);
@@ -7185,7 +7185,7 @@ static void gattServerSetupAutomationIo(void)
     uCxGattServerCharDefine_t analogResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, analogUuid, 2,
                                       propReadNotify, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       analogValue, 2,
                                       2,
                                       &analogResponse);
@@ -7277,8 +7277,8 @@ static void gattServerSetupBatteryOnly(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       charUuid, 2,
                                       props, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       &initial, 1,
                                       1,               // add CCCD
                                       &rsp);
@@ -7347,8 +7347,8 @@ static void gattServerSetupEnvSensing(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       tempUuid, 2,
                                       propsReadNotify, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       (uint8_t *)&tempValue, sizeof(tempValue),
                                       2,  // max_length for int16_t (2 bytes)
                                       &tempRsp);
@@ -7370,8 +7370,8 @@ static void gattServerSetupEnvSensing(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       humUuid, 2,
                                       propsReadNotify, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       (uint8_t *)&humValue, sizeof(humValue),
                                       2,  // max_length for uint16_t (2 bytes)
                                       &humRsp);
@@ -7435,8 +7435,8 @@ static void gattServerSetupUartService(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       (uint8_t *)kUartTxCharUuid, 16,
                                       propsNotify, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       initTx, sizeof(initTx),
                                       244,  // max_length for UART data transmission
                                       &txRsp);
@@ -7455,8 +7455,8 @@ static void gattServerSetupUartService(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       (uint8_t *)kUartRxCharUuid, 16,
                                       propsWriteNoRsp, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED,
                                       initRx, sizeof(initRx),
                                       244,  // max_length for UART data reception
                                       &rxRsp);
@@ -7578,8 +7578,8 @@ static void gattServerSetupSpsService(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       (uint8_t *)kSpsFifoCharUuid, 16,
                                       propsFifo, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED,
                                       initFifo, sizeof(initFifo),
                                       244,  // max_length for SPS data packets
                                       &fifoRsp);
@@ -7598,8 +7598,8 @@ static void gattServerSetupSpsService(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       (uint8_t *)kSpsCreditsCharUuid, 16,
                                       propsCredits, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED,
                                       initCredits, sizeof(initCredits),
                                       4,  // max_length for credit counter (uint32)
                                       &creditsRsp);
@@ -7799,8 +7799,8 @@ static void gattServerSetupLocationService(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       charUuid, 2,
                                       props, 1,
-                                      U_SECURITY_READ_NONE,
-                                      U_SECURITY_WRITE_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE,
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,
                                       (uint8_t *)&loc, sizeof(loc),
                                       1,
                                       &rsp);
@@ -7952,8 +7952,8 @@ static void gattServerSetupCtsService(void)
     result = uCxGattServerCharDefine6(&gUcxHandle,
                                       charUuid, 2,          // UUID
                                       props, 1,             // Properties
-                                      U_SECURITY_READ_NONE, // Read
-                                      U_SECURITY_WRITE_NONE,// Write
+                                      U_GATT_SERVER_READ_SECURITY_NONE, // Read
+                                      U_GATT_SERVER_WRITE_SECURITY_NONE,// Write
                                       initPayload, 10,
                                       1,                    // add CCCD
                                       &rsp);
@@ -8359,7 +8359,7 @@ static void gattServerSendHelloWorld(void)
 // ============================================================================
 
 // URC handler for bond/pairing status
-static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBondStatus_t bond_status)
+static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBtBondStatus_t bond_status)
 {
     (void)puCxHandle;
     
@@ -8374,7 +8374,7 @@ static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_ad
              bd_addr->address[0], bd_addr->address[1], bd_addr->address[2],
              bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
     
-    if (bond_status == U_BOND_STATUS_BONDING_SUCCEEDED) {
+    if (bond_status == U_BT_BOND_STATUS_BONDING_SUCCEEDED) {
         printf("\n─────────────────────────────────────────────────\n");
         printf("PAIRING SUCCESS\n");
         printf("─────────────────────────────────────────────────\n");
@@ -8435,11 +8435,11 @@ static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddr
     int response = getchar();
     getchar(); // consume newline
     
-    uYesNo_t answer = (response == 'y' || response == 'Y') ? U_YES_NO_YES : U_YES_NO_NO;
+    uBtConfirm_t answer = (response == 'y' || response == 'Y') ? U_BT_CONFIRM_YES : U_BT_CONFIRM_NO;
     int32_t result = uCxBluetoothUserConfirmation(&gUcxHandle, bd_addr, answer);
     
     if (result == 0) {
-        if (answer == U_YES_NO_YES) {
+        if (answer == U_BT_CONFIRM_YES) {
             printf("✓ Pairing accepted - waiting for confirmation...\n");
         } else {
             printf("✗ Pairing rejected\n");
@@ -8523,7 +8523,7 @@ static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddres
     
     if (gotInput && idx >= 6) {
         int32_t passkey = atoi(passkeyStr);
-        int32_t result = uCxBluetoothUserPasskeyEntry3(&gUcxHandle, bd_addr, U_YES_NO_YES, passkey);
+        int32_t result = uCxBluetoothUserPasskeyEntry3(&gUcxHandle, bd_addr, U_BT_CONFIRM_YES, passkey);
         if (result == 0) {
             printf("✓ Passkey sent - waiting for pairing completion...\n");
         } else {
@@ -8531,7 +8531,7 @@ static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddres
         }
     } else {
         printf("ERROR: Passkey entry timeout or invalid\n");
-        uCxBluetoothUserPasskeyEntry2(&gUcxHandle, bd_addr, U_YES_NO_NO);
+        uCxBluetoothUserPasskeyEntry2(&gUcxHandle, bd_addr, U_BT_CONFIRM_NO);
     }
 }
 
@@ -8625,14 +8625,14 @@ static void bluetoothSetPairing(void)
     
     int pairingMode;
     if (choice[0] == '1') {
-        pairingMode = U_PAIRING_MODE_PAIRING_MODE_ENABLE;
+        pairingMode = U_BT_PAIRING_MODE_ENABLE;
         printf("Selected: Enable pairing\n");
     } else if (choice[0] == '2') {
-        pairingMode = U_PAIRING_MODE_PAIRING_MODE_DISABLE;
+        pairingMode = U_BT_PAIRING_MODE_DISABLE;
         printf("Selected: Disable pairing\n");
     } else {
         printf("Invalid choice, using default (Enable)\n");
-        pairingMode = U_PAIRING_MODE_PAIRING_MODE_ENABLE;
+        pairingMode = U_BT_PAIRING_MODE_ENABLE;
     }
     
     // Step 2: Security Mode
@@ -8687,23 +8687,23 @@ static void bluetoothSetPairing(void)
     int ioCapabilities;
     const char *ioCapDesc;
     if (choice[0] == '1') {
-        ioCapabilities = U_IO_CAPABILITIES_DISPLAY_ONLY;
+        ioCapabilities = U_BT_IO_CAP_DISPLAY_ONLY;
         ioCapDesc = "Display only";
     } else if (choice[0] == '2') {
-        ioCapabilities = U_IO_CAPABILITIES_DISPLAY_YES_NO;
+        ioCapabilities = U_BT_IO_CAP_DISPLAY_YES_NO;
         ioCapDesc = "Display + Yes/No";
     } else if (choice[0] == '3') {
-        ioCapabilities = U_IO_CAPABILITIES_KEYBOARD_ONLY;
+        ioCapabilities = U_BT_IO_CAP_KEYBOARD_ONLY;
         ioCapDesc = "Keyboard only";
     } else if (choice[0] == '4') {
-        ioCapabilities = U_IO_CAPABILITIES_NO_INPUT_NO_OUTPUT;
+        ioCapabilities = U_BT_IO_CAP_NO_INPUT_NO_OUTPUT;
         ioCapDesc = "No input/output (Just Works)";
     } else if (choice[0] == '5') {
-        ioCapabilities = U_IO_CAPABILITIES_KEYBOARD_DISPLAY;
+        ioCapabilities = U_BT_IO_CAP_KEYBOARD_DISPLAY;
         ioCapDesc = "Keyboard + Display";
     } else {
         printf("Invalid choice, using default (No input/output)\n");
-        ioCapabilities = U_IO_CAPABILITIES_NO_INPUT_NO_OUTPUT;
+        ioCapabilities = U_BT_IO_CAP_NO_INPUT_NO_OUTPUT;
         ioCapDesc = "No input/output (Just Works)";
     }
     printf("Selected: %s\n", ioCapDesc);
@@ -8963,8 +8963,8 @@ static void mqttSubscribe(void)
             printf("Subscribing to '%s' with QoS %d...\n", topic, qos);
             
             int32_t result = uCxMqttSubscribe4(&gUcxHandle, MQTT_CONFIG_ID, 
-                                               U_SUBSCRIBE_ACTION_SUBSCRIBE, 
-                                               topic, (uQos_t)qos);
+                                               U_MQTT_SUBSCRIBE_ACTION_SUBSCRIBE, 
+                                               topic, (uMqttQos_t)qos);
             
             if (result == 0) {
                 printf("✓ Subscribed successfully\n");
@@ -9001,7 +9001,7 @@ static void mqttUnsubscribe(void)
         printf("Unsubscribing from '%s'...\n", topic);
         
         int32_t result = uCxMqttSubscribe3(&gUcxHandle, MQTT_CONFIG_ID, 
-                                           U_SUBSCRIBE_ACTION_UNSUBSCRIBE, 
+                                           U_MQTT_SUBSCRIBE_ACTION_UNSUBSCRIBE, 
                                            topic);
         
         if (result == 0) {
@@ -9068,8 +9068,8 @@ static void mqttPublish(void)
     printf("QoS: %d, Retain: %d\n", qos, retain);
     
     uCxMqttPublish_t publishRsp;
-    int32_t result = uCxMqttPublish(&gUcxHandle, MQTT_CONFIG_ID, (uQos_t)qos, 
-                                     (uRetain_t)retain, topic, 
+    int32_t result = uCxMqttPublish(&gUcxHandle, MQTT_CONFIG_ID, (uMqttQos_t)qos, 
+                                     (uMqttRetain_t)retain, topic, 
                                      (uint8_t*)message, (int32_t)strlen(message), &publishRsp);
     
     if (result == 0) {
@@ -9101,8 +9101,8 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
     // Step 1: Check Wi-Fi connection status
     uCxWifiStationStatus_t wifiStatus;
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &wifiStatus)) {
-        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
-            if (wifiStatus.rsp.WifiStatusIdInt.int_val != 2) {  // 2 = Connected
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
+            if (wifiStatus.rsp.StatusIdInt.int_val != 2) {  // 2 = Connected
                 printf("ERROR: Wi-Fi is not connected!\n");
                 printf("Please connect to Wi-Fi first using the [w] Wi-Fi menu.\n");
                 uCxEnd(&gUcxHandle);
@@ -9122,8 +9122,8 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
     
     // Step 2: Check RSSI (signal strength)
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &wifiStatus)) {
-        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
-            int32_t rssi = wifiStatus.rsp.WifiStatusIdInt.int_val;
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
+            int32_t rssi = wifiStatus.rsp.StatusIdInt.int_val;
             if (rssi == -32768) {
                 printf("ERROR: Not connected to AP (RSSI unavailable)\n");
                 uCxEnd(&gUcxHandle);
@@ -9155,7 +9155,7 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
     char ipStr[50] = {0};
     uSockIpAddress_t ipAddr;
     
-    if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
+    if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_IPV4, &ipAddr) == 0) {
         if (ipAddr.type == U_SOCK_ADDRESS_TYPE_V4) {
             uint32_t ipv4 = ipAddr.address.ipv4;
             snprintf(ipStr, sizeof(ipStr), "%d.%d.%d.%d", 
@@ -9371,46 +9371,48 @@ static void httpGetExample(void)
         remove(filename);
     }
     
-    // int32_t totalBytes = 0;
-    // int32_t chunkSize = sizeof(response) - 1;
-    // bool moreData = true;
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 2048;
+    int32_t moreToRead = 1;
+    uint8_t buffer[2048];
     
-    // while (moreData) {
-    //     uCxHttpGetHttpBodyString_t bodyResp;
-    //     
-    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
-    //         int32_t bytesReceived = bodyResp.data_length;
-    //         totalBytes += bytesReceived;
-    //         
-    //         if (saveToFile) {
-    //             // Append to file
-    //             if (!saveResponseToFile(filename, (const char *)bodyResp.byte_array_data.pData, 
-    //                                    bytesReceived, totalBytes > bytesReceived)) {
-    //                 uCxEnd(&gUcxHandle);
-    //                 return;
-    //             }
-    //         } else {
-    //             // Display to console
-    //             fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
-    //         }
-    //         
-    //         moreData = (bodyResp.more_to_read != 0);
-    //         uCxEnd(&gUcxHandle);
-    //         
-    //         if (moreData) {
-    //             printf(".");  // Progress indicator
-    //             fflush(stdout);
-    //         }
-    //     } else {
-    //         printf("\nERROR: Failed to read response body\n");
-    //         break;
-    //         }
-    // }
+    while (moreToRead) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        
+        if (bytesRead < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            
+            if (saveToFile) {
+                // Append to file
+                FILE *fp = fopen(filename, totalBytes > bytesRead ? "ab" : "wb");
+                if (fp) {
+                    fwrite(buffer, 1, bytesRead, fp);
+                    fclose(fp);
+                } else {
+                    printf("\nERROR: Failed to open file '%s'\n", filename);
+                    break;
+                }
+            } else {
+                // Display to console
+                fwrite(buffer, 1, bytesRead, stdout);
+            }
+            
+            if (moreToRead) {
+                printf(".");  // Progress indicator
+                fflush(stdout);
+            }
+        }
+    }
     
-    //printf("\n");
-    // printf("✓ Response received: %d bytes total\n", totalBytes);
+    printf("\n");
+    printf("✓ Response received: %d bytes total\n", totalBytes);
     
-    if (saveToFile) {
+    if (saveToFile && totalBytes > 0) {
         printf("✓ Response saved to '%s'\n", filename);
     }
     
@@ -9522,14 +9524,12 @@ static void httpPostExample(void)
     printf("Sending POST request to http://%s%s...\n", host, path);
     printf("POST data: %d bytes\n", dataLen);
     
-    // TODO: Uncomment when uCxHttpPostRequestString API is available
-    // err = uCxHttpPostRequestString(&gUcxHandle, sessionId, postData, dataLen);
-    // if (err < 0) {
-    //     printf("ERROR: POST request failed (error: %d)\n", err);
-    //     return;
-    // }
-    // printf("✓ POST request sent successfully\n");
-    printf("⚠ HTTP POST not yet implemented (API function unavailable)\n");
+    err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)postData, dataLen);
+    if (err < 0) {
+        printf("ERROR: POST request failed (error: %d)\n", err);
+        return;
+    }
+    printf("✓ POST request sent successfully\n");
     
     // Step 4: Read response headers
     printf("\n");
@@ -9548,39 +9548,25 @@ static void httpPostExample(void)
     printf("\n");
     printf("Reading response body...\n");
     
-    // TODO: Uncomment when uCxHttpGetHttpBodyString API is available
-    // int32_t totalBytes = 0;
-    // int32_t chunkSize = sizeof(response) - 1;
-    // bool moreData = true;
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 2048;
+    int32_t moreToRead = 1;
+    uint8_t buffer[2048];
     
-    // while (moreData) {
-    //     uCxHttpGetHttpBodyString_t bodyResp;
-    //     
-    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
-    //         int32_t bytesReceived = bodyResp.data_length;
-    //         totalBytes += bytesReceived;
-    //         
-    //         // Display response to console
-    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
-    //         
-    //         moreData = (bodyResp.more_to_read != 0);
-    //         uCxEnd(&gUcxHandle);
-    //         
-    //         if (moreData) {
-    //             printf(".");  // Progress indicator
-    //             fflush(stdout);
-    //         }
-    //     } else {
-    //         printf("\nERROR: Failed to read response body\n");
-    //         break;
-    //     }
-    // }
-    
-    // printf("\n");
-    // printf("✓ Response received: %d bytes total\n", totalBytes);
-    
-    printf("✓ POST request sent successfully\n");
-    printf("(Response body reading not yet implemented)\n");
+    printf("─────────────────────────────────────────────────\n");
+    while (moreToRead) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            fwrite(buffer, 1, bytesRead, stdout);
+        }
+    }
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("✓ Response received: %d bytes total\n", totalBytes);
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -9669,7 +9655,6 @@ static void ipGeolocationExample(void)
     printf("\n");
     printf("Reading response body...\n");
     
-    // Note: Response body reading not yet implemented
     // Expected JSON response format from ip-api.com:
     // {
     //   "status": "success",
@@ -9688,32 +9673,27 @@ static void ipGeolocationExample(void)
     //   "query": "35.192.x.x"
     // }
     
-    // int32_t totalBytes = 0;
-    // int32_t chunkSize = 2048;
-    // bool moreData = true;
-    // 
-    // while (moreData) {
-    //     uCxHttpGetHttpBodyString_t bodyResp;
-    //     
-    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
-    //         int32_t bytesReceived = bodyResp.data_length;
-    //         totalBytes += bytesReceived;
-    //         
-    //         // Display JSON response
-    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
-    //         
-    //         moreData = (bodyResp.more_to_read != 0);
-    //         uCxEnd(&gUcxHandle);
-    //     } else {
-    //         printf("\nERROR: Failed to read response body\n");
-    //         break;
-    //     }
-    // }
-    // 
-    // printf("\n");
-    // printf("✓ Response received: %d bytes total\n", totalBytes);
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 2048;
+    int32_t moreToRead = 1;
+    uint8_t buffer[2048];
     
-    printf("(Response body reading not yet implemented)\n");
+    printf("─────────────────────────────────────────────────\n");
+    while (moreToRead) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            fwrite(buffer, 1, bytesRead, stdout);
+        }
+    }
+    printf("\n─────────────────────────────────────────────────\n");
+    if (totalBytes > 0) {
+        printf("✓ Response received: %d bytes total\n", totalBytes);
+    }
     printf("\n");
     
     printf("Expected JSON Response Fields:\n");
@@ -9840,32 +9820,27 @@ static void externalIpDetectionExample(void)
     //
     // This is a minimal response containing just your external IP address
     
-    // int32_t totalBytes = 0;
-    // int32_t chunkSize = 256;  // Response is very small
-    // bool moreData = true;
-    // 
-    // while (moreData) {
-    //     uCxHttpGetHttpBodyString_t bodyResp;
-    //     
-    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
-    //         int32_t bytesReceived = bodyResp.data_length;
-    //         totalBytes += bytesReceived;
-    //         
-    //         // Display JSON response
-    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
-    //         
-    //         moreData = (bodyResp.more_to_read != 0);
-    //         uCxEnd(&gUcxHandle);
-    //     } else {
-    //         printf("\nERROR: Failed to read response body\n");
-    //         break;
-    //     }
-    // }
-    // 
-    // printf("\n");
-    // printf("✓ Response received: %d bytes total\n", totalBytes);
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 2048;
+    int32_t moreToRead = 1;
+    uint8_t buffer[2048];
     
-    printf("(Response body reading not yet implemented)\n");
+    printf("─────────────────────────────────────────────────\n");
+    while (moreToRead) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            fwrite(buffer, 1, bytesRead, stdout);
+        }
+    }
+    printf("\n─────────────────────────────────────────────────\n");
+    if (totalBytes > 0) {
+        printf("✓ Response received: %d bytes total\n", totalBytes);
+    }
     printf("\n");
     
     printf("Expected JSON Response Format:\n");
@@ -10130,8 +10105,7 @@ static void wifiPositioningExample(void)
     printf("Sending POST request to https://%s%s...\n", host, path);
     printf("POST data: %d bytes\n", dataLen);
     
-    uCxHttpPostRequest_t postResp;
-    err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)postData, dataLen, &postResp);
+    err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)postData, dataLen);
     if (err < 0) {
         printf("ERROR: POST request failed (error: %d)\n", err);
         printf("\n");
@@ -10140,8 +10114,7 @@ static void wifiPositioningExample(void)
         return;
     }
     printf("✓ POST request sent successfully\n");
-    printf("  Session ID: %d\n", postResp.session_id);
-    printf("  Written Length: %d bytes\n", postResp.written_length);
+    printf("  Data sent: %d bytes\n", dataLen);
     
     // Read response headers
     printf("\n");
@@ -10180,43 +10153,35 @@ static void wifiPositioningExample(void)
     //     "logId": 300000528485206
     // }
     
-    // int32_t totalBytes = 0;
-    // int32_t chunkSize = 2048;
-    // bool moreData = true;
-    // 
-    // printf("Position Data:\n");
-    // printf("─────────────────────────────────────────────────\n");
-    // 
-    // while (moreData) {
-    //     uCxHttpGetHttpBodyString_t bodyResp;
-    //     
-    //     if (uCxHttpGetHttpBodyStringBegin(&gUcxHandle, sessionId, chunkSize, &bodyResp)) {
-    //         int32_t bytesReceived = bodyResp.data_length;
-    //         totalBytes += bytesReceived;
-    //         
-    //         // Display JSON response
-    //         fwrite(bodyResp.byte_array_data.pData, 1, bytesReceived, stdout);
-    //         
-    //         moreData = (bodyResp.more_to_read != 0);
-    //         uCxEnd(&gUcxHandle);
-    //     } else {
-    //         printf("\nERROR: Failed to read response body\n");
-    //         break;
-    //     }
-    // }
-    // 
-    // printf("\n─────────────────────────────────────────────────\n");
-    // printf("✓ Response received: %d bytes total\n", totalBytes);
-    //
-    // // Parse JSON response to extract latitude and longitude
-    // // Simple parsing example (in production, use a JSON library)
-    // // Example response: {"location":{"lat":55.7174228,"lng":13.2137795},"accuracy":2}
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 2048;
+    int32_t moreToRead = 1;
+    uint8_t buffer[2048];
+    
+    printf("Position Data:\n");
+    printf("─────────────────────────────────────────────────\n");
+    while (moreToRead) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            fwrite(buffer, 1, bytesRead, stdout);
+        }
+    }
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    // TODO: Parse JSON response to extract latitude and longitude
+    // Simple parsing example (in production, use a JSON library)
+    // Example response: {"location":{"lat":55.7174228,"lng":13.2137795},"accuracy":2}
     // 
     // double lat = 0.0, lng = 0.0;
     // int accuracy = 0;
     // 
-    // // TODO: Parse JSON properly when response body reading is available
-    // // For now, this is a placeholder showing how it would work:
+    // // Parse JSON properly when needed:
     // // sscanf(jsonBuffer, "...parse lat/lng...", &lat, &lng);
     // 
     // if (lat != 0.0 && lng != 0.0) {
@@ -10231,8 +10196,6 @@ static void wifiPositioningExample(void)
     //     // Generate Google Maps link and QR code
     //     generateLocationQRCode(lat, lng);
     // }
-    
-    printf("(Response body reading not yet implemented)\n");
     printf("\n");
     
     printf("Expected JSON Response Fields:\n");
@@ -10515,8 +10478,8 @@ static void iperfClientExample(void)
     
     // Start iPerf test
     // Using uCxDiagnosticsIperf7: action, protocol, role, port, report_interval, time_boundary, ip_addr
-    int32_t result = uCxDiagnosticsIperf7(&gUcxHandle, U_IPERF_ACTION_START, 
-                                          protocol, U_ROLE_CLIENT, 
+    int32_t result = uCxDiagnosticsIperf7(&gUcxHandle, U_DIAG_IPERF_ACTION_START, 
+                                          protocol, U_DIAG_ROLE_CLIENT, 
                                           port, 1, duration, &ipAddr);
     
     if (result != 0) {
@@ -10620,8 +10583,8 @@ static void iperfServerExample(void)
     
     // Start iPerf server
     // Using uCxDiagnosticsIperf5: action, protocol, role, port, report_interval
-    int32_t result = uCxDiagnosticsIperf5(&gUcxHandle, U_IPERF_ACTION_START, 
-                                          protocol, U_ROLE_SERVER, 
+    int32_t result = uCxDiagnosticsIperf5(&gUcxHandle, U_DIAG_IPERF_ACTION_START, 
+                                          protocol, U_DIAG_ROLE_SERVER, 
                                           port, 1);
     
     if (result != 0) {
@@ -10665,7 +10628,7 @@ static void iperfStopExample(void)
     printf("Stopping iPerf test...\n");
     
     // Stop iPerf using STOP action
-    int32_t result = uCxDiagnosticsIperf2(&gUcxHandle, U_IPERF_ACTION_STOP, U_PROTOCOL_TYPE_TCP);
+    int32_t result = uCxDiagnosticsIperf2(&gUcxHandle, U_DIAG_IPERF_ACTION_STOP, U_DIAG_PROTOCOL_TYPE_TCP);
     
     if (result == 0) {
         gIperfRunning = false;
@@ -10770,8 +10733,8 @@ static void testConnectivityWrapper(void)
     // Try to get SSID
     uCxWifiStationStatus_t wifiStatus;
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_SSID, &wifiStatus)) {
-        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_STR) {
-            strncpy(ssid, wifiStatus.rsp.WifiStatusIdStr.ssid, sizeof(ssid) - 1);
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_STR) {
+            strncpy(ssid, wifiStatus.rsp.StatusIdStr.ssid, sizeof(ssid) - 1);
             ssid[sizeof(ssid) - 1] = '\0';
         }
         uCxEnd(&gUcxHandle);
@@ -10779,23 +10742,23 @@ static void testConnectivityWrapper(void)
     
     // Try to get RSSI
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &wifiStatus)) {
-        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
-            rssi = wifiStatus.rsp.WifiStatusIdInt.int_val;
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
+            rssi = wifiStatus.rsp.StatusIdInt.int_val;
         }
         uCxEnd(&gUcxHandle);
     }
     
     // Try to get channel
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CHANNEL, &wifiStatus)) {
-        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT) {
-            channel = wifiStatus.rsp.WifiStatusIdInt.int_val;
+        if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
+            channel = wifiStatus.rsp.StatusIdInt.int_val;
         }
         uCxEnd(&gUcxHandle);
     }
     
     // Get gateway IP address
     uSockIpAddress_t gatewayAddr;
-    if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &gatewayAddr) == 0) {
+    if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_GATE_WAY, &gatewayAddr) == 0) {
         uCxIpAddressToString(&gatewayAddr, gateway, sizeof(gateway));
     }
     
@@ -10833,7 +10796,7 @@ static void unixTimeToString(uint64_t unixTime, char *buffer, size_t bufferSize)
 static void ntpTimeExample(void)
 {
     int32_t err;
-    uEnable_t ntpEnabled;
+    uNtpClientStatus_t ntpEnabled;
     char choice[10];
     char serverAddress[256];
     int32_t serverId = 0;
@@ -10867,7 +10830,7 @@ static void ntpTimeExample(void)
     printf("\n");
     err = uCxNetworkTimeGetClientEnabled(&gUcxHandle, &ntpEnabled);
     if (err == 0) {
-        printf("Current NTP status: %s\n", (ntpEnabled == U_ENABLE_ENABLE_MANUAL || ntpEnabled == U_ENABLE_ENABLE_AUTO) ? "ENABLED" : "DISABLED");
+        printf("Current NTP status: %s\n", (ntpEnabled == U_NTP_CLIENT_STATUS_ENABLE_MANUAL || ntpEnabled == U_NTP_CLIENT_STATUS_ENABLE_AUTO) ? "ENABLED" : "DISABLED");
     } else {
         printf("WARNING: Failed to read NTP status (error: %d)\n", err);
     }
@@ -10916,9 +10879,9 @@ static void ntpTimeExample(void)
     printf("Configuring NTP...\n");
     
     // Step 3: Enable NTP client if not already enabled
-    if (ntpEnabled != U_ENABLE_ENABLE_MANUAL && ntpEnabled != U_ENABLE_ENABLE_AUTO) {
+    if (ntpEnabled != U_NTP_CLIENT_STATUS_ENABLE_MANUAL && ntpEnabled != U_NTP_CLIENT_STATUS_ENABLE_AUTO) {
         printf("Enabling NTP client...\n");
-        err = uCxNetworkTimeSetClientEnabled(&gUcxHandle, U_ENABLE_ENABLE_MANUAL);
+        err = uCxNetworkTimeSetClientEnabled(&gUcxHandle, U_NTP_CLIENT_STATUS_ENABLE_MANUAL);
         if (err < 0) {
             printf("ERROR: Failed to enable NTP client (error: %d)\n", err);
             printf("\n");
@@ -11091,7 +11054,7 @@ static void ntpTimeExample(void)
     // Step 7: Show configured NTP servers
     printf("\n");
     printf("Configured NTP servers:\n");
-    uCxNetworkTimeGetNtpServer_t ntpServerInfo;
+    uCxNtpGetNtpServer_t ntpServerInfo;
     if (uCxNetworkTimeGetNtpServerBegin(&gUcxHandle, &ntpServerInfo)) {
         printf("  Server %d: %s", ntpServerInfo.ntp_server_id, ntpServerInfo.ntp_server_address);
         if (ntpServerInfo.reachable) {
@@ -11171,7 +11134,7 @@ static void tlsShowConfig(void)
     
     if (err == 0) {
         printf("Server Name Indication (SNI): %s\n", 
-               (sniEnabled == U_ENABLED_ENABLED) ? "Enabled" : "Disabled");
+               (sniEnabled == U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
     } else {
         printf("Server Name Indication (SNI): ERROR (failed to query)\n");
     }
@@ -11182,7 +11145,7 @@ static void tlsShowConfig(void)
     
     if (err == 0) {
         printf("Handshake Fragmentation: %s\n",
-               (fragEnabled == U_ENABLED_ENABLED) ? "Enabled" : "Disabled");
+               (fragEnabled == U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
     } else {
         printf("Handshake Fragmentation: ERROR (failed to query)\n");
     }
@@ -11217,7 +11180,7 @@ static void tlsListCertificates(void)
     
     uCxSecurityListCertificatesBegin(&gUcxHandle);
     
-    uCxSecurityListCertificates_t certInfo;
+    uCxSecListCertificates_t certInfo;
     int certCount = 0;
     
     while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
@@ -11228,13 +11191,13 @@ static void tlsListCertificates(void)
         // Certificate type
         printf("    Type: ");
         switch (certInfo.cert_type) {
-            case U_CERT_TYPEROOT:
+            case U_SEC_CERT_TYPE_ROOT:
                 printf("Root/CA Certificate\n");
                 break;
-            case U_CERT_TYPECLIENT:
+            case U_SEC_CERT_TYPE_CLIENT:
                 printf("Client Certificate\n");
                 break;
-            case U_CERT_TYPEKEY:
+            case U_SEC_CERT_TYPE_KEY:
                 printf("Client Private Key\n");
                 break;
             default:
@@ -11339,20 +11302,20 @@ static void tlsUploadCertificate(void)
     }
     
     int choice = atoi(input);
-    uCertType_t certType;
+    uSecCertType_t certType;
     const char *typeStr;
     
     switch (choice) {
         case 1:
-            certType = U_CERT_TYPEROOT;
+            certType = U_SEC_CERT_TYPE_ROOT;
             typeStr = "CA/Root Certificate";
             break;
         case 2:
-            certType = U_CERT_TYPECLIENT;
+            certType = U_SEC_CERT_TYPE_CLIENT;
             typeStr = "Client Certificate";
             break;
         case 3:
-            certType = U_CERT_TYPEKEY;
+            certType = U_SEC_CERT_TYPE_KEY;
             typeStr = "Client Private Key";
             break;
         case 0:
@@ -11542,14 +11505,14 @@ static void tlsDeleteCertificate(void)
     int32_t err = -1;
     
     // Try as Root cert first
-    err = uCxSecurityCertificateRemove(&gUcxHandle, U_CERT_TYPEROOT, certName);
+    err = uCxSecurityCertificateRemove(&gUcxHandle, U_SEC_CERT_TYPE_ROOT, certName);
     if (err != 0) {
         // Try as Client cert
-        err = uCxSecurityCertificateRemove(&gUcxHandle, U_CERT_TYPECLIENT, certName);
+        err = uCxSecurityCertificateRemove(&gUcxHandle, U_SEC_CERT_TYPE_CLIENT, certName);
     }
     if (err != 0) {
         // Try as Key
-        err = uCxSecurityCertificateRemove(&gUcxHandle, U_CERT_TYPEKEY, certName);
+        err = uCxSecurityCertificateRemove(&gUcxHandle, U_SEC_CERT_TYPE_KEY, certName);
     }
     
     if (err == 0) {
@@ -12421,9 +12384,11 @@ static void handleUserInput(void)
             } else if (firstChar == 't') {
                 choice = 52;  // AT Terminal (interactive)
             } else if (firstChar == 'l') {
-                choice = 12;  // Toggle UCX logging
+                choice = 21;  // Toggle UCX logging
             } else if (firstChar == 'c') {
-                choice = 13;  // List API commands
+                choice = 12;  // List API commands
+            } else if (firstChar == 'd') {
+                choice = 13;  // Network Diagnostics
             } else if (firstChar == 'f') {
                 choice = 16;  // Firmware update
             } else if (firstChar == 'e') {
@@ -13448,7 +13413,7 @@ static void moduleStartupInit(void)
     }
     
     printf("Enabling extended error codes...\n");
-    result = uCxSystemSetExtendedError(&gUcxHandle, U_EXTENDED_ERRORS_ON);
+    result = uCxSystemSetExtendedError(&gUcxHandle, U_SYS_EXTENDED_ERRORS_ON);
     if (result == 0) {
         printf("Extended errors enabled.\n");
     } else {
@@ -15200,7 +15165,7 @@ static void showLegacyAdvertisementStatus(void)
     printf("\n--- Legacy Advertisement Status ---\n");
     
     // Get advertisement information (enabled/disabled state)
-    uCxBluetoothGetAdvertiseInformation_t advInfo;
+    uCxBtGetAdvertiseInformation_t advInfo;
     int32_t result = uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo);
     
     if (result != 0) {
@@ -15210,16 +15175,16 @@ static void showLegacyAdvertisementStatus(void)
     
     printf("\nAdvertisement State:\n");
     printf("  Legacy Advertisement: %s\n", 
-           advInfo.legacy_advertisement ? "ENABLED" : "DISABLED");
+           advInfo.legacy_adv ? "ENABLED" : "DISABLED");
     printf("  Directed Advertisement: %s\n", 
-           advInfo.directed_advertisement ? "ENABLED" : "DISABLED");
+           advInfo.directed_adv ? "ENABLED" : "DISABLED");
     
     // Display extended advertisements if any
-    if (advInfo.enabled_extended_advertisements.length > 0) {
+    if (advInfo.extended_adv_list.length > 0) {
         printf("  Extended Advertisements: ");
-        for (size_t i = 0; i < advInfo.enabled_extended_advertisements.length; i++) {
-            printf("%d", advInfo.enabled_extended_advertisements.pIntValues[i]);
-            if (i < advInfo.enabled_extended_advertisements.length - 1) {
+        for (size_t i = 0; i < advInfo.extended_adv_list.length; i++) {
+            printf("%d", advInfo.extended_adv_list.pIntValues[i]);
+            if (i < advInfo.extended_adv_list.length - 1) {
                 printf(", ");
             }
         }
@@ -15229,7 +15194,7 @@ static void showLegacyAdvertisementStatus(void)
     }
     
     // Get legacy advertisement configuration (interval settings)
-    uCxBluetoothGetLegacyAdvertisementConfig_t legacyConfig;
+    uCxBtGetLegacyAdvertisementConfig_t legacyConfig;
     result = uCxBluetoothGetLegacyAdvertisementConfig(&gUcxHandle, &legacyConfig);
     
     if (result != 0) {
@@ -15322,7 +15287,7 @@ static bool ensureLegacyAdvertisementEnabled(void)
     }
     
     // Check current advertisement status
-    uCxBluetoothGetAdvertiseInformation_t advInfo;
+    uCxBtGetAdvertiseInformation_t advInfo;
     int32_t result = uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo);
     
     if (result != 0) {
@@ -15331,7 +15296,7 @@ static bool ensureLegacyAdvertisementEnabled(void)
     }
     
     // If already enabled, return success
-    if (advInfo.legacy_advertisement) {
+    if (advInfo.legacy_adv) {
         printf("✓ Legacy advertisement already enabled\n");
         return true;
     }
@@ -15431,17 +15396,17 @@ static void showBluetoothStatus(void)
         
         if (btMode != 0) {
             // Get advertising information
-            uCxBluetoothGetAdvertiseInformation_t advInfo;
+            uCxBtGetAdvertiseInformation_t advInfo;
             if (uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo) == 0) {
                 printf("\nAdvertising Status:\n");
                 printf("  Legacy Advertising:   %s\n", 
-                       advInfo.legacy_advertisement ? "Enabled" : "Disabled");
+                       advInfo.legacy_adv ? "Enabled" : "Disabled");
                 printf("  Directed Advertising: %s\n", 
-                       advInfo.directed_advertisement ? "Enabled" : "Disabled");
+                       advInfo.directed_adv ? "Enabled" : "Disabled");
                 
                 // Show legacy advertising configuration if enabled
-                if (advInfo.legacy_advertisement) {
-                    uCxBluetoothGetLegacyAdvertisementConfig_t legacyConfig;
+                if (advInfo.legacy_adv) {
+                    uCxBtGetLegacyAdvertisementConfig_t legacyConfig;
                     if (uCxBluetoothGetLegacyAdvertisementConfig(&gUcxHandle, &legacyConfig) == 0) {
                         printf("  Legacy Adv Interval:  %d-%d ms (%.1f-%.1f ms)\n",
                                legacyConfig.advertisement_interval_minimum,
@@ -15457,7 +15422,7 @@ static void showBluetoothStatus(void)
             
             uCxBluetoothListConnectionsBegin(&gUcxHandle);
             
-            uCxBluetoothListConnections_t conn;
+            uCxBtListConnections_t conn;
             int connCount = 0;
             
             while (uCxBluetoothListConnectionsGetNext(&gUcxHandle, &conn)) {
@@ -15507,7 +15472,7 @@ static void showWifiStatus(void)
     
     // Check if connected
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &status)) {
-        int32_t connState = status.rsp.WifiStatusIdInt.int_val;
+        int32_t connState = status.rsp.StatusIdInt.int_val;
         uCxEnd(&gUcxHandle);
         
         if (connState == 2) {
@@ -15515,13 +15480,13 @@ static void showWifiStatus(void)
             
             // Get SSID
             if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_SSID, &status)) {
-                printf("SSID: %s\n", status.rsp.WifiStatusIdStr.ssid);
+                printf("SSID: %s\n", status.rsp.StatusIdStr.ssid);
                 uCxEnd(&gUcxHandle);
             }
             
             // Get RSSI
             if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &status)) {
-                int32_t rssi = status.rsp.WifiStatusIdInt.int_val;
+                int32_t rssi = status.rsp.StatusIdInt.int_val;
                 if (rssi != -32768) {
                     printf("RSSI: %d dBm\n", rssi);
                 }
@@ -15883,7 +15848,7 @@ static void bluetoothScan(void)
     BtDevice_t devices[MAX_BT_DEVICES];
     memset(devices, 0, sizeof(devices));  // Clear array before use
     int deviceCount = 0;
-    uCxBluetoothDiscoveryDefault_t device;
+    uCxBtDiscoveryDefault_t device;
     
     // Get discovered devices and deduplicate
     bool gotResponse;
@@ -16125,7 +16090,7 @@ static void bluetoothSyncConnections(void)
     // Query active connections from module
     uCxBluetoothListConnectionsBegin(&gUcxHandle);
     
-    uCxBluetoothListConnections_t conn;
+    uCxBtListConnections_t conn;
     while (uCxBluetoothListConnectionsGetNext(&gUcxHandle, &conn)) {
         if (gBtConnectionCount < MAX_BT_CONNECTIONS) {
             gBtConnections[gBtConnectionCount].handle = conn.conn_handle;
@@ -16511,7 +16476,7 @@ static void wifiConnect(void)
     // Check if already connected and disconnect if necessary
     uCxWifiStationStatus_t connStatus;
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &connStatus)) {
-        int32_t connState = connStatus.rsp.WifiStatusIdInt.int_val;
+        int32_t connState = connStatus.rsp.StatusIdInt.int_val;
         uCxEnd(&gUcxHandle);
         
         if (connState == 2) {  // 2 = Connected
@@ -16655,7 +16620,7 @@ static void wifiConnect(void)
     if (strlen(password) > 0) {
         // WPA2/WPA3 with password (threshold = WPA2 or higher)
         printf("Setting WPA2/WPA3 security...\n");
-        if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WPA_THRESHOLD_WPA2) != 0) {
+        if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
             printf("ERROR: Failed to set WPA security\n");
             return;
         }
@@ -16689,7 +16654,7 @@ static void wifiConnect(void)
         int32_t rssi = -100;  // Default value
         uCxWifiStationStatus_t rssiStatus;
         if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_RSSI, &rssiStatus)) {
-            rssi = rssiStatus.rsp.WifiStatusIdInt.int_val;
+            rssi = rssiStatus.rsp.StatusIdInt.int_val;
             if (rssi != -32768) {
                 printf("Signal strength: %d dBm\n", rssi);
             }
@@ -16702,19 +16667,19 @@ static void wifiConnect(void)
         char subnetStr[40] = "";  // Store subnet mask
         char gatewayStr[40] = "";  // Store gateway for ping test
         
-        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_IPV4, &ipAddr) == 0) {
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_IPV4, &ipAddr) == 0) {
             if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
                 printf("IP address: %s\n", ipStr);
             }
         }
         
-        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_SUBNET, &ipAddr) == 0) {
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_SUBNET, &ipAddr) == 0) {
             if (uCxIpAddressToString(&ipAddr, subnetStr, sizeof(subnetStr)) > 0) {
                 printf("Subnet mask: %s\n", subnetStr);
             }
         }
         
-        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
             if (uCxIpAddressToString(&ipAddr, gatewayStr, sizeof(gatewayStr)) > 0) {
                 printf("Gateway: %s\n", gatewayStr);
             }
@@ -16724,7 +16689,7 @@ static void wifiConnect(void)
         int32_t channel = 0;
         uCxWifiStationStatus_t channelStatus;
         if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CHANNEL, &channelStatus)) {
-            channel = channelStatus.rsp.WifiStatusIdInt.int_val;
+            channel = channelStatus.rsp.StatusIdInt.int_val;
             uCxEnd(&gUcxHandle);
         }
         
@@ -16857,7 +16822,7 @@ static void wifiApEnable(void)
     printf("✓ Channel set: 6\n");
     
     // Step 2: Set AP passphrase (WPA2)
-    err = uCxWifiApSetSecurityWpa2(&gUcxHandle, password, U_WPA_VERSION_WPA2);
+    err = uCxWifiApSetSecurityWpa2(&gUcxHandle, password, U_WIFI_WPA_VERSION_WPA2);
     if (err != 0) {
         printf("ERROR: Failed to set AP passphrase (error: %d)\n", err);
         return;
@@ -16997,7 +16962,7 @@ static void wifiApShowStatus(void)
     uCxWifiApListNetworkStatusBegin(&gUcxHandle);
     uCxWifiApListNetworkStatus_t netStatus;
     while (uCxWifiApListNetworkStatusGetNext(&gUcxHandle, &netStatus)) {
-        uSockIpAddress_t *ip = &netStatus.status_val;
+        uSockIpAddress_t *ip = &netStatus.net_status_val;
         if (ip->type == U_SOCK_ADDRESS_TYPE_V4) {
             char ipStr[50];
             uint32_t ipv4 = ip->address.ipv4;
@@ -17007,10 +16972,10 @@ static void wifiApShowStatus(void)
             
             // Status ID meanings: 0=IPv4, 1=Subnet, 2=Gateway, 3=DNS
             const char *statusDesc[] = {"IPv4 Address", "Subnet Mask", "Gateway", "DNS Server"};
-            if (netStatus.status_id >= 0 && netStatus.status_id <= 3) {
-                printf("  %s: %s\n", statusDesc[netStatus.status_id], ipStr);
+            if (netStatus.net_status_id >= 0 && netStatus.net_status_id <= 3) {
+                printf("  %s: %s\n", statusDesc[netStatus.net_status_id], ipStr);
             } else {
-                printf("  Status %d: %s\n", netStatus.status_id, ipStr);
+                printf("  Status %d: %s\n", netStatus.net_status_id, ipStr);
             }
         }
     }
@@ -17222,7 +17187,7 @@ static void wifiApConfigure(void)
                     if (fgets(password, sizeof(password), stdin)) {
                         password[strcspn(password, "\r\n")] = 0;
                         if (strlen(password) >= 8) {
-                            err = uCxWifiApSetSecurityWpa2(&gUcxHandle, password, U_WPA_VERSION_WPA2);
+                            err = uCxWifiApSetSecurityWpa2(&gUcxHandle, password, U_WIFI_WPA_VERSION_WPA2);
                             if (err == 0) {
                                 printf("✓ Security set to WPA2\n");
                             } else {
