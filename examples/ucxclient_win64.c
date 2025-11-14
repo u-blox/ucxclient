@@ -203,6 +203,12 @@ static volatile bool gGattNotificationThreadRunning = false;
 static bool gBatteryNotificationsEnabled = false;  // Battery notifications enabled
 static uint8_t gBatteryLevel = 100;                // Battery level percentage
 static bool gCtsServerNotificationsEnabled = false; // CTS notifications enabled
+static bool gEssServerTempNotificationsEnabled = false; // ESS Temperature notifications enabled
+static bool gEssServerHumNotificationsEnabled = false;  // ESS Humidity notifications enabled
+static int16_t gEssServerTempValue = 2345;         // Temperature in 0.01°C (23.45°C)
+static uint16_t gEssServerHumValue = 4500;         // Humidity in 0.01% (45.00%)
+static int32_t gEnvServerTempCccdHandle = -1;      // ESS Temperature CCCD handle
+static int32_t gEnvServerHumCccdHandle = -1;       // ESS Humidity CCCD handle
 
 // HID over GATT (HoG) tracking
 static int32_t gHidServiceHandle = -1;             // HID Service (0x1812)
@@ -4260,8 +4266,10 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
     printf("\n");
     
     // Log the current CCCD handles for debugging
-    printf("[DEBUG] Known CCCD handles: BootKbd=%d, Keyboard=%d, Battery=%d\n", 
-           gHidBootKbdCccdHandle, gHidKeyboardCccdHandle, gBatteryCccdHandle);
+    printf("[DEBUG] Known CCCD handles: BootKbd=%d, Keyboard=%d, Battery=%d, Heartbeat=%d, CTS=%d, ESS_Temp=%d, ESS_Hum=%d\n", 
+           gHidBootKbdCccdHandle, gHidKeyboardCccdHandle, gBatteryCccdHandle, 
+           gHeartbeatCccdHandle, gCtsServerTimeCccdHandle, 
+           gEnvServerTempCccdHandle, gEnvServerHumCccdHandle);
     
     // Update current connection handle (client is connected!)
     if (gCurrentGattConnHandle != conn_handle) {
@@ -4474,6 +4482,54 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
         }
 
         (void)oldState; // Available for comparison/debounce if needed
+        return;
+    }
+    
+    // Check if this is a CCCD write for ESS Temperature
+    if (gEnvServerTempCccdHandle > 0 && value_handle == gEnvServerTempCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[ESS Temperature] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gEssServerTempNotificationsEnabled = true;
+                
+                // Start unified notification thread if not running
+                if (gGattNotificationThread == NULL) {
+                    gGattNotificationThreadRunning = true;
+                    gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
+                    if (gGattNotificationThread) {
+                        printf("[GATT] Unified notification thread started\n");
+                    }
+                }
+            } else {
+                printf("\n[ESS Temperature] Client disabled notifications\n");
+                gEssServerTempNotificationsEnabled = false;
+            }
+        }
+        return;
+    }
+    
+    // Check if this is a CCCD write for ESS Humidity
+    if (gEnvServerHumCccdHandle > 0 && value_handle == gEnvServerHumCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[ESS Humidity] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gEssServerHumNotificationsEnabled = true;
+                
+                // Start unified notification thread if not running
+                if (gGattNotificationThread == NULL) {
+                    gGattNotificationThreadRunning = true;
+                    gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
+                    if (gGattNotificationThread) {
+                        printf("[GATT] Unified notification thread started\n");
+                    }
+                }
+            } else {
+                printf("\n[ESS Humidity] Client disabled notifications\n");
+                gEssServerHumNotificationsEnabled = false;
+            }
+        }
         return;
     }
     
@@ -4774,6 +4830,58 @@ static DWORD WINAPI gattNotificationThread(LPVOID lpParam)
                     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "CTS: %04u-%02u-%02u %02u:%02u:%02u",
                                   payload[0] | (payload[1] << 8),
                                   payload[2], payload[3], payload[4], payload[5], payload[6]);
+                    consecutiveErrors = 0;  // Reset error counter on success
+                } else {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        printf("[GATT] Too many consecutive errors, stopping notification thread\n");
+                        gGattNotificationThreadRunning = false;
+                        gCurrentGattConnHandle = -1;
+                        break;
+                    }
+                }
+            }
+            
+            // 4. Send ESS Temperature notification (if enabled)
+            if (gEssServerTempNotificationsEnabled && gEnvServerTempHandle > 0) {
+                // Vary temperature (20.00°C to 30.00°C in 0.25°C increments)
+                static int16_t tempDirection = 25;  // 0.25°C steps
+                gEssServerTempValue = (int16_t)(gEssServerTempValue + tempDirection);
+                if (gEssServerTempValue >= 3000) tempDirection = -25;  // 30.00°C
+                if (gEssServerTempValue <= 2000) tempDirection = 25;   // 20.00°C
+                
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                               gEnvServerTempHandle,
+                                                               (uint8_t*)&gEssServerTempValue, 2);
+                if (result == 0) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "ESS Temperature: %d.%02d°C", 
+                                  gEssServerTempValue / 100, abs(gEssServerTempValue % 100));
+                    consecutiveErrors = 0;  // Reset error counter on success
+                } else {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        printf("[GATT] Too many consecutive errors, stopping notification thread\n");
+                        gGattNotificationThreadRunning = false;
+                        gCurrentGattConnHandle = -1;
+                        break;
+                    }
+                }
+            }
+            
+            // 5. Send ESS Humidity notification (if enabled)
+            if (gEssServerHumNotificationsEnabled && gEnvServerHumHandle > 0) {
+                // Vary humidity (30.00% to 70.00% in 1% increments)
+                static int16_t humDirection = 100;  // 1% steps
+                gEssServerHumValue = (uint16_t)(gEssServerHumValue + humDirection);
+                if (gEssServerHumValue >= 7000) humDirection = -100;  // 70.00%
+                if (gEssServerHumValue <= 3000) humDirection = 100;   // 30.00%
+                
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                               gEnvServerHumHandle,
+                                                               (uint8_t*)&gEssServerHumValue, 2);
+                if (result == 0) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "ESS Humidity: %u.%02u%%", 
+                                  gEssServerHumValue / 100, gEssServerHumValue % 100);
                     consecutiveErrors = 0;  // Reset error counter on success
                 } else {
                     consecutiveErrors++;
@@ -7232,8 +7340,9 @@ static void gattServerSetupEnvSensing(void)
     }
 
     gEnvServerTempHandle = tempRsp.value_handle;
+    gEnvServerTempCccdHandle = tempRsp.cccd_handle;
     printf("✓ Temperature characteristic created (handle=%d, CCCD=%d)\n",
-           gEnvServerTempHandle, tempRsp.cccd_handle);
+           gEnvServerTempHandle, gEnvServerTempCccdHandle);
 
     // 3) Humidity characteristic (0x2A6F), in 0.01%% units, e.g. 45.00%%
     uint8_t humUuid[] = {0x2A, 0x6F};
@@ -7254,8 +7363,9 @@ static void gattServerSetupEnvSensing(void)
     }
 
     gEnvServerHumHandle = humRsp.value_handle;
+    gEnvServerHumCccdHandle = humRsp.cccd_handle;
     printf("✓ Humidity characteristic created (handle=%d, CCCD=%d)\n",
-           gEnvServerHumHandle, humRsp.cccd_handle);
+           gEnvServerHumHandle, gEnvServerHumCccdHandle);
 
     // 4) Activate service
     result = uCxGattServerServiceActivate(&gUcxHandle);
@@ -11886,11 +11996,6 @@ static void printMenu(void)
             break;
             
         case MENU_GATT_EXAMPLES:
-            printf("\n");
-            printf("══════════════════════════════════════════════════════════════\n");
-            printf("                    GATT EXAMPLES MENU\n");
-            printf("══════════════════════════════════════════════════════════════\n");
-            printf("\n");
             printf("┌─────────────────────────────────────────────────────────────┐\n");
             printf("│  GATT SERVER EXAMPLES (9 Profiles)                          │\n");
             printf("│  This device provides services to remote BLE clients        │\n");
@@ -11905,16 +12010,6 @@ static void printMenu(void)
             printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
             printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
-            printf("\n");
-            printf("┌─────────────────────────────────────────────────────────────┐\n");
-            printf("│  GATT CLIENT EXAMPLES (8 Demos)                             │\n");
-            printf("│  This device connects to and reads from remote servers      │\n");
-            printf("└─────────────────────────────────────────────────────────────┘\n");
-            printf("\n");
-            printf("  [t] Current Time Service Client - Read time from CTS server\n");
-            printf("\n");
-            printf("  NOTE: For all client examples, use [g] GATT Client menu\n");
-            printf("        (ESS, LNS, NUS, SPS, BAS, DIS, AIO clients available)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
