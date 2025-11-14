@@ -9372,9 +9372,9 @@ static void httpGetExample(void)
     }
     
     int32_t totalBytes = 0;
-    int32_t chunkSize = 2048;
+    int32_t chunkSize = 1000;  // Max 1000 bytes per read
     int32_t moreToRead = 1;
-    uint8_t buffer[2048];
+    uint8_t buffer[1000];
     
     while (moreToRead) {
         int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
@@ -9641,15 +9641,33 @@ static void ipGeolocationExample(void)
     // Step 4: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
+    printf("[DEBUG] Before uCxHttpGetHeader1Begin\n");
+    fflush(stdout);
+    
     uCxHttpGetHeader_t headerResp;
+    memset(&headerResp, 0, sizeof(headerResp));
+    
     if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("[DEBUG] Header read successful, length=%d\n", (int)headerResp.byte_array_data.length);
+        fflush(stdout);
+        
         printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerResp.byte_array_data.length > 0 && headerResp.byte_array_data.pData != NULL) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        }
         printf("─────────────────────────────────────────────────\n");
+        
+        printf("[DEBUG] Before uCxEnd\n");
+        fflush(stdout);
         uCxEnd(&gUcxHandle);
+        printf("[DEBUG] After uCxEnd\n");
+        fflush(stdout);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
+    
+    printf("[DEBUG] After header reading section\n");
+    fflush(stdout);
     
     // Step 5: Read response body (JSON data)
     printf("\n");
@@ -9674,9 +9692,9 @@ static void ipGeolocationExample(void)
     // }
     
     int32_t totalBytes = 0;
-    int32_t chunkSize = 2048;
+    int32_t chunkSize = 1000;  // Max 1000 bytes per read
     int32_t moreToRead = 1;
-    uint8_t buffer[2048];
+    uint8_t buffer[1000];
     
     printf("─────────────────────────────────────────────────\n");
     while (moreToRead) {
@@ -9801,14 +9819,47 @@ static void externalIpDetectionExample(void)
     // Step 4: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
+    
     uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
-        printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
-        printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
-    } else {
-        printf("WARNING: Failed to read response headers\n");
+    int32_t contentLength = -1;
+    char headerBuffer[2048];
+    int32_t headerBufferLen = 0;
+    
+    // Loop to read all header chunks
+    while (true) {
+        memset(&headerResp, 0, sizeof(headerResp));
+        
+        if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+            // Collect header data for parsing
+            if (headerResp.byte_array_data.length > 0 && 
+                headerResp.byte_array_data.pData != NULL &&
+                headerBufferLen + headerResp.byte_array_data.length < sizeof(headerBuffer)) {
+                memcpy(headerBuffer + headerBufferLen, 
+                       headerResp.byte_array_data.pData, 
+                       headerResp.byte_array_data.length);
+                headerBufferLen += headerResp.byte_array_data.length;
+            }
+            
+            uCxEnd(&gUcxHandle);
+            
+            // Continue reading if there's more
+            if (headerResp.more_to_read == 0) {
+                break;  // All headers received
+            }
+        } else {
+            printf("WARNING: Failed to read response headers\n");
+            break;
+        }
+    }
+    
+    // Parse Content-Length from headers
+    if (headerBufferLen > 0) {
+        headerBuffer[headerBufferLen] = '\0';  // Null terminate
+        char *contentLengthPos = strstr(headerBuffer, "Content-Length: ");
+        if (contentLengthPos) {
+            contentLength = atoi(contentLengthPos + 16);
+            printf("Expected response size: %d bytes\n", contentLength);
+        }
     }
     
     // Step 5: Read response body (JSON data)
@@ -9821,19 +9872,23 @@ static void externalIpDetectionExample(void)
     // This is a minimal response containing just your external IP address
     
     int32_t totalBytes = 0;
-    int32_t chunkSize = 2048;
+    int32_t chunkSize = 1000;  // Max 1000 bytes per read
     int32_t moreToRead = 1;
-    uint8_t buffer[2048];
+    uint8_t buffer[1000];
     
     printf("─────────────────────────────────────────────────\n");
+    
     while (moreToRead) {
         int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        
         if (bytesRead < 0) {
             printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
             break;
         }
+        
         if (bytesRead > 0) {
             totalBytes += bytesRead;
+            // Print buffer contents safely
             fwrite(buffer, 1, bytesRead, stdout);
         }
     }
@@ -10154,9 +10209,9 @@ static void wifiPositioningExample(void)
     // }
     
     int32_t totalBytes = 0;
-    int32_t chunkSize = 2048;
+    int32_t chunkSize = 1000;  // Max 1000 bytes per read
     int32_t moreToRead = 1;
-    uint8_t buffer[2048];
+    uint8_t buffer[1000];
     
     printf("Position Data:\n");
     printf("─────────────────────────────────────────────────\n");
