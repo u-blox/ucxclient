@@ -145,6 +145,12 @@ static bool gUcxConnected = false;  // UCX client connection status (COM port)
 // Socket tracking
 static int32_t gCurrentSocket = -1;
 
+// Wi-Fi Positioning - stored location for GATT Location and Navigation Service
+static double gLocationLatitude = 0.0;
+static double gLocationLongitude = 0.0;
+static int32_t gLocationAccuracy = 0;  // Accuracy in meters
+static bool gLocationValid = false;    // Whether we have a valid position
+
 // Bluetooth connection tracking
 #define MAX_BT_CONNECTIONS 7  // u-connectXpress supports up to 7 concurrent BT connections
 typedef struct {
@@ -803,6 +809,9 @@ static void pingResponseUrc(struct uCxHandle *puCxHandle, uDiagPingResponse_t pi
 static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_packets, 
                            int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_output);
+
+// URC handler for HTTP
+static void httpRequestStatusUrc(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char *description);
 
 // ============================================================================
 // BLUETOOTH HELPER FUNCTIONS
@@ -2057,6 +2066,14 @@ static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_outpu
     if (strstr(iperf_output, "Server Report:") || strstr(iperf_output, "Completed")) {
         gIperfRunning = false;
     }
+}
+
+static void httpRequestStatusUrc(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char *description)
+{
+    (void)puCxHandle;
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "HTTP response: session %d, status %d %s", 
+                   session_id, status_code, description ? description : "");
 }
 
 static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id)
@@ -6430,6 +6447,9 @@ static void enableAllUrcs(void)
     uCxDiagnosticsRegisterPingComplete(&gUcxHandle, pingCompleteUrc);
     uCxDiagnosticsRegisterIperfOutput(&gUcxHandle, iperfOutputUrc);
     
+    // HTTP events
+    uCxHttpRegisterRequestStatus(&gUcxHandle, httpRequestStatusUrc);
+    
     // MQTT events
     uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
     uCxMqttRegisterDataAvailable(&gUcxHandle, mqttDataAvailableUrc);
@@ -6477,6 +6497,7 @@ static void disableAllUrcs(void)
     // uCxSystemRegisterStartup(&gUcxHandle, NULL);  // Removed from API
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, NULL);
     uCxDiagnosticsRegisterPingComplete(&gUcxHandle, NULL);
+    uCxHttpRegisterRequestStatus(&gUcxHandle, NULL);
     uCxMqttRegisterConnect(&gUcxHandle, NULL);
     uCxMqttRegisterDataAvailable(&gUcxHandle, NULL);
     uCxBluetoothRegisterConnect(&gUcxHandle, NULL);
@@ -9231,6 +9252,328 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
 // HTTP Helper Functions
 // ----------------------------------------------------------------
 
+// Parse Content-Length from HTTP headers with overflow protection
+// Returns -1 if not found or invalid, otherwise the length value
+static int32_t parseContentLength(const char *headers, int32_t headersLen)
+{
+    if (!headers || headersLen <= 0) {
+        return -1;
+    }
+    
+    const char *contentLengthPos = strstr(headers, "Content-Length: ");
+    if (!contentLengthPos) {
+        return -1;
+    }
+    
+    const char *valueStart = contentLengthPos + 16;
+    const char *p = valueStart;
+    
+    // Skip leading whitespace
+    while (*p == ' ' || *p == '\t') p++;
+    
+    // Validate: must contain only digits
+    bool validDigits = (*p >= '0' && *p <= '9');
+    const char *digitStart = p;
+    while (*p >= '0' && *p <= '9') p++;
+    
+    if (!validDigits || p == digitStart) {
+        return -1;  // No digits found
+    }
+    
+    // Parse with overflow protection
+    uint64_t tmp = 0;
+    const uint64_t MAX_ALLOWED = 10000000;  // 10MB max for embedded device
+    p = digitStart;
+    
+    while (*p >= '0' && *p <= '9') {
+        int digit = *p - '0';
+        
+        // Check for overflow before multiplying
+        if (tmp > MAX_ALLOWED / 10) {
+            return -1;  // Overflow, reject
+        }
+        
+        tmp = tmp * 10 + digit;
+        
+        // Check if result exceeds max
+        if (tmp > MAX_ALLOWED) {
+            return -1;  // Too large, reject
+        }
+        
+        p++;
+    }
+    
+    // Only accept if in valid range
+    if (tmp > 0 && tmp <= MAX_ALLOWED) {
+        return (int32_t)tmp;
+    }
+    
+    return -1;
+}
+
+// Read HTTP response headers, accumulating all chunks
+// Returns true on success, false on error
+static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t bufferSize, int32_t *pHeaderLen)
+{
+    if (!headerBuffer || !pHeaderLen || bufferSize <= 0) {
+        return false;
+    }
+    
+    *pHeaderLen = 0;
+    uCxHttpGetHeader_t headerResp;
+    
+    // Loop to read all header chunks
+    while (true) {
+        memset(&headerResp, 0, sizeof(headerResp));
+        
+        if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+            // Collect header data
+            if (headerResp.byte_array_data.length > 0 && 
+                headerResp.byte_array_data.pData != NULL &&
+                *pHeaderLen + headerResp.byte_array_data.length < bufferSize) {
+                memcpy(headerBuffer + *pHeaderLen, 
+                       headerResp.byte_array_data.pData, 
+                       headerResp.byte_array_data.length);
+                *pHeaderLen += headerResp.byte_array_data.length;
+            }
+            
+            uCxEnd(&gUcxHandle);
+            
+            // Continue reading if there's more
+            if (headerResp.more_to_read == 0) {
+                break;  // All headers received
+            }
+        } else {
+            return false;  // Failed to read headers
+        }
+    }
+    
+    // Null-terminate for parsing
+    if (*pHeaderLen < bufferSize) {
+        headerBuffer[*pHeaderLen] = '\0';
+    }
+    
+    // Success if we completed reading (more_to_read reached 0)
+    return true;
+}
+
+// Read HTTP response body in chunks
+// Returns total bytes read, or negative on error
+// If expectedLength > 0, reads exactly that many bytes (respecting 1000 byte API limit per chunk)
+// If expectedLength <= 0, reads until moreToRead flag is false
+static int32_t readHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSize, 
+                            int32_t expectedLength, void (*outputCallback)(const uint8_t *data, int32_t len))
+{
+    if (!buffer || bufferSize <= 0) {
+        return -1;
+    }
+    
+    int32_t totalBytes = 0;
+    int32_t moreToRead = 1;
+    
+    while (moreToRead) {
+        // Determine chunk size for this read
+        int32_t chunkSize;
+        if (expectedLength > 0) {
+            // Read based on Content-Length, but respect API limit
+            int32_t remaining = expectedLength - totalBytes;
+            chunkSize = (remaining < 1000) ? remaining : 1000;
+            
+            if (chunkSize <= 0) {
+                break;  // We've read everything we expected
+            }
+        } else {
+            // No Content-Length, use default chunk size
+            chunkSize = (bufferSize < 1000) ? bufferSize : 1000;
+        }
+        
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        
+        if (bytesRead < 0) {
+            return bytesRead;  // Return error code
+        }
+        
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            
+            // Call output callback if provided
+            if (outputCallback) {
+                outputCallback(buffer, bytesRead);
+            }
+        }
+    }
+    
+    return totalBytes;
+}
+
+// Default callback: write to stdout
+static void httpBodyToStdout(const uint8_t *data, int32_t len)
+{
+    fwrite(data, 1, len, stdout);
+}
+
+// Extract IP address from ipify JSON response: {"ip":"123.45.67.89"}
+// Returns true if IP extracted successfully, false otherwise
+static bool extractIpFromJson(const char *jsonData, int32_t jsonLen, char *ipBuffer, int32_t ipBufferSize)
+{
+    if (!jsonData || jsonLen <= 0 || !ipBuffer || ipBufferSize < 16) {
+        return false;
+    }
+    
+    // Look for "ip":"
+    const char *ipStart = strstr(jsonData, "\"ip\":\"");
+    if (!ipStart) {
+        return false;
+    }
+    
+    ipStart += 6;  // Skip past "ip":"
+    
+    // Find the closing quote
+    const char *ipEnd = strchr(ipStart, '"');
+    if (!ipEnd || ipEnd <= ipStart) {
+        return false;
+    }
+    
+    int32_t ipLen = (int32_t)(ipEnd - ipStart);
+    if (ipLen >= ipBufferSize) {
+        return false;  // IP too long for buffer
+    }
+    
+    // Copy IP address
+    memcpy(ipBuffer, ipStart, ipLen);
+    ipBuffer[ipLen] = '\0';
+    
+    return true;
+}
+
+// Send HTTP POST request with data
+// Returns total bytes sent on success, negative on error
+static int32_t postHttpData(int32_t sessionId, const char *data, int32_t dataLen, bool verbose)
+{
+    if (!data || dataLen <= 0) {
+        return -1;
+    }
+    
+    if (verbose) {
+        printf("Sending POST data: %d bytes\n", dataLen);
+    }
+    
+    int32_t sent = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)data, dataLen);
+    if (sent < 0) {
+        if (verbose) {
+            printf("ERROR: POST request failed (error: %d)\n", sent);
+        }
+        return sent;
+    }
+    
+    if (verbose) {
+        printf("✓ POST complete: %d bytes sent\n", sent);
+    }
+    
+    return sent;
+}
+
+// Get external IP address from ipify.org
+// Returns true on success with IP in ipBuffer, false on failure
+static bool getExternalIp(int32_t sessionId, char *ipBuffer, int32_t ipBufferSize, bool verbose)
+{
+    if (!ipBuffer || ipBufferSize < 16) {
+        return false;
+    }
+    
+    if (verbose) {
+        printf("Getting external IP address from ipify.org...\n");
+    }
+    
+    int32_t err;
+    
+    // Configure HTTP for ipify
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, "api.ipify.org");
+    if (err < 0) {
+        if (verbose) {
+            printf("ERROR: Failed to set connection parameters for ipify (error: %d)\n", err);
+        }
+        return false;
+    }
+    
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, "/?format=json");
+    if (err < 0) {
+        if (verbose) {
+            printf("ERROR: Failed to set request path for ipify (error: %d)\n", err);
+        }
+        return false;
+    }
+    
+    // Send GET request
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        if (verbose) {
+            printf("ERROR: GET request to ipify failed (error: %d)\n", err);
+        }
+        return false;
+    }
+    
+    // Read headers
+    char headerBuffer[2048] = {0};
+    int32_t headerBufferLen = 0;
+    if (!readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerBufferLen)) {
+        if (verbose) {
+            printf("ERROR: Failed to read response headers from ipify\n");
+        }
+        return false;
+    }
+    
+    int32_t contentLength = parseContentLength(headerBuffer, headerBufferLen);
+    
+    // Read body (should be small JSON like {"ip":"123.45.67.89"})
+    char ipifyResponse[256] = {0};
+    int32_t ipifyResponseLen = 0;
+    int32_t moreToRead = 1;
+    uint8_t buffer[256];
+    
+    while (moreToRead && ipifyResponseLen < sizeof(ipifyResponse) - 1) {
+        int32_t chunkSize = (contentLength > 0) ? 
+            ((contentLength - ipifyResponseLen < 256) ? contentLength - ipifyResponseLen : 256) : 256;
+        if (chunkSize > 1000) chunkSize = 1000;  // API limit
+        
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            if (verbose) {
+                printf("ERROR: Failed to read ipify response (error: %d)\n", bytesRead);
+            }
+            return false;
+        }
+        if (bytesRead > 0) {
+            int32_t copyLen = bytesRead;
+            if (ipifyResponseLen + copyLen >= sizeof(ipifyResponse)) {
+                copyLen = sizeof(ipifyResponse) - ipifyResponseLen - 1;
+            }
+            memcpy(ipifyResponse + ipifyResponseLen, buffer, copyLen);
+            ipifyResponseLen += copyLen;
+        }
+        
+        if (contentLength > 0 && ipifyResponseLen >= contentLength) {
+            break;  // Got everything we expected
+        }
+    }
+    ipifyResponse[ipifyResponseLen] = '\0';
+    
+    // Extract IP from JSON
+    if (!extractIpFromJson(ipifyResponse, ipifyResponseLen, ipBuffer, ipBufferSize)) {
+        if (verbose) {
+            printf("ERROR: Failed to extract IP from ipify response\n");
+            printf("Response was: %s\n", ipifyResponse);
+        }
+        return false;
+    }
+    
+    if (verbose) {
+        printf("✓ External IP detected: %s\n", ipBuffer);
+    }
+    
+    return true;
+}
+
 static bool saveResponseToFile(const char *filename, const char *data, int32_t dataLen, bool append)
 {
     FILE *fp = fopen(filename, append ? "ab" : "wb");
@@ -9577,6 +9920,7 @@ static void ipGeolocationExample(void)
 {
     int32_t sessionId = 0;
     int32_t err;
+    char externalIp[64] = {0};
     
     printf("\n─────────────────────────────────────────────────────────────\n");
     printf("IP GEOLOCATION\n");
@@ -9591,19 +9935,45 @@ static void ipGeolocationExample(void)
         return;
     }
     
-    printf("Getting IP geolocation information...\n");
+    // ============================================================
+    // STEP 1: Get External IP Address from ipify.org
+    // ============================================================
+    printf("Step 1: Getting external IP address...\n");
     printf("\n");
     
+    if (!getExternalIp(sessionId, externalIp, sizeof(externalIp), true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    
+    // Small delay to allow previous HTTP session to fully close
+    Sleep(500);
+    
+    // ============================================================
+    // STEP 2: Get Geolocation for the IP from ip-api.com
+    // ============================================================
+    printf("Step 2: Getting geolocation data for %s from ip-api.com...\n", externalIp);
+    printf("\n");
+    
+    // Disconnect previous HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);  // Brief delay after disconnect
+    
     // API: https://ip-api.com/docs/api:json
-    // Endpoint: http://ip-api.com/json/
+    // Endpoint: http://ip-api.com/json/{ip}
     // Returns: JSON with country, city, ISP, lat/lon, etc.
     
     const char *host = "ip-api.com";
-    const char *path = "/json/";
+    char path[128];
+    snprintf(path, sizeof(path), "/json/%s", externalIp);
     
     printf("Configuring HTTP connection...\n");
     
-    // Step 1: Set connection parameters
+    // Set connection parameters
     err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
@@ -9614,7 +9984,7 @@ static void ipGeolocationExample(void)
     }
     printf("✓ Connection configured for %s\n", host);
     
-    // Step 2: Set request path
+    // Set request path
     err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
     if (err < 0) {
         printf("ERROR: Failed to set request path (error: %d)\n", err);
@@ -9625,7 +9995,7 @@ static void ipGeolocationExample(void)
     }
     printf("✓ Request path set to %s\n", path);
     
-    // Step 3: Send GET request
+    // Send GET request
     printf("\n");
     printf("Sending GET request to http://%s%s...\n", host, path);
     err = uCxHttpGetRequest(&gUcxHandle, sessionId);
@@ -9638,38 +10008,33 @@ static void ipGeolocationExample(void)
     }
     printf("✓ GET request sent successfully\n");
     
-    // Step 4: Read response headers
+    // Read response headers
     printf("\n");
     printf("Reading response headers...\n");
-    printf("[DEBUG] Before uCxHttpGetHeader1Begin\n");
-    fflush(stdout);
     
-    uCxHttpGetHeader_t headerResp;
-    memset(&headerResp, 0, sizeof(headerResp));
-    
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
-        printf("[DEBUG] Header read successful, length=%d\n", (int)headerResp.byte_array_data.length);
-        fflush(stdout);
-        
-        printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.length > 0 && headerResp.byte_array_data.pData != NULL) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
-        }
-        printf("─────────────────────────────────────────────────\n");
-        
-        printf("[DEBUG] Before uCxEnd\n");
-        fflush(stdout);
-        uCxEnd(&gUcxHandle);
-        printf("[DEBUG] After uCxEnd\n");
-        fflush(stdout);
-    } else {
-        printf("WARNING: Failed to read response headers\n");
+    char headerBuffer[2048] = {0};
+    int32_t headerBufferLen = 0;
+    if (!readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerBufferLen)) {
+        printf("ERROR: Failed to read response headers\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
     }
     
-    printf("[DEBUG] After header reading section\n");
-    fflush(stdout);
+    int32_t contentLength = parseContentLength(headerBuffer, headerBufferLen);
+    if (contentLength > 0) {
+        printf("✓ Content-Length: %d bytes\n", contentLength);
+    }
     
-    // Step 5: Read response body (JSON data)
+    // Read response body (JSON data)
+    printf("\n");
+    printf("Reading response body...\n");
+    if (contentLength > 0) {
+        printf("✓ Content-Length: %d bytes\n", contentLength);
+    }
+    
+    // Read response body (JSON data)
     printf("\n");
     printf("Reading response body...\n");
     
@@ -9691,26 +10056,22 @@ static void ipGeolocationExample(void)
     //   "query": "35.192.x.x"
     // }
     
-    int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Max 1000 bytes per read
-    int32_t moreToRead = 1;
-    uint8_t buffer[1000];
+    uint8_t bodyBuffer[1000];
     
     printf("─────────────────────────────────────────────────\n");
-    while (moreToRead) {
-        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
-        if (bytesRead < 0) {
-            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
-            break;
-        }
-        if (bytesRead > 0) {
-            totalBytes += bytesRead;
-            fwrite(buffer, 1, bytesRead, stdout);
-        }
-    }
+    int32_t totalBytes = readHttpBody(sessionId, bodyBuffer, sizeof(bodyBuffer), contentLength, httpBodyToStdout);
     printf("\n─────────────────────────────────────────────────\n");
+    
     if (totalBytes > 0) {
-        printf("✓ Response received: %d bytes total\n", totalBytes);
+        printf("✓ Response received: %d bytes total", totalBytes);
+        if (contentLength > 0 && totalBytes == contentLength) {
+            printf(" (matches Content-Length)");
+        } else if (contentLength > 0) {
+            printf(" (expected %d)", contentLength);
+        }
+        printf("\n");
+    } else if (totalBytes < 0) {
+        printf("ERROR: Failed to read response body (error: %d)\n", totalBytes);
     }
     printf("\n");
     
@@ -9749,7 +10110,7 @@ static void ipGeolocationExample(void)
 static void externalIpDetectionExample(void)
 {
     int32_t sessionId = 0;
-    int32_t err;
+    char externalIp[64] = {0};
     
     printf("\n─────────────────────────────────────────────────────────────\n");
     printf("EXTERNAL IP DETECTION\n");
@@ -9767,138 +10128,24 @@ static void externalIpDetectionExample(void)
     printf("Detecting external IP address...\n");
     printf("\n");
     
-    // API: https://www.ipify.org/
-    // Endpoints:
-    //   - Plain text: https://api.ipify.org (or http://api.ipify.org)
-    //   - JSON:       https://api.ipify.org?format=json
-    //   - JSONP:      https://api.ipify.org?format=jsonp
-    //
-    // This is a simple, free API that returns your public IP address
-    // No rate limiting, no authentication required
-    
-    const char *host = "api.ipify.org";
-    const char *path = "/?format=json";
-    
-    printf("Configuring HTTP connection...\n");
-    
-    // Step 1: Set connection parameters
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
-    if (err < 0) {
-        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+    // Use common function to get external IP
+    if (!getExternalIp(sessionId, externalIp, sizeof(externalIp), true)) {
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
-    printf("✓ Connection configured for %s\n", host);
     
-    // Step 2: Set request path
-    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
-    if (err < 0) {
-        printf("ERROR: Failed to set request path (error: %d)\n", err);
-        printf("\n");
-        printf("Press Enter to continue...");
-        getchar();
-        return;
-    }
-    printf("✓ Request path set to %s\n", path);
-    
-    // Step 3: Send GET request
     printf("\n");
-    printf("Sending GET request to http://%s%s...\n", host, path);
-    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
-    if (err < 0) {
-        printf("ERROR: GET request failed (error: %d)\n", err);
-        printf("\n");
-        printf("Press Enter to continue...");
-        getchar();
-        return;
-    }
-    printf("✓ GET request sent successfully\n");
-    
-    // Step 4: Read response headers
-    printf("\n");
-    printf("Reading response headers...\n");
-    
-    uCxHttpGetHeader_t headerResp;
-    int32_t contentLength = -1;
-    char headerBuffer[2048];
-    int32_t headerBufferLen = 0;
-    
-    // Loop to read all header chunks
-    while (true) {
-        memset(&headerResp, 0, sizeof(headerResp));
-        
-        if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
-            // Collect header data for parsing
-            if (headerResp.byte_array_data.length > 0 && 
-                headerResp.byte_array_data.pData != NULL &&
-                headerBufferLen + headerResp.byte_array_data.length < sizeof(headerBuffer)) {
-                memcpy(headerBuffer + headerBufferLen, 
-                       headerResp.byte_array_data.pData, 
-                       headerResp.byte_array_data.length);
-                headerBufferLen += headerResp.byte_array_data.length;
-            }
-            
-            uCxEnd(&gUcxHandle);
-            
-            // Continue reading if there's more
-            if (headerResp.more_to_read == 0) {
-                break;  // All headers received
-            }
-        } else {
-            printf("WARNING: Failed to read response headers\n");
-            break;
-        }
-    }
-    
-    // Parse Content-Length from headers
-    if (headerBufferLen > 0) {
-        headerBuffer[headerBufferLen] = '\0';  // Null terminate
-        char *contentLengthPos = strstr(headerBuffer, "Content-Length: ");
-        if (contentLengthPos) {
-            contentLength = atoi(contentLengthPos + 16);
-            printf("Expected response size: %d bytes\n", contentLength);
-        }
-    }
-    
-    // Step 5: Read response body (JSON data)
-    printf("\n");
-    printf("Reading response body...\n");
-    
-    // Expected JSON response format from ipify.org:
-    // {"ip":"123.45.67.89"}
-    //
-    // This is a minimal response containing just your external IP address
-    
-    int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Max 1000 bytes per read
-    int32_t moreToRead = 1;
-    uint8_t buffer[1000];
-    
     printf("─────────────────────────────────────────────────\n");
-    
-    while (moreToRead) {
-        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
-        
-        if (bytesRead < 0) {
-            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
-            break;
-        }
-        
-        if (bytesRead > 0) {
-            totalBytes += bytesRead;
-            // Print buffer contents safely
-            fwrite(buffer, 1, bytesRead, stdout);
-        }
-    }
-    printf("\n─────────────────────────────────────────────────\n");
-    if (totalBytes > 0) {
-        printf("✓ Response received: %d bytes total\n", totalBytes);
-    }
+    printf("Your External IP Address: %s\n", externalIp);
+    printf("─────────────────────────────────────────────────\n");
     printf("\n");
     
     printf("Expected JSON Response Format:\n");
+    printf("  {\"ip\":\"123.45.67.89\"}\n");
+    printf("\n");
+    printf("The 'ip' field contains your public/external IP address\n");
     printf("  {\"ip\":\"123.45.67.89\"}\n");
     printf("\n");
     printf("The 'ip' field contains your public/external IP address\n");
@@ -10000,8 +10247,8 @@ static void wifiPositioningExample(void)
     int apCount = 0;
     char macStr[18];
     
-    // Build JSON payload for Combain API
-    strcpy(postData, "{\n    \"wifiAccessPoints\": [");
+    // Build JSON payload for Combain API (compact format)
+    strcpy(postData, "{\"wifiAccessPoints\":[");
     dataLen = (int)strlen(postData);
     
     printf("Collecting access point data...\n");
@@ -10022,20 +10269,16 @@ static void wifiPositioningExample(void)
             dataLen += snprintf(postData + dataLen, sizeof(postData) - dataLen, ",");
         }
         
-        // Add access point entry to JSON
+        // Add access point entry to JSON (compact format, no whitespace)
         dataLen += snprintf(postData + dataLen, sizeof(postData) - dataLen,
-                           "\n        {\n"
-                           "            \"macAddress\": \"%s\",\n"
-                           "            \"ssid\": \"%s\",\n"
-                           "            \"signalStrength\": %d\n"
-                           "        }",
+                           "{\"macAddress\":\"%s\",\"ssid\":\"%s\",\"signalStrength\":%d}",
                            macStr, scanResult.ssid, scanResult.rssi);
         
         apCount++;
         
         // Prevent buffer overflow
         if (dataLen >= sizeof(postData) - 200) {
-            printf("WARNING: Buffer limit reached, truncating AP list\n");
+            printf("  (Buffer limit reached at %d APs)\n", apCount);
             break;
         }
     }
@@ -10054,16 +10297,15 @@ static void wifiPositioningExample(void)
         return;
     }
     
-    // Complete JSON payload
+    // Complete JSON payload (compact format)
     dataLen += snprintf(postData + dataLen, sizeof(postData) - dataLen,
-                       "\n    ],\n"
-                       "    \"indoor\": 1\n"
-                       "}");
+                       "],\"indoor\":1}");
     
     printf("JSON Payload (%d bytes):\n", dataLen);
     printf("─────────────────────────────────────────────────\n");
     printf("%s\n", postData);
     printf("─────────────────────────────────────────────────\n");
+    printf("\n");
     printf("\n");
     
     // Step 2: Check for Combain API key
@@ -10116,11 +10358,17 @@ static void wifiPositioningExample(void)
     }
     
     // Prepare POST request to Combain API
+    // Note: Using HTTP instead of HTTPS to avoid certificate requirements
     const char *host = "apiv2.combain.com";
     char path[256];
     snprintf(path, sizeof(path), "/?key=%s&id=ucxclient_win64", gCombainApiKey);
     
     printf("Configuring HTTP connection to Combain...\n");
+    printf("Note: Using HTTP (not HTTPS) - Combain supports both\n");
+    
+    // Disconnect any previous HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
     
     // Set connection parameters
     err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
@@ -10133,6 +10381,10 @@ static void wifiPositioningExample(void)
     }
     printf("✓ Connection configured for %s\n", host);
     
+    // Skip TLS for now - use plain HTTP
+    // TODO: Add certificate management for HTTPS support
+    // err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    
     // Set request path
     err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
     if (err < 0) {
@@ -10144,44 +10396,68 @@ static void wifiPositioningExample(void)
     }
     printf("✓ Request path set to %s\n", path);
     
-    // Note: Header setting functions not yet available
-    // err = uCxHttpSetRequestHeader2(&gUcxHandle, sessionId, "Content-Type: application/json");
-    // if (err < 0) {
-    //     printf("ERROR: Failed to set Content-Type header (error: %d)\n", err);
-    //     printf("\n");
-    //     printf("Press Enter to continue...");
-    //     getchar();
-    //     return;
-    // }
-    // printf("✓ Content-Type header set\n");
+    // Set Content-Type header
+    err = uCxHttpAddHeaderField(&gUcxHandle, sessionId, "Content-Type", "application/json");
+    if (err < 0) {
+        printf("ERROR: Failed to set Content-Type header (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Content-Type header set to application/json\n");
+    
+    // Set Content-Length header
+    char contentLengthValue[32];
+    snprintf(contentLengthValue, sizeof(contentLengthValue), "%d", dataLen);
+    err = uCxHttpAddHeaderField(&gUcxHandle, sessionId, "Content-Length", contentLengthValue);
+    if (err < 0) {
+        printf("ERROR: Failed to set Content-Length header (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Content-Length header set to %d bytes\n", dataLen);
     
     // Send POST request with JSON data
     printf("\n");
-    printf("Sending POST request to https://%s%s...\n", host, path);
-    printf("POST data: %d bytes\n", dataLen);
+    printf("Sending POST request to http://%s%s...\n", host, path);
+    printf("\n");
+    printf("Complete POST Request:\n");
+    printf("═════════════════════════════════════════════════\n");
+    printf("POST %s HTTP/1.1\n", path);
+    printf("Host: %s\n", host);
+    printf("Content-Type: application/json\n");
+    printf("Content-Length: %d\n", dataLen);
+    printf("\n");
+    printf("%s\n", postData);
+    printf("═════════════════════════════════════════════════\n");
+    printf("\n");
     
-    err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)postData, dataLen);
-    if (err < 0) {
-        printf("ERROR: POST request failed (error: %d)\n", err);
+    int32_t bytesSent = postHttpData(sessionId, postData, dataLen, true);
+    if (bytesSent < 0) {
+        printf("ERROR: POST request failed (error: %d)\n", bytesSent);
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
     printf("✓ POST request sent successfully\n");
-    printf("  Data sent: %d bytes\n", dataLen);
+    printf("  Data sent: %d bytes\n", bytesSent);
     
     // Read response headers
     printf("\n");
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
-        printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
-        printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
-    } else {
+    
+    char headerBuffer[2048] = {0};
+    int32_t headerBufferLen = 0;
+    if (!readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerBufferLen)) {
         printf("WARNING: Failed to read response headers\n");
+    } else if (headerBufferLen > 0) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%s", headerBuffer);
+        printf("─────────────────────────────────────────────────\n");
     }
     
     // Read response body (JSON location data)
@@ -10189,68 +10465,98 @@ static void wifiPositioningExample(void)
     printf("Reading response body...\n");
     
     // Expected JSON response format from Combain:
-    // {
-    //     "location": {
-    //         "lat": 55.7174228,
-    //         "lng": 13.2137795
-    //     },
-    //     "accuracy": 2,
-    //     "state": "...",
-    //     "indoor": {
-    //         "buildingModelId": 135432394,
-    //         "buildingId": 172119,
-    //         "building": "Combain Office",
-    //         "floorIndex": 13,
-    //         "floorLabel": "14",
-    //         "roomIndex": 1000000000017996,
-    //         "room": "Le Kitchen"
-    //     },
-    //     "logId": 300000528485206
-    // }
+    // {"location":{"lat":55.7174228,"lng":13.2137795},"accuracy":2}
     
-    int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Max 1000 bytes per read
+    char jsonBuffer[1000] = {0};
+    int32_t jsonLen = 0;
     int32_t moreToRead = 1;
     uint8_t buffer[1000];
     
     printf("Position Data:\n");
     printf("─────────────────────────────────────────────────\n");
-    while (moreToRead) {
-        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+    while (moreToRead && jsonLen < sizeof(jsonBuffer) - 1) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, 1000, buffer, &moreToRead);
         if (bytesRead < 0) {
             printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
             break;
         }
         if (bytesRead > 0) {
-            totalBytes += bytesRead;
             fwrite(buffer, 1, bytesRead, stdout);
+            // Also store in buffer for parsing
+            int32_t copyLen = bytesRead;
+            if (jsonLen + copyLen >= sizeof(jsonBuffer)) {
+                copyLen = sizeof(jsonBuffer) - jsonLen - 1;
+            }
+            memcpy(jsonBuffer + jsonLen, buffer, copyLen);
+            jsonLen += copyLen;
         }
     }
+    jsonBuffer[jsonLen] = '\0';
     printf("\n─────────────────────────────────────────────────\n");
-    printf("✓ Response received: %d bytes total\n", totalBytes);
+    printf("✓ Response received: %d bytes total\n", jsonLen);
+    printf("\n");
     
-    // TODO: Parse JSON response to extract latitude and longitude
-    // Simple parsing example (in production, use a JSON library)
-    // Example response: {"location":{"lat":55.7174228,"lng":13.2137795},"accuracy":2}
-    // 
-    // double lat = 0.0, lng = 0.0;
-    // int accuracy = 0;
-    // 
-    // // Parse JSON properly when needed:
-    // // sscanf(jsonBuffer, "...parse lat/lng...", &lat, &lng);
-    // 
-    // if (lat != 0.0 && lng != 0.0) {
-    //     printf("\n");
-    //     printf("─────────────────────────────────────────────────\n");
-    //     printf("POSITION DETERMINED\n");
-    //     printf("─────────────────────────────────────────────────\n");
-    //     printf("  Latitude:  %.7f\n", lat);
-    //     printf("  Longitude: %.7f\n", lng);
-    //     printf("  Accuracy:  %d meters\n", accuracy);
-    //     
-    //     // Generate Google Maps link and QR code
-    //     generateLocationQRCode(lat, lng);
-    // }
+    // Parse JSON to extract latitude and longitude
+    double lat = 0.0, lng = 0.0;
+    int accuracy = 0;
+    
+    // Simple JSON parsing (look for "lat": and "lng": fields)
+    const char *latPos = strstr(jsonBuffer, "\"lat\":");
+    const char *lngPos = strstr(jsonBuffer, "\"lng\":");
+    const char *accPos = strstr(jsonBuffer, "\"accuracy\":");
+    
+    bool locationFound = false;
+    if (latPos && lngPos) {
+        // Parse latitude
+        if (sscanf(latPos + 6, "%lf", &lat) == 1 && 
+            sscanf(lngPos + 6, "%lf", &lng) == 1) {
+            locationFound = true;
+            
+            // Parse accuracy (optional)
+            if (accPos) {
+                sscanf(accPos + 11, "%d", &accuracy);
+            }
+        }
+    }
+    
+    if (locationFound) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("POSITION DETERMINED\n");
+        printf("─────────────────────────────────────────────────\n");
+        printf("  Latitude:  %.7f\n", lat);
+        printf("  Longitude: %.7f\n", lng);
+        if (accuracy > 0) {
+            printf("  Accuracy:  %d meters\n", accuracy);
+        }
+        printf("\n");
+        
+        // Store location in global variables for GATT Location and Navigation Service
+        gLocationLatitude = lat;
+        gLocationLongitude = lng;
+        gLocationAccuracy = accuracy;
+        gLocationValid = true;
+        
+        printf("✓ Location stored for GATT Location and Navigation Service\n");
+        printf("\n");
+        
+        // Generate Google Maps link and QR code
+        generateLocationQRCode(lat, lng);
+    } else {
+        // Clear location data on failure
+        gLocationLatitude = 0.0;
+        gLocationLongitude = 0.0;
+        gLocationAccuracy = 0;
+        gLocationValid = false;
+        
+        printf("No valid location data in response.\n");
+        printf("This typically means the Wi-Fi access points are not\n");
+        printf("in Combain's geolocation database.\n");
+        printf("\n");
+        printf("Try:\n");
+        printf("  - Moving to a more public location (mall, airport, etc.)\n");
+        printf("  - Scanning from a location with more diverse APs\n");
+        printf("  - The APs need to be mapped in Combain's database first\n");
+    }
     printf("\n");
     
     printf("Expected JSON Response Fields:\n");
@@ -12041,6 +12347,7 @@ static void printMenu(void)
             break;
             
         case MENU_WIFI:
+            printf("\n");
             printf("\n");
             printf("                  WI-FI STATION MENU\n");
             printf("\n");
@@ -16404,16 +16711,16 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
         printf("   Warm-up complete (%d ms)\n", gPingAvgTime);
     }
     
-    // Test 1: Ping gateway (local network) - 4 pings
+    // Test 1: Ping gateway (local network) - 2 pings
     printf("\n1. Testing local network (gateway: %s)...\n", gateway);
-    printf("   Sending 4 pings...\n");
+    printf("   Sending 2 pings...\n");
     gPingSuccess = 0;
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 4) == 0) {
-        // Wait for ping complete URC event (max 15 seconds for 4 pings)
-        if (waitEvent(URC_FLAG_PING_COMPLETE, 15)) {
+    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 2) == 0) {
+        // Wait for ping complete URC event (max 10 seconds for 2 pings)
+        if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
             if (gPingSuccess > 0) {
                 localPingAvg = gPingAvgTime;
                 localSuccess = true;
@@ -16434,16 +16741,16 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    // Test 2: Ping Google DNS (internet connectivity) - 4 pings
+    // Test 2: Ping Google DNS (internet connectivity) - 2 pings
     printf("\n2. Testing internet connectivity (8.8.8.8)...\n");
-    printf("   Sending 4 pings...\n");
+    printf("   Sending 2 pings...\n");
     gPingSuccess = 0;
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 4) == 0) {
-        // Wait for ping complete URC event (max 15 seconds for 4 pings)
-        if (waitEvent(URC_FLAG_PING_COMPLETE, 15)) {
+    if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 2) == 0) {
+        // Wait for ping complete URC event (max 10 seconds for 2 pings)
+        if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
             if (gPingSuccess > 0) {
                 internetPingAvg = gPingAvgTime;
                 internetSuccess = true;
