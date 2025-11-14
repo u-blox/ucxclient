@@ -197,6 +197,13 @@ static uint8_t gHeartbeatCounter = 60;             // Heartbeat BPM value
 static HANDLE gHeartbeatThread = NULL;             // Background thread handle
 static volatile bool gHeartbeatThreadRunning = false; // Thread control flag
 
+// Unified GATT Server notification system
+static HANDLE gGattNotificationThread = NULL;      // Unified notification thread
+static volatile bool gGattNotificationThreadRunning = false;
+static bool gBatteryNotificationsEnabled = false;  // Battery notifications enabled
+static uint8_t gBatteryLevel = 100;                // Battery level percentage
+static bool gCtsServerNotificationsEnabled = false; // CTS notifications enabled
+
 // HID over GATT (HoG) tracking
 static int32_t gHidServiceHandle = -1;             // HID Service (0x1812)
 static int32_t gHidInfoHandle = -1;                // HID Information characteristic
@@ -338,7 +345,6 @@ static int32_t gEnvServerHumHandle = -1;
 static int32_t gCtsServerServiceHandle    = -1;
 static int32_t gCtsServerTimeValueHandle  = -1;
 static int32_t gCtsServerTimeCccdHandle   = -1;
-static bool gCtsServerNotificationsEnabled = false;
 static ULONGLONG gCtsServerLastTick = 0;
 
 // 128-bit UUIDs for UART service & chars (Nordic-like)
@@ -635,6 +641,8 @@ static void executeAtTerminal(void);
 static void executeAti9(void);
 static void executeModuleReboot(void);
 static void showLegacyAdvertisementStatus(void);
+static bool ensureLegacyAdvertisementEnabled(void);
+static void showGattServerConnectionInfo(void);
 static void showBluetoothStatus(void);
 static void showWifiStatus(void);
 static void bluetoothMenu(void);
@@ -719,6 +727,7 @@ static void gattServerSendKeyPress(void);
 static void gattServerSendMediaControl(void);
 static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uOptions_t options);
 static DWORD WINAPI heartbeatThread(LPVOID lpParam);
+static DWORD WINAPI gattNotificationThread(LPVOID lpParam);
 static void gattClientNotificationUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
 static void handleHeartRateNotification(int connHandle, const uint8_t *data, size_t len);
 static void handleUartRxNotification(int connHandle, const uint8_t *data, size_t len);
@@ -1961,6 +1970,28 @@ static void startupUrc(struct uCxHandle *puCxHandle)
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
     
+    // Prevent re-entry: Only reconfigure if we haven't done so recently (within 2 seconds)
+    if (gLastStartupConfigTime == 0 || (currentTime - gLastStartupConfigTime) > 2000) {
+        gLastStartupConfigTime = currentTime;
+        
+        // Re-initialize module settings after restart
+        printf("\n[Module restarted] Re-initializing settings...\n");
+        
+        // Disable echo
+        if (uCxAtClientExecSimpleCmd(puCxHandle->pAtClient, "ATE0") == 0) {
+            printf("  ✓ Echo disabled\n");
+        } else {
+            printf("  ✗ Failed to disable echo\n");
+        }
+        
+        // Enable extended error codes
+        if (uCxAtClientExecSimpleCmdF(puCxHandle->pAtClient, "AT+USYEE=", "d", 1, U_CX_AT_UTIL_PARAM_LAST) == 0) {
+            printf("  ✓ Extended error codes enabled\n");
+        } else {
+            printf("  ✗ Failed to enable extended error codes\n");
+        }
+    }
+    
     // Signal the event to wake up any waiting code
     signalEvent(URC_FLAG_STARTUP);
 }
@@ -2289,6 +2320,20 @@ static void btDisconnected(struct uCxHandle *puCxHandle, int32_t conn_handle)
     // Clear connection handle
     if (gCurrentGattConnHandle == conn_handle) {
         gCurrentGattConnHandle = -1;
+        
+        // Stop unified notification thread when connection closes
+        if (gGattNotificationThread) {
+            gGattNotificationThreadRunning = false;
+            WaitForSingleObject(gGattNotificationThread, 2000);
+            CloseHandle(gGattNotificationThread);
+            gGattNotificationThread = NULL;
+            printf("  Stopped GATT notification thread\n");
+        }
+        
+        // Reset notification flags
+        gHeartbeatNotificationsEnabled = false;
+        gBatteryNotificationsEnabled = false;
+        gCtsServerNotificationsEnabled = false;
         
         // Only clear GATT discovery data if we're in client mode
         // (i.e., we discovered services from a remote device)
@@ -4087,6 +4132,29 @@ static void gattServerSetupHeartbeat(void)
     printf("GATT Server: Heartbeat Service Setup\n");
     printf("─────────────────────────────────────────────────\n\n");
     
+    // Warn if service might already exist
+    if (gHeartbeatServiceHandle > 0) {
+        printf("⚠️  WARNING: Heart Rate Service was already created (handle %d)\n", gHeartbeatServiceHandle);
+        printf("   Old services persist until module reboot.\n");
+        printf("   Recommendation: Reboot module first for clean setup.\n\n");
+        printf("   Continue anyway? (y/N): ");
+        
+        char response[10];
+        if (fgets(response, sizeof(response), stdin)) {
+            if (tolower(response[0]) != 'y') {
+                printf("Setup cancelled. Use main menu option [5] to reboot module.\n");
+                return;
+            }
+        }
+        printf("\n");
+    }
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
+    
     printf("This will create a Heart Rate Service (0x180D) with:\n");
     printf("  - Heart Rate Measurement characteristic (0x2A37)\n");
     printf("  - Properties: Notify\n");
@@ -4119,7 +4187,7 @@ static void gattServerSetupHeartbeat(void)
                                       propBytes, 1,
                                       U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
                                       defaultValue, 2,
-                                      20, // max length
+                                      20, // max_length: Allow up to 20 bytes for Heart Rate Measurement
                                       &charResponse);
     
     if (result != 0) {
@@ -4145,16 +4213,12 @@ static void gattServerSetupHeartbeat(void)
     }
     printf("✓ Service activated successfully!\n\n");
     
-    // Set initial heartbeat value
+    // Initialize heartbeat counter (value will be sent via notifications)
     gHeartbeatCounter = 60; // Start at 60 BPM
-    uint8_t heartbeatData[] = {0x00, gHeartbeatCounter}; // Flags=0, BPM value
+    printf("  Initial heartbeat value: %d BPM (will be sent when client enables notifications)\n\n", gHeartbeatCounter);
     
-    result = uCxGattServerSetAttrValue(&gUcxHandle, gHeartbeatCharHandle, 
-                                       heartbeatData, sizeof(heartbeatData));
-    
-    if (result == 0) {
-        printf("Step 4: Initial value set to %d BPM\n\n", gHeartbeatCounter);
-    }
+    // Show connection information
+    showGattServerConnectionInfo();
     
     printf("\n─────────────────────────────────────────────────\n");
     printf("Heartbeat Service Ready!\n");
@@ -4164,12 +4228,12 @@ static void gattServerSetupHeartbeat(void)
     printf("  1. Connect a GATT client (phone app, etc.)\n");
     printf("  2. Client should discover Heart Rate Service\n");
     printf("  3. Client enables notifications on Heart Rate Measurement\n");
-    printf("  4. Server will automatically send heartbeat updates every second\n\n");
+    printf("  4. Server automatically sends heartbeat updates every second (58-72 BPM)\n\n");
     
-    printf("Manual control:\n");
-    printf("  - Heartbeat starts automatically when client enables notifications\n");
-    printf("  - Heartbeat stops automatically when client disables notifications\n");
-    printf("  - Use [3] to change the heartbeat BPM value\n\n");
+    printf("Auto-Notification System:\n");
+    printf("  - Updates sent every 1 second when notifications enabled\n");
+    printf("  - Shared thread handles Battery, Heartbeat, and CTS notifications\n");
+    printf("  - Thread starts/stops automatically based on client subscriptions\n\n");
     
     // Store handles for later use
     gGattServerServiceHandle = gHeartbeatServiceHandle;
@@ -4271,18 +4335,27 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
             if (cccdValue & 0x0001) {
                 printf("\n[Battery] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gBatteryNotificationsEnabled = true;
+                gBatteryLevel = 100; // Reset to 100%
                 
-                // Send initial battery level (100%)
-                uint8_t batteryLevel = 100;
+                // Start unified notification thread if not running
+                if (gGattNotificationThread == NULL) {
+                    gGattNotificationThreadRunning = true;
+                    gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
+                    if (gGattNotificationThread) {
+                        printf("[GATT] Unified notification thread started\n");
+                    }
+                }
+                
+                // Send initial battery level
                 int32_t result = uCxGattServerSendNotification(&gUcxHandle, conn_handle, 
-                                                               gBatteryLevelHandle, &batteryLevel, 1);
+                                                               gBatteryLevelHandle, &gBatteryLevel, 1);
                 if (result == 0) {
                     printf("[Battery] Sent initial battery level: 100%%\n");
-                } else {
-                    printf("[Battery] WARNING: Failed to send battery level (code %d)\n", result);
                 }
             } else {
                 printf("\n[Battery] Client disabled notifications\n");
+                gBatteryNotificationsEnabled = false;
             }
         }
         return;
@@ -4295,6 +4368,15 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
             if (cccdValue & 0x0001) {
                 printf("\n[CTS] Notifications ENABLED\n");
                 gCtsServerNotificationsEnabled = true;
+                
+                // Start unified notification thread if not running
+                if (gGattNotificationThread == NULL) {
+                    gGattNotificationThreadRunning = true;
+                    gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
+                    if (gGattNotificationThread) {
+                        printf("[GATT] Unified notification thread started\n");
+                    }
+                }
             } else {
                 printf("\n[CTS] Notifications DISABLED\n");
                 gCtsServerNotificationsEnabled = false;
@@ -4413,36 +4495,29 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
             
             U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "CCCD value: 0x%04X", cccdValue);
+            printf("[DEBUG] Heartbeat CCCD write: conn=%d, char_handle=%d, cccd_handle=%d, value=0x%04X\n",
+                   conn_handle, gHeartbeatCharHandle, gHeartbeatCccdHandle, cccdValue);
             
             if (cccdValue & 0x0001) {  // Bit 0 = Notifications enabled
                 // Client enabled notifications
-                printf("\n[Heartbeat] Client enabled notifications\n");
+                printf("\n[Heartbeat] Client enabled notifications (conn=%d stored as gCurrentGattConnHandle)\n", conn_handle);
                 gHeartbeatNotificationsEnabled = true;
                 
-                // Start heartbeat thread if not already running
-                if (gHeartbeatThread == NULL) {
-                    gHeartbeatThreadRunning = true;
-                    gHeartbeatThread = CreateThread(NULL, 0, heartbeatThread, NULL, 0, NULL);
-                    if (gHeartbeatThread) {
-                        printf("[Heartbeat] Auto-notification thread started\n");
+                // Start unified notification thread if not running
+                if (gGattNotificationThread == NULL) {
+                    gGattNotificationThreadRunning = true;
+                    gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
+                    if (gGattNotificationThread) {
+                        printf("[GATT] Unified notification thread started\n");
                     } else {
-                        printf("[Heartbeat] ERROR: Failed to start thread\n");
-                        gHeartbeatThreadRunning = false;
+                        printf("[GATT] ERROR: Failed to start notification thread\n");
+                        gGattNotificationThreadRunning = false;
                     }
                 }
             } else {
                 // Client disabled notifications (cccdValue == 0x0000)
                 printf("\n[Heartbeat] Client disabled notifications\n");
                 gHeartbeatNotificationsEnabled = false;
-                
-                // Stop heartbeat thread
-                if (gHeartbeatThread) {
-                    gHeartbeatThreadRunning = false;
-                    WaitForSingleObject(gHeartbeatThread, 2000);
-                    CloseHandle(gHeartbeatThread);
-                    gHeartbeatThread = NULL;
-                    printf("[Heartbeat] Auto-notification thread stopped\n");
-                }
             }
         }
     }
@@ -4609,6 +4684,114 @@ static DWORD WINAPI heartbeatThread(LPVOID lpParam)
     }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Heartbeat thread stopped");
+    return 0;
+}
+
+// Unified GATT server notification thread
+// Handles periodic notifications for Battery, CTS, and Heartbeat services
+static DWORD WINAPI gattNotificationThread(LPVOID lpParam)
+{
+    (void)lpParam;
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "GATT notification thread started");
+    printf("[GATT] Unified notification thread running\n");
+    
+    int consecutiveErrors = 0;
+    const int MAX_CONSECUTIVE_ERRORS = 3;
+    
+    while (gGattNotificationThreadRunning) {
+        // Only send if we have an active connection
+        if (gCurrentGattConnHandle >= 0 && gUcxConnected) {
+            
+            // 1. Send Heartbeat notification (if enabled)
+            if (gHeartbeatNotificationsEnabled && gHeartbeatCharHandle > 0) {
+                // Vary the heart rate slightly for realism (58-72 BPM)
+                static int direction = 1;
+                gHeartbeatCounter = (uint8_t)(gHeartbeatCounter + direction);
+                if (gHeartbeatCounter >= 72) direction = -1;
+                if (gHeartbeatCounter <= 58) direction = 1;
+                
+                uint8_t heartbeatData[] = {0x00, gHeartbeatCounter}; // [Flags, BPM]
+                
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                               gHeartbeatCharHandle, 
+                                                               heartbeatData, sizeof(heartbeatData));
+                if (result == 0) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Heartbeat: %d BPM", gHeartbeatCounter);
+                    consecutiveErrors = 0;  // Reset error counter on success
+                } else {
+                    consecutiveErrors++;
+                    printf("[ERROR] Failed to send heartbeat notification (code %d), errors: %d/%d\n", 
+                           result, consecutiveErrors, MAX_CONSECUTIVE_ERRORS);
+                    
+                    // If we get too many consecutive errors, connection is likely dead
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        printf("[GATT] Too many consecutive errors, stopping notification thread\n");
+                        printf("[GATT] Connection appears to be lost (handle %d)\n", gCurrentGattConnHandle);
+                        gGattNotificationThreadRunning = false;
+                        gCurrentGattConnHandle = -1;
+                        break;
+                    }
+                }
+            }
+            
+            // 2. Send Battery notification (if enabled)
+            if (gBatteryNotificationsEnabled && gBatteryLevelHandle > 0) {
+                // Slowly decrease battery level (reset at 10%)
+                if (gBatteryLevel > 10) {
+                    gBatteryLevel--;
+                } else {
+                    gBatteryLevel = 100;
+                }
+                
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                               gBatteryLevelHandle, 
+                                                               &gBatteryLevel, 1);
+                if (result == 0) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Battery: %d%%", gBatteryLevel);
+                    consecutiveErrors = 0;  // Reset error counter on success
+                } else {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        printf("[GATT] Too many consecutive errors, stopping notification thread\n");
+                        gGattNotificationThreadRunning = false;
+                        gCurrentGattConnHandle = -1;
+                        break;
+                    }
+                }
+            }
+            
+            // 3. Send Current Time notification (if enabled)
+            if (gCtsServerNotificationsEnabled && gCtsServerTimeValueHandle > 0) {
+                uint8_t payload[10];
+                ctsBuildTimePayload(payload);
+                
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle,
+                                                               gCurrentGattConnHandle,
+                                                               gCtsServerTimeValueHandle,
+                                                               payload, 10);
+                if (result == 0) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "CTS: %04u-%02u-%02u %02u:%02u:%02u",
+                                  payload[0] | (payload[1] << 8),
+                                  payload[2], payload[3], payload[4], payload[5], payload[6]);
+                    consecutiveErrors = 0;  // Reset error counter on success
+                } else {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        printf("[GATT] Too many consecutive errors, stopping notification thread\n");
+                        gGattNotificationThreadRunning = false;
+                        gCurrentGattConnHandle = -1;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Wait 1 second before next update
+        Sleep(1000);
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "GATT notification thread stopped");
     return 0;
 }
 
@@ -6242,6 +6425,12 @@ static void gattServerSetupHidKeyboard(void)
     printf("─────────────────────────────────────────────────\n");
     printf("Profile: Keyboard + Media Control\n\n");
     
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
+    
     // STEP 0: Configure Bluetooth settings BEFORE creating GATT services
     printf("Step 0: Configuring Bluetooth settings...\n");
     
@@ -6583,7 +6772,7 @@ static void gattServerSetupHidKeyboard(void)
         return;
     }
     
-    printf("✓ HID Service activated!\n\n");
+    printf("✓ HID Service activated!\n");
     
     // Step 7: Create Battery Service (0x180F)
     printf("Step 7: Creating Battery Service (UUID: 0x180F)...\n");
@@ -6624,12 +6813,15 @@ static void gattServerSetupHidKeyboard(void)
             return;
         }
         
-        printf("✓ Battery Service activated!\n\n");
+        printf("✓ Battery Service activated!\n");
     }
     
     printf("\n─────────────────────────────────────────────────\n");
     printf("HID Keyboard + Battery Services Ready!\n");
-    printf("─────────────────────────────────────────────────\n\n");
+    printf("─────────────────────────────────────────────────\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
     
     // Bond management - Check existing bonds
     printf("Checking existing bonds...\n");
@@ -6815,6 +7007,12 @@ static void gattServerSetupAutomationIo(void)
     printf("Automation IO GATT Server Setup\n");
     printf("─────────────────────────────────────────────────\n\n");
     
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
+    
     // Step 1: Define Automation IO Service (0x1815)
     printf("Step 1: Creating Automation IO Service (UUID: 0x1815)...\n");
     uint8_t aioServiceUuid[] = {0x18, 0x15};  // 16-bit UUID (little-endian)
@@ -6885,11 +7083,14 @@ static void gattServerSetupAutomationIo(void)
         return;
     }
     
-    printf("✓ Automation IO Service activated!\n\n");
+    printf("✓ Automation IO Service activated!\n");
     
     printf("─────────────────────────────────────────────────\n");
     printf("Automation IO Service Ready!\n");
-    printf("─────────────────────────────────────────────────\n\n");
+    printf("─────────────────────────────────────────────────\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
     
     printf("Service details:\n");
     printf("  Digital characteristic (0x2A56): Read/Write/Notify\n");
@@ -6925,6 +7126,12 @@ static void gattServerSetupBatteryOnly(void)
     }
 
     printf("\n--- GATT Server: Battery Service Example ---\n");
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
 
     // 1) Define Battery Service 0x180F
     uint8_t svcUuid[] = {0x18, 0x0F};   // 0x180F, big-endian
@@ -6968,9 +7175,15 @@ static void gattServerSetupBatteryOnly(void)
     }
 
     printf("✓ Battery Service activated\n");
-    printf("NOTE: CCCD writes are handled in gattServerCharWriteUrc() already.\n");
-    printf("      When notifications are enabled, you can call:\n");
-    printf("        uCxGattServerSendNotification(..., gBatteryLevelHandle, &level, 1);\n\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
+    
+    printf("Auto-Notification System:\n");
+    printf("  - Battery level automatically decrements from 100%% to 10%% every second\n");
+    printf("  - Shared notification thread handles Battery, Heartbeat, and CTS services\n");
+    printf("  - Thread starts automatically when client enables notifications\n");
+    printf("  - Updates sent every 1 second while notifications are enabled\n\n");
 }
 
 // Setup Environmental Sensing Service (Temperature + Humidity)
@@ -6982,6 +7195,12 @@ static void gattServerSetupEnvSensing(void)
     }
 
     printf("\n--- GATT Server: Environmental Sensing ---\n");
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
 
     // 1) Define ESS service 0x181A
     uint8_t svcUuid[] = {0x18, 0x1A};   // 0x181A
@@ -7005,7 +7224,7 @@ static void gattServerSetupEnvSensing(void)
                                       U_SECURITY_READ_NONE,
                                       U_SECURITY_WRITE_NONE,
                                       (uint8_t *)&tempValue, sizeof(tempValue),
-                                      1,
+                                      2,  // max_length for int16_t (2 bytes)
                                       &tempRsp);
     if (result != 0) {
         printf("ERROR: Failed to add Temperature characteristic (code %d)\n", result);
@@ -7027,7 +7246,7 @@ static void gattServerSetupEnvSensing(void)
                                       U_SECURITY_READ_NONE,
                                       U_SECURITY_WRITE_NONE,
                                       (uint8_t *)&humValue, sizeof(humValue),
-                                      1,
+                                      2,  // max_length for uint16_t (2 bytes)
                                       &humRsp);
     if (result != 0) {
         printf("ERROR: Failed to add Humidity characteristic (code %d)\n", result);
@@ -7046,6 +7265,10 @@ static void gattServerSetupEnvSensing(void)
     }
 
     printf("✓ ESS activated\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
+    
     printf("You can now read Temperature/Humidity or subscribe to notifications.\n\n");
 }
 
@@ -7058,6 +7281,12 @@ static void gattServerSetupUartService(void)
     }
 
     printf("\n--- GATT Server: Custom UART Service ---\n");
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
 
     int32_t result = uCxGattServerServiceDefine(&gUcxHandle,
                                                 (uint8_t *)kUartServiceUuid, 16,
@@ -7081,7 +7310,7 @@ static void gattServerSetupUartService(void)
                                       U_SECURITY_READ_NONE,
                                       U_SECURITY_WRITE_NONE,
                                       initTx, sizeof(initTx),
-                                      1,  // CCCD
+                                      244,  // max_length for UART data transmission
                                       &txRsp);
     if (result != 0) {
         printf("ERROR: Failed to add UART TX characteristic (code %d)\n", result);
@@ -7100,7 +7329,7 @@ static void gattServerSetupUartService(void)
                                       U_SECURITY_READ_NONE,
                                       U_SECURITY_WRITE_UNAUTHENTICATED,
                                       initRx, sizeof(initRx),
-                                      0,      // no CCCD
+                                      244,  // max_length for UART data reception
                                       &rxRsp);
     if (result != 0) {
         printf("ERROR: Failed to add UART RX characteristic (code %d)\n", result);
@@ -7117,6 +7346,10 @@ static void gattServerSetupUartService(void)
     }
 
     printf("✓ UART service activated\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
+    
     printf("Use gattServerCharWriteUrc() to print RX data when client writes.\n");
     printf("Use uCxGattServerSendNotification(..., gUartServerTxHandle, data, len) to send TX data.\n\n");
 }
@@ -7131,6 +7364,12 @@ static void gattServerSetupSpsService(void)
 
     printf("\n--- GATT Server: u-blox Serial Port Service (SPS) ---\n");
     printf("This is similar to NUS but includes optional credit-based flow control\n\n");
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
 
     // Define SPS service (128-bit UUID)
     int32_t result = uCxGattServerServiceDefine(&gUcxHandle,
@@ -7157,7 +7396,7 @@ static void gattServerSetupSpsService(void)
                                       U_SECURITY_READ_NONE,
                                       U_SECURITY_WRITE_UNAUTHENTICATED,
                                       initFifo, sizeof(initFifo),
-                                      1,  // CCCD for notifications
+                                      244,  // max_length for SPS data packets
                                       &fifoRsp);
     if (result != 0) {
         printf("ERROR: Failed to add SPS FIFO characteristic (code %d)\n", result);
@@ -7177,7 +7416,7 @@ static void gattServerSetupSpsService(void)
                                       U_SECURITY_READ_NONE,
                                       U_SECURITY_WRITE_UNAUTHENTICATED,
                                       initCredits, sizeof(initCredits),
-                                      1,  // CCCD for notifications
+                                      4,  // max_length for credit counter (uint32)
                                       &creditsRsp);
     if (result != 0) {
         printf("ERROR: Failed to add SPS Credits characteristic (code %d)\n", result);
@@ -7195,7 +7434,11 @@ static void gattServerSetupSpsService(void)
         return;
     }
 
-    printf("✓ SPS service activated\n\n");
+    printf("✓ SPS service activated\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
+    
     printf("USAGE:\n");
     printf("  • Client writes to FIFO handle for data → displayed in console\n");
     printf("  • Client writes to Credits handle → enables flow control\n");
@@ -7216,6 +7459,12 @@ static void gattServerSetupLocationService(void)
     }
 
     printf("\n--- GATT Server: Location & Navigation (LNS) ---\n");
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
 
     // Service 0x1819
     uint8_t svcUuid[] = {0x18, 0x19};
@@ -7268,7 +7517,10 @@ static void gattServerSetupLocationService(void)
         return;
     }
 
-    printf("✓ LNS activated\n\n");
+    printf("✓ LNS activated\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
 }
 
 // GATT Client: Read Current Time Service
@@ -7366,6 +7618,12 @@ static void gattServerSetupCtsService(void)
     }
 
     printf("\n--- GATT Server: Current Time Service (CTS) ---\n");
+    
+    // Ensure legacy advertisements are enabled for incoming connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
+    }
+    printf("\n");
 
     // Service UUID 0x1805
     uint8_t svcUuid[] = {0x18, 0x05};
@@ -7416,7 +7674,15 @@ static void gattServerSetupCtsService(void)
         return;
     }
 
-    printf("✓ CTS activated — device now serves accurate time\n\n");
+    printf("✓ CTS activated — device now serves accurate time\n");
+    
+    // Show connection information
+    showGattServerConnectionInfo();
+    
+    printf("Auto-Notification System:\n");
+    printf("  - Current time automatically updates every second when notifications enabled\n");
+    printf("  - Shared notification thread handles Battery, Heartbeat, and CTS services\n");
+    printf("  - Thread starts automatically when client enables notifications\n\n");
 }
 
 // Notify CTS time if client has enabled notifications
@@ -11626,8 +11892,8 @@ static void printMenu(void)
             printf("══════════════════════════════════════════════════════════════\n");
             printf("\n");
             printf("┌─────────────────────────────────────────────────────────────┐\n");
-            printf("│  GATT SERVER EXAMPLES (9 Profiles)                         │\n");
-            printf("│  This device provides services to remote BLE clients       │\n");
+            printf("│  GATT SERVER EXAMPLES (9 Profiles)                          │\n");
+            printf("│  This device provides services to remote BLE clients        │\n");
             printf("└─────────────────────────────────────────────────────────────┘\n");
             printf("\n");
             printf("  [h] Heart Rate Service - Heartbeat notifications\n");
@@ -11641,8 +11907,8 @@ static void printMenu(void)
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
             printf("\n");
             printf("┌─────────────────────────────────────────────────────────────┐\n");
-            printf("│  GATT CLIENT EXAMPLES (8 Demos)                            │\n");
-            printf("│  This device connects to and reads from remote servers     │\n");
+            printf("│  GATT CLIENT EXAMPLES (8 Demos)                             │\n");
+            printf("│  This device connects to and reads from remote servers      │\n");
             printf("└─────────────────────────────────────────────────────────────┘\n");
             printf("\n");
             printf("  [t] Current Time Service Client - Read time from CTS server\n");
@@ -12417,11 +12683,11 @@ static void handleUserInput(void)
                     if (strlen(input) > 0) {
                         char firstChar = (char)tolower(input[0]);
                         if (firstChar == 'h') {
-                            gMenuState = MENU_GATT_SERVER;  // Heartbeat example
+                            gattServerSetupHeartbeat();  // Heart Rate Service
                             break;
                         }
                         if (firstChar == 'k') {
-                            gMenuState = MENU_HID;  // HID menu
+                            gattServerSetupHidKeyboard();  // HID Keyboard + Media + Battery
                             break;
                         }
                         if (firstChar == 'a') {
@@ -14757,6 +15023,93 @@ static void showLegacyAdvertisementStatus(void)
     
     printf("\nNote: Use menu option [6] in Bluetooth menu to enable/disable advertising\n");
     printf("      Use menu options [8] for GATT examples (Heartbeat, HID over GATT)\n");
+}
+
+// Helper function to ensure legacy advertisements are enabled for GATT server
+// Returns true if enabled successfully or already enabled, false on error
+static bool ensureLegacyAdvertisementEnabled(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return false;
+    }
+    
+    // Check current advertisement status
+    uCxBluetoothGetAdvertiseInformation_t advInfo;
+    int32_t result = uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to get advertisement information (error %d)\n", result);
+        return false;
+    }
+    
+    // If already enabled, return success
+    if (advInfo.legacy_advertisement) {
+        printf("✓ Legacy advertisement already enabled\n");
+        return true;
+    }
+    
+    // Need to enable legacy advertisements
+    printf("Legacy advertisement is currently DISABLED\n");
+    printf("Enabling legacy advertisement for GATT server connections...\n");
+    
+    // Configure legacy advertisement intervals if needed
+    // Use default intervals: 160 units (100ms) to 240 units (150ms)
+    result = uCxBluetoothSetLegacyAdvertisementConfig(&gUcxHandle, 160, 240);
+    if (result != 0) {
+        printf("WARNING: Failed to configure advertisement intervals (error %d)\n", result);
+        // Continue anyway - may already be configured
+    }
+    
+    // Start legacy advertisements
+    result = uCxBluetoothLegacyAdvertisementStart(&gUcxHandle);
+    if (result != 0) {
+        printf("ERROR: Failed to start legacy advertisement (error %d)\n", result);
+        printf("       Remote devices will not be able to connect!\n");
+        return false;
+    }
+    
+    gBluetoothAdvertising = true;
+    printf("✓ Legacy advertisement enabled - Device is now connectable\n");
+    return true;
+}
+
+// Helper function to display GATT server connection information
+static void showGattServerConnectionInfo(void)
+{
+    if (!gUcxConnected) {
+        return;
+    }
+    
+    // Get local Bluetooth name
+    const char *pDeviceName = NULL;
+    char deviceNameCopy[64] = {0};
+    
+    if (uCxBluetoothGetLocalNameBegin(&gUcxHandle, &pDeviceName)) {
+        // Copy the name before calling uCxEnd (pointer may become invalid)
+        if (pDeviceName) {
+            strncpy(deviceNameCopy, pDeviceName, sizeof(deviceNameCopy) - 1);
+        }
+        // Must call uCxEnd before making another AT command
+        uCxEnd(&gUcxHandle);
+        
+        // Get local Bluetooth address
+        uMacAddress_t btAddr;
+        if (uCxSystemGetLocalAddress(&gUcxHandle, U_INTERFACE_ID_BLUETOOTH, &btAddr) == 0) {
+            printf("\n");
+            printf("┌─────────────────────────────────────────────────────────────┐\n");
+            printf("│  GATT Server Ready - Connect from GATT Client              │\n");
+            printf("└─────────────────────────────────────────────────────────────┘\n");
+            printf("\n");
+            printf("  Device Name: %s\n", deviceNameCopy[0] ? deviceNameCopy : "Unknown");
+            printf("  BT Address:  %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   btAddr.address[0], btAddr.address[1], btAddr.address[2],
+                   btAddr.address[3], btAddr.address[4], btAddr.address[5]);
+            printf("\n");
+            printf("  Scan for this device from your BLE client app or device.\n");
+            printf("\n");
+        }
+    }
 }
 
 // ============================================================================
