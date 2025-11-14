@@ -201,6 +201,7 @@ static volatile bool gHeartbeatThreadRunning = false; // Thread control flag
 static int32_t gHidServiceHandle = -1;             // HID Service (0x1812)
 static int32_t gHidInfoHandle = -1;                // HID Information characteristic
 static int32_t gHidReportMapHandle = -1;           // Report Map characteristic
+static int32_t gHidProtocolModeHandle = -1;        // Protocol Mode characteristic
 static int32_t gHidBootKbdInputHandle = -1;        // Boot Keyboard Input Report characteristic
 static int32_t gHidBootKbdCccdHandle = -1;         // Boot Keyboard Input CCCD handle
 static int32_t gHidBootKbdOutputHandle = -1;       // Boot Keyboard Output Report characteristic
@@ -213,8 +214,11 @@ static int32_t gHidControlPointHandle = -1;        // HID Control Point characte
 static int32_t gBatteryServiceHandle = -1;         // Battery Service (0x180F)
 static int32_t gBatteryLevelHandle = -1;           // Battery Level characteristic
 static int32_t gBatteryCccdHandle = -1;            // Battery Level CCCD handle
-static bool gHidNotificationsEnabled = false;      // HID notifications enabled
-static bool gUseBootKeyboard = false;              // True if Boot Keyboard CCCD enabled, false for Regular Keyboard
+static int32_t gGattServiceChangedHandle = -1;     // GATT Service Changed characteristic
+static bool gHidBootKbdNotificationsEnabled = false;  // Boot Keyboard notifications enabled
+static bool gHidKeyboardNotificationsEnabled = false; // HID Keyboard notifications enabled
+static bool gHidMediaNotificationsEnabled = false;    // HID Media notifications enabled
+static bool gUseBootKeyboard = false;              // True if Boot Keyboard is preferred for sending
 
 // GATT Client notification tracking - handles discovered from remote servers
 static int gHeartRateValueHandle = -1;             // Heart Rate Measurement (0x2A37)
@@ -225,6 +229,24 @@ static int gCtsClientServiceIndex      = -1;
 static int gCtsClientTimeCharIndex     = -1;
 static int gCtsClientTimeValueHandle   = -1;
 static int gCtsClientTimeCccdHandle    = -1;
+
+// GATT Server - Automation IO Service (AIO) (0x1815)
+static int32_t gAioServerServiceHandle      = -1;
+static int32_t gAioServerDigitalCharHandle  = -1;   // Digital characteristic (0x2A56)
+static int32_t gAioServerDigitalCccdHandle  = -1;
+static uint8_t gAioServerDigitalState       = 0x00; // bit0 = "LED 0" (0=off, 1=on)
+static int32_t gAioServerAnalogCharHandle   = -1;   // Analog characteristic (0x2A58)
+static int32_t gAioServerAnalogCccdHandle   = -1;
+static uint16_t gAioServerAnalogValue       = 500;  // Example: 0..1000 range (e.g. 0.0–10.00V)
+
+// GATT Client - Automation IO (AIO) tracking
+static int gAioClientServiceIndex      = -1;
+static int gAioClientDigitalCharIndex  = -1;
+static int gAioClientDigitalValueHandle= -1;
+static int gAioClientDigitalCccdHandle = -1;
+static int gAioClientAnalogCharIndex   = -1;
+static int gAioClientAnalogValueHandle = -1;
+static int gAioClientAnalogCccdHandle  = -1;
 
 // GATT Client - Environmental Sensing Service (ESS)
 static int gEssClientServiceIndex       = -1;
@@ -716,6 +738,12 @@ static bool gattClientFindLnsHandles(void);
 static void gattClientReadLns(void);
 static void gattClientSubscribeLns(void);
 static void gattClientLnsExample(void);
+static void aioParseDigital(const uint8_t *data, size_t len);
+static void aioParseAnalog(const uint8_t *data, size_t len);
+static bool gattClientFindAioHandles(void);
+static void gattClientReadAioValues(void);
+static void gattClientSubscribeAio(void);
+static void gattClientAioExample(void);
 static void uartParseRxData(const uint8_t *data, size_t len);
 static bool gattClientFindUartHandles(void);
 static void gattClientSubscribeUart(void);
@@ -2276,8 +2304,10 @@ static void btDisconnected(struct uCxHandle *puCxHandle, int32_t conn_handle)
             printf("  GATT Server services remain active (ready for reconnection)\n");
         }
         
-        // Reset HID notification flag (client must re-enable CCCDs on reconnect)
-        gHidNotificationsEnabled = false;
+        // Reset HID notification flags (client must re-enable CCCDs on reconnect)
+        gHidBootKbdNotificationsEnabled = false;
+        gHidKeyboardNotificationsEnabled = false;
+        gHidMediaNotificationsEnabled = false;
     }
     
     printf("******************************\n\n");
@@ -4181,12 +4211,17 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
             if (cccdValue & 0x0001) {
                 printf("\n[HID Boot Keyboard] Client enabled notifications (CCCD handle %d)\n", value_handle);
-                gHidNotificationsEnabled = true;
-                gUseBootKeyboard = true;  // Use Boot Keyboard for sending
+                gHidBootKbdNotificationsEnabled = true;
+                gUseBootKeyboard = true;  // Prefer Boot Keyboard for sending
             } else {
                 printf("\n[HID Boot Keyboard] Client disabled notifications\n");
-                gHidNotificationsEnabled = false;
-                gUseBootKeyboard = false;
+                gHidBootKbdNotificationsEnabled = false;
+                // If regular keyboard is still enabled, switch to it
+                if (gHidKeyboardNotificationsEnabled) {
+                    gUseBootKeyboard = false;
+                } else {
+                    gUseBootKeyboard = false;
+                }
             }
         }
         return;
@@ -4198,12 +4233,18 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
             if (cccdValue & 0x0001) {
                 printf("\n[HID Keyboard] Client enabled notifications (CCCD handle %d)\n", value_handle);
-                gHidNotificationsEnabled = true;
-                gUseBootKeyboard = false;  // Use Regular Keyboard for sending
+                gHidKeyboardNotificationsEnabled = true;
+                // Only switch to regular keyboard if boot keyboard is not already preferred
+                if (!gHidBootKbdNotificationsEnabled) {
+                    gUseBootKeyboard = false;
+                }
             } else {
                 printf("\n[HID Keyboard] Client disabled notifications\n");
-                gHidNotificationsEnabled = false;
-                gUseBootKeyboard = false;
+                gHidKeyboardNotificationsEnabled = false;
+                // If boot keyboard is still enabled, keep using it
+                if (gHidBootKbdNotificationsEnabled) {
+                    gUseBootKeyboard = true;
+                }
             }
         }
         return;
@@ -4215,8 +4256,10 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
             if (cccdValue & 0x0001) {
                 printf("\n[HID Media] Client enabled notifications (CCCD handle %d)\n", value_handle);
+                gHidMediaNotificationsEnabled = true;
             } else {
                 printf("\n[HID Media] Client disabled notifications\n");
+                gHidMediaNotificationsEnabled = false;
             }
         }
         return;
@@ -4257,6 +4300,98 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                 gCtsServerNotificationsEnabled = false;
             }
         }
+        return;
+    }
+    
+    // HID Protocol Mode (0 = Boot, 1 = Report)
+    if (value_handle == gHidProtocolModeHandle && value->length >= 1) {
+        uint8_t mode = value->pData[0];
+        gUseBootKeyboard = (mode == 0x00);
+        printf("[HID] Protocol mode set to %s (%u)\n",
+               gUseBootKeyboard ? "BOOT" : "REPORT", mode);
+        return;
+    }
+    
+    // HID Keyboard Output Report (LEDs)
+    if (value_handle == gHidKeyboardOutputHandle && value->length >= 1) {
+        uint8_t leds = value->pData[0];
+        printf("[HID] Keyboard LEDs updated: 0x%02X (Num=%d Caps=%d Scroll=%d)\n",
+               leds,
+               (leds & 0x01) != 0,
+               (leds & 0x02) != 0,
+               (leds & 0x04) != 0);
+        // Optionally store to a global, update a console "LED" state, etc.
+        return;
+    }
+    
+    // Boot Keyboard Output Report (LEDs in boot mode)
+    if (value_handle == gHidBootKbdOutputHandle && value->length >= 1) {
+        uint8_t leds = value->pData[0];
+        printf("[HID] Boot keyboard LEDs updated: 0x%02X\n", leds);
+        return;
+    }
+    
+    // HID Control Point (Suspend / Exit Suspend)
+    if (value_handle == gHidControlPointHandle && value->length >= 1) {
+        uint8_t ctrl = value->pData[0];   // 0 = Suspend, 1 = Exit Suspend
+        printf("[HID] Control Point: %s (%u)\n",
+               (ctrl == 0) ? "Suspend" : "Exit Suspend", ctrl);
+        // You could mute key sending while suspended if you want.
+        return;
+    }
+    
+    // Automation IO: Digital CCCD (notifications)
+    if (gAioServerDigitalCccdHandle > 0 && value_handle == gAioServerDigitalCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            printf("\n[AIO Digital] Client %s notifications (CCCD=0x%04X)\n",
+                   (cccdValue & 0x0001) ? "ENABLED" : "DISABLED",
+                   cccdValue);
+        }
+        return;
+    }
+
+    // Automation IO: Analog CCCD (notifications)
+    if (gAioServerAnalogCccdHandle > 0 && value_handle == gAioServerAnalogCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            printf("\n[AIO Analog] Client %s notifications (CCCD=0x%04X)\n",
+                   (cccdValue & 0x0001) ? "ENABLED" : "DISABLED",
+                   cccdValue);
+        }
+        return;
+    }
+
+    // Automation IO: Digital value write (client controls virtual digital outputs)
+    if (gAioServerDigitalCharHandle > 0 && value_handle == gAioServerDigitalCharHandle) {
+        if (value->length < 1) {
+            printf("\n[AIO Digital] Invalid write (len=%zu)\n", value->length);
+            return;
+        }
+
+        uint8_t newState = value->pData[0];
+        uint8_t oldState = gAioServerDigitalState;
+        gAioServerDigitalState = newState;
+
+        printf("\n[AIO Digital] New digital state: 0x%02X (bit0/LED0 = %u)\n",
+               gAioServerDigitalState,
+               (gAioServerDigitalState & 0x01) ? 1 : 0);
+
+        // Reflect this change back to subscribed clients
+        if (gCurrentGattConnHandle >= 0 && gAioServerDigitalCccdHandle > 0) {
+            int32_t result = uCxGattServerSendNotification(&gUcxHandle,
+                                                           gCurrentGattConnHandle,
+                                                           gAioServerDigitalCharHandle,
+                                                           &gAioServerDigitalState,
+                                                           1);
+            if (result == 0) {
+                printf("[AIO Digital] Notified subscribers of new state.\n");
+            } else {
+                printf("[AIO Digital] WARNING: notify failed (code %d)\n", result);
+            }
+        }
+
+        (void)oldState; // Available for comparison/debounce if needed
         return;
     }
     
@@ -4422,23 +4557,18 @@ static void gattServerCharReadUrc(struct uCxHandle *puCxHandle, int32_t conn_han
     printf("[GATT Read] conn=%d, handle=%d", conn_handle, value_handle);
     
     // Try to identify what was read
-    if (value_handle == 23) {
-        printf(" (HID Information)\n");
-    } else if (value_handle == 25) {
-        printf(" (HID Report Map)\n");
-    } else if (value_handle == 27) {
-        printf(" (HID Keyboard Input)\n");
-    } else if (value_handle == 30) {
-        printf(" (HID Media Input)\n");
-    } else if (value_handle == 33) {
-        printf(" (HID Control Point)\n");
-    } else if (value_handle == 36) {
-        printf(" (Battery Level)\n");
-    } else if (value_handle == 11) {
-        printf(" (Service Changed)\n");
-    } else {
-        printf(" (Unknown)\n");
-    }
+    const char *name = NULL;
+    if (value_handle == gHidInfoHandle)              name = "HID Info";
+    else if (value_handle == gHidReportMapHandle)    name = "HID Report Map";
+    else if (value_handle == gHidKeyboardInputHandle) name = "HID Keyboard Input";
+    else if (value_handle == gHidMediaInputHandle)   name = "HID Media Input";
+    else if (value_handle == gHidControlPointHandle) name = "HID Control Point";
+    else if (value_handle == gBatteryLevelHandle)    name = "Battery Level";
+    else if (value_handle == gGattServiceChangedHandle) name = "Service Changed";
+    
+    printf(" (");
+    printf("%s", name ? name : "Unknown");
+    printf(")\n");
 }
 
 // Background thread that sends heartbeat notifications every second
@@ -4556,6 +4686,18 @@ static void gattClientNotificationUrc(struct uCxHandle *puCxHandle,
     // BATTERY SERVICE (BAS) - Battery Level ------------------------
     if (value_handle == gBasClientValueHandle) {
         basParseBatteryLevel(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // AUTOMATION IO (AIO) - Digital --------------------------------
+    if (value_handle == gAioClientDigitalValueHandle) {
+        aioParseDigital(hex_data->pData, hex_data->length);
+        return;
+    }
+
+    // AUTOMATION IO (AIO) - Analog ---------------------------------
+    if (value_handle == gAioClientAnalogValueHandle) {
+        aioParseAnalog(hex_data->pData, hex_data->length);
         return;
     }
 
@@ -5032,6 +5174,188 @@ static void gattClientLnsExample()
 
     printf("LNS Client running.\n");
     printf("Latitude / Longitude updates will appear automatically.\n\n");
+}
+
+// ============================================================================
+// GATT CLIENT - AUTOMATION IO (AIO)
+// Service UUID: 0x1815
+// Characteristics:
+//   - Digital (0x2A56): bitfield (each bit = digital channel)
+//   - Analog  (0x2A58): typically SINT16
+// ============================================================================
+
+// Parse Digital characteristic data
+static void aioParseDigital(const uint8_t *data, size_t len)
+{
+    if (len == 0) {
+        printf("[AIO] Digital: (empty)\n");
+        return;
+    }
+
+    // Print as hex
+    printf("[AIO] Digital raw: 0x");
+    for (size_t i = 0; i < len; i++) {
+        printf("%02X", data[i]);
+    }
+
+    // Decode bits into channels (D0, D1, ...)
+    printf("  Bits: ");
+    size_t bitCount = len * 8;
+    for (size_t bit = 0; bit < bitCount; bit++) {
+        size_t byteIdx = bit / 8;
+        uint8_t mask = (uint8_t)(1u << (bit % 8));
+        bool on = (data[byteIdx] & mask) != 0;
+        printf("D%zu=%d ", bit, on ? 1 : 0);
+    }
+    printf("\n");
+}
+
+// Parse Analog characteristic data
+static void aioParseAnalog(const uint8_t *data, size_t len)
+{
+    if (len < 2) {
+        printf("[AIO] Analog: invalid length (%zu)\n", len);
+        return;
+    }
+
+    int16_t raw = (int16_t)(data[0] | (data[1] << 8));
+    printf("[AIO] Analog value: %d (0x%04X)\n", raw, (uint16_t)raw);
+}
+
+// Find Automation IO service and characteristic handles
+static bool gattClientFindAioHandles(void)
+{
+    // Reset
+    gAioClientServiceIndex       = -1;
+    gAioClientDigitalCharIndex   = -1;
+    gAioClientDigitalValueHandle = -1;
+    gAioClientDigitalCccdHandle  = -1;
+    gAioClientAnalogCharIndex    = -1;
+    gAioClientAnalogValueHandle  = -1;
+    gAioClientAnalogCccdHandle   = -1;
+
+    // 1) Service 0x1815
+    gAioClientServiceIndex = findServiceByUuid16(0x1815);
+    if (gAioClientServiceIndex < 0) {
+        printf("[AIO] Service 0x1815 (Automation IO) not found.\n");
+        return false;
+    }
+
+    // 2) Digital characteristic 0x2A56
+    gAioClientDigitalCharIndex = findCharByUuid16InService(gAioClientServiceIndex, 0x2A56);
+    if (gAioClientDigitalCharIndex >= 0) {
+        gAioClientDigitalValueHandle =
+            gGattCharacteristics[gAioClientDigitalCharIndex].valueHandle;
+        gAioClientDigitalCccdHandle  = gAioClientDigitalValueHandle + 1;
+
+        printf("[AIO] Digital: handle=0x%04X, CCCD=0x%04X\n",
+               gAioClientDigitalValueHandle, gAioClientDigitalCccdHandle);
+    }
+
+    // 3) Analog characteristic 0x2A58
+    gAioClientAnalogCharIndex = findCharByUuid16InService(gAioClientServiceIndex, 0x2A58);
+    if (gAioClientAnalogCharIndex >= 0) {
+        gAioClientAnalogValueHandle =
+            gGattCharacteristics[gAioClientAnalogCharIndex].valueHandle;
+        gAioClientAnalogCccdHandle  = gAioClientAnalogValueHandle + 1;
+
+        printf("[AIO] Analog:  handle=0x%04X, CCCD=0x%04X\n",
+               gAioClientAnalogValueHandle, gAioClientAnalogCccdHandle);
+    }
+
+    if (gAioClientDigitalValueHandle < 0 && gAioClientAnalogValueHandle < 0) {
+        printf("[AIO] No valid characteristics (Digital/Analog) found in service 0x1815.\n");
+        return false;
+    }
+
+    return true;
+}
+
+// Read Digital + Analog once
+static void gattClientReadAioValues(void)
+{
+    uint8_t buf[20];
+    uByteArray_t value = { .pData = buf, .length = 0 };
+
+    // Digital
+    if (gAioClientDigitalValueHandle > 0) {
+        value.length = 0;
+        int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                           gCurrentGattConnHandle,
+                                           gAioClientDigitalValueHandle,
+                                           &value);
+        if (r >= 0) {
+            aioParseDigital(buf, value.length);
+            uCxEnd(&gUcxHandle);
+        } else {
+            printf("[AIO] Digital read failed (%d)\n", r);
+        }
+    }
+
+    // Analog
+    if (gAioClientAnalogValueHandle > 0) {
+        value.length = 0;
+        int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                           gCurrentGattConnHandle,
+                                           gAioClientAnalogValueHandle,
+                                           &value);
+        if (r >= 0) {
+            aioParseAnalog(buf, value.length);
+            uCxEnd(&gUcxHandle);
+        } else {
+            printf("[AIO] Analog read failed (%d)\n", r);
+        }
+    }
+}
+
+// Subscribe to AIO notifications
+static void gattClientSubscribeAio(void)
+{
+    uint8_t notifyEnable[2] = {0x01, 0x00};
+
+    if (gAioClientDigitalCccdHandle > 0) {
+        uCxGattClientWriteNoRsp(&gUcxHandle,
+                                gCurrentGattConnHandle,
+                                gAioClientDigitalCccdHandle,
+                                notifyEnable, sizeof(notifyEnable));
+        printf("[AIO] Digital notifications ENABLED\n");
+    }
+
+    if (gAioClientAnalogCccdHandle > 0) {
+        uCxGattClientWriteNoRsp(&gUcxHandle,
+                                gCurrentGattConnHandle,
+                                gAioClientAnalogCccdHandle,
+                                notifyEnable, sizeof(notifyEnable));
+        printf("[AIO] Analog notifications ENABLED\n");
+    }
+}
+
+// Complete Automation IO client example
+static void gattClientAioExample(void)
+{
+    printf("\n--- GATT Client: Automation IO (AIO) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection.\n");
+        return;
+    }
+
+    // Step 1: Discover everything for this connection
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // Step 2: Find AIO handles
+    if (!gattClientFindAioHandles()) {
+        return;
+    }
+
+    // Step 3: Read initial state
+    gattClientReadAioValues();
+
+    // Step 4: Subscribe to notifications
+    gattClientSubscribeAio();
+
+    printf("AIO Client running. Digital/Analog changes will show as notifications.\n\n");
 }
 
 // ============================================================================
@@ -6015,12 +6339,13 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t protoResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, protoModeUuid, 2,
                                       propReadWriteNoResp, 1,
-                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
                                       protoModeValue, 1,
                                       1,
                                       &protoResponse);
     
     if (result == 0) {
+        gHidProtocolModeHandle = protoResponse.value_handle;
         printf("✓ Protocol Mode characteristic created (handle: %d, read=open, write=encrypted)\n", protoResponse.value_handle);
     } else {
         printf("WARNING: Failed to create Protocol Mode (code %d)\n", result);
@@ -6073,7 +6398,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t bootKbdResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdInputUuid, 2,
                                       propNotify, 1,
-                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
                                       emptyBootKbdReport, 8,
                                       8,
                                       &bootKbdResponse);
@@ -6116,7 +6441,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t bootKbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdOutputUuid, 2,
                                       propWriteWoResp, 1,
-                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
                                       emptyBootKbdOutput, 1,
                                       1,
                                       &bootKbdOutResponse);
@@ -6156,7 +6481,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t kbdResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, reportUuid, 2,
                                       propReadNotify, 1,
-                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
                                       emptyKbdReport, 9,
                                       9,
                                       &kbdResponse);
@@ -6199,7 +6524,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t kbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, kbdOutputUuid, 2,
                                       propReadWriteWWR, 1,
-                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
                                       ledOutputValue, 1,
                                       1,
                                       &kbdOutResponse);
@@ -6239,7 +6564,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t cpResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, controlPointUuid, 2,
                                       propWriteNoResp, 1,
-                                      U_SECURITY_READ_UNAUTHENTICATED, U_SECURITY_WRITE_UNAUTHENTICATED,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
                                       cpValue, 1,
                                       1,
                                       &cpResponse);
@@ -6418,6 +6743,177 @@ static void gattServerSetupHidKeyboard(void)
     printf("  - Use [a] to send 'Hello World' test\n\n");
     
     gGattServerServiceHandle = gHidServiceHandle;
+}
+
+// ============================================================================
+// AUTOMATION IO (0x1815) GATT Server
+// ============================================================================
+
+// Helper: Send Digital notification
+static void automationIoNotifyDigital(uint8_t newState)
+{
+    gAioServerDigitalState = newState;
+
+    if (gCurrentGattConnHandle < 0 ||
+        gAioServerDigitalCharHandle <= 0 ||
+        gAioServerDigitalCccdHandle <= 0) {
+        return;
+    }
+
+    // Send notification with new digital state
+    int32_t result = uCxGattServerSendNotification(&gUcxHandle,
+                                                   gCurrentGattConnHandle,
+                                                   gAioServerDigitalCharHandle,
+                                                   &gAioServerDigitalState,
+                                                   1);
+    if (result == 0) {
+        printf("[AIO] Digital Notify: 0x%02X (LED0=%u)\n", 
+               gAioServerDigitalState, 
+               (gAioServerDigitalState & 0x01) ? 1 : 0);
+    } else {
+        printf("[AIO] WARNING: Failed to send digital notify (code %d)\n", result);
+    }
+}
+
+// Helper: Send Analog notification
+static void automationIoNotifyAnalog(uint16_t newValue)
+{
+    gAioServerAnalogValue = newValue;
+
+    if (gCurrentGattConnHandle < 0 ||
+        gAioServerAnalogCharHandle <= 0 ||
+        gAioServerAnalogCccdHandle <= 0) {
+        return;
+    }
+
+    // Send notification with new analog value (little-endian)
+    uint8_t payload[2];
+    payload[0] = (uint8_t)(gAioServerAnalogValue & 0xFF);
+    payload[1] = (uint8_t)((gAioServerAnalogValue >> 8) & 0xFF);
+
+    int32_t result = uCxGattServerSendNotification(&gUcxHandle,
+                                                   gCurrentGattConnHandle,
+                                                   gAioServerAnalogCharHandle,
+                                                   payload,
+                                                   sizeof(payload));
+    if (result == 0) {
+        printf("[AIO] Analog Notify: %u\n", gAioServerAnalogValue);
+    } else {
+        printf("[AIO] WARNING: Failed to send analog notify (code %d)\n", result);
+    }
+}
+
+// Setup Automation IO service with Digital and Analog characteristics
+static void gattServerSetupAutomationIo(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("Automation IO GATT Server Setup\n");
+    printf("─────────────────────────────────────────────────\n\n");
+    
+    // Step 1: Define Automation IO Service (0x1815)
+    printf("Step 1: Creating Automation IO Service (UUID: 0x1815)...\n");
+    uint8_t aioServiceUuid[] = {0x18, 0x15};  // 16-bit UUID (little-endian)
+    
+    int32_t result = uCxGattServerServiceDefine(&gUcxHandle, aioServiceUuid, 2, &gAioServerServiceHandle);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to create Automation IO Service (code %d)\n", result);
+        return;
+    }
+    
+    printf("✓ Automation IO Service defined with handle: %d\n\n", gAioServerServiceHandle);
+    
+    // Step 2: Add Digital characteristic (0x2A56) - Read + Write + Notify
+    printf("Step 2: Adding Digital characteristic (0x2A56)...\n");
+    uint8_t digitalUuid[] = {0x2A, 0x56};  // Little-endian
+    uint8_t propReadWriteNotify[] = {0x1A};  // Read (0x02) + Write (0x08) + Notify (0x10) = 0x1A
+    uint8_t digitalValue[] = {0x00};  // Initial value: all bits off
+    
+    uCxGattServerCharDefine_t digitalResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, digitalUuid, 2,
+                                      propReadWriteNotify, 1,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      digitalValue, 1,
+                                      1,
+                                      &digitalResponse);
+    
+    if (result == 0) {
+        gAioServerDigitalCharHandle = digitalResponse.value_handle;
+        gAioServerDigitalCccdHandle = digitalResponse.cccd_handle;
+        printf("✓ Digital characteristic created (handle: %d, CCCD: %d)\n", 
+               digitalResponse.value_handle, digitalResponse.cccd_handle);
+    } else {
+        printf("ERROR: Failed to create Digital characteristic (code %d)\n", result);
+        return;
+    }
+    
+    // Step 3: Add Analog characteristic (0x2A58) - Read + Notify
+    printf("Step 3: Adding Analog characteristic (0x2A58)...\n");
+    uint8_t analogUuid[] = {0x2A, 0x58};  // Little-endian
+    uint8_t propReadNotify[] = {0x12};  // Read (0x02) + Notify (0x10) = 0x12
+    uint8_t analogValue[2] = {0xF4, 0x01};  // Initial value: 500 (little-endian)
+    
+    uCxGattServerCharDefine_t analogResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, analogUuid, 2,
+                                      propReadNotify, 1,
+                                      U_SECURITY_READ_NONE, U_SECURITY_WRITE_NONE,
+                                      analogValue, 2,
+                                      2,
+                                      &analogResponse);
+    
+    if (result == 0) {
+        gAioServerAnalogCharHandle = analogResponse.value_handle;
+        gAioServerAnalogCccdHandle = analogResponse.cccd_handle;
+        printf("✓ Analog characteristic created (handle: %d, CCCD: %d)\n", 
+               analogResponse.value_handle, analogResponse.cccd_handle);
+    } else {
+        printf("ERROR: Failed to create Analog characteristic (code %d)\n", result);
+        return;
+    }
+    
+    // Step 4: Activate Automation IO Service
+    printf("\nStep 4: Activating Automation IO Service...\n");
+    result = uCxGattServerServiceActivate(&gUcxHandle);
+    
+    if (result != 0) {
+        printf("ERROR: Failed to activate Automation IO service (code %d)\n", result);
+        return;
+    }
+    
+    printf("✓ Automation IO Service activated!\n\n");
+    
+    printf("─────────────────────────────────────────────────\n");
+    printf("Automation IO Service Ready!\n");
+    printf("─────────────────────────────────────────────────\n\n");
+    
+    printf("Service details:\n");
+    printf("  Digital characteristic (0x2A56): Read/Write/Notify\n");
+    printf("    - bit 0 = LED 0 state (0=off, 1=on)\n");
+    printf("    - Current value: 0x%02X\n", gAioServerDigitalState);
+    printf("  Analog characteristic (0x2A58): Read/Notify\n");
+    printf("    - Range: 0-1000 (example: voltage * 100)\n");
+    printf("    - Current value: %u\n\n", gAioServerAnalogValue);
+    
+    // Enable advertising
+    printf("Enabling Bluetooth legacy advertising...\n");
+    result = uCxBluetoothLegacyAdvertisementStart(&gUcxHandle);
+    if (result == 0) {
+        gBluetoothAdvertising = true;
+        printf("✓ Advertising enabled - Device is now discoverable!\n\n");
+    } else {
+        printf("WARNING: Failed to enable advertising (code %d)\n\n", result);
+    }
+    
+    printf("─────────────────────────────────────────────────\n");
+    printf("Device Ready for Connection!\n");
+    printf("─────────────────────────────────────────────────\n\n");
+    
+    gGattServerServiceHandle = gAioServerServiceHandle;
 }
 
 // Setup Battery Service only (simple example)
@@ -6947,6 +7443,56 @@ static void ctsNotifyIfEnabled()
            payload[2], payload[3], payload[4], payload[5], payload[6]);
 }
 
+// Centralized HID keyboard report sending - protocol-aware (Boot vs Report mode)
+static int32_t hidSendKeyReport(uint8_t modifiers,
+                                uint8_t key1, uint8_t key2,
+                                uint8_t key3, uint8_t key4,
+                                uint8_t key5, uint8_t key6)
+{
+    if ((!gHidBootKbdNotificationsEnabled && !gHidKeyboardNotificationsEnabled) || gCurrentGattConnHandle < 0) {
+        printf("[HID] Notifications not enabled or no connection.\n");
+        return -1;
+    }
+
+    int32_t handle;
+    uint8_t report[9];
+    size_t len;
+
+    if (gUseBootKeyboard) {
+        // Boot mode: 8-byte report, no Report ID
+        handle = gHidBootKbdInputHandle;
+        report[0] = modifiers;   // modifiers
+        report[1] = 0x00;        // reserved
+        report[2] = key1;
+        report[3] = key2;
+        report[4] = key3;
+        report[5] = key4;
+        report[6] = key5;
+        report[7] = key6;
+        len = 8;
+    } else {
+        // Report mode: 9-byte report (Report ID = 1)
+        handle = gHidKeyboardInputHandle;
+        report[0] = 0x01;        // Report ID
+        report[1] = modifiers;
+        report[2] = 0x00;        // reserved
+        report[3] = key1;
+        report[4] = key2;
+        report[5] = key3;
+        report[6] = key4;
+        report[7] = key5;
+        report[8] = key6;
+        len = 9;
+    }
+
+    int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                   handle, report, (int32_t)len);
+    if (result != 0) {
+        printf("[HID] Failed to send key report (code %d)\n", result);
+    }
+    return result;
+}
+
 // Send a keyboard key press via HID
 static void gattServerSendKeyPress(void)
 {
@@ -6965,7 +7511,7 @@ static void gattServerSendKeyPress(void)
         return;
     }
     
-    if (!gHidNotificationsEnabled) {
+    if (!gHidBootKbdNotificationsEnabled && !gHidKeyboardNotificationsEnabled) {
         printf("\n─────────────────────────────────────────────────\n");
         printf("HID NOTIFICATIONS NOT YET ENABLED\n");
         printf("─────────────────────────────────────────────────\n");
@@ -6976,6 +7522,7 @@ static void gattServerSendKeyPress(void)
         printf("enables HID Input Report notifications.\n\n");
         printf("Please wait a few seconds and try again.\n");
         printf("You'll see '[HID Keyboard] Client enabled notifications'\n");
+        printf("or '[HID Boot Keyboard] Client enabled notifications'\n");
         printf("when it's ready.\n");
         printf("─────────────────────────────────────────────────\n");
         return;
@@ -6999,9 +7546,7 @@ static void gattServerSendKeyPress(void)
     input[strcspn(input, "\n")] = '\0';
     
     // HID Keyboard Report: [ReportID][Modifier][Reserved][Key1-Key6]
-    uint8_t report[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    
-    // Map input to HID usage codes
+    // Get keycode for input
     uint8_t keycode = 0;
     const char *keyName = "";
     
@@ -7049,13 +7594,10 @@ static void gattServerSendKeyPress(void)
         return;
     }
     
-    report[3] = keycode;  // First key in array
-    
     printf("Sending key press: %s (code 0x%02X)\n", keyName, keycode);
     
-    // Send key down (key pressed)
-    int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
-                                         gHidKeyboardInputHandle, report, 9);
+    // Send key down (key pressed) using centralized function
+    int32_t result = hidSendKeyReport(0x00, keycode, 0x00, 0x00, 0x00, 0x00, 0x00);
     
     if (result != 0) {
         printf("ERROR: Failed to send key down notification (code %d)\n", result);
@@ -7065,9 +7607,7 @@ static void gattServerSendKeyPress(void)
     Sleep(50);  // Hold key for 50ms
     
     // Send key up (all zeros = no keys pressed)
-    uint8_t releaseReport[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
-                                  gHidKeyboardInputHandle, releaseReport, 9);
+    result = hidSendKeyReport(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
     
     if (result == 0) {
         printf("✓ Key press sent successfully\n");
@@ -7181,7 +7721,7 @@ static void gattServerSendHelloWorld(void)
         return;
     }
     
-    if (!gHidNotificationsEnabled) {
+    if (!gHidBootKbdNotificationsEnabled && !gHidKeyboardNotificationsEnabled) {
         printf("\n─────────────────────────────────────────────────\n");
         printf("HID NOTIFICATIONS NOT YET ENABLED\n");
         printf("─────────────────────────────────────────────────\n");
@@ -7192,16 +7732,15 @@ static void gattServerSendHelloWorld(void)
         printf("enables HID Input Report notifications.\n\n");
         printf("Please wait a few seconds and try again.\n");
         printf("You'll see '[HID Keyboard] Client enabled notifications'\n");
+        printf("or '[HID Boot Keyboard] Client enabled notifications'\n");
         printf("when it's ready.\n");
         printf("─────────────────────────────────────────────────\n");
         return;
     }
     
-    // Determine which handle to use based on which CCCD the client enabled
-    int32_t targetHandle = gUseBootKeyboard ? gHidBootKbdInputHandle : gHidKeyboardInputHandle;
     const char *reportType = gUseBootKeyboard ? "Boot Keyboard" : "Regular Keyboard";
     
-    printf("\n--- Sending 'Hello World' (via %s, handle %d) ---\n", reportType, targetHandle);
+    printf("\n--- Sending 'Hello World' (via %s) ---\n", reportType);
     
     // Map: H e l l o   W o r l d
     const char *text = "Hello World";
@@ -7220,21 +7759,16 @@ static void gattServerSendHelloWorld(void)
     };
     
     for (size_t i = 0; i < strlen(text); i++) {
-        // HID Keyboard Report: [ReportID][Modifier][Reserved][Key1-Key6]
-        uint8_t report[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-        
         // Check if uppercase (need Shift modifier = 0x02)
+        uint8_t modifier = 0x00;
         if (text[i] >= 'A' && text[i] <= 'Z') {
-            report[1] = 0x02;  // Left Shift modifier
+            modifier = 0x02;  // Left Shift modifier
         }
-        
-        report[3] = keycodes[i];  // First key in array
         
         printf("  Sending: '%c'\n", text[i]);
         
-        // Send key down (use appropriate handle based on what client enabled)
-        int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
-                                             targetHandle, report, 9);
+        // Send key down using centralized function (handles Boot vs Report mode)
+        int32_t result = hidSendKeyReport(modifier, keycodes[i], 0x00, 0x00, 0x00, 0x00, 0x00);
         
         if (result != 0) {
             printf("ERROR: Failed to send key (code %d)\n", result);
@@ -7244,9 +7778,7 @@ static void gattServerSendHelloWorld(void)
         Sleep(50);  // Hold key
         
         // Send key up (all zeros)
-        uint8_t releaseReport[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-        uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle, 
-                                       targetHandle, releaseReport, 9);
+        hidSendKeyReport(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
         
         Sleep(50);  // Delay between keys
     }
@@ -11085,17 +11617,18 @@ static void printMenu(void)
             printf("\n");
             printf("\n");
             printf("GATT SERVER EXAMPLES\n");
-            printf("  [1] Heart Rate Service - Heartbeat notifications\n");
-            printf("  [2] HID Keyboard + Media + Battery - Full HID device\n");
-            printf("  [3] Battery Service only - Simple battery reporting\n");
-            printf("  [4] Environmental Sensing - Temperature + Humidity\n");
-            printf("  [5] UART Service (NUS) - Bidirectional text data\n");
-            printf("  [6] Serial Port Service (SPS) - u-blox, like NUS + credits\n");
-            printf("  [7] Location & Navigation (LNS) - GPS coordinates\n");
-            printf("  [8] Current Time Service (CTS) - Broadcast PC time\n");
+            printf("  [h] Heart Rate Service - Heartbeat notifications\n");
+            printf("  [k] HID Keyboard + Media + Battery - Full HID device\n");
+            printf("  [b] Battery Service only - Simple battery reporting\n");
+            printf("  [e] Environmental Sensing - Temperature + Humidity\n");
+            printf("  [u] UART Service (NUS) - Bidirectional text data\n");
+            printf("  [s] Serial Port Service (SPS) - u-blox, like NUS + credits\n");
+            printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
+            printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
+            printf("  [a] Automation IO Service - Digital + Analog I/O\n");
             printf("\n");
             printf("GATT CLIENT EXAMPLES\n");
-            printf("  [9] Read Current Time - Connect to remote CTS server\n");
+            printf("  [t] Read Current Time - Connect to remote CTS server\n");
             printf("\n");
             printf("NOTE: For more client examples, use [g] GATT Client menu\n");
             printf("\n");
@@ -11144,6 +11677,7 @@ static void printMenu(void)
             printf("  [s] Serial Port Service (SPS) - u-blox, like NUS + credits\n");
             printf("  [b] Battery Service (BAS) - battery percentage\n");
             printf("  [d] Device Information Service (DIS) - device details\n");
+            printf("  [a] Automation IO (AIO) - digital + analog I/O\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -11853,37 +12387,54 @@ static void handleUserInput(void)
             
         case MENU_GATT_EXAMPLES:
             switch (choice) {
-                case 1:
-                    gMenuState = MENU_GATT_SERVER;  // Heartbeat example
-                    break;
-                case 2:
-                    gMenuState = MENU_HID;  // HID menu
-                    break;
-                case 3:
-                    gattServerSetupBatteryOnly();  // Battery Service example
-                    break;
-                case 4:
-                    gattServerSetupEnvSensing();  // Environmental Sensing
-                    break;
-                case 5:
-                    gattServerSetupUartService();  // UART Service
-                    break;
-                case 6:
-                    gattServerSetupSpsService();  // Serial Port Service (SPS)
-                    break;
-                case 7:
-                    gattServerSetupLocationService();  // Location & Navigation
-                    break;
-                case 8:
-                    gattServerSetupCtsService();  // Current Time Service (Server)
-                    break;
-                case 9:
-                    gattClientReadCurrentTime();  // Read Current Time (Client)
-                    break;
                 case 0:
                     gMenuState = MENU_MAIN;
                     break;
                 default:
+                    // Handle letter commands
+                    if (strlen(input) > 0) {
+                        char firstChar = (char)tolower(input[0]);
+                        if (firstChar == 'h') {
+                            gMenuState = MENU_GATT_SERVER;  // Heartbeat example
+                            break;
+                        }
+                        if (firstChar == 'k') {
+                            gMenuState = MENU_HID;  // HID menu
+                            break;
+                        }
+                        if (firstChar == 'a') {
+                            gattServerSetupAutomationIo();  // Automation IO Service
+                            break;
+                        }
+                        if (firstChar == 'b') {
+                            gattServerSetupBatteryOnly();  // Battery Service
+                            break;
+                        }
+                        if (firstChar == 'e') {
+                            gattServerSetupEnvSensing();  // Environmental Sensing
+                            break;
+                        }
+                        if (firstChar == 'u') {
+                            gattServerSetupUartService();  // UART Service
+                            break;
+                        }
+                        if (firstChar == 's') {
+                            gattServerSetupSpsService();  // Serial Port Service (SPS)
+                            break;
+                        }
+                        if (firstChar == 'l') {
+                            gattServerSetupLocationService();  // Location & Navigation
+                            break;
+                        }
+                        if (firstChar == 'c') {
+                            gattServerSetupCtsService();  // Current Time Service (Server)
+                            break;
+                        }
+                        if (firstChar == 't') {
+                            gattClientReadCurrentTime();  // Read Current Time (Client)
+                            break;
+                        }
+                    }
                     printf("Invalid choice!\n");
                     break;
             }
@@ -11962,6 +12513,10 @@ static void handleUserInput(void)
                         }
                         if (firstChar == 'd') {
                             gattClientDisExample();
+                            break;
+                        }
+                        if (firstChar == 'a') {
+                            gattClientAioExample();
                             break;
                         }
                     }

@@ -339,6 +339,144 @@ APIMapping(
 * Command groups: 15 (General, System, Wi-Fi, Bluetooth, GATT, SPS, IP, HTTP, MQTT, Security, etc.)
 * Auto-generated GUI components: ~200+ (forms, buttons, inputs)
 
+## GATT Server and Client Features
+
+The ucxclient Windows application (`ucxclient_win64.c`) includes comprehensive **GATT Server** and **GATT Client** implementations, demonstrating advanced Bluetooth Low Energy capabilities with multiple profile support.
+
+### GATT Server Profiles
+
+The application can act as a GATT Server implementing multiple standard profiles simultaneously:
+
+| Profile | Service UUID | Characteristics | Features |
+| ------- | ------------ | --------------- | -------- |
+| **Heart Rate Service** | 0x180D | Heart Rate Measurement (0x2A37)<br>Body Sensor Location (0x2A38) | Heart rate notifications<br>Sensor location (chest) |
+| **HID over GATT (Keyboard)** | 0x1812 | Protocol Mode (0x2A4E)<br>Report Map (0x2A4B)<br>HID Information (0x2A4A)<br>HID Control Point (0x2A4C)<br>Boot Keyboard Input (0x2A22)<br>Boot Keyboard Output (0x2A32)<br>Keyboard Input (0x2A4D - Report)<br>Keyboard Output (0x2A4D - LED) | Simulates USB keyboard over BLE<br>Boot and Report protocol modes<br>LED status feedback (Num/Caps/Scroll Lock)<br>Supports Suspend/Resume commands<br>6-key rollover keyboard reports |
+| **Automation IO** | 0x1815 | Digital (0x2A56)<br>Analog (0x2A58) | Digital I/O bitfield (read/write/notify)<br>Analog value (read/notify, 16-bit signed)<br>Real-time I/O state notifications |
+| **Battery Service** | 0x180F | Battery Level (0x2A19) | Battery percentage notifications (0-100%) |
+| **Environmental Sensing** | 0x181A | Temperature (0x2A6E)<br>Humidity (0x2A6F) | Temperature in Celsius (×100)<br>Humidity percentage (×100)<br>Environmental data notifications |
+| **Nordic UART Service (NUS)** | 6E400001-B5A3-F393-E0A9-E50E24DCCA9E | TX (6E400003...)<br>RX (6E400002...) | Bidirectional UART-like data transfer<br>Notify on TX, Write on RX |
+| **Serial Port Service (SPS)** | 2456E1B9-26E2-8F83-E744-F34F01E9D701 | FIFO (2456E1B9...)<br>Credits (2456E1B9...) | Flow-controlled serial data transfer<br>Credit-based flow control |
+| **Location and Navigation** | 0x1819 | LN Feature (0x2A6A)<br>Location and Speed (0x2A67)<br>Position Quality (0x2A69) | GPS position notifications<br>Speed and heading data<br>Satellite count and accuracy |
+| **Current Time Service** | 0x1805 | Current Time (0x2A2B) | Date/time distribution (YYYY-MM-DD HH:MM:SS)<br>Adjustable time field (day of week) |
+
+### GATT Client Capabilities
+
+The application can act as a GATT Client to discover and interact with remote GATT servers:
+
+| Profile | Capabilities | Functions |
+| ------- | ------------ | --------- |
+| **Current Time Service** | Read current time from server<br>Subscribe to time update notifications | Discovery of CTS service<br>Automatic CCCD subscription<br>Time format parsing |
+| **Environmental Sensing** | Read temperature and humidity<br>Subscribe to environmental notifications | Multi-sensor discovery<br>Decimal conversion (×100 format)<br>Real-time sensor monitoring |
+| **Location and Navigation** | Read GPS position and speed<br>Subscribe to location updates<br>Read position quality | Feature discovery<br>Coordinate parsing (lat/long)<br>Speed and heading extraction |
+| **Nordic UART Service** | Bidirectional data transfer<br>Subscribe to incoming data notifications | Custom UUID discovery<br>Data transmission via RX characteristic<br>Notification routing |
+| **Serial Port Service** | Flow-controlled data transfer<br>Credit-based flow management | FIFO and Credits discovery<br>Credit monitoring<br>Data segmentation |
+| **Battery Service** | Read battery level<br>Subscribe to battery notifications | Standard service discovery<br>Percentage parsing (0-100) |
+| **Device Information** | Read manufacturer, model, serial number, firmware version | Multi-characteristic discovery<br>String parsing for device metadata |
+| **Automation IO** | Read digital bitfield and analog values<br>Subscribe to I/O change notifications<br>Write digital outputs | Service discovery (0x1815)<br>Bitfield decoder (D0-D7 display)<br>16-bit analog parsing<br>Bidirectional I/O control |
+
+### Menu Navigation
+
+The application uses an **intuitive letter-based menu system** for easy access to GATT examples:
+
+```
+GATT Examples Menu:
+  [h] Heart Rate Service
+  [k] HID Keyboard Service  
+  [a] Automation IO Service
+  [b] Battery Service
+  [e] Environmental Sensing Service
+  [u] Nordic UART Service
+  [s] Serial Port Service (SPS)
+  [l] Location and Navigation Service
+  [c] Current Time Service (Server)
+  [t] Current Time Service (Client)
+```
+
+Each letter mnemonic matches the service name for easy recall.
+
+### Automation IO Details
+
+The **Automation IO** implementation demonstrates industrial I/O control over BLE:
+
+**Server Capabilities**:
+* **Digital Characteristic (0x2A56)**: 
+  * 1-byte bitfield representing 8 digital I/O pins (D0-D7)
+  * Supports Read, Write, and Notify operations
+  * Clients can write to control outputs
+  * Server auto-notifies subscribed clients on state changes
+  * Default state: 0x00 (all outputs low)
+
+* **Analog Characteristic (0x2A58)**:
+  * 16-bit signed integer (little-endian)
+  * Supports Read and Notify operations
+  * Example range: 0-1000 (application-defined units)
+  * Default value: 500
+  * Real-time analog value monitoring
+
+**Client Capabilities**:
+* Automatic service discovery by UUID (0x1815)
+* Characteristic discovery for Digital (0x2A56) and Analog (0x2A58)
+* CCCD discovery and subscription (handle + 1 calculation)
+* Real-time notification parsing:
+  * Digital: Hex display + per-bit decoder (e.g., "D0=1, D1=0, D2=1...")
+  * Analog: Little-endian SINT16 conversion
+* Bidirectional control: Read current state, Write new outputs
+
+**Example Workflow**:
+1. Select `[a] Automation IO` from GATT Examples menu
+2. Service is created with Digital and Analog characteristics
+3. Advertising starts automatically
+4. Clients can connect and discover service UUID 0x1815
+5. Clients subscribe to notifications for real-time updates
+6. Digital writes from client trigger immediate notification to all subscribers
+
+### HID Keyboard Features
+
+The **HID over GATT** implementation provides full keyboard emulation:
+
+**Protocol Support**:
+* Boot Protocol: Basic 8-byte keyboard reports (BIOS-compatible)
+* Report Protocol: Full 6-key rollover with modifier keys
+* Dynamic switching via Protocol Mode characteristic (0x2A4E)
+
+**LED Feedback**:
+* Keyboard Output characteristic (0x2A4D) receives LED states from host
+* Logs Num Lock, Caps Lock, Scroll Lock states
+* Separate Boot Keyboard Output (0x2A32) for Boot protocol mode
+
+**Control Point**:
+* Suspend command (0x00): Keyboard enters low-power state
+* Exit Suspend command (0x01): Keyboard resumes normal operation
+
+**Report Map**:
+* Standard HID descriptor for USB keyboard
+* Defines Input (keys), Output (LEDs), Feature reports
+* 63-byte descriptor compatible with all major operating systems
+
+### Security and Compatibility
+
+All GATT characteristics use **U_SECURITY_READ_NONE/WRITE_NONE** for maximum compatibility during development and testing. For production deployments, update to appropriate security levels (UNAUTHENTICATED, AUTHENTICATED, or AUTHORIZED) based on requirements.
+
+### Usage Examples
+
+**Starting a GATT Server**:
+```
+Main Menu → [g] GATT Examples → [a] Automation IO Service
+```
+Service is created, advertising starts, ready for client connections.
+
+**Starting a GATT Client**:
+```
+Main Menu → [y] GATT Client → [a] Automation IO (AIO)
+```
+Discovers remote AIO service, reads values, subscribes to notifications.
+
+**Testing Bidirectional I/O**:
+1. Start AIO Server on Device A
+2. Start AIO Client on Device B (discovers and subscribes)
+3. Client writes new digital state → Server receives write → Server notifies all subscribers
+4. Real-time I/O state synchronization across devices
+
 ## uAtClient API
 
 This API contains an AT client implementation that handles transmission of AT commands, reception and parsing of AT responses and URCs. You will find the uAtClient API in the [inc/](inc) directory.
