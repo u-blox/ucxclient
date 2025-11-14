@@ -329,7 +329,9 @@ static int32_t gLnsServerLocSpeedHandle = -1;
 // GATT Server - UART Service (NUS-style)
 static int32_t gUartServerServiceHandle = -1;
 static int32_t gUartServerTxHandle = -1;
+static int32_t gUartServerTxCccdHandle = -1;
 static int32_t gUartServerRxHandle = -1;
+static bool gUartServerTxNotificationsEnabled = false;
 
 // GATT Server - Serial Port Service (SPS - u-blox)
 static int32_t gSpsServerServiceHandle = -1;
@@ -4509,6 +4511,22 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
         return;
     }
     
+    // Check if this is a CCCD write for UART TX
+    if (gUartServerTxCccdHandle > 0 && value_handle == gUartServerTxCccdHandle) {
+        if (value->length >= 2) {
+            uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
+            if (cccdValue & 0x0001) {
+                printf("\n[UART] Client enabled TX notifications (CCCD handle %d)\n", value_handle);
+                gUartServerTxNotificationsEnabled = true;
+                printf("[UART] You can now send data using uCxGattServerSendNotification()\n");
+            } else {
+                printf("\n[UART] Client disabled TX notifications\n");
+                gUartServerTxNotificationsEnabled = false;
+            }
+        }
+        return;
+    }
+    
     // Check if this is a CCCD write for ESS Humidity
     if (gEnvServerHumCccdHandle > 0 && value_handle == gEnvServerHumCccdHandle) {
         if (value->length >= 2) {
@@ -7427,8 +7445,9 @@ static void gattServerSetupUartService(void)
         return;
     }
     gUartServerTxHandle = txRsp.value_handle;
+    gUartServerTxCccdHandle = txRsp.cccd_handle;
     printf("✓ UART TX characteristic handle=%d, CCCD=%d\n",
-           gUartServerTxHandle, txRsp.cccd_handle);
+           gUartServerTxHandle, gUartServerTxCccdHandle);
 
     // RX characteristic (Write Without Response from client)
     uint8_t initRx[1] = {0x00};
@@ -7460,8 +7479,64 @@ static void gattServerSetupUartService(void)
     // Show connection information
     showGattServerConnectionInfo();
     
-    printf("Use gattServerCharWriteUrc() to print RX data when client writes.\n");
-    printf("Use uCxGattServerSendNotification(..., gUartServerTxHandle, data, len) to send TX data.\n\n");
+    printf("Waiting for client to connect and enable notifications...\n");
+    printf("When connected, incoming data will be displayed automatically.\n");
+    printf("To send data to client, press Enter and type your message.\n\n");
+    
+    // Wait for client connection and CCCD write
+    printf("Press any key when client has connected and enabled notifications...\n");
+    getchar();
+    
+    // Interactive send loop
+    if (gUartServerTxNotificationsEnabled && gCurrentGattConnHandle >= 0) {
+        printf("\n[UART TX] Ready to send data to client\n");
+        printf("Type messages (Enter to send, empty line to exit):\n\n");
+        
+        char message[244];
+        while (1) {
+            printf("TX> ");
+            if (fgets(message, sizeof(message), stdin) == NULL) {
+                break;
+            }
+            
+            // Remove newline
+            size_t len = strlen(message);
+            if (len > 0 && message[len-1] == '\n') {
+                message[len-1] = '\0';
+                len--;
+            }
+            
+            // Empty line = exit
+            if (len == 0) {
+                printf("Exiting UART TX mode.\n");
+                break;
+            }
+            
+            // Send notification
+            int32_t sendResult = uCxGattServerSendNotification(&gUcxHandle, 
+                                                           gCurrentGattConnHandle,
+                                                           gUartServerTxHandle,
+                                                           (uint8_t*)message, 
+                                                           (int32_t)len);
+            if (sendResult == 0) {
+                printf("[UART TX] Sent %zu bytes\n", len);
+            } else {
+                printf("[ERROR] Failed to send UART notification (code %d)\n", sendResult);
+                if (sendResult == -5) {
+                    printf("  Connection may be lost. Press Enter to exit.\n");
+                    getchar();
+                    break;
+                }
+            }
+        }
+    } else {
+        printf("\n[WARNING] Client not connected or notifications not enabled.\n");
+        printf("Make sure client has:\n");
+        printf("  1. Connected to the GATT server\n");
+        printf("  2. Written 0x0001 to CCCD handle %d to enable notifications\n", gUartServerTxCccdHandle);
+    }
+    
+    printf("\n");
 }
 
 // Setup u-blox Serial Port Service (SPS)
@@ -7491,11 +7566,11 @@ static void gattServerSetupSpsService(void)
     }
     printf("✓ SPS service handle=%d\n", gSpsServerServiceHandle);
 
-    // Properties for FIFO: Notify + Indication + Write + WriteNoRsp
-    uint8_t propsFifo[] = {0x1C}; // 0x10 (Notify) | 0x04 (WriteNoRsp) | 0x08 (Write)
+    // Properties for FIFO: Notify + Indicate + Write + WriteNoRsp
+    uint8_t propsFifo[] = {0x3C}; // 0x20 (Indicate) | 0x10 (Notify) | 0x08 (Write) | 0x04 (WriteNoRsp)
     
-    // Properties for Credits: Notify + Indication + Write + WriteNoRsp
-    uint8_t propsCredits[] = {0x1C}; // Same as FIFO
+    // Properties for Credits: Notify + Indicate + Write + WriteNoRsp
+    uint8_t propsCredits[] = {0x3C}; // Same as FIFO
 
     // FIFO characteristic (handles bidirectional data)
     uint8_t initFifo[1] = {0x00};
@@ -7549,15 +7624,132 @@ static void gattServerSetupSpsService(void)
     // Show connection information
     showGattServerConnectionInfo();
     
-    printf("USAGE:\n");
-    printf("  • Client writes to FIFO handle for data → displayed in console\n");
-    printf("  • Client writes to Credits handle → enables flow control\n");
-    printf("  • Server sends via: uCxGattServerSendNotification(..., gSpsServerFifoHandle, data, len)\n");
-    printf("  • Optional: Send credits via: uCxGattServerSendNotification(..., gSpsServerCreditsHandle, &credits, 1)\n");
-    printf("\nFlow Control:\n");
-    printf("  • Disabled by default (works like NUS)\n");
-    printf("  • Enabled when client sends credits > 0\n");
-    printf("  • Disabled when client sends credits = -1 (0xFF)\n\n");
+    printf("Service is ready! Waiting for client connection...\n");
+    printf("Incoming data will be displayed automatically.\n\n");
+    
+    printf("When client connects and enables notifications:\n");
+    printf("  • Press 's' to enter send mode and type messages\n");
+    printf("  • Press '0' to return to menu\n\n");
+    printf("Waiting for connection");
+    
+    // Wait for connection with timeout (60 seconds)
+    int timeout = 60;
+    while (timeout > 0 && gCurrentGattConnHandle < 0) {
+        printf(".");
+        fflush(stdout);
+        Sleep(1000);
+        timeout--;
+    }
+    printf("\n");
+    
+    if (gCurrentGattConnHandle < 0) {
+        printf("\n[TIMEOUT] No client connected after 60 seconds.\n");
+        printf("Service remains active. You can test later or restart the service.\n\n");
+        return;
+    }
+    
+    printf("\n[CONNECTED] Client connected (handle %d)\n", gCurrentGattConnHandle);
+    printf("Waiting for client to enable FIFO notifications...\n\n");
+    
+    // Wait for CCCD enable (30 seconds)
+    timeout = 30;
+    while (timeout > 0 && !gSpsServerFifoNotifyEnabled) {
+        Sleep(100);
+        timeout--;
+        if (timeout % 10 == 0) {
+            printf(".");
+            fflush(stdout);
+        }
+    }
+    
+    if (!gSpsServerFifoNotifyEnabled) {
+        printf("\n[TIMEOUT] Client did not enable notifications.\n");
+        printf("Service remains active. Client can still connect later.\n\n");
+        return;
+    }
+    
+    // Interactive send loop
+    if (gSpsServerFifoNotifyEnabled && gCurrentGattConnHandle >= 0) {
+        printf("\n\n[SPS] Ready! Client has enabled notifications.\n");
+        
+        // Show flow control status
+        if (gSpsServerFlowControlActive) {
+            printf("[SPS] Flow control is ACTIVE (credits available: %d)\n", gSpsServerRemoteCredits);
+        } else {
+            printf("[SPS] Flow control is INACTIVE (works like NUS)\n");
+        }
+        
+        printf("\nPress 's' + Enter to send messages, or press Enter to continue...\n");
+        char choice = getchar();
+        
+        if (choice == 's' || choice == 'S') {
+            printf("\n[SPS TX] Send mode activated\n");
+            printf("Type messages (Enter to send, empty line to exit):\n\n");
+            
+            char message[244];
+            while (1) {
+                printf("TX> ");
+                if (fgets(message, sizeof(message), stdin) == NULL) {
+                    break;
+                }
+                
+                // Remove newline
+                size_t len = strlen(message);
+                if (len > 0 && message[len-1] == '\n') {
+                    message[len-1] = '\0';
+                    len--;
+                }
+                
+                // Empty line = exit
+                if (len == 0) {
+                    printf("Exiting SPS TX mode.\n");
+                    break;
+                }
+                
+                // Check flow control
+                if (gSpsServerFlowControlActive && gSpsServerRemoteCredits <= 0) {
+                    printf("[SPS] Waiting for credits from client...\n");
+                    // Wait a bit for credits
+                    Sleep(500);
+                    if (gSpsServerRemoteCredits <= 0) {
+                        printf("[SPS] No credits available. Message not sent.\n");
+                        printf("      Client needs to send credits or disable flow control (send -1).\n");
+                        continue;
+                    }
+                }
+                
+                // Send notification
+                int32_t sendResult = uCxGattServerSendNotification(&gUcxHandle, 
+                                                               gCurrentGattConnHandle,
+                                                               gSpsServerFifoHandle,
+                                                               (uint8_t*)message, 
+                                                               (int32_t)len);
+                if (sendResult == 0) {
+                    printf("[SPS TX] Sent %zu bytes\n", len);
+                    
+                    // Consume credit if flow control active
+                    if (gSpsServerFlowControlActive && gSpsServerRemoteCredits > 0) {
+                        gSpsServerRemoteCredits--;
+                        printf("[SPS] Credits remaining: %d\n", gSpsServerRemoteCredits);
+                    }
+                } else {
+                    printf("[ERROR] Failed to send SPS notification (code %d)\n", sendResult);
+                    if (sendResult == -5) {
+                        printf("  Connection may be lost. Press Enter to exit.\n");
+                        getchar();
+                        break;
+                    }
+                }
+            }
+        }
+    } else {
+        printf("\n[WARNING] Client not connected or FIFO notifications not enabled.\n");
+        printf("Make sure client has:\n");
+        printf("  1. Connected to the GATT server\n");
+        printf("  2. Written 0x0001 to FIFO CCCD handle %d to enable notifications\n", gSpsServerFifoCccdHandle);
+    }
+    
+    printf("\n");
 }
 
 // Setup Location & Navigation Service
