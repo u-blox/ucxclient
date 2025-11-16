@@ -9188,21 +9188,43 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
                 printf("ERROR: Wi-Fi is not connected!\n");
                 uCxEnd(&gUcxHandle);
                 
-                // Offer to connect using saved profile
-                printf("\nWould you like to connect now? (y/n): ");
-                int ch = getchar();
-                if (ch != '\n') {
-                    getchar();  // consume newline
-                }
-                
-                if (ch == 'y' || ch == 'Y') {
-                    printf("\nAttempting to connect to saved Wi-Fi profile...\n");
+                // Show available profiles and offer to connect
+                if (gWifiProfileCount > 0) {
+                    printf("\nAvailable Wi-Fi profiles:\n");
+                    for (int i = 0; i < gWifiProfileCount; i++) {
+                        printf("  [%d] %s (SSID: %s)\n", i + 1, gWifiProfiles[i].name, gWifiProfiles[i].ssid);
+                    }
+                    printf("  [0] Cancel\n");
+                    printf("\nSelect profile to connect (0-%d): ", gWifiProfileCount);
                     
-                    // Connect using profile 0
-                    err = uCxWifiStationConnect(&gUcxHandle, 0);
+                    int profileChoice = -1;
+                    if (scanf("%d", &profileChoice) != 1) {
+                        getchar(); // consume invalid input
+                        printf("Invalid input. Returning to menu.\n");
+                        return false;
+                    }
+                    getchar(); // consume newline
+                    
+                    if (profileChoice == 0) {
+                        printf("Connection cancelled. Returning to menu.\n");
+                        return false;
+                    }
+                    
+                    if (profileChoice < 1 || profileChoice > gWifiProfileCount) {
+                        printf("Invalid profile selection. Returning to menu.\n");
+                        return false;
+                    }
+                    
+                    int profileIndex = profileChoice - 1;
+                    printf("\nConnecting to '%s' (SSID: %s)...\n", 
+                           gWifiProfiles[profileIndex].name, 
+                           gWifiProfiles[profileIndex].ssid);
+                    
+                    // Connect using selected profile index
+                    err = uCxWifiStationConnect(&gUcxHandle, profileIndex);
                     if (err < 0) {
                         printf("ERROR: Failed to connect to Wi-Fi (error: %d)\n", err);
-                        printf("Please configure Wi-Fi settings using the [w] Wi-Fi menu.\n");
+                        printf("Please check your Wi-Fi settings using the [w] Wi-Fi menu.\n");
                         return false;
                     }
                     
@@ -9241,7 +9263,8 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
                     
                     // Continue to verify IP address and connectivity
                 } else {
-                    printf("Wi-Fi connection required. Returning to menu.\n");
+                    printf("No saved Wi-Fi profiles found.\n");
+                    printf("Please configure Wi-Fi using the [w] Wi-Fi menu.\n");
                     return false;
                 }
             } else if (verbose) {
