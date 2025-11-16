@@ -9190,78 +9190,211 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
                 
                 // Show available profiles and offer to connect
                 if (gWifiProfileCount > 0) {
-                    printf("\nAvailable Wi-Fi profiles:\n");
-                    for (int i = 0; i < gWifiProfileCount; i++) {
-                        printf("  [%d] %s (SSID: %s)\n", i + 1, gWifiProfiles[i].name, gWifiProfiles[i].ssid);
-                    }
-                    printf("  [0] Cancel\n");
-                    printf("\nSelect profile to connect (0-%d): ", gWifiProfileCount);
+                    // Try to suggest profile based on PC IP
+                    int suggestedIdx = wifiSuggestProfile();
                     
-                    int profileChoice = -1;
-                    if (scanf("%d", &profileChoice) != 1) {
-                        getchar(); // consume invalid input
-                        printf("Invalid input. Returning to menu.\n");
-                        return false;
-                    }
-                    getchar(); // consume newline
-                    
-                    if (profileChoice == 0) {
-                        printf("Connection cancelled. Returning to menu.\n");
-                        return false;
-                    }
-                    
-                    if (profileChoice < 1 || profileChoice > gWifiProfileCount) {
-                        printf("Invalid profile selection. Returning to menu.\n");
-                        return false;
-                    }
-                    
-                    int profileIndex = profileChoice - 1;
-                    printf("\nConnecting to '%s' (SSID: %s)...\n", 
-                           gWifiProfiles[profileIndex].name, 
-                           gWifiProfiles[profileIndex].ssid);
-                    
-                    // Connect using selected profile index
-                    err = uCxWifiStationConnect(&gUcxHandle, profileIndex);
-                    if (err < 0) {
-                        printf("ERROR: Failed to connect to Wi-Fi (error: %d)\n", err);
-                        printf("Please check your Wi-Fi settings using the [w] Wi-Fi menu.\n");
-                        return false;
-                    }
-                    
-                    // Wait for connection (up to 15 seconds)
-                    printf("Waiting for Wi-Fi connection");
-                    fflush(stdout);
-                    
-                    bool connected = false;
-                    for (int i = 0; i < 30; i++) {
-                        Sleep(500);
-                        printf(".");
-                        fflush(stdout);
+                    if (suggestedIdx >= 0) {
+                        char currentIP[40];
+                        getCurrentPCIPAddress(currentIP, sizeof(currentIP));
+                        printf("\nRecommended: Profile '%s' matches your network (%s)\n", 
+                               gWifiProfiles[suggestedIdx].name, currentIP);
+                        printf("  [Enter] Connect to '%s' now (quick, no verification)\n", gWifiProfiles[suggestedIdx].name);
+                        printf("  [v]     Connect with verification (check IP/gateway)\n");
+                        printf("  [s]     Show all profiles\n");
+                        printf("  [c]     Cancel\n");
+                        printf("\nChoice: ");
                         
-                        // Check connection status
-                        if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &wifiStatus)) {
-                            if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
-                                if (wifiStatus.rsp.StatusIdInt.int_val == 2) {
+                        char choice[10];
+                        if (!fgets(choice, sizeof(choice), stdin)) {
+                            printf("Invalid input. Returning to menu.\n");
+                            return false;
+                        }
+                        choice[strcspn(choice, "\r\n")] = 0;
+                        
+                        if (choice[0] == 'c' || choice[0] == 'C') {
+                            printf("Connection cancelled. Returning to menu.\n");
+                            return false;
+                        } else if (choice[0] == 's' || choice[0] == 'S') {
+                            // Show all profiles - fall through to profile selection below
+                            suggestedIdx = -1;
+                        } else if (choice[0] == 'v' || choice[0] == 'V' || choice[0] == '\0') {
+                            // Use suggested profile
+                            int profileIndex = suggestedIdx;
+                            bool verifyConnection = (choice[0] == 'v' || choice[0] == 'V');
+                            
+                            printf("\nConnecting to '%s' (SSID: %s)...\n", 
+                                   gWifiProfiles[profileIndex].name, 
+                                   gWifiProfiles[profileIndex].ssid);
+                            
+                            // Set connection parameters
+                            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, gWifiProfiles[profileIndex].ssid) != 0) {
+                                printf("ERROR: Failed to set connection parameters\n");
+                                return false;
+                            }
+                            
+                            // Set security
+                            if (strlen(gWifiProfiles[profileIndex].password) > 0) {
+                                if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, gWifiProfiles[profileIndex].password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
+                                    printf("ERROR: Failed to set WPA security\n");
+                                    return false;
+                                }
+                            } else {
+                                if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+                                    printf("ERROR: Failed to set open security\n");
+                                    return false;
+                                }
+                            }
+                            
+                            // Clear event flags
+                            U_CX_MUTEX_LOCK(gUrcMutex);
+                            gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+                            U_CX_MUTEX_UNLOCK(gUrcMutex);
+                            
+                            // Connect
+                            err = uCxWifiStationConnect(&gUcxHandle, 0);
+                            if (err < 0) {
+                                printf("ERROR: Failed to initiate connection (error: %d)\n", err);
+                                return false;
+                            }
+                            
+                            // Wait for network up event
+                            if (!verifyConnection) {
+                                printf("Connecting");
+                                fflush(stdout);
+                            } else {
+                                printf("Waiting for network up event");
+                                fflush(stdout);
+                            }
+                            
+                            bool connected = false;
+                            for (int i = 0; i < 40; i++) {
+                                Sleep(500);
+                                printf(".");
+                                fflush(stdout);
+                                
+                                U_CX_MUTEX_LOCK(gUrcMutex);
+                                bool netUp = (gUrcEventFlags & URC_FLAG_NETWORK_UP) != 0;
+                                U_CX_MUTEX_UNLOCK(gUrcMutex);
+                                
+                                if (netUp) {
                                     connected = true;
-                                    uCxEnd(&gUcxHandle);
                                     break;
                                 }
                             }
-                            uCxEnd(&gUcxHandle);
+                            
+                            printf("\n");
+                            
+                            if (!connected) {
+                                printf("ERROR: Connection timeout - no network up event received\n");
+                                return false;
+                            }
+                            
+                            printf("✓ Wi-Fi connected successfully\n");
+                            
+                            // Skip verification if quick connect
+                            if (!verifyConnection) {
+                                printf("\n");
+                                return true;
+                            }
+                            
+                            // Otherwise continue with IP/gateway checks below
                         }
                     }
                     
-                    printf("\n");
-                    
-                    if (!connected) {
-                        printf("ERROR: Wi-Fi connection timeout!\n");
-                        printf("Please check your Wi-Fi settings using the [w] Wi-Fi menu.\n");
-                        return false;
+                    // Show all profiles if not using suggested one
+                    if (suggestedIdx < 0) {
+                        printf("\nAvailable Wi-Fi profiles:\n");
+                        for (int i = 0; i < gWifiProfileCount; i++) {
+                            printf("  [%d] %s (SSID: %s)\n", i + 1, gWifiProfiles[i].name, gWifiProfiles[i].ssid);
+                        }
+                        printf("  [0] Cancel\n");
+                        printf("\nSelect profile to connect (0-%d): ", gWifiProfileCount);
+                        
+                        int profileChoice = -1;
+                        if (scanf("%d", &profileChoice) != 1) {
+                            getchar(); // consume invalid input
+                            printf("Invalid input. Returning to menu.\n");
+                            return false;
+                        }
+                        getchar(); // consume newline
+                        
+                        if (profileChoice == 0) {
+                            printf("Connection cancelled. Returning to menu.\n");
+                            return false;
+                        }
+                        
+                        if (profileChoice < 1 || profileChoice > gWifiProfileCount) {
+                            printf("Invalid profile selection. Returning to menu.\n");
+                            return false;
+                        }
+                        
+                        int profileIndex = profileChoice - 1;
+                        printf("\nConnecting to '%s' (SSID: %s)...\n", 
+                               gWifiProfiles[profileIndex].name, 
+                               gWifiProfiles[profileIndex].ssid);
+                        
+                        // Set connection parameters
+                        if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, gWifiProfiles[profileIndex].ssid) != 0) {
+                            printf("ERROR: Failed to set connection parameters\n");
+                            return false;
+                        }
+                        
+                        // Set security
+                        if (strlen(gWifiProfiles[profileIndex].password) > 0) {
+                            if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, gWifiProfiles[profileIndex].password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
+                                printf("ERROR: Failed to set WPA security\n");
+                                return false;
+                            }
+                        } else {
+                            if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+                                printf("ERROR: Failed to set open security\n");
+                                return false;
+                            }
+                        }
+                        
+                        // Clear event flags
+                        U_CX_MUTEX_LOCK(gUrcMutex);
+                        gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+                        U_CX_MUTEX_UNLOCK(gUrcMutex);
+                        
+                        // Connect
+                        err = uCxWifiStationConnect(&gUcxHandle, 0);
+                        if (err < 0) {
+                            printf("ERROR: Failed to initiate connection (error: %d)\n", err);
+                            return false;
+                        }
+                        
+                        // Wait for network up event
+                        printf("Waiting for network up event");
+                        fflush(stdout);
+                        
+                        bool connected = false;
+                        for (int i = 0; i < 40; i++) {
+                            Sleep(500);
+                            printf(".");
+                            fflush(stdout);
+                            
+                            U_CX_MUTEX_LOCK(gUrcMutex);
+                            bool netUp = (gUrcEventFlags & URC_FLAG_NETWORK_UP) != 0;
+                            U_CX_MUTEX_UNLOCK(gUrcMutex);
+                            
+                            if (netUp) {
+                                connected = true;
+                                break;
+                            }
+                        }
+                        
+                        printf("\n");
+                        
+                        if (!connected) {
+                            printf("ERROR: Connection timeout - no network up event received\n");
+                            return false;
+                        }
+                        
+                        printf("✓ Wi-Fi connected successfully\n");
                     }
                     
-                    printf("✓ Wi-Fi connected successfully\n");
-                    
-                    // Continue to verify IP address and connectivity
+                    // Continue to verify IP address and connectivity below
                 } else {
                     printf("No saved Wi-Fi profiles found.\n");
                     printf("Please configure Wi-Fi using the [w] Wi-Fi menu.\n");
