@@ -53,7 +53,7 @@ int32_t uCxPowerDeepSleepWithGpioWakeup(uCxHandle_t * puCxHandle);
  * @param      wakeup_mode: Selects how to wake up from deep sleep.
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxPowerDeepSleep(uCxHandle_t * puCxHandle, uWakeupMode_t wakeup_mode);
+int32_t uCxPowerDeepSleep(uCxHandle_t * puCxHandle, uPowerWakeupMode_t wakeup_mode);
 
 /**
  * Set Power Save Level.

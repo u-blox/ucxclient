@@ -52,13 +52,13 @@ typedef struct
 {
     int32_t socket_handle; /**< Socket identifier be used for any operation on that socket. */
     int32_t protocol;      /**< IP protocol. */
-    int32_t socket_status;
+    int32_t status;
 } uCxSocketListStatus_t;
 
 typedef struct
 {
-    int32_t protocol;      /**< IP protocol. */
-    int32_t socket_status;
+    int32_t protocol; /**< IP protocol. */
+    int32_t status;
 } uCxSocketGetStatus_t;
 
 
@@ -77,21 +77,21 @@ typedef struct
  * @param[out] pSocketHandle: Socket identifier be used for any operation on that socket.
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uProtocol_t protocol, int32_t * pSocketHandle);
+int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uSocketProtocol_t protocol, int32_t * pSocketHandle);
 
 /**
  * Creates a socket and associates it with the specified protocol (TCP or UDP).
  * 
  * Output AT command:
- * > AT+USOCR=<protocol>,<preferred_protocol_type>
+ * > AT+USOCR=<protocol>,<pref_ip_ver>
  *
- * @param[in]  puCxHandle:              uCX API handle
- * @param      protocol:                IP protocol.
- * @param      preferred_protocol_type: Selects the IP address type to use.
- * @param[out] pSocketHandle:           Socket identifier be used for any operation on that socket.
- * @return                              0 on success, negative value on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      protocol:      IP protocol.
+ * @param      pref_ip_ver:   Selects the preferred IP address type to use.
+ * @param[out] pSocketHandle: Socket identifier be used for any operation on that socket.
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uProtocol_t protocol, uPreferredProtocolType_t preferred_protocol_type, int32_t * pSocketHandle);
+int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uSocketProtocol_t protocol, uSocketPrefIpVer_t pref_ip_ver, int32_t * pSocketHandle);
 
 /**
  * Add a TLS context to a socket. This is only valid for TCP client sockets.
@@ -104,7 +104,7 @@ int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uProtocol_t protocol, uPrefer
  * @param      tls_version:   TLS version to use
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxSocketSetTLS2(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version);
+int32_t uCxSocketSetTLS2(uCxHandle_t * puCxHandle, int32_t socket_handle, uWifiTlsVersion_t tls_version);
 
 /**
  * Add a TLS context to a socket. This is only valid for TCP client sockets.
@@ -118,7 +118,7 @@ int32_t uCxSocketSetTLS2(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVe
  * @param      ca_name:       Name of the certificate authority (CA) certificate to use
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version, const char * ca_name);
+int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uWifiTlsVersion_t tls_version, const char * ca_name);
 
 /**
  * Add a TLS context to a socket. This is only valid for TCP client sockets.
@@ -134,7 +134,7 @@ int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVe
  * @param      client_key_name:  Name of the private key for client certificate
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxSocketSetTLS5(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+int32_t uCxSocketSetTLS5(uCxHandle_t * puCxHandle, int32_t socket_handle, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
 /**
  * Get the TLS context information for a socket.
@@ -371,7 +371,7 @@ int32_t uCxSocketGetStatus(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxS
  * @param      value:         See option parameter
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxSocketSetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOption_t option, int32_t value);
+int32_t uCxSocketSetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uSocketOption_t option, int32_t value);
 
 /**
  * Read a socket option for a socket
@@ -385,7 +385,7 @@ int32_t uCxSocketSetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOpt
  * @param[out] pValue:        See option parameter
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOption_t option, int32_t * pValue);
+int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uSocketOption_t option, int32_t * pValue);
 
 /**
  * Does a DNS lookup of a host name and returns the IP address.

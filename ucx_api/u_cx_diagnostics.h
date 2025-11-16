@@ -87,7 +87,7 @@ int32_t uCxDiagnosticsPingStop(uCxHandle_t * puCxHandle);
  * @param      protocol_type: IP protocol
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxDiagnosticsIperf2(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type);
+int32_t uCxDiagnosticsIperf2(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type);
 
 /**
  * Start/stop IPERF 2 server/client
@@ -103,7 +103,7 @@ int32_t uCxDiagnosticsIperf2(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      report_interval: Report interval
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxDiagnosticsIperf5(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval);
+int32_t uCxDiagnosticsIperf5(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval);
 
 /**
  * Start/stop IPERF 2 server/client
@@ -121,7 +121,7 @@ int32_t uCxDiagnosticsIperf5(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      ip_addr:         IP address to connect to. Client only. Ignored if role is server
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxDiagnosticsIperf7(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr);
+int32_t uCxDiagnosticsIperf7(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr);
 
 /**
  * Start/stop IPERF 2 server/client
@@ -140,7 +140,7 @@ int32_t uCxDiagnosticsIperf7(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      length:          Size of packets.
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxDiagnosticsIperf8(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length);
+int32_t uCxDiagnosticsIperf8(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length);
 
 /**
  * Start/stop IPERF 2 server/client
@@ -160,7 +160,7 @@ int32_t uCxDiagnosticsIperf8(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      bandwidth:       Bandwidth to be used for UDP
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxDiagnosticsIperf9(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth);
+int32_t uCxDiagnosticsIperf9(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth);
 
 /**
  * Start/stop IPERF 2 server/client
@@ -182,7 +182,7 @@ int32_t uCxDiagnosticsIperf9(uCxHandle_t * puCxHandle, uIperfAction_t iperf_acti
  * @param      bidirectional:   Bidirectional flag. Client only. Ignored if role is server
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxDiagnosticsIperf10(uCxHandle_t * puCxHandle, uIperfAction_t iperf_action, uProtocolType_t protocol_type, uRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth, uBidirectional_t bidirectional);
+int32_t uCxDiagnosticsIperf10(uCxHandle_t * puCxHandle, uDiagIperfAction_t iperf_action, uDiagProtocolType_t protocol_type, uDiagRole_t role, int32_t port, int32_t report_interval, int32_t time_boundary, uSockIpAddress_t * ip_addr, int32_t length, int32_t bandwidth, uDiagBidirectional_t bidirectional);
 
 /**
  * Register PingComplete event callback

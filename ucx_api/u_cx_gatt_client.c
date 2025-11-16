@@ -56,10 +56,10 @@ bool uCxGattClientDiscoverServiceCharsGetNext(uCxHandle_t * puCxHandle, uCxGattC
     return ret >= 0;
 }
 
-void uCxGattClientDiscoverCharDescriptorsBegin(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, int32_t characteristic_end_handle)
+void uCxGattClientDiscoverCharDescriptorsBegin(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, int32_t char_end_handle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGCDD=", "ddd", conn_handle, value_handle, characteristic_end_handle, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGCDD=", "ddd", conn_handle, value_handle, char_end_handle, U_CX_AT_UTIL_PARAM_LAST);
 }
 
 bool uCxGattClientDiscoverCharDescriptorsGetNext(uCxHandle_t * puCxHandle, uCxGattClientDiscoverCharDescriptors_t * pGattClientDiscoverCharDescriptorsRsp)
@@ -94,7 +94,7 @@ int32_t uCxGattClientWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTGW=", "ddh", conn_handle, value_handle, hex_data, hex_data_len, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxGattClientConfigWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t desc_handle, uConfig_t config)
+int32_t uCxGattClientConfigWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t desc_handle, uGattClientConfig_t config)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTGCCW=", "ddd", conn_handle, desc_handle, config, U_CX_AT_UTIL_PARAM_LAST);
@@ -106,7 +106,7 @@ int32_t uCxGattClientWriteNoRsp(uCxHandle_t * puCxHandle, int32_t conn_handle, i
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTGWNR=", "ddh", conn_handle, value_handle, hex_data, hex_data_len, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxGattClientWriteLong(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, const uint8_t * hex_data, int32_t hex_data_len, uReliable_t reliable, uFlag_t flag, int32_t offset)
+int32_t uCxGattClientWriteLong(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, const uint8_t * hex_data, int32_t hex_data_len, uGattClientReliable_t reliable, uGattClientFlag_t flag, int32_t offset)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTGWL=", "ddhddd", conn_handle, value_handle, hex_data, hex_data_len, reliable, flag, offset, U_CX_AT_UTIL_PARAM_LAST);

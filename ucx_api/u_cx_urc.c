@@ -13,7 +13,6 @@
 #include <stddef.h>
 #include <string.h>
 #include "u_cx.h"
-#include "u_cx_log.h"
 
 /* ------------------------------------------------------------
  * PARSER FUNCTIONS
@@ -93,9 +92,7 @@ static int32_t parseUEBTUPE(uCxHandle_t * puCxHandle, char * pParams, size_t par
     (void)paramsLength;
     uBtLeAddress_t bd_addr;
     int32_t ret = uCxAtUtilParseParamsF(pParams, "b", &bd_addr, U_CX_AT_UTIL_PARAM_LAST);
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "parseUEBTUPE: ret=%d, callback=%p", ret, (void*)puCxHandle->callbacks.UEBTUPE);
     if ((ret >= 0) && puCxHandle->callbacks.UEBTUPE) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "parseUEBTUPE: Calling callback!");
         puCxHandle->callbacks.UEBTUPE(puCxHandle, &bd_addr);
     }
     return ret;

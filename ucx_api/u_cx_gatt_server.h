@@ -64,7 +64,7 @@ int32_t uCxGattServerServiceDefine(uCxHandle_t * puCxHandle, const uint8_t * uui
  * created here. Extended properties such as CPFD, CUDD, and SCCD are not supported.
  * 
  * Output AT command:
- * > AT+UBTGC=<uuid>,<uuid_len>,<properties>,<properties_len>,<security_read>,<security_write>,<value>,<value_len>
+ * > AT+UBTGC=<uuid>,<uuid_len>,<properties>,<properties_len>,<read_security>,<write_security>,<value>,<value_len>
  *
  * @param[in]  puCxHandle:               uCX API handle
  * @param      uuid:                     UUID of characteristic. This can be either 16 bit or 128 bit.
@@ -83,22 +83,22 @@ int32_t uCxGattServerServiceDefine(uCxHandle_t * puCxHandle, const uint8_t * uui
  *                                       value.
  *                                       Reserved Bit: 0x80 - Do not use. Reserved for future use.
  * @param      properties_len:           length of properties
- * @param      security_read:            
- * @param      security_write:           
+ * @param      read_security:            
+ * @param      write_security:           
  * @param      value:                    Default characteristic value before any value is pushed to it. A characteristic value can
  *                                       be 244 bytes long.
  * @param      value_len:                length of value
  * @param[out] pGattServerCharDefineRsp: Please see \ref uCxGattServerCharDefine_t
  * @return                               0 on success, negative value on error.
  */
-int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, uCxGattServerCharDefine_t * pGattServerCharDefineRsp);
+int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, uCxGattServerCharDefine_t * pGattServerCharDefineRsp);
 
 /**
  * Create a new characteristic in the GATT table for a GATT server. The CCCD for the characteristic, if applicable, is
  * created here. Extended properties such as CPFD, CUDD, and SCCD are not supported.
  * 
  * Output AT command:
- * > AT+UBTGC=<uuid>,<uuid_len>,<properties>,<properties_len>,<security_read>,<security_write>,<value>,<value_len>,<max_len
+ * > AT+UBTGC=<uuid>,<uuid_len>,<properties>,<properties_len>,<read_security>,<write_security>,<value>,<value_len>,<max_len
  * gth>
  *
  * @param[in]  puCxHandle:               uCX API handle
@@ -118,8 +118,8 @@ int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid,
  *                                       value.
  *                                       Reserved Bit: 0x80 - Do not use. Reserved for future use.
  * @param      properties_len:           length of properties
- * @param      security_read:            
- * @param      security_write:           
+ * @param      read_security:            
+ * @param      write_security:           
  * @param      value:                    Default characteristic value before any value is pushed to it. A characteristic value can
  *                                       be 244 bytes long.
  * @param      value_len:                length of value
@@ -127,13 +127,13 @@ int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid,
  * @param[out] pGattServerCharDefineRsp: Please see \ref uCxGattServerCharDefine_t
  * @return                               0 on success, negative value on error.
  */
-int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t max_length, uCxGattServerCharDefine_t * pGattServerCharDefineRsp);
+int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, int32_t max_length, uCxGattServerCharDefine_t * pGattServerCharDefineRsp);
 
 /**
  * Define a characteristic.
  * 
  * Output AT command:
- * > AT+UBTGHCC=<uuid>,<uuid_len>,<properties>,<properties_len>,<security_read>,<security_write>
+ * > AT+UBTGHCC=<uuid>,<uuid_len>,<properties>,<properties_len>,<read_security>,<write_security>
  *
  * @param[in]  puCxHandle:                   uCX API handle
  * @param      uuid:                         UUID of characteristic. This can be either 16 bit or 128 bit.
@@ -152,49 +152,49 @@ int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid,
  *                                           value.
  *                                           Reserved Bit: 0x80 - Do not use. Reserved for future use.
  * @param      properties_len:               length of properties
- * @param      security_read:                
- * @param      security_write:               
+ * @param      read_security:                
+ * @param      write_security:               
  * @param[out] pGattServerHostCharDefineRsp: Please see \ref uCxGattServerHostCharDefine_t
  * @return                                   0 on success, negative value on error.
  */
-int32_t uCxGattServerHostCharDefine(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, uCxGattServerHostCharDefine_t * pGattServerHostCharDefineRsp);
+int32_t uCxGattServerHostCharDefine(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, uCxGattServerHostCharDefine_t * pGattServerHostCharDefineRsp);
 
 /**
  * Define descriptor.
  * 
  * Output AT command:
- * > AT+UBTGD=<uuid>,<uuid_len>,<security_read>,<security_write>,<value>,<value_len>
+ * > AT+UBTGD=<uuid>,<uuid_len>,<read_security>,<write_security>,<value>,<value_len>
  *
  * @param[in]  puCxHandle:     uCX API handle
  * @param      uuid:           UUID of characteristic. This can be either 16 bit or 128 bit.
  * @param      uuid_len:       length of uuid
- * @param      security_read:  
- * @param      security_write: 
+ * @param      read_security:  
+ * @param      write_security: 
  * @param      value:          Descriptor value. This can be 23 bytes long.
  * @param      value_len:      length of value
  * @param[out] pDescHandle:    Handle of the created descriptor.
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxGattServerDescriptorDefine4(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t * pDescHandle);
+int32_t uCxGattServerDescriptorDefine4(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, int32_t * pDescHandle);
 
 /**
  * Define descriptor.
  * 
  * Output AT command:
- * > AT+UBTGD=<uuid>,<uuid_len>,<security_read>,<security_write>,<value>,<value_len>,<max_length>
+ * > AT+UBTGD=<uuid>,<uuid_len>,<read_security>,<write_security>,<value>,<value_len>,<max_length>
  *
  * @param[in]  puCxHandle:     uCX API handle
  * @param      uuid:           UUID of characteristic. This can be either 16 bit or 128 bit.
  * @param      uuid_len:       length of uuid
- * @param      security_read:  
- * @param      security_write: 
+ * @param      read_security:  
+ * @param      write_security: 
  * @param      value:          Descriptor value. This can be 23 bytes long.
  * @param      value_len:      length of value
  * @param      max_length:     Maximum length of the descriptor in bytes. The maximum value is 23 bytes.
  * @param[out] pDescHandle:    Handle of the created descriptor.
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxGattServerDescriptorDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t max_length, int32_t * pDescHandle);
+int32_t uCxGattServerDescriptorDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, int32_t max_length, int32_t * pDescHandle);
 
 /**
  * Activate current defined service.

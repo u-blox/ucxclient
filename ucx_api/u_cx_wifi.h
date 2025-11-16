@@ -108,9 +108,9 @@ typedef struct {
 
 typedef enum
 {
-    U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_STR,
-    U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_MAC,
-    U_CX_WIFI_STATION_STATUS_RSP_TYPE_WIFI_STATUS_ID_INT
+    U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_STR,
+    U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_MAC,
+    U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT
 } uCxWifiStationStatusRspType_t;
 
 typedef struct {
@@ -118,19 +118,19 @@ typedef struct {
     union {
         struct
         {
-            int32_t wifi_status_id;
-            const char * ssid;      /**< SSID */
-        } WifiStatusIdStr;
+            int32_t status_id;
+            const char * ssid; /**< SSID */
+        } StatusIdStr;
         struct
         {
-            int32_t wifi_status_id;
-            uMacAddress_t bssid;    /**< BSSID of the connected access point */
-        } WifiStatusIdMac;
+            int32_t status_id;
+            uMacAddress_t bssid; /**< BSSID of the connected access point */
+        } StatusIdMac;
         struct
         {
-            int32_t wifi_status_id;
-            int32_t int_val;        /**< RSSI, Connection status  or Channel */
-        } WifiStatusIdInt;
+            int32_t status_id;
+            int32_t int_val;   /**< RSSI, Connection status  or Channel */
+        } StatusIdInt;
     } rsp;
 } uCxWifiStationStatus_t;
 
@@ -158,8 +158,8 @@ typedef struct {
 
 typedef struct
 {
-    int32_t status_id;
-    uSockIpAddress_t status_val; /**< IP address */
+    int32_t net_status_id;
+    uSockIpAddress_t net_status_val; /**< IP address */
 } uCxWifiStationListNetworkStatus_t;
 
 typedef struct
@@ -194,8 +194,8 @@ typedef struct
 
 typedef struct
 {
-    int32_t status_id;
-    uSockIpAddress_t status_val; /**< IP address */
+    int32_t net_status_id;
+    uSockIpAddress_t net_status_val; /**< IP address */
 } uCxWifiApListNetworkStatus_t;
 
 
@@ -250,7 +250,7 @@ bool uCxWifiGetHostnameBegin(uCxHandle_t * puCxHandle, const char ** ppHostName)
  * @param      client_key_name:  Name of the private key for client certificate
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxWifiStationSetSecurityEnterprise5(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+int32_t uCxWifiStationSetSecurityEnterprise5(uCxHandle_t * puCxHandle, int32_t wlan_handle, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
 /**
  * Set the EAP-TLS connection parameters to use.
@@ -270,7 +270,7 @@ int32_t uCxWifiStationSetSecurityEnterprise5(uCxHandle_t * puCxHandle, int32_t w
  * @param      identity:         Identity for EAP-TLS
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxWifiStationSetSecurityEnterprise6(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name, const char * identity);
+int32_t uCxWifiStationSetSecurityEnterprise6(uCxHandle_t * puCxHandle, int32_t wlan_handle, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name, const char * identity);
 
 /**
  * Get the current Wi-Fi station security config
@@ -305,7 +305,7 @@ bool uCxWifiStationGetSecurityBegin(uCxHandle_t * puCxHandle, int32_t wlan_handl
  * @param      peap_password: Password for PEAP authentication.
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxWifiStationSetSecurityPeap4(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * peap_user, const char * peap_password);
+int32_t uCxWifiStationSetSecurityPeap4(uCxHandle_t * puCxHandle, int32_t wlan_handle, uWifiTlsVersion_t tls_version, const char * peap_user, const char * peap_password);
 
 /**
  * Set the PEAP connection parameters to use.
@@ -325,7 +325,7 @@ int32_t uCxWifiStationSetSecurityPeap4(uCxHandle_t * puCxHandle, int32_t wlan_ha
  * @param      ca_name:       Name of the certificate authority (CA) certificate to use
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxWifiStationSetSecurityPeap5(uCxHandle_t * puCxHandle, int32_t wlan_handle, uTlsVersion_t tls_version, const char * peap_user, const char * peap_password, const char * ca_name);
+int32_t uCxWifiStationSetSecurityPeap5(uCxHandle_t * puCxHandle, int32_t wlan_handle, uWifiTlsVersion_t tls_version, const char * peap_user, const char * peap_password, const char * ca_name);
 
 /**
  * Set WPA connection parameters to use
@@ -342,7 +342,7 @@ int32_t uCxWifiStationSetSecurityPeap5(uCxHandle_t * puCxHandle, int32_t wlan_ha
  * @param      wpa_threshold: Lowest WPA version to connect to
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxWifiStationSetSecurityWpa(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * passphrase, uWpaThreshold_t wpa_threshold);
+int32_t uCxWifiStationSetSecurityWpa(uCxHandle_t * puCxHandle, int32_t wlan_handle, const char * passphrase, uWifiWpaThreshold_t wpa_threshold);
 
 /**
  * Sets security to open security
@@ -506,14 +506,14 @@ int32_t uCxWifiStationDisconnect(uCxHandle_t * puCxHandle);
  * Show current status of Wi-Fi station network interface
  * 
  * Output AT command:
- * > AT+UWSNST=<status_id>
+ * > AT+UWSNST=<net_status_id>
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param      status_id:  
- * @param[out] pStatusVal: IP address
- * @return                 0 on success, negative value on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      net_status_id: 
+ * @param[out] pNetStatusVal: IP address
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxWifiStationGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uSockIpAddress_t * pStatusVal);
+int32_t uCxWifiStationGetNetworkStatus(uCxHandle_t * puCxHandle, uWifiNetStatusId_t net_status_id, uSockIpAddress_t * pNetStatusVal);
 
 /**
  * Show current status of Wi-Fi station network interface
@@ -538,6 +538,35 @@ void uCxWifiStationListNetworkStatusBegin(uCxHandle_t * puCxHandle);
  *                                               error code in this case).
  */
 bool uCxWifiStationListNetworkStatusGetNext(uCxHandle_t * puCxHandle, uCxWifiStationListNetworkStatus_t * pWifiStationListNetworkStatusRsp);
+
+/**
+ * Set the regulatory domain for all Wi-Fi interfaces. This will configure the channel list and power levels for Wi-Fi.
+ * Make sure to set the correct code for the region the device will be operating in. Both 2.4 and 5 GHz band is always
+ * operative. Set the domain before starting AP or Station
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UWRD=<reg_domain>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      reg_domain: Regulatory domain
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxWifiSetRegulatoryDomain(uCxHandle_t * puCxHandle, uWifiRegDomain_t reg_domain);
+
+/**
+ * Read regulatory domain
+ * 
+ * Output AT command:
+ * > AT+UWRD?
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pRegDomain: Regulatory domain
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxWifiGetRegulatoryDomain(uCxHandle_t * puCxHandle, uWifiRegDomain_t * pRegDomain);
 
 /**
  * Initiate synchronous Wi-Fi scan (will lock AT interface until scan has finished)
@@ -576,7 +605,7 @@ bool uCxWifiStationScanDefaultGetNext(uCxHandle_t * puCxHandle, uCxWifiStationSc
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxWifiStationScan1Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode);
+void uCxWifiStationScan1Begin(uCxHandle_t * puCxHandle, uWifiScanMode_t scan_mode);
 
 /**
  * 
@@ -602,7 +631,7 @@ bool uCxWifiStationScan1GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxWifiStationScan2Begin(uCxHandle_t * puCxHandle, uScanMode_t scan_mode, const char * ssid);
+void uCxWifiStationScan2Begin(uCxHandle_t * puCxHandle, uWifiScanMode_t scan_mode, const char * ssid);
 
 /**
  * 
@@ -618,17 +647,17 @@ bool uCxWifiStationScan2GetNext(uCxHandle_t * puCxHandle, uCxWifiStationScan_t *
  * Read status
  * 
  * Output AT command:
- * > AT+UWSST=<wifi_status_id>
+ * > AT+UWSST=<status_id>
  *
  * @param[in]  puCxHandle:            uCX API handle
- * @param      wifi_status_id:        
+ * @param      status_id:             
  * @param[out] pWifiStationStatusRsp: Please see \ref uCxWifiStationStatus_t
  * @return                            true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxWifiStationStatusBegin(uCxHandle_t * puCxHandle, uWifiStatusId_t wifi_status_id, uCxWifiStationStatus_t * pWifiStationStatusRsp);
+bool uCxWifiStationStatusBegin(uCxHandle_t * puCxHandle, uWifiStatusId_t status_id, uCxWifiStationStatus_t * pWifiStationStatusRsp);
 
 /**
  * Start an access point with the current access point configuration.
@@ -687,7 +716,7 @@ int32_t uCxWifiApSetConnectionParams1(uCxHandle_t * puCxHandle, const char * ssi
  * @param      channel:    channel
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxWifiApSetConnectionParams2(uCxHandle_t * puCxHandle, const char * ssid, uChannel_t channel);
+int32_t uCxWifiApSetConnectionParams2(uCxHandle_t * puCxHandle, const char * ssid, uWifiChannel_t channel);
 
 /**
  * Read the current connection parameters
@@ -733,7 +762,7 @@ int32_t uCxWifiApSetSecurityWpa1(uCxHandle_t * puCxHandle, const char * passphra
  * @param      wpa_version: 
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxWifiApSetSecurityWpa2(uCxHandle_t * puCxHandle, const char * passphrase, uWpaVersion_t wpa_version);
+int32_t uCxWifiApSetSecurityWpa2(uCxHandle_t * puCxHandle, const char * passphrase, uWifiWpaVersion_t wpa_version);
 
 /**
  * Sets security level to open for the AP config
@@ -789,14 +818,14 @@ bool uCxWifiApListStationsGetNext(uCxHandle_t * puCxHandle, uMacAddress_t * pMac
  * Show current status of Wi-Fi station network interface
  * 
  * Output AT command:
- * > AT+UWAPNST=<status_id>
+ * > AT+UWAPNST=<net_status_id>
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param      status_id:  
- * @param[out] pStatusVal: IP address
- * @return                 0 on success, negative value on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      net_status_id: 
+ * @param[out] pNetStatusVal: IP address
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxWifiApGetNetworkStatus(uCxHandle_t * puCxHandle, uStatusId_t status_id, uSockIpAddress_t * pStatusVal);
+int32_t uCxWifiApGetNetworkStatus(uCxHandle_t * puCxHandle, uWifiNetStatusId_t net_status_id, uSockIpAddress_t * pNetStatusVal);
 
 /**
  * Show current status of Wi-Fi station network interface
@@ -835,7 +864,7 @@ bool uCxWifiApListNetworkStatusGetNext(uCxHandle_t * puCxHandle, uCxWifiApListNe
  * @param      roaming:    
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxWifiSetWifiRoaming(uCxHandle_t * puCxHandle, uRoaming_t roaming);
+int32_t uCxWifiSetWifiRoaming(uCxHandle_t * puCxHandle, uWifiRoaming_t roaming);
 
 /**
  * Get Wi-Fi station roaming enabled or disabled
@@ -847,7 +876,7 @@ int32_t uCxWifiSetWifiRoaming(uCxHandle_t * puCxHandle, uRoaming_t roaming);
  * @param[out] pRoaming:   
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxWifiGetWifiRoaming(uCxHandle_t * puCxHandle, uRoaming_t * pRoaming);
+int32_t uCxWifiGetWifiRoaming(uCxHandle_t * puCxHandle, uWifiRoaming_t * pRoaming);
 
 /**
  * Write the threshold for when to start roaming background scanning, in dBm.
@@ -946,7 +975,7 @@ int32_t uCxWifiStationGetRoamingScanInterval(uCxHandle_t * puCxHandle, int32_t *
  * @param      roaming_aggressive: 
  * @return                         0 on success, negative value on error.
  */
-int32_t uCxWifiStationSetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t roaming_aggressive);
+int32_t uCxWifiStationSetAggressiveRoaming(uCxHandle_t * puCxHandle, uWifiRoamingAggressive_t roaming_aggressive);
 
 /**
  * Get aggressive roaming enabled or disabled.
@@ -958,7 +987,7 @@ int32_t uCxWifiStationSetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAgg
  * @param[out] pRoamingAggressive: 
  * @return                         0 on success, negative value on error.
  */
-int32_t uCxWifiStationGetAggressiveRoaming(uCxHandle_t * puCxHandle, uRoamingAggressive_t * pRoamingAggressive);
+int32_t uCxWifiStationGetAggressiveRoaming(uCxHandle_t * puCxHandle, uWifiRoamingAggressive_t * pRoamingAggressive);
 
 /**
  * Write the delay time roaming waits before performing handover.
@@ -996,13 +1025,13 @@ int32_t uCxWifiStationGetRoamingDelayMs(uCxHandle_t * puCxHandle, int32_t * pRoa
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UWSROS5=<roaming_all_channels>
+ * > AT+UWSROS5=<roaming_channels>
  *
- * @param[in]  puCxHandle:           uCX API handle
- * @param      roaming_all_channels: Roaming on all channels or current channel
- * @return                           0 on success, negative value on error.
+ * @param[in]  puCxHandle:       uCX API handle
+ * @param      roaming_channels: Roaming on all channels or current channel
+ * @return                       0 on success, negative value on error.
  */
-int32_t uCxWifiStationSetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t roaming_all_channels);
+int32_t uCxWifiStationSetRoamingAllChannels(uCxHandle_t * puCxHandle, uWifiRoamingChannels_t roaming_channels);
 
 /**
  * Read whether to perform roaming on all channels.
@@ -1010,11 +1039,11 @@ int32_t uCxWifiStationSetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAl
  * Output AT command:
  * > AT+UWSROS5?
  *
- * @param[in]  puCxHandle:          uCX API handle
- * @param[out] pRoamingAllChannels: Roaming on all channels or current channel
- * @return                          0 on success, negative value on error.
+ * @param[in]  puCxHandle:       uCX API handle
+ * @param[out] pRoamingChannels: Roaming on all channels or current channel
+ * @return                       0 on success, negative value on error.
  */
-int32_t uCxWifiStationGetRoamingAllChannels(uCxHandle_t * puCxHandle, uRoamingAllChannels_t * pRoamingAllChannels);
+int32_t uCxWifiStationGetRoamingAllChannels(uCxHandle_t * puCxHandle, uWifiRoamingChannels_t * pRoamingChannels);
 
 /**
  * Register LinkUp event callback

@@ -159,7 +159,7 @@ bool uCxGeneralGetTypeCodeBegin(uCxHandle_t * puCxHandle, const char ** ppTypeCo
  * @param      greeting_mode: 
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode);
+int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGeneralGreetingMode_t greeting_mode);
 
 /**
  * Set the greeting text and mode.
@@ -176,7 +176,7 @@ int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGreetingMode_t gre
  *                            Note: Can not be an empty string.
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode, const char * text);
+int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGeneralGreetingMode_t greeting_mode, const char * text);
 
 /**
  * Read the greeting text.

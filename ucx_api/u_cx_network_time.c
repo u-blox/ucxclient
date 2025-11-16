@@ -14,18 +14,18 @@
 #include "u_cx_at_client.h"
 #include "u_cx_network_time.h"
 
-int32_t uCxNetworkTimeSetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t enable)
+int32_t uCxNetworkTimeSetClientEnabled(uCxHandle_t * puCxHandle, uNtpClientStatus_t client_status)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UNTE=", "d", enable, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UNTE=", "d", client_status, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxNetworkTimeGetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t * pEnable)
+int32_t uCxNetworkTimeGetClientEnabled(uCxHandle_t * puCxHandle, uNtpClientStatus_t * pClientStatus)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UNTE?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UNTE:", NULL, NULL, "d", pEnable, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UNTE:", NULL, NULL, "d", pClientStatus, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
@@ -42,11 +42,11 @@ int32_t uCxNetworkTimeSetNtpServer(uCxHandle_t * puCxHandle, int32_t ntp_server_
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UNTSC=", "ds", ntp_server_id, ntp_server_address, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxNetworkTimeGetNtpServerBegin(uCxHandle_t * puCxHandle, uCxNetworkTimeGetNtpServer_t * pNetworkTimeGetNtpServerRsp)
+bool uCxNetworkTimeGetNtpServerBegin(uCxHandle_t * puCxHandle, uCxNtpGetNtpServer_t * pNtpGetNtpServerRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UNTSC?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UNTSC:", NULL, NULL, "dsid", &pNetworkTimeGetNtpServerRsp->ntp_server_id, &pNetworkTimeGetNtpServerRsp->ntp_server_address, &pNetworkTimeGetNtpServerRsp->ntp_server_ip, &pNetworkTimeGetNtpServerRsp->reachable, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UNTSC:", NULL, NULL, "dsid", &pNtpGetNtpServerRsp->ntp_server_id, &pNtpGetNtpServerRsp->ntp_server_address, &pNtpGetNtpServerRsp->ntp_server_ip, &pNtpGetNtpServerRsp->reachable, U_CX_AT_UTIL_PARAM_LAST);
     return ret >= 0;
 }

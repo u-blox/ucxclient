@@ -245,7 +245,7 @@ int32_t uCxMqttSetLastWillAndTestament3(uCxHandle_t * puCxHandle, int32_t mqtt_i
  * @param      qos:        Quality of Service (QoS) for the message or topic
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxMqttSetLastWillAndTestament4(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uQos_t qos);
+int32_t uCxMqttSetLastWillAndTestament4(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uMqttQos_t qos);
 
 /**
  * Add last will and testament configuration for the client
@@ -264,7 +264,7 @@ int32_t uCxMqttSetLastWillAndTestament4(uCxHandle_t * puCxHandle, int32_t mqtt_i
  * @param      retain:     Retain flag for message
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxMqttSetLastWillAndTestament5(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uQos_t qos, uRetain_t retain);
+int32_t uCxMqttSetLastWillAndTestament5(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uMqttQos_t qos, uMqttRetain_t retain);
 
 /**
  * Get last will and testament configuration for the client
@@ -296,7 +296,7 @@ bool uCxMqttGetLastWillAndTestamentBegin(uCxHandle_t * puCxHandle, int32_t mqtt_
  * @param      tls_version: TLS version to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxMqttSetTLS2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version);
+int32_t uCxMqttSetTLS2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uWifiTlsVersion_t tls_version);
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
@@ -313,7 +313,7 @@ int32_t uCxMqttSetTLS2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t 
  * @param      ca_name:     Name of the certificate authority (CA) certificate to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxMqttSetTLS3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name);
+int32_t uCxMqttSetTLS3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uWifiTlsVersion_t tls_version, const char * ca_name);
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
@@ -332,7 +332,7 @@ int32_t uCxMqttSetTLS3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t 
  * @param      client_key_name:  Name of the private key for client certificate
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxMqttSetTLS5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+int32_t uCxMqttSetTLS5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
 /**
  * Get TLS config
@@ -379,7 +379,7 @@ int32_t uCxMqttDisconnect(uCxHandle_t * puCxHandle, int32_t mqtt_id);
  * @param[out] pMqttPublishRsp: Please see \ref uCxMqttPublish_t
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len, uCxMqttPublish_t * pMqttPublishRsp);
+int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttQos_t qos, uMqttRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len, uCxMqttPublish_t * pMqttPublishRsp);
 
 /**
  * Subscribe or unsubscribe to/from MQTT topic.
@@ -393,7 +393,7 @@ int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uR
  * @param      topic:            Topic name or filter (wildcard allowed)
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action, const char * topic);
+int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttSubscribeAction_t subscribe_action, const char * topic);
 
 /**
  * Subscribe or unsubscribe to/from MQTT topic.
@@ -408,7 +408,7 @@ int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeA
  * @param      qos:              Quality of Service (QoS) for the message or topic
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action, const char * topic, uQos_t qos);
+int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttSubscribeAction_t subscribe_action, const char * topic, uMqttQos_t qos);
 
 /**
  * Read available MQTT message in binary format.

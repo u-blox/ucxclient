@@ -26,28 +26,28 @@ extern "C" {
 
 typedef enum
 {
-    U_GREETING_MODEOFF,   /**< Turn off the greeting text. */
-    U_GREETING_MODEON = 1 /**< Turn on the greeting text. */
-} uGreetingMode_t;
+    U_GENERAL_GREETING_MODE_OFF,   /**< Turn off the greeting text. */
+    U_GENERAL_GREETING_MODE_ON = 1 /**< Turn on the greeting text. */
+} uGeneralGreetingMode_t;
 
 typedef enum
 {
-    U_INTERFACE_ID_BLUETOOTH,         /**< Bluetooth */
-    U_INTERFACE_ID_WI_FI_STATION = 1, /**< Wi-Fi station */
-    U_INTERFACE_ID_WI_FI_AP = 2       /**< Wi-Fi Access point */
+    U_INTERFACE_ID_BLUETOOTH,        /**< Bluetooth */
+    U_INTERFACE_ID_WIFI_STATION = 1, /**< Wi-Fi station */
+    U_INTERFACE_ID_WIFI_AP = 2       /**< Wi-Fi Access point */
 } uInterfaceId_t;
 
 typedef enum
 {
-    U_EXTENDED_ERRORS_OFF,   /**< (Factory default) Extended error codes will not be displayed */
-    U_EXTENDED_ERRORS_ON = 1 /**< Extended error code will be displayed on every error */
-} uExtendedErrors_t;
+    U_SYS_EXTENDED_ERRORS_OFF,   /**< (Factory default) Extended error codes will not be displayed */
+    U_SYS_EXTENDED_ERRORS_ON = 1 /**< Extended error code will be displayed on every error */
+} uSysExtendedErrors_t;
 
 typedef enum
 {
-    U_ECHO_ON_OFF,   /**< Module does not echo the characters */
-    U_ECHO_ON_ON = 1 /**< (Factory default) Module echoes the characters */
-} uEchoOn_t;
+    U_SYS_ECHO_ON_OFF,   /**< Module does not echo the characters */
+    U_SYS_ECHO_ON_ON = 1 /**< (Factory default) Module echoes the characters */
+} uSysEchoOn_t;
 
 typedef enum
 {
@@ -64,145 +64,152 @@ typedef enum
 
 typedef enum
 {
-    U_DATA_TYPE_SCAN_RESPONSE,     /**< Scan response data. */
-    U_DATA_TYPE_ADVERTISE_DATA = 1 /**< Advertise data. */
-} uDataType_t;
+    U_BT_DATA_TYPE_SCAN_RESPONSE,     /**< Scan response data. */
+    U_BT_DATA_TYPE_ADVERTISE_DATA = 1 /**< Advertise data. */
+} uBtDataType_t;
 
 typedef enum
 {
-    U_DISCOVERY_TYPE_DISCOVER_ALL,                  /**< All with no filter. Displays all found devices; devices can be displayed multiple times. */
-    U_DISCOVERY_TYPE_DISCOVER_ALL_NO_DUPLICATES = 1 /**< General inquiry. Displays devices in General or Limited discoverability mode; each device
-                                                         is displayed only once. */
-} uDiscoveryType_t;
+    U_BT_DISCOVERY_TYPE_ALL,                  /**< All with no filter. Displays all found devices; devices can be displayed multiple times. */
+    U_BT_DISCOVERY_TYPE_ALL_NO_DUPLICATES = 1 /**< General inquiry. Displays devices in General or Limited discoverability mode; each device
+                                                   is displayed only once. */
+} uBtDiscoveryType_t;
 
 typedef enum
 {
-    U_DISCOVERY_MODE_ACTIVE,     /**< Active discovery. */
-    U_DISCOVERY_MODE_PASSIVE = 1 /**< Passive, no scan response data will be received. */
-} uDiscoveryMode_t;
+    U_BT_DISCOVERY_MODE_ACTIVE,     /**< Active discovery. */
+    U_BT_DISCOVERY_MODE_PASSIVE = 1 /**< Passive, no scan response data will be received. */
+} uBtDiscoveryMode_t;
 
 typedef enum
 {
-    U_OUTPUT_EVENTS_OUTPUT_EVENTS_DISABLED,   /**< Disable output events during background discovery */
-    U_OUTPUT_EVENTS_OUTPUT_EVENTS_ENABLED = 1 /**< Enable output events during background discovery */
-} uOutputEvents_t;
+    U_BT_OUTPUT_EVENTS_DISABLED,   /**< Disable output events during background discovery */
+    U_BT_OUTPUT_EVENTS_ENABLED = 1 /**< Enable output events during background discovery */
+} uBtOutputEvents_t;
 
 typedef enum
 {
-    U_PROPERTY_ID_CONNECTION_INTERVAL,       /**< Connection interval used on this connection.
-                                                   Range: 6 to 3200
-                                                   Time = status_val * 1.25 ms
-                                                   Time range: 7.5 ms to 4000 ms */
-    U_PROPERTY_ID_PERIPHERAL_LATENCY = 1,    /**< Peripheral latency for the connection in number of connection events. Range: 0 to 499 */
-    U_PROPERTY_ID_SUPERVISION_TIMEOUT = 2,   /**< Supervision timeout (in ms) for this connections. Range: 100 ms to 32000 ms */
-    U_PROPERTY_ID_MTU_SIZE = 3,              /**< MTU size for this connections. */
-    U_PROPERTY_ID_PDU_TX_PAYLOAD_LENGTH = 4, /**< Data Channel TX PDU Payload Length. */
-    U_PROPERTY_ID_PDU_RX_PAYLOAD_LENGTH = 5, /**< Data Channel RX PDU Payload Length. */
-    U_PROPERTY_ID_DATA_LENGTH_EXTENSION = 6, /**< Data Length Extension state. 0: Data Length Extension Off \ 1: Data Length Extension On */
-    U_PROPERTY_ID_LOCAL_ROLE = 7,            /**< Local role in this connection. 1: Low Energy Central \ 2: Low Energy Peripheral */
-    U_PROPERTY_ID_TX_PHY = 8,                /**< TX Phy used in this connection
-                                                  Bit 0: 1 Mbps
-                                                  Bit 1: 2 Mbps
-                                                  Bit 2: Coded */
-    U_PROPERTY_ID_RX_PHY = 9                 /**< RX Phy used in this connection
-                                                  Bit 0: 1 Mbps
-                                                  Bit 1: 2 Mbps
-                                                  Bit 2: Coded */
-} uPropertyId_t;
+    U_BT_PROP_ID_CONNECTION_INTERVAL,       /**< Connection interval used on this connection.
+                                                  Range: 6 to 3200
+                                                  Time = status_val * 1.25 ms
+                                                  Time range: 7.5 ms to 4000 ms */
+    U_BT_PROP_ID_PERIPHERAL_LATENCY = 1,    /**< Peripheral latency for the connection in number of connection events. Range: 0 to 499 */
+    U_BT_PROP_ID_SUPERVISION_TIMEOUT = 2,   /**< Supervision timeout (in ms) for this connections. Range: 100 ms to 32000 ms */
+    U_BT_PROP_ID_MTU_SIZE = 3,              /**< MTU size for this connections. */
+    U_BT_PROP_ID_PDU_TX_PAYLOAD_LENGTH = 4, /**< Data Channel TX PDU Payload Length. */
+    U_BT_PROP_ID_PDU_RX_PAYLOAD_LENGTH = 5, /**< Data Channel RX PDU Payload Length. */
+    U_BT_PROP_ID_DATA_LENGTH_EXTENSION = 6, /**< Data Length Extension state. 0: Data Length Extension Off \ 1: Data Length Extension On */
+    U_BT_PROP_ID_LOCAL_ROLE = 7,            /**< Local role in this connection. 1: Low Energy Central \ 2: Low Energy Peripheral */
+    U_BT_PROP_ID_TX_PHY = 8,                /**< TX Phy used in this connection
+                                                 Bit 0: 1 Mbps
+                                                 Bit 1: 2 Mbps
+                                                 Bit 2: Coded */
+    U_BT_PROP_ID_RX_PHY = 9                 /**< RX Phy used in this connection
+                                                 Bit 0: 1 Mbps
+                                                 Bit 1: 2 Mbps
+                                                 Bit 2: Coded */
+} uBtPropId_t;
 
 typedef enum
 {
-    U_LEGACY_ADVERTISEMENT_LEGACY_ADVERTISEMENT_DISABLED,   /**< Legacy Advertisement Not Running */
-    U_LEGACY_ADVERTISEMENT_LEGACY_ADVERTISEMENT_ENABLED = 1 /**< Legacy Advertisement Running */
-} uLegacyAdvertisement_t;
+    U_BT_LEGACY_ADV_DISABLED,   /**< Legacy Advertisement Not Running */
+    U_BT_LEGACY_ADV_ENABLED = 1 /**< Legacy Advertisement Running */
+} uBtLegacyAdv_t;
 
 typedef enum
 {
-    U_DIRECTED_ADVERTISEMENT_DIRECTED_ADVERTISEMENT_DISABLED,   /**< Directed Advertisement Not Running */
-    U_DIRECTED_ADVERTISEMENT_DIRECTED_ADVERTISEMENT_ENABLED = 1 /**< Directed Advertisement Running */
-} uDirectedAdvertisement_t;
+    U_BT_DIRECTED_ADV_DISABLED,   /**< Directed Advertisement Not Running */
+    U_BT_DIRECTED_ADV_ENABLED = 1 /**< Directed Advertisement Running */
+} uBtDirectedAdv_t;
 
 typedef enum
 {
-    U_IO_CAPABILITIES_NO_INPUT_NO_OUTPUT,  /**< Set I/O Capabilities to No Input No Output. */
-    U_IO_CAPABILITIES_DISPLAY_ONLY = 1,    /**< Set I/O Capabilities to Display Only. */
-    U_IO_CAPABILITIES_DISPLAY_YES_NO = 2,  /**< Set I/O Capabilities to Display Yes/No */
-    U_IO_CAPABILITIES_KEYBOARD_ONLY = 3,   /**< Set I/O Capabilities to Keyboard Only. */
-    U_IO_CAPABILITIES_KEYBOARD_DISPLAY = 4 /**< Set I/O Capabilities to Keyboard Display. */
-} uIoCapabilities_t;
+    U_BT_IO_CAP_NO_INPUT_NO_OUTPUT,  /**< Set I/O Capabilities to No Input No Output. */
+    U_BT_IO_CAP_DISPLAY_ONLY = 1,    /**< Set I/O Capabilities to Display Only. */
+    U_BT_IO_CAP_DISPLAY_YES_NO = 2,  /**< Set I/O Capabilities to Display Yes/No */
+    U_BT_IO_CAP_KEYBOARD_ONLY = 3,   /**< Set I/O Capabilities to Keyboard Only. */
+    U_BT_IO_CAP_KEYBOARD_DISPLAY = 4 /**< Set I/O Capabilities to Keyboard Display. */
+} uBtIoCap_t;
 
 typedef enum
 {
-    U_BT_SECURITY_MODE_NONE,                                    /**< Security not required. No encryption enforced. */
-    U_BT_SECURITY_MODE_UNAUTHENTICATED = 1,                     /**< Require at least unauthenticated bonding. */
-    U_BT_SECURITY_MODE_AUTHENTICATED = 2,                       /**< Require authenticated bonding. No secure connections. */
-    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION = 3,     /**< Require authenticated bonding. Support secure connections. Fallback to simple pairing if
-                                                                     the remote side does not support secure connections. */
-    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION_ONLY = 4 /**< Require authenticated bonding. Strictly uses secure connections. */
+    U_WIFI_SECURITY_MODE_OPEN,    /**< Open security */
+    U_WIFI_SECURITY_MODE_WPA = 1, /**< WPA security */
+    U_WIFI_SECURITY_MODE_EAP = 2, /**< EAP-TLS security */
+    U_WIFI_SECURITY_MODE_PEAP = 3 /**< PEAP security */
+} uWifiSecurityMode_t;
+
+typedef enum
+{
+    U_BT_PAIRING_MODE_DISABLE,   /**< Disable pairing mode. */
+    U_BT_PAIRING_MODE_ENABLE = 1 /**< Enable pairing mode. */
+} uBtPairingMode_t;
+
+typedef enum
+{
+    U_BT_CONFIRM_NO,     /**< Deny bonding. */
+    U_BT_CONFIRM_YES = 1 /**< Confirm bonding. */
+} uBtConfirm_t;
+
+typedef enum
+{
+    U_BT_SECURITY_MODE_NONE,                                    /**< No security required. */
+    U_BT_SECURITY_MODE_UNAUTHENTICATED = 1,                    /**< Unauthenticated encryption required. */
+    U_BT_SECURITY_MODE_AUTHENTICATED = 2,                       /**< Authenticated encryption required. */
+    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION = 3,     /**< Authenticated Secure Connection required. */
+    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION_ONLY = 4 /**< Authenticated Secure Connection Only. */
 } uBtSecurityMode_t;
 
 typedef enum
 {
-    U_PAIRING_MODE_PAIRING_MODE_DISABLE,   /**< Disable pairing mode. */
-    U_PAIRING_MODE_PAIRING_MODE_ENABLE = 1 /**< Enable pairing mode. */
-} uPairingMode_t;
+    U_BT_CHAR_ID_MANUFACTURER_NAME,     /**< Manufacturer name string. Maximum length of the custom string is 31 characters. */
+    U_BT_CHAR_ID_MODEL_NAME = 1,        /**< Model name string. Maximum length of the custom string is 20 characters. */
+    U_BT_CHAR_ID_FIRMWARE_REVISION = 2, /**< Firmware revision string. Maximum length of the custom string is 20 characters. */
+    U_BT_CHAR_ID_SOFTWARE_REVISION = 3  /**< Software revision string. Maximum length of the custom string is 20 characters. */
+} uBtCharId_t;
 
 typedef enum
 {
-    U_YES_NO_NO,     /**< Deny bonding. */
-    U_YES_NO_YES = 1 /**< Confirm bonding. */
-} uYesNo_t;
+    U_GATT_CLIENT_CONFIG_NONE,                     /**< None */
+    U_GATT_CLIENT_CONFIG_ENABLE_NOTIFICATIONS = 1, /**< Enable notifications */
+    U_GATT_CLIENT_CONFIG_ENABLE_INDICATIONS = 2,   /**< Enable indications */
+    U_GATT_CLIENT_CONFIG_ENABLE_NOT_IND = 3        /**< Enable notifications and indications */
+} uGattClientConfig_t;
 
 typedef enum
 {
-    U_CHARACTERISTIC_ID_MANUFACTURER_NAME,     /**< Manufacturer name string. Maximum length of the custom string is 31 characters. */
-    U_CHARACTERISTIC_ID_MODEL_NAME = 1,        /**< Model name string. Maximum length of the custom string is 20 characters. */
-    U_CHARACTERISTIC_ID_FIRMWARE_REVISION = 2, /**< Firmware revision string. Maximum length of the custom string is 20 characters. */
-    U_CHARACTERISTIC_ID_SOFTWARE_REVISION = 3  /**< Software revision string. Maximum length of the custom string is 20 characters. */
-} uCharacteristicId_t;
+    U_GATT_CLIENT_RELIABLE_NO,     /**< Not reliable */
+    U_GATT_CLIENT_RELIABLE_YES = 1 /**< Reliable */
+} uGattClientReliable_t;
 
 typedef enum
 {
-    U_CONFIG_NONE,                     /**< None */
-    U_CONFIG_ENABLE_NOTIFICATIONS = 1, /**< Enable notifications */
-    U_CONFIG_ENABLE_INDICATIONS = 2,   /**< Enable indications */
-    U_CONFIG_ENABLE_NOT_IND = 3        /**< Enable notifications and indications */
-} uConfig_t;
+    U_GATT_CLIENT_FLAG_FINAL_DATA,    /**< Final data */
+    U_GATT_CLIENT_FLAG_MORE_DATA = 1, /**< More data */
+    U_GATT_CLIENT_FLAG_CANCEL = 2     /**< Cancel data writing */
+} uGattClientFlag_t;
 
 typedef enum
 {
-    U_RELIABLE_NOT_RELIABLE, /**< Not reliable */
-    U_RELIABLE_RELIABLE = 1  /**< Reliable */
-} uReliable_t;
+    U_GATT_SERVER_READ_SECURITY_NONE = 1,            /**< No encryption required. */
+    U_GATT_SERVER_READ_SECURITY_UNAUTHENTICATED = 2, /**< Unauthenticated encryption required. */
+    U_GATT_SERVER_READ_SECURITY_AUTHENTICATED = 3    /**< Authenticated encryption required. */
+} uGattServerReadSecurity_t;
 
 typedef enum
 {
-    U_FLAG_FINAL_DATA,             /**< Final data */
-    U_FLAG_MORE_DATA = 1,          /**< More data */
-    U_FLAG_CANCEL_DATA_WRITING = 2 /**< Cancel */
-} uFlag_t;
+    U_GATT_SERVER_WRITE_SECURITY_NONE = 1,            /**< No encryption required. */
+    U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED = 2, /**< Unauthenticated encryption required. */
+    U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED = 3    /**< Authenticated encryption required. */
+} uGattServerWriteSecurity_t;
 
 typedef enum
 {
-    U_SECURITY_READ_NONE = 1,            /**< No encryption required. */
-    U_SECURITY_READ_UNAUTHENTICATED = 2, /**< Unauthenticated encryption required. */
-    U_SECURITY_READ_AUTHENTICATED = 3    /**< Authenticated encryption required. */
-} uSecurityRead_t;
-
-typedef enum
-{
-    U_SECURITY_WRITE_NONE = 1,            /**< No encryption required. */
-    U_SECURITY_WRITE_UNAUTHENTICATED = 2, /**< Unauthenticated encryption required. */
-    U_SECURITY_WRITE_AUTHENTICATED = 3    /**< Authenticated encryption required. */
-} uSecurityWrite_t;
-
-typedef enum
-{
-    U_SPS_SERVICE_OPTION_DISABLE_SPS_SERVICE,   /**< This option disables the SPS service after saving the configuration and restarting the
-                                                     device. (Default) */
-    U_SPS_SERVICE_OPTION_ENABLE_SPS_SERVICE = 1 /**< This option enables the SPS service directly.
-                                                     If this option is set, and the configuration is saved,
-                                                     SPS will be enabled after reboot. */
+    U_SPS_SERVICE_OPTION_DISABLE,   /**< This option disables the SPS service after saving the configuration and restarting the
+                                         device. (Default) */
+    U_SPS_SERVICE_OPTION_ENABLE = 1 /**< This option enables the SPS service directly.
+                                         If this option is set, and the configuration is saved,
+                                         SPS will be enabled after reboot. */
 } uSpsServiceOption_t;
 
 typedef enum
@@ -214,54 +221,128 @@ typedef enum
 
 typedef enum
 {
-    U_TLS_VERSION_NO_TLS,                /**< Disable TLS */
-    U_TLS_VERSION_TLS1_2 = 1,            /**< TLS 1.2 */
-    U_TLS_VERSION_TLS1_3 = 2,            /**< TLS 1.3 */
-    U_TLS_VERSION_TLS1_2__OR__TLS1_3 = 3 /**< TLS 1.2 or 1.3 (negotiate highest) */
-} uTlsVersion_t;
+    U_WIFI_TLS_VERSION_NO_TLS,              /**< Disable TLS */
+    U_WIFI_TLS_VERSION_TLS1_2 = 1,          /**< TLS 1.2 */
+    U_WIFI_TLS_VERSION_TLS1_3 = 2,          /**< TLS 1.3 */
+    U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3 = 3 /**< TLS 1.2 or 1.3 (negotiate highest) */
+} uWifiTlsVersion_t;
 
 typedef enum
 {
-    U_SECURITY_MODE_OPEN,    /**< Open security */
-    U_SECURITY_MODE_WPA = 1, /**< WPA security */
-    U_SECURITY_MODE_EAP = 2, /**< EAP-TLS security */
-    U_SECURITY_MODE_PEAP = 3 /**< PEAP security */
-} uSecurityMode_t;
+    U_WIFI_WPA_THRESHOLD_WPA2,    /**< Only connect to access points that support WPA2 or up */
+    U_WIFI_WPA_THRESHOLD_WPA3 = 1 /**< Only connect to access points that support WPA3 */
+} uWifiWpaThreshold_t;
 
 typedef enum
 {
-    U_WPA_THRESHOLD_WPA2,    /**< Only connect to access points that support WPA2 or up */
-    U_WPA_THRESHOLD_WPA3 = 1 /**< Only connect to access points that support WPA3 */
-} uWpaThreshold_t;
+    U_WIFI_IP_MODE_DHCP,      /**< DHCP */
+    U_WIFI_IP_MODE_STATIC = 1 /**< Static IP */
+} uWifiIpMode_t;
 
 typedef enum
 {
-    U_IP_MODE_DHCP,      /**< DHCP */
-    U_IP_MODE_STATIC = 1 /**< Static IP */
-} uIpMode_t;
+    U_WIFI_NET_STATUS_ID_IPV4,         /**< The current IPv4 address.
+                                            Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_WIFI_NET_STATUS_ID_SUBNET = 1,   /**< The current subnet mask
+                                            Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_WIFI_NET_STATUS_ID_GATE_WAY = 2, /**< The current gateway
+                                            Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_WIFI_NET_STATUS_ID_PRIM_DNS = 3, /**< The current primary DNS server
+                                            Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_WIFI_NET_STATUS_ID_SEC_DNS = 4,  /**< The current secondary DNS server
+                                            Note: If network is down this will be 0.0.0.0 regardless of IP setting */
+    U_WIFI_NET_STATUS_ID_IPV6 = 5      /**< The current IPv6 link local address
+                                            Note: If network is down this will be [0000:0000:0000:0000:0000:0000:0000:0000] regardless
+                                            of IP setting */
+} uWifiNetStatusId_t;
 
 typedef enum
 {
-    U_STATUS_ID_IPV4,         /**< The current IPv4 address.
-                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
-    U_STATUS_ID_SUBNET = 1,   /**< The current subnet mask
-                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
-    U_STATUS_ID_GATE_WAY = 2, /**< The current gateway
-                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
-    U_STATUS_ID_PRIM_DNS = 3, /**< The current primary DNS server
-                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
-    U_STATUS_ID_SEC_DNS = 4,  /**< The current secondary DNS server
-                                   Note: If network is down this will be 0.0.0.0 regardless of IP setting */
-    U_STATUS_ID_IPV6 = 5      /**< The current IPv6 link local address
-                                   Note: If network is down this will be [0000:0000:0000:0000:0000:0000:0000:0000] regardless
-                                   of IP setting */
-} uStatusId_t;
+    U_WIFI_REG_DOMAIN_WORLD,    /**< World
+                                     Supported Channels;
+                                     1-11
+                                     36,40,44,48
+                                     52,56,60,64 */
+    U_WIFI_REG_DOMAIN_ETSI = 1, /**< ETSI
+                                     Supported Channels;
+                                     1-13
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140
+                                     149,153,157,161,165 */
+    U_WIFI_REG_DOMAIN_FCC = 2,  /**< FCC
+                                     Supported Channels;
+                                     1-11
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140
+                                     144
+                                     149,153,157,161,165 */
+    U_WIFI_REG_DOMAIN_IC = 3,   /**< IC/ISED
+                                     Supported Channels;
+                                     1-11
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,132,136,140
+                                     144
+                                     149,153,157,161,165 */
+    U_WIFI_REG_DOMAIN_NZ = 4,   /**< NZ
+                                     Supported Channels;
+                                     1-13
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140
+                                     149,153,157,161,165 */
+    U_WIFI_REG_DOMAIN_MKK = 5,  /**< MKK/Japan
+                                     Supported Channels;
+                                     1-14
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140
+                                     144 */
+    U_WIFI_REG_DOMAIN_NCC = 6,  /**< NCC/Taiwan
+                                     Supported Channels;
+                                     1-11
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140
+                                     144
+                                     149,153,157,161,165 */
+    U_WIFI_REG_DOMAIN_ACMA = 7, /**< ACMA/AU
+                                     Supported Channels;
+                                     1-13
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,132,136,140
+                                     149,153,157,161,165 */
+    U_WIFI_REG_DOMAIN_KCC = 8,  /**< KCC/South Korea
+                                     Supported Channels;
+                                     1-13
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140
+                                     144
+                                     149,153,157,161,165 */
+    U_WIFI_REG_DOMAIN_SA = 9,   /**< SA/South Africa
+                                     Supported Channels;
+                                     1-13
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140 */
+    U_WIFI_REG_DOMAIN_BR = 10   /**< Brazil
+                                     Supported Channels;
+                                     1-13
+                                     36,40,44,48
+                                     52,56,60,64
+                                     100,104,108,112,116,120,124,128,132,136,140
+                                     149,153,157,161,165 */
+} uWifiRegDomain_t;
 
 typedef enum
 {
-    U_SCAN_MODE_ACTIVE,     /**< Active */
-    U_SCAN_MODE_PASSIVE = 1 /**< Passive */
-} uScanMode_t;
+    U_WIFI_SCAN_MODE_ACTIVE,     /**< Active */
+    U_WIFI_SCAN_MODE_PASSIVE = 1 /**< Passive */
+} uWifiScanMode_t;
 
 typedef enum
 {
@@ -274,57 +355,57 @@ typedef enum
 
 typedef enum
 {
-    U_CHANNEL1 = 1,   /**< 1 */
-    U_CHANNEL2 = 2,   /**< 2 */
-    U_CHANNEL3 = 3,   /**< 3 */
-    U_CHANNEL4 = 4,   /**< 4 */
-    U_CHANNEL5 = 5,   /**< 5 */
-    U_CHANNEL6 = 6,   /**< 6 */
-    U_CHANNEL7 = 7,   /**< 7 */
-    U_CHANNEL8 = 8,   /**< 8 */
-    U_CHANNEL9 = 9,   /**< 9 */
-    U_CHANNEL10 = 10, /**< 10 */
-    U_CHANNEL11 = 11, /**< 11 */
-    U_CHANNEL36 = 36, /**< 36 */
-    U_CHANNEL40 = 40, /**< 40 */
-    U_CHANNEL44 = 44, /**< 44 */
-    U_CHANNEL48 = 48  /**< 48 */
-} uChannel_t;
+    U_WIFI_CHANNEL_1 = 1,   /**< 1 */
+    U_WIFI_CHANNEL_2 = 2,   /**< 2 */
+    U_WIFI_CHANNEL_3 = 3,   /**< 3 */
+    U_WIFI_CHANNEL_4 = 4,   /**< 4 */
+    U_WIFI_CHANNEL_5 = 5,   /**< 5 */
+    U_WIFI_CHANNEL_6 = 6,   /**< 6 */
+    U_WIFI_CHANNEL_7 = 7,   /**< 7 */
+    U_WIFI_CHANNEL_8 = 8,   /**< 8 */
+    U_WIFI_CHANNEL_9 = 9,   /**< 9 */
+    U_WIFI_CHANNEL_10 = 10, /**< 10 */
+    U_WIFI_CHANNEL_11 = 11, /**< 11 */
+    U_WIFI_CHANNEL_36 = 36, /**< 36 */
+    U_WIFI_CHANNEL_40 = 40, /**< 40 */
+    U_WIFI_CHANNEL_44 = 44, /**< 44 */
+    U_WIFI_CHANNEL_48 = 48  /**< 48 */
+} uWifiChannel_t;
 
 typedef enum
 {
-    U_WPA_VERSION_WPA2 /**< WPA 2 */
-} uWpaVersion_t;
+    U_WIFI_WPA_VERSION_WPA2 /**< WPA 2 */
+} uWifiWpaVersion_t;
 
 typedef enum
 {
-    U_ROAMING_DISABLE,   /**< Disable roaming */
-    U_ROAMING_ENABLE = 1 /**< Enable roaming */
-} uRoaming_t;
+    U_WIFI_ROAMING_DISABLE,   /**< Disable roaming */
+    U_WIFI_ROAMING_ENABLE = 1 /**< Enable roaming */
+} uWifiRoaming_t;
 
 typedef enum
 {
-    U_ROAMING_AGGRESSIVE_DISABLE,   /**< Disable aggressive roaming */
-    U_ROAMING_AGGRESSIVE_ENABLE = 1 /**< Enable aggressive roaming */
-} uRoamingAggressive_t;
+    U_WIFI_ROAMING_AGGRESSIVE_DISABLE,   /**< Disable aggressive roaming */
+    U_WIFI_ROAMING_AGGRESSIVE_ENABLE = 1 /**< Enable aggressive roaming */
+} uWifiRoamingAggressive_t;
 
 typedef enum
 {
-    U_ROAMING_ALL_CHANNELS_CURRENT_CHANNEL, /**< Roaming on current channel */
-    U_ROAMING_ALL_CHANNELS_ALL_CHANNELS = 1 /**< Roaming on all channels */
-} uRoamingAllChannels_t;
+    U_WIFI_ROAMING_CHANNELS_CURRENT_CHANNEL, /**< Roaming on current channel */
+    U_WIFI_ROAMING_CHANNELS_ALL = 1          /**< Roaming on all channels */
+} uWifiRoamingChannels_t;
 
 typedef enum
 {
-    U_PROTOCOL_TCP = 6, /**< TCP */
-    U_PROTOCOL_UDP = 17 /**< UDP */
-} uProtocol_t;
+    U_SOCKET_PROTOCOL_TCP = 6, /**< TCP */
+    U_SOCKET_PROTOCOL_UDP = 17 /**< UDP */
+} uSocketProtocol_t;
 
 typedef enum
 {
-    U_PREFERRED_PROTOCOL_TYPE_IP_V4,    /**< IPv4 address. */
-    U_PREFERRED_PROTOCOL_TYPE_IP_V6 = 1 /**< IPv6 address. */
-} uPreferredProtocolType_t;
+    U_SOCKET_PREF_IP_VER_IPV4,    /**< IPv4 address. */
+    U_SOCKET_PREF_IP_VER_IPV6 = 1 /**< IPv6 address. */
+} uSocketPrefIpVer_t;
 
 typedef enum
 {
@@ -335,157 +416,163 @@ typedef enum
 
 typedef enum
 {
-    U_OPTION_NO_DELAY,       /**< Turn on/off No delay feature for TCP sockets.
-                                  Integer flag: 0 = off (i.e. Nagle algorithm enabled), 1 = on  (i.e. Nagle algorithm
-                                  disabled)
-                                  Default: to 0 */
-    U_OPTION_BLOCK = 1,      /**< Set socket to be blocking or non blocking.
-                                  Integer flag: 0 = off, 1 = on.
-                                  Sockets are non-blocking by default (Note that read/write will always be non-blocking).
-                                  Can only be set while the socket is in a non connected state.
-                                  Note: Only valid for non-persistent TCP sockets, will have no effect on UDP sockets */
-    U_OPTION_KEEP_ALIVE = 2, /**< Keep connections alive by sending keepalive probes.
-                                  Integer flag: 0 = off, 1 = on.
-                                  To calculate the keepalive time us this formula KeepIdle + (KeepIntvl * KeepCnt).
-                                  Defaults to 1.
-                                  Note: Only valid for TCP sockets. */
-    U_OPTION_KEEP_IDLE = 3,  /**< Set Keep Idle value for the socket.
-                                  This specifies the amount of time (in sec) that the connection must be idle before sending
-                                  keepalive probes (if keepalive is enabled).
-                                  Defaults to 3.
-                                  Note: Only valid for TCP sockets. */
-    U_OPTION_KEEP_INTVL = 4, /**< Set keep alive interval value for the socket. This is the time in seconds between two
-                                  successive keepalive retransmissions.
-                                  Defaults to 3.
-                                  Note: Only valid for TCP sockets. */
-    U_OPTION_KEEP_CNT = 5,   /**< Set keep alive counter value for the socket.
-                                  The number of unanswered probes required to force closure of the socket.
-                                  Defaults to 3.
-                                  Note: Only valid for TCP sockets. */
-    U_OPTION_BROADCAST = 6   /**< Set broadcast capability for UDP sockets.
-                                  Integer flag: 0 = off, 1 = on.
-                                  When enabled, allows sending and receiving UDP packets to/from broadcast addresses.
-                                  Defaults to 0 (disabled).
-                                  Note: Only valid for UDP sockets. */
-} uOption_t;
+    U_SOCKET_OPTION_NO_DELAY,       /**< Turn on/off No delay feature for TCP sockets.
+                                         Integer flag: 0 = off (i.e. Nagle algorithm enabled), 1 = on  (i.e. Nagle algorithm
+                                         disabled)
+                                         Default: to 0 */
+    U_SOCKET_OPTION_BLOCK = 1,      /**< Set socket to be blocking or non blocking.
+                                         Integer flag: 0 = off, 1 = on.
+                                         Sockets are non-blocking by default (Note that read/write will always be non-blocking).
+                                         Can only be set while the socket is in a non connected state.
+                                         Note: Only valid for non-persistent TCP sockets, will have no effect on UDP sockets */
+    U_SOCKET_OPTION_KEEP_ALIVE = 2, /**< Keep connections alive by sending keepalive probes.
+                                         Integer flag: 0 = off, 1 = on.
+                                         To calculate the keepalive time us this formula KeepIdle + (KeepIntvl * KeepCnt).
+                                         Defaults to 1.
+                                         Note: Only valid for TCP sockets. */
+    U_SOCKET_OPTION_KEEP_IDLE = 3,  /**< Set Keep Idle value for the socket.
+                                         This specifies the amount of time (in sec) that the connection must be idle before sending
+                                         keepalive probes (if keepalive is enabled).
+                                         Defaults to 3.
+                                         Note: Only valid for TCP sockets. */
+    U_SOCKET_OPTION_KEEP_INTVL = 4, /**< Set keep alive interval value for the socket. This is the time in seconds between two
+                                         successive keepalive retransmissions.
+                                         Defaults to 3.
+                                         Note: Only valid for TCP sockets. */
+    U_SOCKET_OPTION_KEEP_CNT = 5,   /**< Set keep alive counter value for the socket.
+                                         The number of unanswered probes required to force closure of the socket.
+                                         Defaults to 3.
+                                         Note: Only valid for TCP sockets. */
+    U_SOCKET_OPTION_BROADCAST = 6   /**< Set broadcast capability for UDP sockets.
+                                         Integer flag: 0 = off, 1 = on.
+                                         When enabled, allows sending and receiving UDP packets to/from broadcast addresses.
+                                         Defaults to 0 (disabled).
+                                         Note: Only valid for UDP sockets. */
+} uSocketOption_t;
 
 typedef enum
 {
-    U_QOS_AT_MOST_ONCE,      /**< At most once */
-    U_QOS_AT_LEAST_ONCE = 1, /**< At least once */
-    U_QOS_EXACTLY_ONCE = 2   /**< Exactly once */
-} uQos_t;
+    U_MQTT_QOS_AT_MOST_ONCE,      /**< At most once */
+    U_MQTT_QOS_AT_LEAST_ONCE = 1, /**< At least once */
+    U_MQTT_QOS_EXACTLY_ONCE = 2   /**< Exactly once */
+} uMqttQos_t;
 
 typedef enum
 {
-    U_RETAIN_NO_RETAIN, /**< Do not retain message on broker */
-    U_RETAIN_RETAIN = 1 /**< Retain message on broker */
-} uRetain_t;
+    U_MQTT_RETAIN_NO,     /**< Do not retain message on broker */
+    U_MQTT_RETAIN_YES = 1 /**< Retain message on broker */
+} uMqttRetain_t;
 
 typedef enum
 {
-    U_SUBSCRIBE_ACTION_SUBSCRIBE,      /**< Subscribe to topic */
-    U_SUBSCRIBE_ACTION_UNSUBSCRIBE = 1 /**< Unsubscribe from topic */
-} uSubscribeAction_t;
+    U_MQTT_SUBSCRIBE_ACTION_SUBSCRIBE,      /**< Subscribe to topic */
+    U_MQTT_SUBSCRIBE_ACTION_UNSUBSCRIBE = 1 /**< Unsubscribe from topic */
+} uMqttSubscribeAction_t;
 
 typedef enum
 {
-    U_ENABLE_DISABLE,           /**< (Factory default) Disable NTP client */
-    U_ENABLE_ENABLE_MANUAL = 1, /**< Enable NTP client using NTP servers configured by AT+UNTSC */
-    U_ENABLE_ENABLE_AUTO = 2    /**< Enable NTP client using NTP servers configured by DHCP if exists, otherwise use NTP
-                                     servers configured by AT+UNTSC */
-} uEnable_t;
+    U_NTP_CLIENT_STATUS_DISABLE,           /**< (Factory default) Disable NTP client */
+    U_NTP_CLIENT_STATUS_ENABLE_MANUAL = 1, /**< Enable NTP client using NTP servers configured by AT+UNTSC */
+    U_NTP_CLIENT_STATUS_ENABLE_AUTO = 2    /**< Enable NTP client using NTP servers configured by DHCP if exists, otherwise use NTP
+                                                servers configured by AT+UNTSC */
+} uNtpClientStatus_t;
 
 typedef enum
 {
-    U_REACHABLE_UNREACHABLE,  /**< NTP server is unreachable */
-    U_REACHABLE_REACHABLE = 1 /**< NTP server is reachable */
-} uReachable_t;
+    U_NTP_REACHABLE_NO,     /**< NTP server is unreachable */
+    U_NTP_REACHABLE_YES = 1 /**< NTP server is reachable */
+} uNtpReachable_t;
 
 typedef enum
 {
-    U_CERT_TYPEROOT,       /**< Root certificate */
-    U_CERT_TYPECLIENT = 1, /**< Client certificate */
-    U_CERT_TYPEKEY = 2     /**< Client private key */
-} uCertType_t;
+    U_SEC_CERT_TYPE_ROOT,       /**< Root certificate */
+    U_SEC_CERT_TYPE_CLIENT = 1, /**< Client certificate */
+    U_SEC_CERT_TYPE_KEY = 2     /**< Client private key */
+} uSecCertType_t;
 
 typedef enum
 {
-    U_CERTIFICATE_DETAIL_IDFINGERPRINT,          /**< The fingerprint of the certificate, returns hex_value */
-    U_CERTIFICATE_DETAIL_IDCERTIFICATE_SIZE = 1, /**< The size of the certificate, returns int_value */
-    U_CERTIFICATE_DETAIL_IDNOT_BEFORE_DATE = 2,  /**< Certificate not valid before date, returns hex_value */
-    U_CERTIFICATE_DETAIL_IDNOT_AFTER_DATE = 3    /**< Certificate not valid after date, returns hex_value */
-} uCertificateDetailId_t;
+    U_SEC_CERT_DETAIL_ID_FINGERPRINT,          /**< The fingerprint of the certificate, returns hex_value */
+    U_SEC_CERT_DETAIL_ID_CERTIFICATE_SIZE = 1, /**< The size of the certificate, returns int_value */
+    U_SEC_CERT_DETAIL_ID_NOT_BEFORE_DATE = 2,  /**< Certificate not valid before date, returns hex_value */
+    U_SEC_CERT_DETAIL_ID_NOT_AFTER_DATE = 3    /**< Certificate not valid after date, returns hex_value */
+} uSecCertDetailId_t;
 
 typedef enum
 {
-    U_EXTENSION_SNI,              /**< Server Name Extension */
-    U_EXTENSION_FRAGMENTATION = 1 /**< Handshake fragmentation */
-} uExtension_t;
+    U_SEC_EXTENSION_SNI,              /**< Server Name Extension */
+    U_SEC_EXTENSION_FRAGMENTATION = 1 /**< Handshake fragmentation */
+} uSecExtension_t;
 
 typedef enum
 {
-    U_ENABLED_DISABLED,   /**< Disabled */
-    U_ENABLED_ENABLED = 1 /**< Enabled */
+    U_TLS_EXT_DISABLED,   /**< TLS extension disabled */
+    U_TLS_EXT_ENABLED = 1 /**< TLS extension enabled */
+} uTlsExt_t;
+
+typedef enum
+{
+    U_ENABLED_NO,     /**< Disabled */
+    U_ENABLED_YES = 1 /**< Enabled */
 } uEnabled_t;
 
 typedef enum
 {
-    U_WAKEUP_MODE_WAKEUP_GPIO /**< Wakeup by pulling the module wakeup pin low. */
-} uWakeupMode_t;
+    U_POWER_WAKEUP_MODE_WAKEUP_GPIO /**< Wakeup by pulling the module wakeup pin low. */
+} uPowerWakeupMode_t;
 
 typedef enum
 {
-    U_IPERF_ACTION_START = 1, /**< Start iperf */
-    U_IPERF_ACTION_STOP = 2   /**< Stop iperf */
-} uIperfAction_t;
+    U_DIAG_IPERF_ACTION_START = 1, /**< Start iperf */
+    U_DIAG_IPERF_ACTION_STOP = 2   /**< Stop iperf */
+} uDiagIperfAction_t;
 
 typedef enum
 {
-    U_PROTOCOL_TYPE_TCP = 1, /**< TCP */
-    U_PROTOCOL_TYPE_UDP = 2  /**< UDP */
-} uProtocolType_t;
+    U_DIAG_PROTOCOL_TYPE_TCP = 1, /**< TCP */
+    U_DIAG_PROTOCOL_TYPE_UDP = 2  /**< UDP */
+} uDiagProtocolType_t;
 
 typedef enum
 {
-    U_ROLE_SERVER = 1, /**< Server */
-    U_ROLE_CLIENT = 2  /**< Client */
-} uRole_t;
+    U_DIAG_ROLE_SERVER = 1, /**< Server */
+    U_DIAG_ROLE_CLIENT = 2  /**< Client */
+} uDiagRole_t;
 
 typedef enum
 {
-    U_BIDIRECTIONAL_OFF,   /**< Off */
-    U_BIDIRECTIONAL_ON = 1 /**< On
-                                When starting bidirectional TCP test, start a server on both tester and DUT, then start a
-                                client with bidirectional flag on the DUT.
-                                If doing bidirectional UDP test, start a server on both DUT and tester and then start a
-                                client with a bidirectional flag on both. */
-} uBidirectional_t;
+    U_DIAG_BIDIRECTIONAL_OFF,   /**< Off */
+    U_DIAG_BIDIRECTIONAL_ON = 1 /**< On
+                                     When starting bidirectional TCP test, start a server on both tester and DUT, then start a
+                                     client with bidirectional flag on the DUT.
+                                     If doing bidirectional UDP test, start a server on both DUT and tester and then start a
+                                     client with a bidirectional flag on both. */
+} uDiagBidirectional_t;
 
 typedef enum
 {
-    U_BOND_STATUS_BONDING_SUCCEEDED,                /**< Bonding procedure succeeded. */
-    U_BOND_STATUS_BONDING_FAILED_TIMEOUT = 1,       /**< Bonding procedure failed due to page timeout. */
-    U_BOND_STATUS_BONDING_FAILED_AUTH = 2,          /**< Bonding failed because of authentication or pairing failed. This could be due to incorrect
-                                                         PIN/passkey. */
-    U_BOND_STATUS_BONDING_FAILED_MITM = 3,          /**< Bonding failed because the protection against Man-In-The-Middle attack could not be
-                                                         guaranteed; the generated link key was too weak. */
-    U_BOND_STATUS_BONDING_FAILED_PEER_LOST_BOND = 4 /**< Bonding failed because peer have lost the bonding info. Use AT+UBTUB to delete the local
-                                                         bond to allow re-bonding. */
-} uBondStatus_t;
+    U_BT_BOND_STATUS_BONDING_SUCCEEDED,                /**< Bonding procedure succeeded. */
+    U_BT_BOND_STATUS_BONDING_FAILED_TIMEOUT = 1,       /**< Bonding procedure failed due to page timeout. */
+    U_BT_BOND_STATUS_BONDING_FAILED_AUTH = 2,          /**< Bonding failed because of authentication or pairing failed. This could be due to incorrect
+                                                            PIN/passkey. */
+    U_BT_BOND_STATUS_BONDING_FAILED_MITM = 3,          /**< Bonding failed because the protection against Man-In-The-Middle attack could not be
+                                                            guaranteed; the generated link key was too weak. */
+    U_BT_BOND_STATUS_BONDING_FAILED_PEER_LOST_BOND = 4 /**< Bonding failed because peer have lost the bonding info. Use AT+UBTUB to delete the local
+                                                            bond to allow re-bonding. */
+} uBtBondStatus_t;
 
 typedef enum
 {
-    U_OPTIONS_WRITE_WITH_OUT_RESPONSE, /**< Write without Response performed */
-    U_OPTIONS_WRITE_WITH_RESPONSE = 1, /**< Write with Response performed */
-    U_OPTIONS_WRITE_LONG = 2           /**< Write long performed */
-} uOptions_t;
+    U_GATT_SERVER_OPTIONS_WRITE_WITH_OUT_RESPONSE, /**< Write without Response performed */
+    U_GATT_SERVER_OPTIONS_WRITE_WITH_RESPONSE = 1, /**< Write with Response performed */
+    U_GATT_SERVER_OPTIONS_WRITE_LONG = 2           /**< Write long performed */
+} uGattServerOptions_t;
 
 typedef enum
 {
-    U_PING_RESPONSE_FALSE,   /**< Ping failed. */
-    U_PING_RESPONSE_TRUE = 1 /**< Ping succeeded. */
-} uPingResponse_t;
+    U_DIAG_PING_RESPONSE_FALSE,   /**< Ping failed. */
+    U_DIAG_PING_RESPONSE_TRUE = 1 /**< Ping succeeded. */
+} uDiagPingResponse_t;
 
 /* ------------------------------------------------------------
  * CALLBACK TYPES
@@ -495,15 +582,15 @@ struct uCxHandle;
 typedef void (*uSTARTUP_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEBTC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLeAddress_t *bd_addr);
 typedef void (*uUEBTDC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
-typedef void (*uUEBTB_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBondStatus_t bond_status);
+typedef void (*uUEBTB_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBtBondStatus_t bond_status);
 typedef void (*uUEBTUC_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
 typedef void (*uUEBTUPD_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
 typedef void (*uUEBTUPE_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr);
 typedef void (*uUEBTPHYU_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t phy_status, int32_t tx_phy, int32_t rx_phy);
-typedef void (*uUEBTBGD_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t rssi, const char * device_name, uDataType_t data_type, uByteArray_t *data);
+typedef void (*uUEBTBGD_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t rssi, const char * device_name, uBtDataType_t data_type, uByteArray_t *data);
 typedef void (*uUEBTGCN_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
 typedef void (*uUEBTGCI_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
-typedef void (*uUEBTGCW_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uOptions_t options);
+typedef void (*uUEBTGCW_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uGattServerOptions_t options);
 typedef void (*uUEBTGRR_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle);
 typedef void (*uUEBTGIC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t char_handle);
 typedef void (*uUESPSC_t)(struct uCxHandle *puCxHandle, int32_t conn_handle);
@@ -537,11 +624,11 @@ typedef void (*uUEMQDC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t
 typedef void (*uUEMQDA_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t message_len);
 typedef void (*uUEMQDD_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t message_len);
 typedef void (*uUEMQPC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t packet_id, int32_t message_len);
-typedef void (*uUEMQSC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action);
+typedef void (*uUEMQSC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, uMqttSubscribeAction_t subscribe_action);
 typedef void (*uUEHTCDC_t)(struct uCxHandle *puCxHandle, int32_t session_id);
 typedef void (*uUEHTCRS_t)(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char * description);
 typedef void (*uUEDGPC_t)(struct uCxHandle *puCxHandle, int32_t transmitted_packets, int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
-typedef void (*uUEDGP_t)(struct uCxHandle *puCxHandle, uPingResponse_t ping_response, int32_t response_time);
+typedef void (*uUEDGP_t)(struct uCxHandle *puCxHandle, uDiagPingResponse_t ping_response, int32_t response_time);
 typedef void (*uUEDGI_t)(struct uCxHandle *puCxHandle, const char * iperf_output);
 
 /* ------------------------------------------------------------

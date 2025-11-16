@@ -26,19 +26,19 @@ int32_t uCxHttpSetConnectionParams3(uCxHandle_t * puCxHandle, int32_t session_id
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UHTCCP=", "dsd", session_id, host, port, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxHttpSetTLS2(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion_t tls_version)
+int32_t uCxHttpSetTLS2(uCxHandle_t * puCxHandle, int32_t session_id, uWifiTlsVersion_t tls_version)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UHTCTLS=", "dd", session_id, tls_version, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxHttpSetTLS3(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion_t tls_version, const char * ca_name)
+int32_t uCxHttpSetTLS3(uCxHandle_t * puCxHandle, int32_t session_id, uWifiTlsVersion_t tls_version, const char * ca_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UHTCTLS=", "dds", session_id, tls_version, ca_name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxHttpSetTLS5(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name)
+int32_t uCxHttpSetTLS5(uCxHandle_t * puCxHandle, int32_t session_id, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UHTCTLS=", "ddsss", session_id, tls_version, ca_name, client_cert_name, client_key_name, U_CX_AT_UTIL_PARAM_LAST);
@@ -77,18 +77,23 @@ bool uCxHttpGetHeader2Begin(uCxHandle_t * puCxHandle, int32_t session_id, int32_
     return ret >= 0;
 }
 
-int32_t uCxHttpGetBody(uCxHandle_t * puCxHandle, int32_t session_id, int32_t data_length, int32_t * pMoreToRead)
+int32_t uCxHttpGetBody(uCxHandle_t * puCxHandle, int32_t session_id, int32_t data_length, uint8_t * pDataBuf, int32_t * pMoreToRead)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    uint8_t *pBinBuffer = pDataBuf;
+    uint16_t binBufferLen = (uint16_t)data_length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UHTCGBB=", "dd", session_id, data_length, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UHTCGBB:", NULL, NULL, "-d", pMoreToRead, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UHTCGBB:", pBinBuffer, &binBufferLen, "-d", pMoreToRead, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
         }
+    }
+    if (ret >= 0) {
+        ret = (int32_t)binBufferLen;
     }
     return ret;
 }
@@ -162,18 +167,22 @@ bool uCxHttpGetDeleteRequestHeaderBegin(uCxHandle_t * puCxHandle, int32_t sessio
     return ret >= 0;
 }
 
-int32_t uCxHttpPostRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len, uCxHttpPostRequest_t * pHttpPostRequestRsp)
+int32_t uCxHttpPostRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t written_length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UHTCRPOB=", "dB", session_id, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UHTCRPOB:", NULL, NULL, "dd", &pHttpPostRequestRsp->session_id, &pHttpPostRequestRsp->written_length, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UHTCRPOB:", NULL, NULL, "-d", &written_length, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
         }
+    }
+    if (ret >= 0) {
+        ret = written_length;
     }
     return ret;
 }
@@ -187,18 +196,22 @@ bool uCxHttpGetPostRequestHeaderBegin(uCxHandle_t * puCxHandle, int32_t session_
     return ret >= 0;
 }
 
-int32_t uCxHttpPutRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len, uCxHttpPutRequest_t * pHttpPutRequestRsp)
+int32_t uCxHttpPutRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t written_length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UHTCRPUB=", "dB", session_id, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UHTCRPUB:", NULL, NULL, "dd", &pHttpPutRequestRsp->session_id, &pHttpPutRequestRsp->written_length, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UHTCRPUB:", NULL, NULL, "-d", &written_length, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
         }
+    }
+    if (ret >= 0) {
+        ret = written_length;
     }
     return ret;
 }

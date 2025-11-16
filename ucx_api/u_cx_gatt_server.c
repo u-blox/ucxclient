@@ -30,11 +30,11 @@ int32_t uCxGattServerServiceDefine(uCxHandle_t * puCxHandle, const uint8_t * uui
     return ret;
 }
 
-int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, uCxGattServerCharDefine_t * pGattServerCharDefineRsp)
+int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, uCxGattServerCharDefine_t * pGattServerCharDefineRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGC=", "hhddh", uuid, uuid_len, properties, properties_len, security_read, security_write, value, value_len, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGC=", "hhddh", uuid, uuid_len, properties, properties_len, read_security, write_security, value, value_len, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTGC:", NULL, NULL, "dd", &pGattServerCharDefineRsp->value_handle, &pGattServerCharDefineRsp->cccd_handle, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
@@ -46,11 +46,11 @@ int32_t uCxGattServerCharDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid,
     return ret;
 }
 
-int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t max_length, uCxGattServerCharDefine_t * pGattServerCharDefineRsp)
+int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, int32_t max_length, uCxGattServerCharDefine_t * pGattServerCharDefineRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGC=", "hhddhd", uuid, uuid_len, properties, properties_len, security_read, security_write, value, value_len, max_length, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGC=", "hhddhd", uuid, uuid_len, properties, properties_len, read_security, write_security, value, value_len, max_length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTGC:", NULL, NULL, "dd", &pGattServerCharDefineRsp->value_handle, &pGattServerCharDefineRsp->cccd_handle, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
@@ -62,11 +62,11 @@ int32_t uCxGattServerCharDefine6(uCxHandle_t * puCxHandle, const uint8_t * uuid,
     return ret;
 }
 
-int32_t uCxGattServerHostCharDefine(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, uCxGattServerHostCharDefine_t * pGattServerHostCharDefineRsp)
+int32_t uCxGattServerHostCharDefine(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, const uint8_t * properties, int32_t properties_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, uCxGattServerHostCharDefine_t * pGattServerHostCharDefineRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGHCC=", "hhdd", uuid, uuid_len, properties, properties_len, security_read, security_write, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGHCC=", "hhdd", uuid, uuid_len, properties, properties_len, read_security, write_security, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTGHCC:", NULL, NULL, "dd", &pGattServerHostCharDefineRsp->value_handle, &pGattServerHostCharDefineRsp->cccd_handle, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
@@ -78,11 +78,11 @@ int32_t uCxGattServerHostCharDefine(uCxHandle_t * puCxHandle, const uint8_t * uu
     return ret;
 }
 
-int32_t uCxGattServerDescriptorDefine4(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t * pDescHandle)
+int32_t uCxGattServerDescriptorDefine4(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, int32_t * pDescHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGD=", "hddh", uuid, uuid_len, security_read, security_write, value, value_len, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGD=", "hddh", uuid, uuid_len, read_security, write_security, value, value_len, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTGD:", NULL, NULL, "d", pDescHandle, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
@@ -94,11 +94,11 @@ int32_t uCxGattServerDescriptorDefine4(uCxHandle_t * puCxHandle, const uint8_t *
     return ret;
 }
 
-int32_t uCxGattServerDescriptorDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uSecurityRead_t security_read, uSecurityWrite_t security_write, const uint8_t * value, int32_t value_len, int32_t max_length, int32_t * pDescHandle)
+int32_t uCxGattServerDescriptorDefine5(uCxHandle_t * puCxHandle, const uint8_t * uuid, int32_t uuid_len, uGattServerReadSecurity_t read_security, uGattServerWriteSecurity_t write_security, const uint8_t * value, int32_t value_len, int32_t max_length, int32_t * pDescHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGD=", "hddhd", uuid, uuid_len, security_read, security_write, value, value_len, max_length, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTGD=", "hddhd", uuid, uuid_len, read_security, write_security, value, value_len, max_length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTGD:", NULL, NULL, "d", pDescHandle, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed

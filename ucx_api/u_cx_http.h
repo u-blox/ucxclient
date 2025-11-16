@@ -63,21 +63,9 @@ typedef struct
 
 typedef struct
 {
-    int32_t session_id;     /**< Unique http session identifier. Currently only one session is supported, 0. */
-    int32_t written_length; /**< Data length that was written as body. */
-} uCxHttpPostRequest_t;
-
-typedef struct
-{
     int32_t session_id;       /**< Unique http session identifier. Currently only one session is supported, 0. */
     const char * header_data; /**< data encoded as a ascii chars. */
 } uCxHttpGetPostRequestHeader_t;
-
-typedef struct
-{
-    int32_t session_id;     /**< Unique http session identifier. Currently only one session is supported, 0. */
-    int32_t written_length; /**< Data length that was written as body. */
-} uCxHttpPutRequest_t;
 
 typedef struct
 {
@@ -128,7 +116,7 @@ int32_t uCxHttpSetConnectionParams3(uCxHandle_t * puCxHandle, int32_t session_id
  * @param      tls_version: TLS version to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxHttpSetTLS2(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion_t tls_version);
+int32_t uCxHttpSetTLS2(uCxHandle_t * puCxHandle, int32_t session_id, uWifiTlsVersion_t tls_version);
 
 /**
  * Add a TLS context to a http session.
@@ -142,7 +130,7 @@ int32_t uCxHttpSetTLS2(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion
  * @param      ca_name:     Name of the certificate authority (CA) certificate to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxHttpSetTLS3(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion_t tls_version, const char * ca_name);
+int32_t uCxHttpSetTLS3(uCxHandle_t * puCxHandle, int32_t session_id, uWifiTlsVersion_t tls_version, const char * ca_name);
 
 /**
  * Add a TLS context to a http session.
@@ -158,7 +146,7 @@ int32_t uCxHttpSetTLS3(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion
  * @param      client_key_name:  Name of the private key for client certificate
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxHttpSetTLS5(uCxHandle_t * puCxHandle, int32_t session_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+int32_t uCxHttpSetTLS5(uCxHandle_t * puCxHandle, int32_t session_id, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
 /**
  * Get the TLS context information for a http session.
@@ -235,10 +223,11 @@ bool uCxHttpGetHeader2Begin(uCxHandle_t * puCxHandle, int32_t session_id, int32_
  * @param[in]  puCxHandle:  uCX API handle
  * @param      session_id:  Unique http session identifier. Currently only one session is supported, 0.
  * @param      data_length: Length of the data to be read
+ * @param[out] pDataBuf:    Output data buffer
  * @param[out] pMoreToRead: Indicates if there is more data to be read.
- * @return                  0 on success, negative value on error.
+ * @return                  Number of bytes read or negative value on error.
  */
-int32_t uCxHttpGetBody(uCxHandle_t * puCxHandle, int32_t session_id, int32_t data_length, int32_t * pMoreToRead);
+int32_t uCxHttpGetBody(uCxHandle_t * puCxHandle, int32_t session_id, int32_t data_length, uint8_t * pDataBuf, int32_t * pMoreToRead);
 
 /**
  * Add a custom header field to the current request. Using this will override any custom header set by {ref:AT+UHTCRHSC}.
@@ -388,14 +377,14 @@ bool uCxHttpGetDeleteRequestHeaderBegin(uCxHandle_t * puCxHandle, int32_t sessio
  * Output AT command:
  * > AT+UHTCRPOB=<session_id>,<binary_data>,<binary_data_len>
  *
- * @param[in]  puCxHandle:          uCX API handle
- * @param      session_id:          Unique http session identifier. Currently only one session is supported, 0.
- * @param      binary_data:         
- * @param      binary_data_len:     length of binary_data
- * @param[out] pHttpPostRequestRsp: Please see \ref uCxHttpPostRequest_t
- * @return                          0 on success, negative value on error.
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      session_id:      Unique http session identifier. Currently only one session is supported, 0.
+ * @param      binary_data:     
+ * @param      binary_data_len: length of binary_data
+ * @return                      Negative value on error. On success:
+ *                              Data length that was written as body.
  */
-int32_t uCxHttpPostRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len, uCxHttpPostRequest_t * pHttpPostRequestRsp);
+int32_t uCxHttpPostRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len);
 
 /**
  * Return the HTTP header for a POST request
@@ -419,14 +408,14 @@ bool uCxHttpGetPostRequestHeaderBegin(uCxHandle_t * puCxHandle, int32_t session_
  * Output AT command:
  * > AT+UHTCRPUB=<session_id>,<binary_data>,<binary_data_len>
  *
- * @param[in]  puCxHandle:         uCX API handle
- * @param      session_id:         Unique http session identifier. Currently only one session is supported, 0.
- * @param      binary_data:        
- * @param      binary_data_len:    length of binary_data
- * @param[out] pHttpPutRequestRsp: Please see \ref uCxHttpPutRequest_t
- * @return                         0 on success, negative value on error.
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      session_id:      Unique http session identifier. Currently only one session is supported, 0.
+ * @param      binary_data:     
+ * @param      binary_data_len: length of binary_data
+ * @return                      Negative value on error. On success:
+ *                              Data length that was written as body.
  */
-int32_t uCxHttpPutRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len, uCxHttpPutRequest_t * pHttpPutRequestRsp);
+int32_t uCxHttpPutRequest(uCxHandle_t * puCxHandle, int32_t session_id, const uint8_t * binary_data, int32_t binary_data_len);
 
 /**
  * Return the HTTP header for a PUT request

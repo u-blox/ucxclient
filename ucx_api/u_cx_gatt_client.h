@@ -149,18 +149,18 @@ bool uCxGattClientDiscoverServiceCharsGetNext(uCxHandle_t * puCxHandle, uCxGattC
  * Discover all descriptors of a characteristic.
  * 
  * Output AT command:
- * > AT+UBTGCDD=<conn_handle>,<value_handle>,<characteristic_end_handle>
+ * > AT+UBTGCDD=<conn_handle>,<value_handle>,<char_end_handle>
  *
- * @param[in]  puCxHandle:                uCX API handle
- * @param      conn_handle:               Bluetooth Low Energy connection handle.
- * @param      value_handle:              Attribute handle of the characteristic value.
- * @param      characteristic_end_handle: End handle of characteristic to which descriptor discovery is being performed.
- * @return                                true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      conn_handle:     Bluetooth Low Energy connection handle.
+ * @param      value_handle:    Attribute handle of the characteristic value.
+ * @param      char_end_handle: End handle of characteristic to which descriptor discovery is being performed.
+ * @return                      true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxGattClientDiscoverCharDescriptorsBegin(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, int32_t characteristic_end_handle);
+void uCxGattClientDiscoverCharDescriptorsBegin(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, int32_t char_end_handle);
 
 /**
  * 
@@ -236,7 +236,7 @@ int32_t uCxGattClientWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_
  * @param      config:      
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxGattClientConfigWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t desc_handle, uConfig_t config);
+int32_t uCxGattClientConfigWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t desc_handle, uGattClientConfig_t config);
 
 /**
  * Write characteristic.
@@ -269,7 +269,7 @@ int32_t uCxGattClientWriteNoRsp(uCxHandle_t * puCxHandle, int32_t conn_handle, i
  * @param      offset:       
  * @return                   0 on success, negative value on error.
  */
-int32_t uCxGattClientWriteLong(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, const uint8_t * hex_data, int32_t hex_data_len, uReliable_t reliable, uFlag_t flag, int32_t offset);
+int32_t uCxGattClientWriteLong(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t value_handle, const uint8_t * hex_data, int32_t hex_data_len, uGattClientReliable_t reliable, uGattClientFlag_t flag, int32_t offset);
 
 /**
  * Register Notification event callback

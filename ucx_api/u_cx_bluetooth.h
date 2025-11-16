@@ -34,7 +34,7 @@ typedef struct
     const char * device_name; /**< Name of the discovered device. */
     int32_t data_type;        /**< Type of advertising data received. */
     uByteArray_t data;        /**< Complete advertise/scan response data received from the remote device. */
-} uCxBluetoothDiscoveryDefault_t;
+} uCxBtDiscoveryDefault_t;
 
 typedef struct
 {
@@ -43,26 +43,26 @@ typedef struct
     const char * device_name; /**< Name of the discovered device. */
     int32_t data_type;        /**< Type of advertising data received. */
     uByteArray_t data;        /**< Complete advertise/scan response data received from the remote device. */
-} uCxBluetoothDiscovery_t;
+} uCxBtDiscovery_t;
 
 typedef struct
 {
     int32_t conn_handle;    /**< Connection handle of the Bluetooth low energy connection. */
     uBtLeAddress_t bd_addr; /**< Bluetooth device address of the remote device. */
-} uCxBluetoothListConnections_t;
+} uCxBtListConnections_t;
 
 typedef struct
 {
-    int32_t property_id;
-    int32_t status_val;  /**< Value of the preceding property. */
-} uCxBluetoothListConnectionStatus_t;
+    int32_t prop_id;
+    int32_t status_val; /**< Value of the preceding property. */
+} uCxBtListConnectionStatus_t;
 
 typedef struct
 {
-    int32_t legacy_advertisement;
-    int32_t directed_advertisement;
-    uIntList_t enabled_extended_advertisements;
-} uCxBluetoothGetAdvertiseInformation_t;
+    int32_t legacy_adv;
+    int32_t directed_adv;
+    uIntList_t extended_adv_list; /**< List of indexes currently being used for extended advertisements */
+} uCxBtGetAdvertiseInformation_t;
 
 typedef struct
 {
@@ -72,13 +72,13 @@ typedef struct
     int32_t advertisement_interval_maximum; /**< Advertising interval maximum (must be >= Advertising interval minimum. 
                                                   Default: 2000.
                                                   Calculation: advertisement_interval_maximum * 0.625 ms) */
-} uCxBluetoothGetLegacyAdvertisementConfig_t;
+} uCxBtGetLegacyAdvertisementConfig_t;
 
 typedef struct
 {
-    int32_t characteristic_id;
-    const char * characteristic_value; /**< Value of Device Information Service characteristic. */
-} uCxBluetoothListDeviceInfoServiceChars_t;
+    int32_t char_id;
+    const char * char_value; /**< Value of Device Information Service characteristic. */
+} uCxBtListDeviceInfoServiceChars_t;
 
 typedef struct
 {
@@ -92,7 +92,7 @@ typedef struct
                          OR a bit field with bits:
                          Bit 0: 1 Mbps preferred
                          Bit 1: 2 Mbps preferred */
-} uCxBluetoothGetPhy_t;
+} uCxBtGetPhy_t;
 
 
 /* ------------------------------------------------------------
@@ -106,13 +106,13 @@ typedef struct
  * Requires AT&W and a reboot before taking effect.
  * 
  * Output AT command:
- * > AT+UBTM=<bt_mode>
+ * > AT+UBTM=<mode>
  *
  * @param[in]  puCxHandle: uCX API handle
- * @param      bt_mode:    
+ * @param      mode:       
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetMode(uCxHandle_t * puCxHandle, uBtMode_t bt_mode);
+int32_t uCxBluetoothSetMode(uCxHandle_t * puCxHandle, uBtMode_t mode);
 
 /**
  * Read Bluetooth Mode.
@@ -121,10 +121,10 @@ int32_t uCxBluetoothSetMode(uCxHandle_t * puCxHandle, uBtMode_t bt_mode);
  * > AT+UBTM?
  *
  * @param[in]  puCxHandle: uCX API handle
- * @param[out] pBtMode:    
+ * @param[out] pMode:      
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetMode(uCxHandle_t * puCxHandle, uBtMode_t * pBtMode);
+int32_t uCxBluetoothGetMode(uCxHandle_t * puCxHandle, uBtMode_t * pMode);
 
 /**
  * Initiate connection.
@@ -201,12 +201,12 @@ void uCxBluetoothDiscoveryDefaultBegin(uCxHandle_t * puCxHandle);
 /**
  * 
  *
- * @param[in]  puCxHandle:                    uCX API handle
- * @param[out] pBluetoothDiscoveryDefaultRsp: Please see \ref uCxBluetoothDiscoveryDefault_t
- * @return                                    true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                            error code in this case).
+ * @param[in]  puCxHandle:             uCX API handle
+ * @param[out] pBtDiscoveryDefaultRsp: Please see \ref uCxBtDiscoveryDefault_t
+ * @return                             true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                     error code in this case).
  */
-bool uCxBluetoothDiscoveryDefaultGetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscoveryDefault_t * pBluetoothDiscoveryDefaultRsp);
+bool uCxBluetoothDiscoveryDefaultGetNext(uCxHandle_t * puCxHandle, uCxBtDiscoveryDefault_t * pBtDiscoveryDefaultRsp);
 
 /**
  * Start discovery.
@@ -221,17 +221,17 @@ bool uCxBluetoothDiscoveryDefaultGetNext(uCxHandle_t * puCxHandle, uCxBluetoothD
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxBluetoothDiscovery1Begin(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type);
+void uCxBluetoothDiscovery1Begin(uCxHandle_t * puCxHandle, uBtDiscoveryType_t discovery_type);
 
 /**
  * 
  *
- * @param[in]  puCxHandle:             uCX API handle
- * @param[out] pBluetoothDiscoveryRsp: Please see \ref uCxBluetoothDiscovery_t
- * @return                             true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                     error code in this case).
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param[out] pBtDiscoveryRsp: Please see \ref uCxBtDiscovery_t
+ * @return                      true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                              error code in this case).
  */
-bool uCxBluetoothDiscovery1GetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscovery_t * pBluetoothDiscoveryRsp);
+bool uCxBluetoothDiscovery1GetNext(uCxHandle_t * puCxHandle, uCxBtDiscovery_t * pBtDiscoveryRsp);
 
 /**
  * Start discovery.
@@ -247,17 +247,17 @@ bool uCxBluetoothDiscovery1GetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscove
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxBluetoothDiscovery2Begin(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode);
+void uCxBluetoothDiscovery2Begin(uCxHandle_t * puCxHandle, uBtDiscoveryType_t discovery_type, uBtDiscoveryMode_t discovery_mode);
 
 /**
  * 
  *
- * @param[in]  puCxHandle:             uCX API handle
- * @param[out] pBluetoothDiscoveryRsp: Please see \ref uCxBluetoothDiscovery_t
- * @return                             true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                     error code in this case).
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param[out] pBtDiscoveryRsp: Please see \ref uCxBtDiscovery_t
+ * @return                      true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                              error code in this case).
  */
-bool uCxBluetoothDiscovery2GetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscovery_t * pBluetoothDiscoveryRsp);
+bool uCxBluetoothDiscovery2GetNext(uCxHandle_t * puCxHandle, uCxBtDiscovery_t * pBtDiscoveryRsp);
 
 /**
  * Start discovery.
@@ -274,17 +274,17 @@ bool uCxBluetoothDiscovery2GetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscove
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-void uCxBluetoothDiscovery3Begin(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode, int32_t discovery_length);
+void uCxBluetoothDiscovery3Begin(uCxHandle_t * puCxHandle, uBtDiscoveryType_t discovery_type, uBtDiscoveryMode_t discovery_mode, int32_t discovery_length);
 
 /**
  * 
  *
- * @param[in]  puCxHandle:             uCX API handle
- * @param[out] pBluetoothDiscoveryRsp: Please see \ref uCxBluetoothDiscovery_t
- * @return                             true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                     error code in this case).
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param[out] pBtDiscoveryRsp: Please see \ref uCxBtDiscovery_t
+ * @return                      true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                              error code in this case).
  */
-bool uCxBluetoothDiscovery3GetNext(uCxHandle_t * puCxHandle, uCxBluetoothDiscovery_t * pBluetoothDiscoveryRsp);
+bool uCxBluetoothDiscovery3GetNext(uCxHandle_t * puCxHandle, uCxBtDiscovery_t * pBtDiscoveryRsp);
 
 /**
  * Start background discovery
@@ -307,7 +307,7 @@ int32_t uCxBluetoothBgDiscoveryDefaultStart(uCxHandle_t * puCxHandle);
  * @param      discovery_type: 
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxBluetoothBgDiscoveryStart1(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type);
+int32_t uCxBluetoothBgDiscoveryStart1(uCxHandle_t * puCxHandle, uBtDiscoveryType_t discovery_type);
 
 /**
  * Start background discovery
@@ -320,7 +320,7 @@ int32_t uCxBluetoothBgDiscoveryStart1(uCxHandle_t * puCxHandle, uDiscoveryType_t
  * @param      discovery_mode: 
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxBluetoothBgDiscoveryStart2(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode);
+int32_t uCxBluetoothBgDiscoveryStart2(uCxHandle_t * puCxHandle, uBtDiscoveryType_t discovery_type, uBtDiscoveryMode_t discovery_mode);
 
 /**
  * Start background discovery
@@ -334,7 +334,7 @@ int32_t uCxBluetoothBgDiscoveryStart2(uCxHandle_t * puCxHandle, uDiscoveryType_t
  * @param      output_events:  
  * @return                     0 on success, negative value on error.
  */
-int32_t uCxBluetoothBgDiscoveryStart3(uCxHandle_t * puCxHandle, uDiscoveryType_t discovery_type, uDiscoveryMode_t discovery_mode, uOutputEvents_t output_events);
+int32_t uCxBluetoothBgDiscoveryStart3(uCxHandle_t * puCxHandle, uBtDiscoveryType_t discovery_type, uBtDiscoveryMode_t discovery_mode, uBtOutputEvents_t output_events);
 
 /**
  * Stop background discovery
@@ -377,12 +377,12 @@ void uCxBluetoothListConnectionsBegin(uCxHandle_t * puCxHandle);
 /**
  * 
  *
- * @param[in]  puCxHandle:                   uCX API handle
- * @param[out] pBluetoothListConnectionsRsp: Please see \ref uCxBluetoothListConnections_t
- * @return                                   true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                           error code in this case).
+ * @param[in]  puCxHandle:            uCX API handle
+ * @param[out] pBtListConnectionsRsp: Please see \ref uCxBtListConnections_t
+ * @return                            true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                    error code in this case).
  */
-bool uCxBluetoothListConnectionsGetNext(uCxHandle_t * puCxHandle, uCxBluetoothListConnections_t * pBluetoothListConnectionsRsp);
+bool uCxBluetoothListConnectionsGetNext(uCxHandle_t * puCxHandle, uCxBtListConnections_t * pBtListConnectionsRsp);
 
 /**
  * Read all properties of an existing Bluetooth low energy ACL connection.
@@ -402,26 +402,26 @@ void uCxBluetoothListConnectionStatusBegin(uCxHandle_t * puCxHandle, int32_t con
 /**
  * 
  *
- * @param[in]  puCxHandle:                        uCX API handle
- * @param[out] pBluetoothListConnectionStatusRsp: Please see \ref uCxBluetoothListConnectionStatus_t
- * @return                                        true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                                error code in this case).
+ * @param[in]  puCxHandle:                 uCX API handle
+ * @param[out] pBtListConnectionStatusRsp: Please see \ref uCxBtListConnectionStatus_t
+ * @return                                 true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                         error code in this case).
  */
-bool uCxBluetoothListConnectionStatusGetNext(uCxHandle_t * puCxHandle, uCxBluetoothListConnectionStatus_t * pBluetoothListConnectionStatusRsp);
+bool uCxBluetoothListConnectionStatusGetNext(uCxHandle_t * puCxHandle, uCxBtListConnectionStatus_t * pBtListConnectionStatusRsp);
 
 /**
  * Read a specific property of an existing Bluetooth low energy ACL connection.
  * 
  * Output AT command:
- * > AT+UBTCST=<conn_handle>,<property_id>
+ * > AT+UBTCST=<conn_handle>,<prop_id>
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      conn_handle: Connection handle of the Bluetooth low energy connection.
- * @param      property_id: 
+ * @param      prop_id:     
  * @param[out] pStatusVal:  Value of the preceding property.
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetConnectionStatus(uCxHandle_t * puCxHandle, int32_t conn_handle, uPropertyId_t property_id, int32_t * pStatusVal);
+int32_t uCxBluetoothGetConnectionStatus(uCxHandle_t * puCxHandle, int32_t conn_handle, uBtPropId_t prop_id, int32_t * pStatusVal);
 
 /**
  * Read the current advertisements
@@ -429,11 +429,11 @@ int32_t uCxBluetoothGetConnectionStatus(uCxHandle_t * puCxHandle, int32_t conn_h
  * Output AT command:
  * > AT+UBTA?
  *
- * @param[in]  puCxHandle:                           uCX API handle
- * @param[out] pBluetoothGetAdvertiseInformationRsp: Please see \ref uCxBluetoothGetAdvertiseInformation_t
- * @return                                           0 on success, negative value on error.
+ * @param[in]  puCxHandle:                    uCX API handle
+ * @param[out] pBtGetAdvertiseInformationRsp: Please see \ref uCxBtGetAdvertiseInformation_t
+ * @return                                    0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetAdvertiseInformation(uCxHandle_t * puCxHandle, uCxBluetoothGetAdvertiseInformation_t * pBluetoothGetAdvertiseInformationRsp);
+int32_t uCxBluetoothGetAdvertiseInformation(uCxHandle_t * puCxHandle, uCxBtGetAdvertiseInformation_t * pBtGetAdvertiseInformationRsp);
 
 /**
  * Write custom advertising data.
@@ -812,11 +812,11 @@ int32_t uCxBluetoothSetLegacyAdvertisementConfig(uCxHandle_t * puCxHandle, int32
  * Output AT command:
  * > AT+UBTALS?
  *
- * @param[in]  puCxHandle:                                uCX API handle
- * @param[out] pBluetoothGetLegacyAdvertisementConfigRsp: Please see \ref uCxBluetoothGetLegacyAdvertisementConfig_t
- * @return                                                0 on success, negative value on error.
+ * @param[in]  puCxHandle:                         uCX API handle
+ * @param[out] pBtGetLegacyAdvertisementConfigRsp: Please see \ref uCxBtGetLegacyAdvertisementConfig_t
+ * @return                                         0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetLegacyAdvertisementConfig(uCxHandle_t * puCxHandle, uCxBluetoothGetLegacyAdvertisementConfig_t * pBluetoothGetLegacyAdvertisementConfigRsp);
+int32_t uCxBluetoothGetLegacyAdvertisementConfig(uCxHandle_t * puCxHandle, uCxBtGetLegacyAdvertisementConfig_t * pBtGetLegacyAdvertisementConfigRsp);
 
 /**
  * Write scan interval.
@@ -910,13 +910,13 @@ int32_t uCxBluetoothGetConnectToDirectedAdv(uCxHandle_t * puCxHandle, int32_t * 
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UBTIOC=<io_capabilities>
+ * > AT+UBTIOC=<io_cap>
  *
- * @param[in]  puCxHandle:      uCX API handle
- * @param      io_capabilities: 
- * @return                      0 on success, negative value on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      io_cap:     
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetIoCapabilities(uCxHandle_t * puCxHandle, uIoCapabilities_t io_capabilities);
+int32_t uCxBluetoothSetIoCapabilities(uCxHandle_t * puCxHandle, uBtIoCap_t io_cap);
 
 /**
  * Read I/O Capabilities
@@ -924,11 +924,11 @@ int32_t uCxBluetoothSetIoCapabilities(uCxHandle_t * puCxHandle, uIoCapabilities_
  * Output AT command:
  * > AT+UBTIOC?
  *
- * @param[in]  puCxHandle:      uCX API handle
- * @param[out] pIoCapabilities: 
- * @return                      0 on success, negative value on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pIoCap:     
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetIoCapabilities(uCxHandle_t * puCxHandle, uIoCapabilities_t * pIoCapabilities);
+int32_t uCxBluetoothGetIoCapabilities(uCxHandle_t * puCxHandle, uBtIoCap_t * pIoCap);
 
 /**
  * Writes the security mode
@@ -937,13 +937,13 @@ int32_t uCxBluetoothGetIoCapabilities(uCxHandle_t * puCxHandle, uIoCapabilities_
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UBTBSM=<bt_security_mode>
+ * > AT+UBTBSM=<security_mode>
  *
- * @param[in]  puCxHandle:       uCX API handle
- * @param      bt_security_mode: 
- * @return                       0 on success, negative value on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      security_mode: 
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetSecurityMode(uCxHandle_t * puCxHandle, uBtSecurityMode_t bt_security_mode);
+int32_t uCxBluetoothSetSecurityMode(uCxHandle_t * puCxHandle, uBtSecurityMode_t security_mode);
 
 /**
  * Reads the security mode
@@ -951,11 +951,11 @@ int32_t uCxBluetoothSetSecurityMode(uCxHandle_t * puCxHandle, uBtSecurityMode_t 
  * Output AT command:
  * > AT+UBTBSM?
  *
- * @param[in]  puCxHandle:      uCX API handle
- * @param[out] pBtSecurityMode: 
- * @return                      0 on success, negative value on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param[out] pSecurityMode: 
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetSecurityMode(uCxHandle_t * puCxHandle, uBtSecurityMode_t * pBtSecurityMode);
+int32_t uCxBluetoothGetSecurityMode(uCxHandle_t * puCxHandle, uBtSecurityMode_t * pSecurityMode);
 
 /**
  * Writes the pairing mode.
@@ -970,7 +970,7 @@ int32_t uCxBluetoothGetSecurityMode(uCxHandle_t * puCxHandle, uBtSecurityMode_t 
  * @param      pairing_mode: 
  * @return                   0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetPairingMode(uCxHandle_t * puCxHandle, uPairingMode_t pairing_mode);
+int32_t uCxBluetoothSetPairingMode(uCxHandle_t * puCxHandle, uBtPairingMode_t pairing_mode);
 
 /**
  * Read current pairing mode.
@@ -982,47 +982,47 @@ int32_t uCxBluetoothSetPairingMode(uCxHandle_t * puCxHandle, uPairingMode_t pair
  * @param[out] pPairingMode: 
  * @return                   0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetPairingMode(uCxHandle_t * puCxHandle, uPairingMode_t * pPairingMode);
+int32_t uCxBluetoothGetPairingMode(uCxHandle_t * puCxHandle, uBtPairingMode_t * pPairingMode);
 
 /**
  * Respond to +UEUBTUC and confirm/deny bonding.
  * 
  * Output AT command:
- * > AT+UBTUC=<bd_addr>,<yes_no>
+ * > AT+UBTUC=<bd_addr>,<confirm>
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      bd_addr:    Bluetooth device address of the remote device.
- * @param      yes_no:     
+ * @param      confirm:    
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothUserConfirmation(uCxHandle_t * puCxHandle, uBtLeAddress_t * bd_addr, uYesNo_t yes_no);
+int32_t uCxBluetoothUserConfirmation(uCxHandle_t * puCxHandle, uBtLeAddress_t * bd_addr, uBtConfirm_t confirm);
 
 /**
  * Respond to +UEBTUPE event and confirm/deny bonding.
  * 
  * Output AT command:
- * > AT+UBTUPE=<bd_addr>,<yes_no>
+ * > AT+UBTUPE=<bd_addr>,<confirm>
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      bd_addr:    Bluetooth device address of the remote device.
- * @param      yes_no:     
+ * @param      confirm:    
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothUserPasskeyEntry2(uCxHandle_t * puCxHandle, uBtLeAddress_t * bd_addr, uYesNo_t yes_no);
+int32_t uCxBluetoothUserPasskeyEntry2(uCxHandle_t * puCxHandle, uBtLeAddress_t * bd_addr, uBtConfirm_t confirm);
 
 /**
  * Respond to +UEBTUPE event and confirm/deny bonding.
  * 
  * Output AT command:
- * > AT+UBTUPE=<bd_addr>,<yes_no>,<passkey>
+ * > AT+UBTUPE=<bd_addr>,<confirm>,<passkey>
  *
  * @param[in]  puCxHandle: uCX API handle
  * @param      bd_addr:    Bluetooth device address of the remote device.
- * @param      yes_no:     
- * @param      passkey:    Passkey used to confirm bonding, if yes_no is set to no, this can be omitted.
+ * @param      confirm:    
+ * @param      passkey:    Passkey used to confirm bonding, if confirm is set to no, this can be omitted.
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothUserPasskeyEntry3(uCxHandle_t * puCxHandle, uBtLeAddress_t * bd_addr, uYesNo_t yes_no, int32_t passkey);
+int32_t uCxBluetoothUserPasskeyEntry3(uCxHandle_t * puCxHandle, uBtLeAddress_t * bd_addr, uBtConfirm_t confirm, int32_t passkey);
 
 /**
  * Initiate bonding. To perform the bonding, the remote device must be in a pairable and connectable mode. Bond Event
@@ -1091,30 +1091,30 @@ bool uCxBluetoothListBondedDevicesGetNext(uCxHandle_t * puCxHandle, uBtLeAddress
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UBTDIS=<characteristic_id>,<characteristic_value>
+ * > AT+UBTDIS=<char_id>,<char_value>
  *
- * @param[in]  puCxHandle:           uCX API handle
- * @param      characteristic_id:    
- * @param      characteristic_value: Value of Device Information Service characteristic.
- * @return                           0 on success, negative value on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      char_id:    
+ * @param      char_value: Value of Device Information Service characteristic.
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetDeviceInfoServiceChar(uCxHandle_t * puCxHandle, uCharacteristicId_t characteristic_id, const char * characteristic_value);
+int32_t uCxBluetoothSetDeviceInfoServiceChar(uCxHandle_t * puCxHandle, uBtCharId_t char_id, const char * char_value);
 
 /**
  * Read a characteristic value.
  * 
  * Output AT command:
- * > AT+UBTDIS=<characteristic_id>
+ * > AT+UBTDIS=<char_id>
  *
- * @param[in]  puCxHandle:            uCX API handle
- * @param      characteristic_id:     
- * @param[out] ppCharacteristicValue: Value of Device Information Service characteristic.
- * @return                            true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:  uCX API handle
+ * @param      char_id:     
+ * @param[out] ppCharValue: Value of Device Information Service characteristic.
+ * @return                  true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxBluetoothGetDeviceInfoServiceCharBegin(uCxHandle_t * puCxHandle, uCharacteristicId_t characteristic_id, const char ** ppCharacteristicValue);
+bool uCxBluetoothGetDeviceInfoServiceCharBegin(uCxHandle_t * puCxHandle, uBtCharId_t char_id, const char ** ppCharValue);
 
 /**
  * Read all individual characteristic of the Device Information Service characteristics.
@@ -1133,12 +1133,12 @@ void uCxBluetoothListDeviceInfoServiceCharsBegin(uCxHandle_t * puCxHandle);
 /**
  * 
  *
- * @param[in]  puCxHandle:                              uCX API handle
- * @param[out] pBluetoothListDeviceInfoServiceCharsRsp: Please see \ref uCxBluetoothListDeviceInfoServiceChars_t
- * @return                                              true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                                      error code in this case).
+ * @param[in]  puCxHandle:                       uCX API handle
+ * @param[out] pBtListDeviceInfoServiceCharsRsp: Please see \ref uCxBtListDeviceInfoServiceChars_t
+ * @return                                       true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                               error code in this case).
  */
-bool uCxBluetoothListDeviceInfoServiceCharsGetNext(uCxHandle_t * puCxHandle, uCxBluetoothListDeviceInfoServiceChars_t * pBluetoothListDeviceInfoServiceCharsRsp);
+bool uCxBluetoothListDeviceInfoServiceCharsGetNext(uCxHandle_t * puCxHandle, uCxBtListDeviceInfoServiceChars_t * pBtListDeviceInfoServiceCharsRsp);
 
 /**
  * Requests a Bluetooth Low Energy PHY update.
@@ -1168,12 +1168,12 @@ int32_t uCxBluetoothRequestPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, in
  * Output AT command:
  * > AT+UBTPHYR=<conn_handle>
  *
- * @param[in]  puCxHandle:          uCX API handle
- * @param      conn_handle:         Connection handle of the Bluetooth low energy connection.
- * @param[out] pBluetoothGetPhyRsp: Please see \ref uCxBluetoothGetPhy_t
- * @return                          0 on success, negative value on error.
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param      conn_handle:  Connection handle of the Bluetooth low energy connection.
+ * @param[out] pBtGetPhyRsp: Please see \ref uCxBtGetPhy_t
+ * @return                   0 on success, negative value on error.
  */
-int32_t uCxBluetoothGetPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, uCxBluetoothGetPhy_t * pBluetoothGetPhyRsp);
+int32_t uCxBluetoothGetPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, uCxBtGetPhy_t * pBtGetPhyRsp);
 
 /**
  * Register Connect event callback

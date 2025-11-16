@@ -32,7 +32,7 @@ typedef struct
     int32_t baud_rate;    /**< Baudrate */
     int32_t flow_control; /**< 0: No flow control
                                1: Use CTS/RTS flow control */
-} uCxSystemGetUartSettings_t;
+} uCxSysGetUartSettings_t;
 
 typedef struct
 {
@@ -41,7 +41,7 @@ typedef struct
     int32_t post_timeout;   /**< Minimum time (ms) of no data activity required after the escape sequence is sent. Factory
                                  default: 1000 */
     int32_t escape_timeout; /**< Maximum time interval (ms) between escape characters. Factory default: 200 */
-} uCxSystemGetEscSequenceSettings_t;
+} uCxSysGetEscSequenceSettings_t;
 
 
 /* ------------------------------------------------------------
@@ -198,11 +198,11 @@ int32_t uCxSystemSetUartSettings3(uCxHandle_t * puCxHandle, int32_t baud_rate, i
  * Output AT command:
  * > AT+USYUS?
  *
- * @param[in]  puCxHandle:                uCX API handle
- * @param[out] pSystemGetUartSettingsRsp: Please see \ref uCxSystemGetUartSettings_t
- * @return                                0 on success, negative value on error.
+ * @param[in]  puCxHandle:             uCX API handle
+ * @param[out] pSysGetUartSettingsRsp: Please see \ref uCxSysGetUartSettings_t
+ * @return                             0 on success, negative value on error.
  */
-int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSystemGetUartSettings_t * pSystemGetUartSettingsRsp);
+int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSysGetUartSettings_t * pSysGetUartSettingsRsp);
 
 /**
  * Read the last error code
@@ -229,7 +229,7 @@ int32_t uCxSystemGetLastErrorCode(uCxHandle_t * puCxHandle, int32_t * pErrorCode
  * @param      extended_errors: Extended error codes setting
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t extended_errors);
+int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uSysExtendedErrors_t extended_errors);
 
 /**
  * Read extended error codes enabled/disabled
@@ -241,7 +241,7 @@ int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t ex
  * @param[out] pExtendedErrors: Extended error codes setting
  * @return                      0 on success, negative value on error.
  */
-int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t * pExtendedErrors);
+int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uSysExtendedErrors_t * pExtendedErrors);
 
 /**
  * Set system time of the module.
@@ -311,7 +311,7 @@ int32_t uCxSystemSetEchoOn(uCxHandle_t * puCxHandle);
  * @param[out] pEchoOn:    
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uEchoOn_t * pEchoOn);
+int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uSysEchoOn_t * pEchoOn);
 
 /**
  * Write escape character. This settings change the decimal value of the escape character used by some modes, such as
@@ -453,11 +453,11 @@ int32_t uCxSystemSetEscSequenceSettings(uCxHandle_t * puCxHandle, int32_t pre_ti
  * Output AT command:
  * > AT+UTMES?
  *
- * @param[in]  puCxHandle:                       uCX API handle
- * @param[out] pSystemGetEscSequenceSettingsRsp: Please see \ref uCxSystemGetEscSequenceSettings_t
- * @return                                       0 on success, negative value on error.
+ * @param[in]  puCxHandle:                    uCX API handle
+ * @param[out] pSysGetEscSequenceSettingsRsp: Please see \ref uCxSysGetEscSequenceSettings_t
+ * @return                                    0 on success, negative value on error.
  */
-int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSystemGetEscSequenceSettings_t * pSystemGetEscSequenceSettingsRsp);
+int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSysGetEscSequenceSettings_t * pSysGetEscSequenceSettingsRsp);
 
 
 #ifdef __cplusplus

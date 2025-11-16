@@ -33,7 +33,7 @@ typedef struct
     const char * ntp_server_address; /**< NTP server address (Fully Qualified Domain name or IP address) */
     uSockIpAddress_t ntp_server_ip;  /**< NTP server IP address */
     int32_t reachable;               /**< NTP server reachability */
-} uCxNetworkTimeGetNtpServer_t;
+} uCxNtpGetNtpServer_t;
 
 
 /* ------------------------------------------------------------
@@ -47,13 +47,13 @@ typedef struct
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+UNTE=<enable>
+ * > AT+UNTE=<client_status>
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param      enable:     Enable/disable NTP client
- * @return                 0 on success, negative value on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      client_status: Enable/disable NTP client
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxNetworkTimeSetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t enable);
+int32_t uCxNetworkTimeSetClientEnabled(uCxHandle_t * puCxHandle, uNtpClientStatus_t client_status);
 
 /**
  * Read NTP client status
@@ -61,11 +61,11 @@ int32_t uCxNetworkTimeSetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t enabl
  * Output AT command:
  * > AT+UNTE?
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param[out] pEnable:    Enable/disable NTP client
- * @return                 0 on success, negative value on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param[out] pClientStatus: Enable/disable NTP client
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxNetworkTimeGetClientEnabled(uCxHandle_t * puCxHandle, uEnable_t * pEnable);
+int32_t uCxNetworkTimeGetClientEnabled(uCxHandle_t * puCxHandle, uNtpClientStatus_t * pClientStatus);
 
 /**
  * Set NTP servers
@@ -94,14 +94,14 @@ int32_t uCxNetworkTimeSetNtpServer(uCxHandle_t * puCxHandle, int32_t ntp_server_
  * Output AT command:
  * > AT+UNTSC?
  *
- * @param[in]  puCxHandle:                  uCX API handle
- * @param[out] pNetworkTimeGetNtpServerRsp: Please see \ref uCxNetworkTimeGetNtpServer_t
- * @return                                  true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:          uCX API handle
+ * @param[out] pNtpGetNtpServerRsp: Please see \ref uCxNtpGetNtpServer_t
+ * @return                          true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxNetworkTimeGetNtpServerBegin(uCxHandle_t * puCxHandle, uCxNetworkTimeGetNtpServer_t * pNetworkTimeGetNtpServerRsp);
+bool uCxNetworkTimeGetNtpServerBegin(uCxHandle_t * puCxHandle, uCxNtpGetNtpServer_t * pNtpGetNtpServerRsp);
 
 
 #ifdef __cplusplus

@@ -14,7 +14,7 @@
 #include "u_cx_at_client.h"
 #include "u_cx_socket.h"
 
-int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uProtocol_t protocol, int32_t * pSocketHandle)
+int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uSocketProtocol_t protocol, int32_t * pSocketHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
@@ -30,11 +30,11 @@ int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uProtocol_t protocol, int32_t
     return ret;
 }
 
-int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uProtocol_t protocol, uPreferredProtocolType_t preferred_protocol_type, int32_t * pSocketHandle)
+int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uSocketProtocol_t protocol, uSocketPrefIpVer_t pref_ip_ver, int32_t * pSocketHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+USOCR=", "dd", protocol, preferred_protocol_type, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+USOCR=", "dd", protocol, pref_ip_ver, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOCR:", NULL, NULL, "d", pSocketHandle, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
@@ -46,19 +46,19 @@ int32_t uCxSocketCreate2(uCxHandle_t * puCxHandle, uProtocol_t protocol, uPrefer
     return ret;
 }
 
-int32_t uCxSocketSetTLS2(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version)
+int32_t uCxSocketSetTLS2(uCxHandle_t * puCxHandle, int32_t socket_handle, uWifiTlsVersion_t tls_version)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USOTLS=", "dd", socket_handle, tls_version, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version, const char * ca_name)
+int32_t uCxSocketSetTLS3(uCxHandle_t * puCxHandle, int32_t socket_handle, uWifiTlsVersion_t tls_version, const char * ca_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USOTLS=", "dds", socket_handle, tls_version, ca_name, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSocketSetTLS5(uCxHandle_t * puCxHandle, int32_t socket_handle, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name)
+int32_t uCxSocketSetTLS5(uCxHandle_t * puCxHandle, int32_t socket_handle, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USOTLS=", "ddsss", socket_handle, tls_version, ca_name, client_cert_name, client_key_name, U_CX_AT_UTIL_PARAM_LAST);
@@ -229,7 +229,7 @@ bool uCxSocketListStatusGetNext(uCxHandle_t * puCxHandle, uCxSocketListStatus_t 
 {
     int32_t ret;
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOST:", NULL, NULL, "ddd", &pSocketListStatusRsp->socket_handle, &pSocketListStatusRsp->protocol, &pSocketListStatusRsp->socket_status, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOST:", NULL, NULL, "ddd", &pSocketListStatusRsp->socket_handle, &pSocketListStatusRsp->protocol, &pSocketListStatusRsp->status, U_CX_AT_UTIL_PARAM_LAST);
     return ret >= 0;
 }
 
@@ -238,7 +238,7 @@ int32_t uCxSocketGetStatus(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxS
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USOST=", "d", socket_handle, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOST:", NULL, NULL, "-dd", &pSocketGetStatusRsp->protocol, &pSocketGetStatusRsp->socket_status, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOST:", NULL, NULL, "-dd", &pSocketGetStatusRsp->protocol, &pSocketGetStatusRsp->status, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
@@ -249,13 +249,13 @@ int32_t uCxSocketGetStatus(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxS
     return ret;
 }
 
-int32_t uCxSocketSetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOption_t option, int32_t value)
+int32_t uCxSocketSetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uSocketOption_t option, int32_t value)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USOO=", "ddd", socket_handle, option, value, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uOption_t option, int32_t * pValue)
+int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uSocketOption_t option, int32_t * pValue)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;

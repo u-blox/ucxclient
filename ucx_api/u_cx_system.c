@@ -78,12 +78,12 @@ int32_t uCxSystemSetUartSettings3(uCxHandle_t * puCxHandle, int32_t baud_rate, i
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYUS=", "ddd", baud_rate, flow_control, change_after_confirm, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSystemGetUartSettings_t * pSystemGetUartSettingsRsp)
+int32_t uCxSystemGetUartSettings(uCxHandle_t * puCxHandle, uCxSysGetUartSettings_t * pSysGetUartSettingsRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USYUS?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USYUS:", NULL, NULL, "dd", &pSystemGetUartSettingsRsp->baud_rate, &pSystemGetUartSettingsRsp->flow_control, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USYUS:", NULL, NULL, "dd", &pSysGetUartSettingsRsp->baud_rate, &pSysGetUartSettingsRsp->flow_control, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
@@ -110,13 +110,13 @@ int32_t uCxSystemGetLastErrorCode(uCxHandle_t * puCxHandle, int32_t * pErrorCode
     return ret;
 }
 
-int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t extended_errors)
+int32_t uCxSystemSetExtendedError(uCxHandle_t * puCxHandle, uSysExtendedErrors_t extended_errors)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYEE=", "d", extended_errors, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uExtendedErrors_t * pExtendedErrors)
+int32_t uCxSystemGetExtendedError(uCxHandle_t * puCxHandle, uSysExtendedErrors_t * pExtendedErrors)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
@@ -159,7 +159,7 @@ int32_t uCxSystemSetEchoOn(uCxHandle_t * puCxHandle)
     return uCxAtClientExecSimpleCmdF(pAtClient, "ATE1", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uEchoOn_t * pEchoOn)
+int32_t uCxSystemGetEcho(uCxHandle_t * puCxHandle, uSysEchoOn_t * pEchoOn)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
@@ -269,12 +269,12 @@ int32_t uCxSystemSetEscSequenceSettings(uCxHandle_t * puCxHandle, int32_t pre_ti
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UTMES=", "ddd", pre_timeout, post_timeout, escape_timeout, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSystemGetEscSequenceSettings_t * pSystemGetEscSequenceSettingsRsp)
+int32_t uCxSystemGetEscSequenceSettings(uCxHandle_t * puCxHandle, uCxSysGetEscSequenceSettings_t * pSysGetEscSequenceSettingsRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UTMES?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UTMES:", NULL, NULL, "ddd", &pSystemGetEscSequenceSettingsRsp->pre_timeout, &pSystemGetEscSequenceSettingsRsp->post_timeout, &pSystemGetEscSequenceSettingsRsp->escape_timeout, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UTMES:", NULL, NULL, "ddd", &pSysGetEscSequenceSettingsRsp->pre_timeout, &pSysGetEscSequenceSettingsRsp->post_timeout, &pSysGetEscSequenceSettingsRsp->escape_timeout, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);

@@ -64,13 +64,13 @@ int32_t uCxSpsConnect2(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t fl
  * Can be stored using AT&W.
  * 
  * Output AT command:
- * > AT+USPS=<sps_service_option>
+ * > AT+USPS=<service_option>
  *
- * @param[in]  puCxHandle:         uCX API handle
- * @param      sps_service_option: 
- * @return                         0 on success, negative value on error.
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param      service_option: 
+ * @return                     0 on success, negative value on error.
  */
-int32_t uCxSpsSetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t sps_service_option);
+int32_t uCxSpsSetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t service_option);
 
 /**
  * Read if the SPS service is enabled or disabled.
@@ -78,11 +78,11 @@ int32_t uCxSpsSetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t sps
  * Output AT command:
  * > AT+USPS?
  *
- * @param[in]  puCxHandle:        uCX API handle
- * @param[out] pSpsServiceOption: 
- * @return                        0 on success, negative value on error.
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param[out] pServiceOption: 
+ * @return                     0 on success, negative value on error.
  */
-int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * pSpsServiceOption);
+int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * pServiceOption);
 
 /**
  * Writes the specified amount of data to the specified SPS connection in binary mode. Max 1000 bytes.

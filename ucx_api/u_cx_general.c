@@ -74,13 +74,13 @@ bool uCxGeneralGetTypeCodeBegin(uCxHandle_t * puCxHandle, const char ** ppTypeCo
     return ret >= 0;
 }
 
-int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode)
+int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGeneralGreetingMode_t greeting_mode)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+CSGT=", "d", greeting_mode, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode, const char * text)
+int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGeneralGreetingMode_t greeting_mode, const char * text)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+CSGT=", "ds", greeting_mode, text, U_CX_AT_UTIL_PARAM_LAST);
