@@ -7706,7 +7706,7 @@ static void gattServerSetupSpsService(void)
         }
         
         printf("\nPress 's' + Enter to send messages, or press Enter to continue...\n");
-        char choice = getchar();
+        char choice = (char)getchar();
         
         if (choice == 's' || choice == 'S') {
             printf("\n[SPS TX] Send mode activated\n");
@@ -9339,7 +9339,7 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
                 memcpy(headerBuffer + *pHeaderLen, 
                        headerResp.byte_array_data.pData, 
                        headerResp.byte_array_data.length);
-                *pHeaderLen += headerResp.byte_array_data.length;
+                *pHeaderLen += (int32_t)headerResp.byte_array_data.length;
             }
             
             uCxEnd(&gUcxHandle);
@@ -11526,6 +11526,7 @@ static void formatFingerprintWithColons(const char *hex, char *output, size_t ou
 // Extract certificate data from PEM file (between BEGIN/END markers)
 static bool extractCertFromPEM(const char *pemData, size_t pemLen, uint8_t **certDER, size_t *certDERLen)
 {
+    (void)pemLen;  // Parameter reserved for future bounds checking
     // Find BEGIN CERTIFICATE marker
     const char *beginMarker = strstr(pemData, "-----BEGIN CERTIFICATE-----");
     if (!beginMarker) {
@@ -11761,7 +11762,7 @@ static void tlsShowConfig(void)
     
     if (err == 0) {
         printf("Server Name Indication (SNI): %s\n", 
-               (sniEnabled == U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
+               (sniEnabled == (uEnabled_t)U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
     } else {
         printf("Server Name Indication (SNI): ERROR (failed to query)\n");
     }
@@ -11772,7 +11773,7 @@ static void tlsShowConfig(void)
     
     if (err == 0) {
         printf("Handshake Fragmentation: %s\n",
-               (fragEnabled == U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
+               (fragEnabled == (uEnabled_t)U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
     } else {
         printf("Handshake Fragmentation: ERROR (failed to query)\n");
     }
@@ -11863,16 +11864,55 @@ static void tlsShowCertificateDetails(void)
     printf("CERTIFICATE DETAILS\n");
     printf("─────────────────────────────────────────────────────────────\n\n");
     
+    // First, list available certificates
+    printf("Available certificates:\n\n");
+    
+    uCxSecurityListCertificatesBegin(&gUcxHandle);
+    uCxSecListCertificates_t certInfo;
+    int certCount = 0;
+    
+    while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
+        certCount++;
+        printf("  [%d] %s", certCount, certInfo.name);
+        
+        switch (certInfo.cert_type) {
+            case U_SEC_CERT_TYPE_ROOT:
+                printf(" (CA Certificate)");
+                break;
+            case U_SEC_CERT_TYPE_CLIENT:
+                printf(" (Client Certificate)");
+                break;
+            case U_SEC_CERT_TYPE_KEY:
+                printf(" (Private Key)");
+                break;
+        }
+        printf("\n");
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (certCount == 0) {
+        printf("  No certificates installed.\n");
+        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    
+    // Prompt for certificate name
     char certName[128];
-    printf("Enter certificate name: ");
+    printf("Enter certificate name (or press Enter to cancel): ");
     if (!fgets(certName, sizeof(certName), stdin)) {
         return;
     }
     certName[strcspn(certName, "\r\n")] = 0;  // Remove newline
     
     if (strlen(certName) == 0) {
-        printf("ERROR: Certificate name cannot be empty\n");
-        printf("\nPress Enter to continue...");
+        printf("Cancelled.\n");
+        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("Press Enter to continue...");
         getchar();
         return;
     }
@@ -11881,21 +11921,10 @@ static void tlsShowCertificateDetails(void)
     
     // Use AT+USECD to get certificate details
     uCxSecReadAllCertificatesDetails_t details;
-    bool hasDetails = uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details);
-    
-    if (!hasDetails) {
-        int32_t err = uCxEnd(&gUcxHandle);
-        printf("ERROR: Certificate not found (error: %d)\n", err);
-        printf("\nTip: Use [3] to list all certificates first\n");
-        printf("\n─────────────────────────────────────────────────────────────\n");
-        printf("Press Enter to continue...");
-        getchar();
-        return;
-    }
-    
     int detailCount = 0;
     
-    do {
+    // Call Begin with all 3 parameters, returns bool and can be called repeatedly
+    while (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details)) {
         detailCount++;
         
         // Handle both response types
@@ -11974,7 +12003,7 @@ static void tlsShowCertificateDetails(void)
                 break;
             }
         }
-    } while (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details));
+    }
     
     uCxEnd(&gUcxHandle);
     
@@ -12048,22 +12077,6 @@ static void tlsUploadCertificate(void)
     printf("Selected: %s\n", typeStr);
     printf("\n");
     
-    // Get certificate name
-    char certName[128];
-    printf("Enter certificate name (internal reference): ");
-    if (!fgets(certName, sizeof(certName), stdin)) {
-        return;
-    }
-    certName[strcspn(certName, "\r\n")] = 0;  // Remove newline
-    
-    if (strlen(certName) == 0) {
-        printf("ERROR: Certificate name cannot be empty\n");
-        printf("\n");
-        printf("Press Enter to continue...");
-        getchar();
-        return;
-    }
-    
     // Get file path
     char filePath[512];
     printf("Enter certificate file path (PEM format): ");
@@ -12079,6 +12092,35 @@ static void tlsUploadCertificate(void)
         getchar();
         return;
     }
+    
+    // Extract filename from path and use as certificate name
+    char certName[128];
+    const char *filename = strrchr(filePath, '\\');
+    if (!filename) {
+        filename = strrchr(filePath, '/');  // Try Unix-style path
+    }
+    filename = filename ? filename + 1 : filePath;  // Use full path if no separator found
+    
+    // Copy filename and remove extension
+    strncpy(certName, filename, sizeof(certName) - 1);
+    certName[sizeof(certName) - 1] = '\0';
+    
+    // Remove extension (everything after last dot)
+    char *dotPos = strrchr(certName, '.');
+    if (dotPos) {
+        *dotPos = '\0';
+    }
+    
+    if (strlen(certName) == 0) {
+        printf("ERROR: Could not extract certificate name from filename\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Certificate name: %s (auto-detected from filename)\n", certName);
+    printf("\n");
     
     // Read certificate file
     FILE *fp = fopen(filePath, "rb");
@@ -12168,40 +12210,39 @@ static void tlsUploadCertificate(void)
             
             // Query the certificate details to get module's fingerprint
             uCxSecReadAllCertificatesDetails_t details;
-            if (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details)) {
-                bool fingerprintMatch = false;
-                
-                do {
-                    if (details.type == U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_BYTES &&
-                        details.rsp.CertDetailIdBytes.cert_detail_id == U_SEC_CERT_DETAIL_ID_FINGERPRINT) {
-                        
-                        // Convert module fingerprint to hex string
-                        char moduleFingerprint[65];
-                        const uint8_t *fpData = details.rsp.CertDetailIdBytes.hex_value.pData;
-                        size_t fpLen = details.rsp.CertDetailIdBytes.hex_value.length;
-                        
-                        for (size_t i = 0; i < fpLen && i < 32; i++) {
-                            sprintf(moduleFingerprint + (i * 2), "%02X", fpData[i]);
-                        }
-                        moduleFingerprint[64] = '\0';
-                        
-                        printf("Module SHA256 Fingerprint:\n");
-                        printf("  %s\n", moduleFingerprint);
-                        
-                        // Compare fingerprints (case-insensitive)
-                        if (_stricmp(localFingerprint, moduleFingerprint) == 0) {
-                            printf("\n✓ Fingerprints match! Certificate verified.\n");
-                            fingerprintMatch = true;
-                        } else {
-                            printf("\n⚠ WARNING: Fingerprints do NOT match!\n");
-                            printf("  This may indicate data corruption during upload.\n");
-                        }
-                        break;
+            bool fingerprintMatch = false;
+            
+            // Call Begin repeatedly to get each detail
+            while (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details)) {
+                if (details.type == U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_BYTES &&
+                    details.rsp.CertDetailIdBytes.cert_detail_id == U_SEC_CERT_DETAIL_ID_FINGERPRINT) {
+                    
+                    // Convert module fingerprint to hex string
+                    char moduleFingerprint[65];
+                    const uint8_t *fpData = details.rsp.CertDetailIdBytes.hex_value.pData;
+                    size_t fpLen = details.rsp.CertDetailIdBytes.hex_value.length;
+                    
+                    for (size_t i = 0; i < fpLen && i < 32; i++) {
+                        sprintf(moduleFingerprint + (i * 2), "%02X", fpData[i]);
                     }
-                } while (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details));
-                
-                uCxEnd(&gUcxHandle);
+                    moduleFingerprint[64] = '\0';
+                    
+                    printf("Module SHA256 Fingerprint:\n");
+                    printf("  %s\n", moduleFingerprint);
+                    
+                    // Compare fingerprints (case-insensitive)
+                    if (_stricmp(localFingerprint, moduleFingerprint) == 0) {
+                        printf("\n✓ Fingerprints match! Certificate verified.\n");
+                        fingerprintMatch = true;
+                    } else {
+                        printf("\n⚠ WARNING: Fingerprints do NOT match!\n");
+                        printf("  This may indicate data corruption during upload.\n");
+                    }
+                    break;
+                }
             }
+            
+            uCxEnd(&gUcxHandle);
         }
         
         printf("\nThe certificate is now available for TLS connections.\n");
