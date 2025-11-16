@@ -12269,30 +12269,65 @@ static void tlsDeleteCertificate(void)
         return;
     }
     
-    printf("\n");
-    printf("\n");
-    printf("                DELETE CERTIFICATE\n");
-    printf("\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("DELETE CERTIFICATE\n");
+    printf("─────────────────────────────────────────────────────────────\n\n");
+    
+    // List available certificates
+    printf("Available certificates:\n\n");
+    
+    uCxSecurityListCertificatesBegin(&gUcxHandle);
+    uCxSecListCertificates_t certInfo;
+    int certCount = 0;
+    
+    while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
+        certCount++;
+        printf("  [%d] %s", certCount, certInfo.name);
+        
+        switch (certInfo.cert_type) {
+            case U_SEC_CERT_TYPE_ROOT:
+                printf(" (CA Certificate)");
+                break;
+            case U_SEC_CERT_TYPE_CLIENT:
+                printf(" (Client Certificate)");
+                break;
+            case U_SEC_CERT_TYPE_KEY:
+                printf(" (Private Key)");
+                break;
+        }
+        printf("\n");
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (certCount == 0) {
+        printf("  No certificates installed.\n");
+        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
     printf("\n");
     
+    // Prompt for certificate name
     char certName[128];
-    printf("Enter certificate name to delete: ");
+    printf("Enter certificate name to delete (or press Enter to cancel): ");
     if (!fgets(certName, sizeof(certName), stdin)) {
         return;
     }
     certName[strcspn(certName, "\r\n")] = 0;  // Remove newline
     
     if (strlen(certName) == 0) {
-        printf("ERROR: Certificate name cannot be empty\n");
-        printf("\n");
+        printf("Cancelled.\n");
+        printf("\n─────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
     
     // Confirm deletion
-    printf("\n");
-    printf("WARNING: This will permanently delete the certificate!\n");
+    printf("\nWARNING: This will permanently delete the certificate!\n");
     printf("Are you sure you want to delete '%s'? (y/N): ", certName);
     
     char confirm[10];
@@ -12302,14 +12337,13 @@ static void tlsDeleteCertificate(void)
     
     if (tolower(confirm[0]) != 'y') {
         printf("Cancelled.\n");
-        printf("\n");
+        printf("\n─────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
     
-    printf("\n");
-    printf("Deleting certificate: %s\n", certName);
+    printf("\nDeleting certificate: %s\n", certName);
     
     // Note: UCX API requires cert type for deletion
     // We'll try all three types since we don't know which one it is
@@ -12330,15 +12364,12 @@ static void tlsDeleteCertificate(void)
         printf("✓ Certificate deleted successfully\n");
     } else {
         printf("ERROR: Failed to delete certificate (error: %d)\n", err);
-        printf("\n");
-        printf("Possible reasons:\n");
+        printf("\nPossible reasons:\n");
         printf("  - Certificate name not found\n");
         printf("  - Certificate is currently in use by an active connection\n");
     }
     
-    printf("\n");
-    printf("\n");
-    printf("\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
     printf("Press Enter to continue...");
     getchar();
 }
