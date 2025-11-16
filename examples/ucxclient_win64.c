@@ -9199,7 +9199,7 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
                     printf("\nAttempting to connect to saved Wi-Fi profile...\n");
                     
                     // Connect using profile 0
-                    err = uCxWifiStationConnect2(&gUcxHandle, 0);
+                    err = uCxWifiStationConnect(&gUcxHandle, 0);
                     if (err < 0) {
                         printf("ERROR: Failed to connect to Wi-Fi (error: %d)\n", err);
                         printf("Please configure Wi-Fi settings using the [w] Wi-Fi menu.\n");
