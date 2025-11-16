@@ -818,6 +818,29 @@ static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_outpu
 // URC handler for HTTP
 static void httpRequestStatusUrc(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char *description);
 
+// HTTP and REST API example functions
+static void httpGetExample(void);
+static void httpPostExample(void);
+static void httpQuoteApiExample(void);
+static void httpTimeApiExample(void);
+static void httpStatusCodeExample(void);
+static void httpJsonPostExample(void);
+
+// JSON parsing utility functions
+static bool extractJsonString(const char *json, const char *key, char *value, size_t valueSize);
+static bool extractJsonNumber(const char *json, const char *key, char *value, size_t valueSize);
+static bool extractJsonNestedString(const char *json, const char *objectKey, const char *valueKey, 
+                                   char *value, size_t valueSize);
+static bool extractJsonNestedNumber(const char *json, const char *objectKey, const char *valueKey, 
+                                   char *value, size_t valueSize);
+
+// HTTPS REST API Helper - configures HTTPS connection with TLS 1.2
+// Returns true on success, false on error (with error message printed)
+static bool configureHttpsConnection(int32_t sessionId, const char *hostname, const char *path);
+
+// REST API Examples
+static void httpJsonPlaceholderExample(void);
+
 // ============================================================================
 // BLUETOOTH HELPER FUNCTIONS
 // ============================================================================
@@ -1821,7 +1844,10 @@ static void deobfuscatePassword(const char *input, char *output, size_t outputSi
     // Convert from hex with XOR
     size_t outIdx = 0;
     for (size_t i = 0; i < inputLen && outIdx < outputSize - 1; i += 2) {
-        char hexByte[3] = {input[i], input[i+1], '\0'};
+        char hexByte[3];
+        hexByte[0] = input[i];
+        hexByte[1] = input[i+1];
+        hexByte[2] = '\0';
         unsigned char c = (unsigned char)strtol(hexByte, NULL, 16);
         output[outIdx] = c ^ OBFUSCATION_KEY[outIdx % keyLen];
         outIdx++;
@@ -3788,7 +3814,10 @@ static void gattClientWriteCharacteristic(void)
     size_t dataLen = hexLen / 2;
     
     for (size_t i = 0; i < dataLen; i++) {
-        char byteStr[3] = {hexInput[i*2], hexInput[i*2 + 1], '\0'};
+        char byteStr[3];
+        byteStr[0] = hexInput[i*2];
+        byteStr[1] = hexInput[i*2 + 1];
+        byteStr[2] = '\0';
         data[i] = (uint8_t)strtol(byteStr, NULL, 16);
     }
     
@@ -3837,7 +3866,10 @@ static void gattServerAddService(void)
     uint8_t uuid[16];
     int32_t uuidLen = (int32_t)(hexLen / 2);
     for (int i = 0; i < uuidLen; i++) {
-        char byteStr[3] = {uuidStr[i*2], uuidStr[i*2 + 1], '\0'};
+        char byteStr[3];
+        byteStr[0] = uuidStr[i*2];
+        byteStr[1] = uuidStr[i*2 + 1];
+        byteStr[2] = '\0';
         uuid[i] = (uint8_t)strtol(byteStr, NULL, 16);
     }
     
@@ -3894,7 +3926,10 @@ static void gattServerSetCharacteristic(void)
     size_t dataLen = hexLen / 2;
     
     for (size_t i = 0; i < dataLen; i++) {
-        char byteStr[3] = {hexInput[i*2], hexInput[i*2 + 1], '\0'};
+        char byteStr[3];
+        byteStr[0] = hexInput[i*2];
+        byteStr[1] = hexInput[i*2 + 1];
+        byteStr[2] = '\0';
         data[i] = (uint8_t)strtol(byteStr, NULL, 16);
     }
     
@@ -3945,7 +3980,10 @@ static void gattServerAddCharacteristic(void)
     uint8_t uuid[16];
     int32_t uuidLen = (int32_t)(hexLen / 2);
     for (int i = 0; i < uuidLen; i++) {
-        char byteStr[3] = {uuidStr[i*2], uuidStr[i*2 + 1], '\0'};
+        char byteStr[3];
+        byteStr[0] = uuidStr[i*2];
+        byteStr[1] = uuidStr[i*2 + 1];
+        byteStr[2] = '\0';
         uuid[i] = (uint8_t)strtol(byteStr, NULL, 16);
     }
     
@@ -3984,11 +4022,13 @@ static void gattServerAddCharacteristic(void)
     printf("\nAdding characteristic to service %d...\n", gGattServerServiceHandle);
     
     // Properties as byte array
-    uint8_t propBytes[] = {(uint8_t)properties};
+    uint8_t propBytes[1];
+    propBytes[0] = (uint8_t)properties;
     
     // Call uCxGattServerCharDefine6 with all parameters
     uCxGattServerCharDefine_t response;
-    uint8_t defaultValue[] = {0x00}; // Default value
+    uint8_t defaultValue[1];
+    defaultValue[0] = 0x00; // Default value
     
     int32_t result = uCxGattServerCharDefine6(&gUcxHandle, uuid, uuidLen,
                                               propBytes, 1, // properties as byte array
@@ -4060,7 +4100,10 @@ static void gattServerSendNotification(void)
     size_t dataLen = hexLen / 2;
     
     for (size_t i = 0; i < dataLen; i++) {
-        char byteStr[3] = {hexInput[i*2], hexInput[i*2 + 1], '\0'};
+        char byteStr[3];
+        byteStr[0] = hexInput[i*2];
+        byteStr[1] = hexInput[i*2 + 1];
+        byteStr[2] = '\0';
         data[i] = (uint8_t)strtol(byteStr, NULL, 16);
     }
     
@@ -4710,7 +4753,9 @@ static DWORD WINAPI heartbeatThread(LPVOID lpParam)
             if (gHeartbeatCounter <= 58) direction = 1;
             
             // Build heart rate measurement value: [Flags, BPM]
-            uint8_t heartbeatData[] = {0x00, gHeartbeatCounter};
+            uint8_t heartbeatData[2];
+            heartbeatData[0] = 0x00;
+            heartbeatData[1] = gHeartbeatCounter;
             
             // Send notification
             int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
@@ -4756,7 +4801,9 @@ static DWORD WINAPI gattNotificationThread(LPVOID lpParam)
                 if (gHeartbeatCounter >= 72) direction = -1;
                 if (gHeartbeatCounter <= 58) direction = 1;
                 
-                uint8_t heartbeatData[] = {0x00, gHeartbeatCounter}; // [Flags, BPM]
+                uint8_t heartbeatData[2]; // [Flags, BPM]
+                heartbeatData[0] = 0x00;
+                heartbeatData[1] = gHeartbeatCounter;
                 
                 int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
                                                                gHeartbeatCharHandle, 
@@ -5148,7 +5195,9 @@ static void gattClientReadCtsTime()
     }
 
     uint8_t buf[20];
-    uByteArray_t value = { .pData = buf, .length = 0 };
+    uByteArray_t value;
+    value.pData = buf;
+    value.length = 0;
 
     int32_t r = uCxGattClientReadBegin(&gUcxHandle,
                                        gCurrentGattConnHandle,
@@ -5293,7 +5342,9 @@ static bool gattClientFindEssHandles()
 static void gattClientReadEssValues()
 {
     uint8_t buf[20];
-    uByteArray_t value = { .pData = buf, .length = 0 };
+    uByteArray_t value;
+    value.pData = buf;
+    value.length = 0;
 
     // Temperature
     if (gEssClientTempValueHandle > 0) {
@@ -5438,7 +5489,9 @@ static void gattClientReadLns()
     }
 
     uint8_t buf[32];
-    uByteArray_t value = { .pData = buf, .length = 0 };
+    uByteArray_t value;
+    value.pData = buf;
+    value.length = 0;
 
     int32_t r = uCxGattClientReadBegin(&gUcxHandle,
                                        gCurrentGattConnHandle,
@@ -5607,7 +5660,9 @@ static bool gattClientFindAioHandles(void)
 static void gattClientReadAioValues(void)
 {
     uint8_t buf[20];
-    uByteArray_t value = { .pData = buf, .length = 0 };
+    uByteArray_t value;
+    value.pData = buf;
+    value.length = 0;
 
     // Digital
     if (gAioClientDigitalValueHandle > 0) {
@@ -6211,7 +6266,9 @@ static void gattClientReadBattery(void)
     }
 
     uint8_t buf[8];
-    uByteArray_t value = { .pData = buf, .length = 0 };
+    uByteArray_t value;
+    value.pData = buf;
+    value.length = 0;
 
     int32_t r = uCxGattClientReadBegin(&gUcxHandle,
                                        gCurrentGattConnHandle,
@@ -6339,7 +6396,9 @@ static bool gattClientFindDisHandles(void)
 static void disReadAndPrint(uint16_t uuid, int32_t handle)
 {
     uint8_t buf[64];
-    uByteArray_t value = { .pData = buf, .length = 0 };
+    uByteArray_t value;
+    value.pData = buf;
+    value.length = 0;
 
     int32_t r = uCxGattClientReadBegin(&gUcxHandle,
                                        gCurrentGattConnHandle,
@@ -9922,6 +9981,976 @@ static void httpPostExample(void)
     getchar();
 }
 
+// ============================================================================
+// JSON PARSING UTILITIES
+// ============================================================================
+
+/**
+ * @brief Extract JSON string value (simple parser, no external library)
+ * 
+ * @param json      JSON string to parse
+ * @param key       Key to find (e.g., "temp")
+ * @param value     Output buffer for value
+ * @param valueSize Size of output buffer
+ * @return true if found and extracted
+ */
+static bool extractJsonString(const char *json, const char *key, char *value, size_t valueSize)
+{
+    if (!json || !key || !value || valueSize == 0) {
+        return false;
+    }
+    
+    // Build search pattern: "key":"
+    char pattern[128];
+    snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
+    
+    const char *start = strstr(json, pattern);
+    if (!start) {
+        return false;
+    }
+    
+    // Move past the pattern
+    start += strlen(pattern);
+    
+    // Find the closing quote
+    const char *end = strchr(start, '"');
+    if (!end) {
+        return false;
+    }
+    
+    // Calculate length and copy
+    size_t len = (size_t)(end - start);
+    if (len >= valueSize) {
+        len = valueSize - 1;
+    }
+    
+    memcpy(value, start, len);
+    value[len] = '\0';
+    
+    return true;
+}
+
+/**
+ * @brief Extract JSON numeric value (as string)
+ * 
+ * @param json      JSON string to parse
+ * @param key       Key to find (e.g., "temperature")
+ * @param value     Output buffer for value
+ * @param valueSize Size of output buffer
+ * @return true if found and extracted
+ */
+static bool extractJsonNumber(const char *json, const char *key, char *value, size_t valueSize)
+{
+    if (!json || !key || !value || valueSize == 0) {
+        return false;
+    }
+    
+    // Build search pattern: "key":
+    char pattern[128];
+    snprintf(pattern, sizeof(pattern), "\"%s\":", key);
+    
+    const char *start = strstr(json, pattern);
+    if (!start) {
+        return false;
+    }
+    
+    // Move past the pattern
+    start += strlen(pattern);
+    
+    // Skip whitespace
+    while (*start == ' ' || *start == '\t' || *start == '\n') {
+        start++;
+    }
+    
+    // Find the end (comma, closing brace, or whitespace)
+    const char *end = start;
+    while (*end && *end != ',' && *end != '}' && *end != ' ' && *end != '\t' && *end != '\n') {
+        end++;
+    }
+    
+    // Calculate length and copy
+    size_t len = (size_t)(end - start);
+    if (len >= valueSize) {
+        len = valueSize - 1;
+    }
+    
+    memcpy(value, start, len);
+    value[len] = '\0';
+    
+    return true;
+}
+
+/**
+ * @brief Extract nested JSON string value (one level deep)
+ * 
+ * @param json       JSON string to parse
+ * @param objectKey  Object key (e.g., "main")
+ * @param valueKey   Value key within object (e.g., "temp")
+ * @param value      Output buffer for value
+ * @param valueSize  Size of output buffer
+ * @return true if found and extracted
+ */
+static bool extractJsonNestedString(const char *json, const char *objectKey, const char *valueKey, 
+                                   char *value, size_t valueSize)
+{
+    if (!json || !objectKey || !valueKey || !value || valueSize == 0) {
+        return false;
+    }
+    
+    // Build pattern for object: "objectKey":{
+    char pattern[128];
+    snprintf(pattern, sizeof(pattern), "\"%s\":{", objectKey);
+    
+    const char *objectStart = strstr(json, pattern);
+    if (!objectStart) {
+        return false;
+    }
+    
+    // Find the closing brace for this object
+    const char *objectEnd = strchr(objectStart + strlen(pattern), '}');
+    if (!objectEnd) {
+        return false;
+    }
+    
+    // Extract the object content
+    size_t objectLen = (size_t)(objectEnd - objectStart);
+    char *objectContent = (char *)malloc(objectLen + 1);
+    if (!objectContent) {
+        return false;
+    }
+    
+    memcpy(objectContent, objectStart, objectLen);
+    objectContent[objectLen] = '\0';
+    
+    // Now search for the value key within the object
+    bool found = extractJsonString(objectContent, valueKey, value, valueSize);
+    
+    free(objectContent);
+    return found;
+}
+
+/**
+ * @brief Extract nested JSON numeric value (one level deep)
+ */
+static bool extractJsonNestedNumber(const char *json, const char *objectKey, const char *valueKey, 
+                                   char *value, size_t valueSize)
+{
+    if (!json || !objectKey || !valueKey || !value || valueSize == 0) {
+        return false;
+    }
+    
+    // Build pattern for object: "objectKey":{
+    char pattern[128];
+    snprintf(pattern, sizeof(pattern), "\"%s\":{", objectKey);
+    
+    const char *objectStart = strstr(json, pattern);
+    if (!objectStart) {
+        return false;
+    }
+    
+    // Find the closing brace for this object
+    const char *objectEnd = strchr(objectStart + strlen(pattern), '}');
+    if (!objectEnd) {
+        return false;
+    }
+    
+    // Extract the object content
+    size_t objectLen = (size_t)(objectEnd - objectStart);
+    char *objectContent = (char *)malloc(objectLen + 1);
+    if (!objectContent) {
+        return false;
+    }
+    
+    memcpy(objectContent, objectStart, objectLen);
+    objectContent[objectLen] = '\0';
+    
+    // Now search for the value key within the object
+    bool found = extractJsonNumber(objectContent, valueKey, value, valueSize);
+    
+    free(objectContent);
+    return found;
+}
+
+// ============================================================================
+// HTTPS HELPER FUNCTION
+// ============================================================================
+
+/**
+ * Configure HTTPS connection with TLS 1.2
+ * 
+ * @param sessionId HTTP session ID
+ * @param hostname Server hostname (e.g., "httpbin.org")
+ * @param path Request path (e.g., "/uuid")
+ * @return true on success, false on error
+ */
+static bool configureHttpsConnection(int32_t sessionId, const char *hostname, const char *path)
+{
+    int32_t err;
+    
+    // Enable TLS 1.2 FIRST (before setting connection params)
+    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    if (err < 0) {
+        printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+        return false;
+    }
+    printf("✓ TLS 1.2 enabled\n");
+    
+    // Set connection parameters with HTTPS port 443
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostname, 443);
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        return false;
+    }
+    
+    // Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        return false;
+    }
+    
+    printf("✓ HTTPS connection configured\n");
+    return true;
+}
+
+// ============================================================================
+// REST API EXAMPLES WITH JSON
+// ============================================================================
+
+/**
+ * @brief Example: Get sample data from JSONPlaceholder API
+ */
+static void httpQuoteApiExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("=== HTTPBIN.ORG - UUID API DEMO ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Configuring HTTPS connection to httpbin.org...\n");
+    
+    // Use helper function to configure HTTPS
+    if (!configureHttpsConnection(sessionId, "httpbin.org", "/uuid")) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("\n");
+    printf("Sending GET request to https://httpbin.org/uuid...\n");
+    
+    // Send GET request
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("✓ Request sent successfully\n");
+    printf("\n");
+    
+    // Read response headers
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    // Read response body (max 1000 bytes per read)
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t moreToRead = 1;
+    uint8_t buffer[1000];
+    char jsonResponse[4096] = {0};
+    
+    while (moreToRead && totalBytes < (int32_t)(sizeof(jsonResponse) - 1)) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            // Append to JSON response buffer
+            if (totalBytes + bytesRead < (int32_t)sizeof(jsonResponse)) {
+                memcpy(jsonResponse + totalBytes, buffer, bytesRead);
+                totalBytes += bytesRead;
+            }
+            if (moreToRead) {
+                printf(".");  // Progress indicator
+                fflush(stdout);
+            }
+        }
+    }
+    printf("\n");
+    
+    jsonResponse[totalBytes] = '\0';
+    
+    if (totalBytes > 0) {
+        printf("✓ Received %d bytes\n", totalBytes);
+        printf("\n");
+        
+        // Parse JSON response from httpbin.org/uuid
+        // Response format: {"uuid": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"}
+        char uuid[128];
+        
+        printf("─────────────────────────────────────────────────\n");
+        printf("GENERATED UUID:\n");
+        printf("─────────────────────────────────────────────────\n");
+        
+        // Extract UUID (field "uuid")
+        if (extractJsonString(jsonResponse, "uuid", uuid, sizeof(uuid))) {
+            printf("\n  %s\n", uuid);
+            printf("\nUUID Format: 8-4-4-4-12 hexadecimal digits\n");
+        } else {
+            printf("\nFailed to parse UUID from response\n");
+        }
+        
+        printf("─────────────────────────────────────────────────\n");
+        
+        // Show raw JSON for educational purposes
+        printf("\nRaw JSON Response:\n");
+        printf("%s\n", jsonResponse);
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief Example: Get current time from WorldTimeAPI
+ */
+static void httpTimeApiExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("=== WORLDTIMEAPI.ORG - CURRENT TIME ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Get timezone from user
+    char timezone[128];
+    printf("Enter timezone (e.g., Europe/London, America/New_York) or press Enter for UTC: ");
+    if (!fgets(timezone, sizeof(timezone), stdin)) {
+        printf("ERROR: Failed to read timezone\n");
+        return;
+    }
+    timezone[strcspn(timezone, "\r\n")] = 0;
+    
+    // Default to UTC if empty
+    char path[256];
+    if (strlen(timezone) == 0) {
+        snprintf(path, sizeof(path), "/api/timezone/Etc/UTC");
+    } else {
+        snprintf(path, sizeof(path), "/api/timezone/%s", timezone);
+    }
+    
+    printf("\n");
+    printf("Configuring HTTPS connection to worldtimeapi.org...\n");
+    
+    // Use helper function to configure HTTPS
+    if (!configureHttpsConnection(sessionId, "worldtimeapi.org", path)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("\n");
+    printf("Sending GET request to https://worldtimeapi.org%s...\n", path);
+    
+    // Send GET request
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("✓ Request sent successfully\n");
+    printf("\n");
+    
+    // Read response headers
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    // Read response body (max 1000 bytes per read)
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t moreToRead = 1;
+    uint8_t buffer[1000];
+    char jsonResponse[4096] = {0};
+    
+    while (moreToRead && totalBytes < (int32_t)(sizeof(jsonResponse) - 1)) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            // Append to JSON response buffer
+            if (totalBytes + bytesRead < (int32_t)sizeof(jsonResponse)) {
+                memcpy(jsonResponse + totalBytes, buffer, bytesRead);
+                totalBytes += bytesRead;
+            }
+            if (moreToRead) {
+                printf(".");  // Progress indicator
+                fflush(stdout);
+            }
+        }
+    }
+    printf("\n");
+    
+    jsonResponse[totalBytes] = '\0';
+    
+    if (totalBytes > 0) {
+        printf("✓ Received %d bytes\n", totalBytes);
+        printf("\n");
+        
+        // Parse JSON response
+        char datetime[64];
+        char tz[64];
+        char abbr[16];
+        char utcOffset[16];
+        
+        printf("─────────────────────────────────────────────────\n");
+        printf("CURRENT TIME:\n");
+        printf("─────────────────────────────────────────────────\n");
+        
+        if (extractJsonString(jsonResponse, "datetime", datetime, sizeof(datetime))) {
+            printf("Date/Time: %s\n", datetime);
+        }
+        
+        if (extractJsonString(jsonResponse, "timezone", tz, sizeof(tz))) {
+            printf("Timezone:  %s\n", tz);
+        }
+        
+        if (extractJsonString(jsonResponse, "abbreviation", abbr, sizeof(abbr))) {
+            printf("Abbrev:    %s\n", abbr);
+        }
+        
+        if (extractJsonString(jsonResponse, "utc_offset", utcOffset, sizeof(utcOffset))) {
+            printf("UTC Offset: %s\n", utcOffset);
+        }
+        
+        printf("─────────────────────────────────────────────────\n");
+        
+        // Show raw JSON for educational purposes
+        printf("\nRaw JSON Response:\n");
+        printf("%s\n", jsonResponse);
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief Example: Test HTTP status codes using httpbin.org
+ */
+static void httpStatusCodeExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("=== HTTPBIN.ORG - HTTP STATUS CODE TESTING ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Get status code from user
+    char statusInput[16];
+    printf("Enter HTTP status code to test (e.g., 200, 404, 500): ");
+    if (!fgets(statusInput, sizeof(statusInput), stdin)) {
+        printf("ERROR: Failed to read status code\n");
+        return;
+    }
+    statusInput[strcspn(statusInput, "\r\n")] = 0;
+    
+    int statusCode = atoi(statusInput);
+    if (statusCode < 100 || statusCode > 599) {
+        printf("ERROR: Invalid status code (must be 100-599)\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    char path[64];
+    snprintf(path, sizeof(path), "/status/%d", statusCode);
+    
+    printf("\n");
+    printf("Configuring HTTP connection to httpbin.org...\n");
+    
+    // Disconnect any previous HTTP session to ensure clean state
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);  // Brief delay for disconnect to complete
+    
+    // Set connection parameters
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, "httpbin.org");
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("✓ Connection configured\n");
+    printf("\n");
+    printf("Sending GET request to http://httpbin.org%s...\n", path);
+    
+    // Send GET request
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("✓ Request sent successfully\n");
+    printf("\n");
+    
+    // Read response headers
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Read response body (if any)
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t moreToRead = 1;
+    uint8_t buffer[1000];
+    
+    while (moreToRead) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            fwrite(buffer, 1, bytesRead, stdout);
+        }
+    }
+    
+    printf("\n");
+    printf("✓ Response received: %d bytes\n", totalBytes);
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief Example: POST JSON data to httpbin.org/post
+ */
+static void httpJsonPostExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("=== HTTPBIN.ORG - JSON POST REQUEST ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Get user input for JSON data
+    char name[128];
+    char message[256];
+    
+    printf("Enter your name: ");
+    if (!fgets(name, sizeof(name), stdin)) {
+        printf("ERROR: Failed to read name\n");
+        return;
+    }
+    name[strcspn(name, "\r\n")] = 0;
+    
+    printf("Enter a message: ");
+    if (!fgets(message, sizeof(message), stdin)) {
+        printf("ERROR: Failed to read message\n");
+        return;
+    }
+    message[strcspn(message, "\r\n")] = 0;
+    
+    // Build JSON payload
+    char jsonPayload[1024];
+    snprintf(jsonPayload, sizeof(jsonPayload), 
+             "{\"name\":\"%s\",\"message\":\"%s\",\"timestamp\":\"%lld\"}", 
+             name, message, (long long)time(NULL));
+    
+    int32_t dataLen = (int32_t)strlen(jsonPayload);
+    
+    printf("\n");
+    printf("JSON Payload (%d bytes):\n", dataLen);
+    printf("%s\n", jsonPayload);
+    printf("\n");
+    
+    printf("Configuring HTTP connection to httpbin.org...\n");
+    
+    // Set connection parameters
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, "httpbin.org");
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, "/post");
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Set Content-Type header for JSON
+    err = uCxHttpAddHeaderField(&gUcxHandle, sessionId, "Content-Type", "application/json");
+    if (err < 0) {
+        printf("WARNING: Failed to set Content-Type header (error: %d)\n", err);
+    }
+    
+    printf("✓ Connection configured\n");
+    printf("\n");
+    printf("Sending POST request to http://httpbin.org/post...\n");
+    
+    // Send POST request with JSON data
+    err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)jsonPayload, dataLen);
+    if (err < 0) {
+        printf("ERROR: POST request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("✓ POST request sent successfully\n");
+    printf("\n");
+    
+    // Read response headers
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    }
+    
+    // Read response body
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t moreToRead = 1;
+    uint8_t buffer[1000];
+    
+    printf("─────────────────────────────────────────────────\n");
+    while (moreToRead) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            fwrite(buffer, 1, bytesRead, stdout);
+        }
+    }
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("✓ Response received: %d bytes\n", totalBytes);
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief Example: JSONPlaceholder - Fake REST API for testing
+ * Demonstrates fetching sample posts, users, and comments from typicode.com
+ */
+static void httpJsonPlaceholderExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("=== JSONPLACEHOLDER.TYPICODE.COM - FAKE REST API ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(true, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Menu for user to select endpoint
+    printf("Select data to fetch:\n");
+    printf("  [1] Sample Post (id: 1)\n");
+    printf("  [2] Sample User (id: 1)\n");
+    printf("  [3] Sample Comment (id: 1)\n");
+    printf("  [4] List of Posts (first 5)\n");
+    printf("\nEnter choice (1-4): ");
+    
+    char choice[16];
+    if (!fgets(choice, sizeof(choice), stdin)) {
+        printf("ERROR: Failed to read choice\n");
+        return;
+    }
+    
+    const char *path = NULL;
+    const char *description = NULL;
+    
+    switch (choice[0]) {
+        case '1':
+            path = "/posts/1";
+            description = "Sample Post";
+            break;
+        case '2':
+            path = "/users/1";
+            description = "Sample User";
+            break;
+        case '3':
+            path = "/comments/1";
+            description = "Sample Comment";
+            break;
+        case '4':
+            path = "/posts?_limit=5";
+            description = "Posts (first 5)";
+            break;
+        default:
+            printf("Invalid choice\n");
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+    }
+    
+    printf("\n");
+    printf("Configuring HTTPS connection to jsonplaceholder.typicode.com...\n");
+    
+    // Use helper function to configure HTTPS
+    if (!configureHttpsConnection(sessionId, "jsonplaceholder.typicode.com", path)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("Sending GET request to https://jsonplaceholder.typicode.com%s...\n", path);
+    
+    // Send GET request
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("✓ Request sent successfully\n");
+    printf("\n");
+    
+    // Read response headers
+    printf("Reading response headers...\n");
+    uCxHttpGetHeader_t headerResp;
+    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        printf("─────────────────────────────────────────────────\n");
+        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        printf("─────────────────────────────────────────────────\n");
+        uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    // Read response body (max 1000 bytes per read)
+    int32_t totalBytes = 0;
+    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t moreToRead = 1;
+    uint8_t buffer[1000];
+    char jsonResponse[4096] = {0};
+    
+    while (moreToRead && totalBytes < (int32_t)(sizeof(jsonResponse) - 1)) {
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            int32_t bytesToCopy = bytesRead;
+            if (totalBytes + bytesToCopy >= (int32_t)sizeof(jsonResponse)) {
+                bytesToCopy = (int32_t)sizeof(jsonResponse) - totalBytes - 1;
+            }
+            memcpy(jsonResponse + totalBytes, buffer, bytesToCopy);
+            totalBytes += bytesToCopy;
+            printf(".");
+        }
+    }
+    
+    printf("\n");
+    
+    jsonResponse[totalBytes] = '\0';
+    
+    if (totalBytes > 0) {
+        printf("✓ Received %d bytes\n", totalBytes);
+        printf("\n");
+        
+        // Parse and display key fields based on endpoint
+        printf("─────────────────────────────────────────────────\n");
+        printf("%s DATA:\n", description);
+        printf("─────────────────────────────────────────────────\n");
+        
+        if (choice[0] == '1') {  // Post
+            char title[256], body[512], userId[16], id[16];
+            if (extractJsonNumber(jsonResponse, "userId", userId, sizeof(userId))) {
+                printf("User ID: %s\n", userId);
+            }
+            if (extractJsonNumber(jsonResponse, "id", id, sizeof(id))) {
+                printf("Post ID: %s\n", id);
+            }
+            if (extractJsonString(jsonResponse, "title", title, sizeof(title))) {
+                printf("Title: %s\n", title);
+            }
+            if (extractJsonString(jsonResponse, "body", body, sizeof(body))) {
+                printf("Body: %s\n", body);
+            }
+        } else if (choice[0] == '2') {  // User
+            char name[128], username[64], email[128], city[64];
+            if (extractJsonString(jsonResponse, "name", name, sizeof(name))) {
+                printf("Name: %s\n", name);
+            }
+            if (extractJsonString(jsonResponse, "username", username, sizeof(username))) {
+                printf("Username: %s\n", username);
+            }
+            if (extractJsonString(jsonResponse, "email", email, sizeof(email))) {
+                printf("Email: %s\n", email);
+            }
+            if (extractJsonNestedString(jsonResponse, "address", "city", city, sizeof(city))) {
+                printf("City: %s\n", city);
+            }
+        } else if (choice[0] == '3') {  // Comment
+            char name[256], email[128], body[512];
+            if (extractJsonString(jsonResponse, "name", name, sizeof(name))) {
+                printf("Name: %s\n", name);
+            }
+            if (extractJsonString(jsonResponse, "email", email, sizeof(email))) {
+                printf("Email: %s\n", email);
+            }
+            if (extractJsonString(jsonResponse, "body", body, sizeof(body))) {
+                printf("Body: %s\n", body);
+            }
+        }
+        
+        printf("─────────────────────────────────────────────────\n");
+        
+        // Show raw JSON for educational purposes
+        printf("\nRaw JSON Response:\n");
+        printf("%s\n", jsonResponse);
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
 static void ipGeolocationExample(void)
 {
     int32_t sessionId = 0;
@@ -12102,15 +13131,9 @@ static void tlsUploadCertificate(void)
     }
     filename = filename ? filename + 1 : filePath;  // Use full path if no separator found
     
-    // Copy filename and remove extension
+    // Copy full filename (keep extension to avoid name conflicts)
     strncpy(certName, filename, sizeof(certName) - 1);
     certName[sizeof(certName) - 1] = '\0';
-    
-    // Remove extension (everything after last dot)
-    char *dotPos = strrchr(certName, '.');
-    if (dotPos) {
-        *dotPos = '\0';
-    }
     
     if (strlen(certName) == 0) {
         printf("ERROR: Could not extract certificate name from filename\n");
@@ -12597,7 +13620,7 @@ static void printWelcomeGuide(void)
     printf("WI-FI OPERATIONS (NORA-W36 only):\n");
     printf("  - [w] Wi-Fi Station - Scan, connect, disconnect, status\n");
     printf("  - [o] Wi-Fi Access Point - Create hotspot with QR code\n");
-    printf("  - [n] Network - Sockets, MQTT, HTTP\n");
+    printf("  - [n] Network - Sockets (TCP, UDP)\n");
     printf("  - [x] Security - TLS/SSL certificates and configuration\n");
     printf("  - [p] HTTP Examples - GET/POST requests\n");
     printf("  - [y] NTP Examples - Time synchronization\n");
@@ -12656,7 +13679,7 @@ static void printHelp(void)
     printf("      - Configure SSID, password, and security (WPA2)\n");
     printf("      - Generate QR code for easy mobile connection\n");
     printf("      - View connected stations and AP status\n");
-    printf("  [n] Network - Sockets, MQTT, HTTP\n");
+    printf("  [n] Network - Sockets (TCP, UDP)\n");
     printf("      - TCP/UDP sockets for client/server communication\n");
     printf("      - MQTT publish/subscribe with QoS\n");
     printf("      - HTTP client (GET/POST/PUT/DELETE)\n");
@@ -12816,7 +13839,7 @@ static void printMenu(void)
                     printf("Wi-Fi FEATURES\n");
                     printf("  [w]     Wi-Fi Station - Scan, connect, status\n");
                     printf("  [o]     Wi-Fi Access Point - Enable, QR code\n");
-                    printf("  [n]     Network - Sockets, MQTT, HTTP\n");
+                    printf("  [n]     Network - Sockets (TCP, UDP)\n");
                     printf("  [d]     Network Diagnostics - Ping, iPerf, DNS lookup\n");
                     printf("  [x]     Security - TLS and certificates\n");
                 } else {
@@ -12986,13 +14009,21 @@ static void printMenu(void)
             
         case MENU_HTTP:
             printf("\n");
-            printf("                  HTTP CLIENT MENU (REST API)\n");
+            printf("            HTTP CLIENT & REST API EXAMPLES\n");
             printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
-            printf("  [1] HTTP GET request (with optional file save)\n");
-            printf("  [2] HTTP POST request (with text or file data)\n");
+            printf("BASIC HTTP:\n");
+            printf("  [1] HTTP GET request (manual entry)\n");
+            printf("  [2] HTTP POST request (text or file)\n");
+            printf("\n");
+            printf("REST API WITH JSON:\n");
+            printf("  [3] UUID Generator (httpbin.org)\n");
+            printf("  [4] World Time API (worldtimeapi.org)\n");
+            printf("  [5] HTTP Status Code Tester (httpbin.org)\n");
+            printf("  [6] JSON POST Example (httpbin.org/post)\n");
+            printf("  [7] JSONPlaceholder - Fake REST API (typicode.com)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -13793,6 +14824,21 @@ static void handleUserInput(void)
                     break;
                 case 2:
                     httpPostExample();
+                    break;
+                case 3:
+                    httpQuoteApiExample();
+                    break;
+                case 4:
+                    httpTimeApiExample();
+                    break;
+                case 5:
+                    httpStatusCodeExample();
+                    break;
+                case 6:
+                    httpJsonPostExample();
+                    break;
+                case 7:
+                    httpJsonPlaceholderExample();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -16142,14 +17188,14 @@ static void executeFactoryReset(void)
     
     printf("\n");
     printf("╔═══════════════════════════════════════════════════════════╗\n");
-    printf("║             ⚠ FACTORY RESET WARNING ⚠                    ║\n");
+    printf("║              FACTORY RESET WARNING                        ║\n");
     printf("╠═══════════════════════════════════════════════════════════╣\n");
     printf("║  This will PERMANENTLY DELETE:                            ║\n");
     printf("║  • All Wi-Fi network credentials                          ║\n");
     printf("║  • All Bluetooth pairings                                 ║\n");
     printf("║  • All TLS certificates                                   ║\n");
     printf("║  • All custom configuration settings                      ║\n");
-    printf("║                                                            ║\n");
+    printf("║                                                           ║\n");
     printf("║  The module will be restored to factory defaults.         ║\n");
     printf("╚═══════════════════════════════════════════════════════════╝\n");
     printf("\n");
@@ -18323,10 +19369,11 @@ static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize)
         if (getaddrinfo(hostname, NULL, &hints, &result) == 0) {
             for (struct addrinfo *ptr = result; ptr != NULL; ptr = ptr->ai_next) {
                 struct sockaddr_in *sockaddr_ipv4 = (struct sockaddr_in *)ptr->ai_addr;
-                char *ip = inet_ntoa(sockaddr_ipv4->sin_addr);
+                char ip[INET_ADDRSTRLEN];
+                inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), ip, INET_ADDRSTRLEN);
                 
                 // Skip loopback addresses
-                if (ip && strncmp(ip, "127.", 4) != 0) {
+                if (ip[0] != '\0' && strncmp(ip, "127.", 4) != 0) {
                     strncpy(ipBuffer, ip, bufferSize - 1);
                     ipBuffer[bufferSize - 1] = '\0';
                     break;
