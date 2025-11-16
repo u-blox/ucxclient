@@ -658,6 +658,7 @@ static void executeAtTest(void);
 static void executeAtTerminal(void);
 static void executeAti9(void);
 static void executeModuleReboot(void);
+static void executeFactoryReset(void);
 static void showLegacyAdvertisementStatus(void);
 static bool ensureLegacyAdvertisementEnabled(void);
 static void showGattServerConnectionInfo(void);
@@ -12623,6 +12624,7 @@ static void printHelp(void)
     printf("  [d] Disconnect   - Close connection to device\n");
     printf("  [i] Device info  - Show model and firmware version\n");
     printf("  [r] Reboot       - Restart the module\n");
+    printf("  [j] Factory reset - Restore module to factory defaults\n");
     printf("  [a] AT terminal  - Send custom AT commands\n");
     printf("  AT test          - Test basic communication\n");
     printf("\n");
@@ -12787,6 +12789,7 @@ static void printMenu(void)
                 printf("  [a]     AT command test\n");
                 printf("  [i]     Device information (ATI9)\n");
                 printf("  [r]     Reboot module\n");
+                printf("  [j]     Factory reset (restore defaults)\n");
                 printf("  [t]     AT Terminal (interactive)\n");
             }
             printf("\n");
@@ -13309,6 +13312,8 @@ static void handleUserInput(void)
                 choice = 4;   // Device information (ATI9)
             } else if (firstChar == 'r') {
                 choice = 5;   // Reboot module
+            } else if (firstChar == 'j') {
+                choice = 53;  // Factory reset
             }
         }
         
@@ -13412,6 +13417,13 @@ static void handleUserInput(void)
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         executeModuleReboot();
+                    }
+                    break;
+                case 53:  // Factory reset (j)
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        executeFactoryReset();
                     }
                     break;
                 case 6:
@@ -16116,6 +16128,108 @@ static void executeModuleReboot(void)
             printf(" timeout!\n");
             printf("Module may have shut down completely (no +STARTUP received).\n");
         }
+    } else {
+        printf("ERROR: Failed to send AT+CPWROFF (error %d)\n", result);
+    }
+}
+
+static void executeFactoryReset(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("╔═══════════════════════════════════════════════════════════╗\n");
+    printf("║             ⚠ FACTORY RESET WARNING ⚠                    ║\n");
+    printf("╠═══════════════════════════════════════════════════════════╣\n");
+    printf("║  This will PERMANENTLY DELETE:                            ║\n");
+    printf("║  • All Wi-Fi network credentials                          ║\n");
+    printf("║  • All Bluetooth pairings                                 ║\n");
+    printf("║  • All TLS certificates                                   ║\n");
+    printf("║  • All custom configuration settings                      ║\n");
+    printf("║                                                            ║\n");
+    printf("║  The module will be restored to factory defaults.         ║\n");
+    printf("╚═══════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    
+    printf("Type 'RESET' (in uppercase) to confirm factory reset, or anything else to cancel: ");
+    char confirm[32];
+    if (!fgets(confirm, sizeof(confirm), stdin)) {
+        return;
+    }
+    confirm[strcspn(confirm, "\r\n")] = 0;  // Remove newline
+    
+    if (strcmp(confirm, "RESET") != 0) {
+        printf("\nFactory reset cancelled.\n");
+        return;
+    }
+    
+    printf("\n--- Factory Reset ---\n");
+    
+    // Clear any pending STARTUP flag and timestamp
+    U_CX_MUTEX_LOCK(gUrcMutex);
+    gUrcEventFlags &= ~URC_FLAG_STARTUP;
+    gStartupTimestamp = 0;
+    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    
+    // Step 1: Factory reset (AT+USYFR)
+    printf("Sending AT+USYFR (factory reset)...\n");
+    int32_t result = uCxSystemFactoryReset(&gUcxHandle);
+    
+    if (result != 0) {
+        printf("ERROR: Factory reset command failed (error %d)\n", result);
+        return;
+    }
+    
+    printf("Factory reset command accepted.\n");
+    
+    // Step 2: Reboot module (AT+CPWROFF)
+    // Enable echo before reboot (workaround for firmware bug)
+    printf("Enabling echo (workaround for firmware bug)...\n");
+    result = uCxSystemSetEchoOn(&gUcxHandle);
+    if (result != 0) {
+        printf("Warning: Failed to enable echo (error %d)\n", result);
+    }
+    
+    printf("Sending AT+CPWROFF (reboot)...\n");
+    
+    ULONGLONG startTime = GetTickCount64();
+    result = uCxSystemReboot(&gUcxHandle);
+    
+    if (result == 0) {
+        printf("Module reboot initiated (OK received).\n");
+        printf("Waiting for module to restart");
+        fflush(stdout);
+        
+        // Wait for +STARTUP URC with timeout
+        for (int i = 0; i < 100; i++) {  // 10 seconds total (100 * 100ms)
+            Sleep(100);
+            printf(".");
+            fflush(stdout);
+            
+            U_CX_MUTEX_LOCK(gUrcMutex);
+            bool startupReceived = (gUrcEventFlags & URC_FLAG_STARTUP) != 0;
+            if (startupReceived) {
+                gUrcEventFlags &= ~URC_FLAG_STARTUP;  // Clear the flag
+            }
+            U_CX_MUTEX_UNLOCK(gUrcMutex);
+            
+            if (startupReceived) {
+                ULONGLONG elapsedMs = gStartupTimestamp - startTime;
+                printf(" done!\n");
+                printf("Module has been reset to factory defaults and rebooted.\n");
+                printf("Reboot time: %llu ms (%.2f seconds)\n", elapsedMs, elapsedMs / 1000.0);
+                
+                // Reconfigure module after reboot
+                moduleStartupInit();
+                return;
+            }
+        }
+        
+        printf(" timeout!\n");
+        printf("Module may have shut down completely (no +STARTUP received).\n");
     } else {
         printf("ERROR: Failed to send AT+CPWROFF (error %d)\n", result);
     }
