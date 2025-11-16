@@ -141,6 +141,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 static uCxAtClient_t gUcxAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gUcxConnected = false;  // UCX client connection status (COM port)
+static bool gModuleRestarted = false;  // Flag set when module restarts (needs reconfiguration)
 
 // Socket tracking
 static int32_t gCurrentSocket = -1;
@@ -254,9 +255,11 @@ static int32_t gAioServerServiceHandle      = -1;
 static int32_t gAioServerDigitalCharHandle  = -1;   // Digital characteristic (0x2A56)
 static int32_t gAioServerDigitalCccdHandle  = -1;
 static uint8_t gAioServerDigitalState       = 0x00; // bit0 = "LED 0" (0=off, 1=on)
+static bool gAioServerDigitalNotificationsEnabled = false;
 static int32_t gAioServerAnalogCharHandle   = -1;   // Analog characteristic (0x2A58)
 static int32_t gAioServerAnalogCccdHandle   = -1;
 static uint16_t gAioServerAnalogValue       = 500;  // Example: 0..1000 range (e.g. 0.0–10.00V)
+static bool gAioServerAnalogNotificationsEnabled = false;
 
 // GATT Client - Automation IO (AIO) tracking
 static int gAioClientServiceIndex      = -1;
@@ -1987,26 +1990,19 @@ static void startupUrc(struct uCxHandle *puCxHandle)
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
     
-    // Prevent re-entry: Only reconfigure if we haven't done so recently (within 2 seconds)
+    // Prevent re-entry: Only note the restart if we haven't done so recently (within 2 seconds)
     if (gLastStartupConfigTime == 0 || (currentTime - gLastStartupConfigTime) > 2000) {
         gLastStartupConfigTime = currentTime;
         
-        // Re-initialize module settings after restart
-        printf("\n[Module restarted] Re-initializing settings...\n");
+        // Set flag so main loop can reconfigure the module
+        gModuleRestarted = true;
         
-        // Disable echo
-        if (uCxAtClientExecSimpleCmd(puCxHandle->pAtClient, "ATE0") == 0) {
-            printf("  ✓ Echo disabled\n");
-        } else {
-            printf("  ✗ Failed to disable echo\n");
-        }
+        // Note: Module has restarted and is in default state
+        printf("\n[Module restarted] Module is now in default state\n");
         
-        // Enable extended error codes
-        if (uCxAtClientExecSimpleCmdF(puCxHandle->pAtClient, "AT+USYEE=", "d", 1, U_CX_AT_UTIL_PARAM_LAST) == 0) {
-            printf("  ✓ Extended error codes enabled\n");
-        } else {
-            printf("  ✗ Failed to enable extended error codes\n");
-        }
+        // DO NOT send AT commands from within URC callback!
+        // This causes assertion failure in URC queue
+        // The gModuleRestarted flag will be handled by the main loop
     }
     
     // Signal the event to wake up any waiting code
@@ -4453,9 +4449,22 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
     if (gAioServerDigitalCccdHandle > 0 && value_handle == gAioServerDigitalCccdHandle) {
         if (value->length >= 2) {
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
-            printf("\n[AIO Digital] Client %s notifications (CCCD=0x%04X)\n",
-                   (cccdValue & 0x0001) ? "ENABLED" : "DISABLED",
-                   cccdValue);
+            if (cccdValue & 0x0001) {
+                printf("\n[AIO Digital] Client ENABLED notifications (CCCD=0x%04X)\n", cccdValue);
+                gAioServerDigitalNotificationsEnabled = true;
+                
+                // Start unified notification thread if not running
+                if (gGattNotificationThread == NULL) {
+                    gGattNotificationThreadRunning = true;
+                    gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
+                    if (gGattNotificationThread) {
+                        printf("[GATT] Unified notification thread started\n");
+                    }
+                }
+            } else {
+                printf("\n[AIO Digital] Client DISABLED notifications (CCCD=0x%04X)\n", cccdValue);
+                gAioServerDigitalNotificationsEnabled = false;
+            }
         }
         return;
     }
@@ -4464,9 +4473,22 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
     if (gAioServerAnalogCccdHandle > 0 && value_handle == gAioServerAnalogCccdHandle) {
         if (value->length >= 2) {
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
-            printf("\n[AIO Analog] Client %s notifications (CCCD=0x%04X)\n",
-                   (cccdValue & 0x0001) ? "ENABLED" : "DISABLED",
-                   cccdValue);
+            if (cccdValue & 0x0001) {
+                printf("\n[AIO Analog] Client ENABLED notifications (CCCD=0x%04X)\n", cccdValue);
+                gAioServerAnalogNotificationsEnabled = true;
+                
+                // Start unified notification thread if not running
+                if (gGattNotificationThread == NULL) {
+                    gGattNotificationThreadRunning = true;
+                    gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
+                    if (gGattNotificationThread) {
+                        printf("[GATT] Unified notification thread started\n");
+                    }
+                }
+            } else {
+                printf("\n[AIO Analog] Client DISABLED notifications (CCCD=0x%04X)\n", cccdValue);
+                gAioServerAnalogNotificationsEnabled = false;
+            }
         }
         return;
     }
@@ -4486,19 +4508,12 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                gAioServerDigitalState,
                (gAioServerDigitalState & 0x01) ? 1 : 0);
 
-        // Reflect this change back to subscribed clients
-        if (gCurrentGattConnHandle >= 0 && gAioServerDigitalCccdHandle > 0) {
-            int32_t result = uCxGattServerSendNotification(&gUcxHandle,
-                                                           gCurrentGattConnHandle,
-                                                           gAioServerDigitalCharHandle,
-                                                           &gAioServerDigitalState,
-                                                           1);
-            if (result == 0) {
-                printf("[AIO Digital] Notified subscribers of new state.\n");
-            } else {
-                printf("[AIO Digital] WARNING: notify failed (code %d)\n", result);
-            }
-        }
+        // NOTE: Do NOT send notification from within URC callback (causes assertion)
+        // The new state is stored in gAioServerDigitalState
+        // Clients can read the characteristic to get the updated value
+        // To actively notify clients, send notification from main thread or use a deferred task
+        
+        printf("[AIO Digital] State updated (clients can read new value)\n");
 
         (void)oldState; // Available for comparison/debounce if needed
         return;
@@ -4917,6 +4932,58 @@ static DWORD WINAPI gattNotificationThread(LPVOID lpParam)
                 if (result == 0) {
                     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "ESS Humidity: %u.%02u%%", 
                                   gEssServerHumValue / 100, gEssServerHumValue % 100);
+                    consecutiveErrors = 0;  // Reset error counter on success
+                } else {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        printf("[GATT] Too many consecutive errors, stopping notification thread\n");
+                        gGattNotificationThreadRunning = false;
+                        gCurrentGattConnHandle = -1;
+                        break;
+                    }
+                }
+            }
+            
+            // 6. Send AIO Digital notification (if enabled)
+            if (gAioServerDigitalNotificationsEnabled && gAioServerDigitalCharHandle > 0) {
+                // Toggle bit 0 (LED 0) every second for demo
+                gAioServerDigitalState ^= 0x01;  // Toggle bit 0
+                
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                               gAioServerDigitalCharHandle,
+                                                               &gAioServerDigitalState, 1);
+                if (result == 0) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "AIO Digital: 0x%02X (LED0=%u)",
+                                  gAioServerDigitalState, (gAioServerDigitalState & 0x01) ? 1 : 0);
+                    consecutiveErrors = 0;  // Reset error counter on success
+                } else {
+                    consecutiveErrors++;
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        printf("[GATT] Too many consecutive errors, stopping notification thread\n");
+                        gGattNotificationThreadRunning = false;
+                        gCurrentGattConnHandle = -1;
+                        break;
+                    }
+                }
+            }
+            
+            // 7. Send AIO Analog notification (if enabled)
+            if (gAioServerAnalogNotificationsEnabled && gAioServerAnalogCharHandle > 0) {
+                // Simulate analog sensor reading (500-900 range, like voltage × 100)
+                static int16_t analogDirection = 10;
+                gAioServerAnalogValue = (uint16_t)(gAioServerAnalogValue + analogDirection);
+                if (gAioServerAnalogValue >= 900) analogDirection = -10;
+                if (gAioServerAnalogValue <= 500) analogDirection = 10;
+                
+                uint8_t payload[2];
+                payload[0] = (uint8_t)(gAioServerAnalogValue & 0xFF);
+                payload[1] = (uint8_t)((gAioServerAnalogValue >> 8) & 0xFF);
+                
+                int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
+                                                               gAioServerAnalogCharHandle,
+                                                               payload, 2);
+                if (result == 0) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "AIO Analog: %u", gAioServerAnalogValue);
                     consecutiveErrors = 0;  // Reset error counter on success
                 } else {
                     consecutiveErrors++;
@@ -12003,7 +12070,33 @@ int main(int argc, char *argv[])
     }
     
     // Main menu loop
+    bool menuNeedsRedraw = true;
+    
     while (gMenuState != MENU_EXIT) {
+        // Handle module restart immediately (don't wait for user input)
+        if (gModuleRestarted && gUcxConnected) {
+            gModuleRestarted = false;  // Clear flag
+            
+            printf("\n  Reconfiguring module after restart...\n");
+            
+            // Disable echo
+            if (uCxAtClientExecSimpleCmd(gUcxHandle.pAtClient, "ATE0") == 0) {
+                printf("  ✓ Echo disabled\n");
+            } else {
+                printf("  ✗ Failed to disable echo\n");
+            }
+            
+            // Enable extended error codes
+            if (uCxAtClientExecSimpleCmdF(gUcxHandle.pAtClient, "AT+USYEE=", "d", 1, U_CX_AT_UTIL_PARAM_LAST) == 0) {
+                printf("  ✓ Extended error codes enabled\n");
+            } else {
+                printf("  ✗ Failed to enable extended error codes\n");
+            }
+            
+            printf("  Module reconfiguration complete\n\n");
+            menuNeedsRedraw = true;
+        }
+        
         // Periodic tasks: CTS time notifications
         ULONGLONG now = GetTickCount64();
         if (now - gCtsServerLastTick >= 1000) {
@@ -12011,8 +12104,20 @@ int main(int argc, char *argv[])
             ctsNotifyIfEnabled();
         }
         
-        printMenu();
-        handleUserInput();
+        // Print menu if needed
+        if (menuNeedsRedraw) {
+            printMenu();
+            menuNeedsRedraw = false;
+        }
+        
+        // Check for keyboard input (non-blocking)
+        if (_kbhit()) {
+            handleUserInput();
+            menuNeedsRedraw = true;
+        }
+        
+        // Small sleep to avoid busy waiting
+        Sleep(50);
     }
     
     // Cleanup
@@ -12147,17 +12252,23 @@ static void printHelp(void)
     printf("      - Verify firmware after update\n");
     printf("\n");
     printf("EXAMPLES:\n");
-    printf("  [e] GATT Examples - Server & Client demonstrations\n");
-    printf("      - GATT Server: 9 profiles (Heart Rate, HID, AIO, Battery, ESS, NUS, SPS, LNS, CTS)\n");
-    printf("      - GATT Client: 8 examples (CTS, ESS, LNS, NUS, SPS, BAS, DIS, AIO)\n");
-    printf("  [p] HTTP Examples - REST API operations\n");
-    printf("      - HTTP GET request with optional file save\n");
-    printf("      - HTTP POST request with text or file data\n");
-    printf("      - Automatic Wi-Fi connectivity validation\n");
-    printf("  [y] NTP Examples - Network time synchronization\n");
-    printf("      - Sync time with popular NTP servers\n");
-    printf("      - Configure custom NTP server\n");
-    printf("      - Display synchronized system time\n");
+    printf("  Bluetooth Examples:\n");
+    printf("    [e] GATT Server - 9 profiles (Heart Rate, HID, AIO, Battery, ESS, NUS, SPS, LNS, CTS)\n");
+    printf("    [g] GATT Client - 8 examples (CTS, ESS, LNS, NUS, SPS, BAS, DIS, AIO)\n");
+    printf("\n");
+    printf("  Wi-Fi Examples (NORA-W36 only):\n");
+    printf("    [p] HTTP Examples - REST API operations\n");
+    printf("        - HTTP GET request with optional file save\n");
+    printf("        - HTTP POST request with text or file data\n");
+    printf("        - Automatic Wi-Fi connectivity validation\n");
+    printf("    [y] NTP Examples - Network time synchronization\n");
+    printf("        - Sync time with popular NTP servers\n");
+    printf("        - Configure custom NTP server\n");
+    printf("        - Display synchronized system time\n");
+    printf("    [k] Location Examples - IP & Wi-Fi based positioning\n");
+    printf("        - External IP detection\n");
+    printf("        - IP-based geolocation\n");
+    printf("        - Wi-Fi positioning with Combain (indoor/outdoor)\n");
     printf("\n");
     printf("TOOLS & SETTINGS:\n");
     printf("  [l] Toggle logging - Show/hide AT command traffic\n");
@@ -12293,13 +12404,18 @@ static void printMenu(void)
                 printf("\n");
                 
                 // === EXAMPLES ===
-                printf("EXAMPLES\n");
+                printf("BLUETOOTH EXAMPLES\n");
                 printf("  [e]     GATT Server Examples (9 profiles)\n");
                 printf("  [g]     GATT Client Examples (8 demos)\n");
-                printf("  [p]     HTTP Examples (GET, POST)\n");
-                printf("  [y]     NTP Examples (Time Sync)\n");
-                printf("  [k]     Location Examples (IP Geolocation, Wi-Fi Positioning)\n");
                 printf("\n");
+                
+                if (hasWiFi) {
+                    printf("Wi-Fi EXAMPLES\n");
+                    printf("  [p]     HTTP Examples (GET, POST)\n");
+                    printf("  [y]     NTP Examples (Time Sync)\n");
+                    printf("  [k]     Location Examples (IP Geolocation, Wi-Fi Positioning)\n");
+                    printf("\n");
+                }
             }
             
             // === TOOLS & SETTINGS (always available) ===
