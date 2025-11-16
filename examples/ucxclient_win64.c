@@ -41,10 +41,12 @@
 #include <setupapi.h>  // For device enumeration
 #include <devguid.h>   // For GUID_DEVCLASS_PORTS
 #include <regstr.h>    // For registry string constants
+#include <wincrypt.h>  // For SHA256 hash calculation
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "ws2_32.lib")  // Windows Sockets library
+#pragma comment(lib, "crypt32.lib")  // Windows Crypto API
 
 // FTD2XX library dynamic loading
 // Note: FT_HANDLE in FTD2XX is actually a pointer type despite being typedef'd as ULONG
@@ -141,7 +143,6 @@ static PFN_FT_Close gpFT_Close = NULL;
 static uCxAtClient_t gUcxAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gUcxConnected = false;  // UCX client connection status (COM port)
-static bool gModuleRestarted = false;  // Flag set when module restarts (needs reconfiguration)
 
 // Socket tracking
 static int32_t gCurrentSocket = -1;
@@ -1987,25 +1988,9 @@ static void startupUrc(struct uCxHandle *puCxHandle)
     // Record timestamp when STARTUP is received
     ULONGLONG currentTime = GetTickCount64();
     gStartupTimestamp = currentTime;
+    gLastStartupConfigTime = currentTime;
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
-    
-    // Prevent re-entry: Only note the restart if we haven't done so recently (within 2 seconds)
-    if (gLastStartupConfigTime == 0 || (currentTime - gLastStartupConfigTime) > 2000) {
-        gLastStartupConfigTime = currentTime;
-        
-        // Set flag so main loop can reconfigure the module
-        gModuleRestarted = true;
-        
-        // Note: Module has restarted and is in default state
-        printf("\n[Module restarted] Module is now in default state\n");
-        
-        // DO NOT send AT commands from within URC callback!
-        // This causes assertion failure in URC queue
-        // The gModuleRestarted flag will be handled by the main loop
-    }
-    
-    // Signal the event to wake up any waiting code
     signalEvent(URC_FLAG_STARTUP);
 }
 
@@ -2089,58 +2074,11 @@ static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_i
 
 static void mqttDataAvailableUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id, int32_t number_bytes)
 {
+    (void)puCxHandle;
+    (void)mqtt_client_id;
+    (void)number_bytes;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "MQTT data received: %d bytes on client %d", number_bytes, mqtt_client_id);
-    
-    // Read the MQTT data immediately
-    printf("\n─────────────────────────────────────────────────\n");
-    printf("MQTT MESSAGE RECEIVED\n");
-    printf("─────────────────────────────────────────────────\n");
-    printf("Client ID: %d\n", mqtt_client_id);
-    printf("Data size: %d bytes\n", number_bytes);
-    
-    // Read the message data using AT+UMQTTRD
-    const char *pTopic = NULL;
-    uint8_t readBuffer[1024];
-    
-    int32_t bytesRead = uCxMqttReadBegin(puCxHandle, mqtt_client_id, readBuffer, sizeof(readBuffer), &pTopic);
-    
-    if (bytesRead >= 0) {
-        if (pTopic) {
-            printf("Topic: %s\n", pTopic);
-        }
-        printf("Message (%d bytes): ", bytesRead);
-        
-        // Try to print as text, but handle binary data
-        bool isPrintable = true;
-        for (int32_t i = 0; i < bytesRead; i++) {
-            if (readBuffer[i] < 32 && readBuffer[i] != '\n' && readBuffer[i] != '\r' && readBuffer[i] != '\t') {
-                isPrintable = false;
-                break;
-            }
-        }
-        
-        if (isPrintable) {
-            // Print as text
-            printf("%.*s\n", bytesRead, readBuffer);
-        } else {
-            // Print as hex
-            printf("\n");
-            for (int32_t i = 0; i < bytesRead; i++) {
-                printf("%02X ", readBuffer[i]);
-                if ((i + 1) % 16 == 0) printf("\n");
-            }
-            if (bytesRead % 16 != 0) printf("\n");
-        }
-        
-        uCxEnd(puCxHandle);
-    } else {
-        printf("ERROR: Failed to read MQTT message (error %d)\n", bytesRead);
-    }
-    printf("─────────────────────────────────────────────────\n");
-    
-    printf("*****************************\n\n");
-    
     signalEvent(URC_FLAG_MQTT_DATA);
 }
 
@@ -11511,6 +11449,267 @@ static void httpMenu(void)
 // SECURITY / TLS FUNCTIONS
 // ============================================================================
 
+// Calculate SHA256 fingerprint of certificate data using Windows Crypto API
+static bool calculateSHA256Fingerprint(const uint8_t *data, size_t dataLen, char *fingerprintHex, size_t fingerprintHexSize)
+{
+    if (!data || !fingerprintHex || fingerprintHexSize < 65) {  // 64 hex chars + null
+        return false;
+    }
+    
+    HCRYPTPROV hProv = 0;
+    HCRYPTHASH hHash = 0;
+    BYTE hash[32];  // SHA256 = 32 bytes
+    DWORD hashLen = sizeof(hash);
+    bool success = false;
+    
+    // Acquire crypto context
+    if (!CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)) {
+        return false;
+    }
+    
+    // Create hash object
+    if (!CryptCreateHash(hProv, CALG_SHA_256, 0, 0, &hHash)) {
+        CryptReleaseContext(hProv, 0);
+        return false;
+    }
+    
+    // Hash the data
+    if (!CryptHashData(hHash, data, (DWORD)dataLen, 0)) {
+        CryptDestroyHash(hHash);
+        CryptReleaseContext(hProv, 0);
+        return false;
+    }
+    
+    // Get hash value
+    if (!CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLen, 0)) {
+        CryptDestroyHash(hHash);
+        CryptReleaseContext(hProv, 0);
+        return false;
+    }
+    
+    // Convert to hex string (uppercase, no colons like module returns)
+    for (DWORD i = 0; i < hashLen; i++) {
+        sprintf(fingerprintHex + (i * 2), "%02X", hash[i]);
+    }
+    fingerprintHex[hashLen * 2] = '\0';
+    
+    success = true;
+    
+    CryptDestroyHash(hHash);
+    CryptReleaseContext(hProv, 0);
+    
+    return success;
+}
+
+// Format fingerprint with colons (OpenSSL style)
+static void formatFingerprintWithColons(const char *hex, char *output, size_t outputSize)
+{
+    if (!hex || !output || outputSize < 96) {  // 64 hex + 31 colons + null
+        return;
+    }
+    
+    size_t hexLen = strlen(hex);
+    size_t outIdx = 0;
+    
+    for (size_t i = 0; i < hexLen && outIdx < outputSize - 1; i += 2) {
+        if (i > 0) {
+            output[outIdx++] = ':';
+        }
+        output[outIdx++] = hex[i];
+        if (i + 1 < hexLen) {
+            output[outIdx++] = hex[i + 1];
+        }
+    }
+    output[outIdx] = '\0';
+}
+
+// Extract certificate data from PEM file (between BEGIN/END markers)
+static bool extractCertFromPEM(const char *pemData, size_t pemLen, uint8_t **certDER, size_t *certDERLen)
+{
+    // Find BEGIN CERTIFICATE marker
+    const char *beginMarker = strstr(pemData, "-----BEGIN CERTIFICATE-----");
+    if (!beginMarker) {
+        beginMarker = strstr(pemData, "-----BEGIN TRUSTED CERTIFICATE-----");
+    }
+    if (!beginMarker) {
+        return false;
+    }
+    
+    // Find END CERTIFICATE marker
+    const char *endMarker = strstr(beginMarker, "-----END CERTIFICATE-----");
+    if (!endMarker) {
+        endMarker = strstr(beginMarker, "-----END TRUSTED CERTIFICATE-----");
+    }
+    if (!endMarker) {
+        return false;
+    }
+    
+    // Move past the BEGIN line
+    const char *base64Start = strchr(beginMarker, '\n');
+    if (!base64Start) {
+        return false;
+    }
+    base64Start++;
+    
+    // Decode Base64 using Windows API
+    DWORD derLen = 0;
+    if (!CryptStringToBinaryA(base64Start, (DWORD)(endMarker - base64Start), 
+                              CRYPT_STRING_BASE64, NULL, &derLen, NULL, NULL)) {
+        return false;
+    }
+    
+    *certDER = (uint8_t *)malloc(derLen);
+    if (!*certDER) {
+        return false;
+    }
+    
+    if (!CryptStringToBinaryA(base64Start, (DWORD)(endMarker - base64Start), 
+                              CRYPT_STRING_BASE64, *certDER, &derLen, NULL, NULL)) {
+        free(*certDER);
+        *certDER = NULL;
+        return false;
+    }
+    
+    *certDERLen = derLen;
+    return true;
+}
+
+// Check if any certificates are available on the module
+// Returns: 0=no certs, 1=has CA only, 2=has CA+client (full mutual TLS)
+static int checkCertificatesAvailable(bool *hasCA, bool *hasClient, bool *hasKey, char *caName, char *clientName, char *keyName, size_t nameSize)
+{
+    if (!gUcxConnected) {
+        return 0;
+    }
+    
+    if (hasCA) *hasCA = false;
+    if (hasClient) *hasClient = false;
+    if (hasKey) *hasKey = false;
+    
+    uCxSecurityListCertificatesBegin(&gUcxHandle);
+    uCxSecListCertificates_t certInfo;
+    
+    while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
+        switch (certInfo.cert_type) {
+            case U_SEC_CERT_TYPE_ROOT:
+                if (hasCA) {
+                    *hasCA = true;
+                    if (caName && nameSize > 0) {
+                        strncpy(caName, certInfo.name, nameSize - 1);
+                        caName[nameSize - 1] = '\0';
+                    }
+                }
+                break;
+            case U_SEC_CERT_TYPE_CLIENT:
+                if (hasClient) {
+                    *hasClient = true;
+                    if (clientName && nameSize > 0) {
+                        strncpy(clientName, certInfo.name, nameSize - 1);
+                        clientName[nameSize - 1] = '\0';
+                    }
+                }
+                break;
+            case U_SEC_CERT_TYPE_KEY:
+                if (hasKey) {
+                    *hasKey = true;
+                    if (keyName && nameSize > 0) {
+                        strncpy(keyName, certInfo.name, nameSize - 1);
+                        keyName[nameSize - 1] = '\0';
+                    }
+                }
+                break;
+        }
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (hasCA && *hasCA) {
+        if (hasClient && *hasClient && hasKey && *hasKey) {
+            return 2;  // Full mutual TLS capability
+        }
+        return 1;  // Server validation only
+    }
+    
+    return 0;  // No TLS certificates
+}
+
+// Prompt user about using TLS with available certificates
+static bool promptForTLSUsage(char *selectedCA, char *selectedClient, char *selectedKey, size_t nameSize)
+{
+    bool hasCA = false, hasClient = false, hasKey = false;
+    char caName[64] = "", clientName[64] = "", keyName[64] = "";
+    
+    int tlsLevel = checkCertificatesAvailable(&hasCA, &hasClient, &hasKey, caName, clientName, keyName, sizeof(caName));
+    
+    if (tlsLevel == 0) {
+        printf("\n");
+        printf("╔════════════════════════════════════════════════════════════╗\n");
+        printf("║  ⚠ TLS SECURITY NOTICE                                     ║\n");
+        printf("╠════════════════════════════════════════════════════════════╣\n");
+        printf("║  No TLS certificates are installed on the module.         ║\n");
+        printf("║                                                            ║\n");
+        printf("║  Without certificates:                                     ║\n");
+        printf("║  • TLS encryption is still possible                        ║\n");
+        printf("║  • Server identity is NOT verified (vulnerable to MITM)   ║\n");
+        printf("║  • Less secure than certificate-based TLS                  ║\n");
+        printf("║                                                            ║\n");
+        printf("║  Recommendation: Upload certificates via Security menu [x] ║\n");
+        printf("╚════════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+        
+        printf("Continue without TLS certificates? (y/N): ");
+        char response[10];
+        if (fgets(response, sizeof(response), stdin) && tolower(response[0]) == 'y') {
+            return false;  // Continue without certs
+        }
+        return false;  // User declined
+    }
+    
+    printf("\n");
+    printf("╔════════════════════════════════════════════════════════════╗\n");
+    if (tlsLevel == 2) {
+        printf("║  ✓ FULL TLS/MUTUAL AUTHENTICATION AVAILABLE                ║\n");
+    } else {
+        printf("║  ✓ TLS SERVER VALIDATION AVAILABLE                         ║\n");
+    }
+    printf("╠════════════════════════════════════════════════════════════╣\n");
+    printf("║  Available certificates:                                   ║\n");
+    if (hasCA) {
+        printf("║  • CA Certificate: %-39s ║\n", caName);
+    }
+    if (hasClient) {
+        printf("║  • Client Cert:    %-39s ║\n", clientName);
+    }
+    if (hasKey) {
+        printf("║  • Client Key:     %-39s ║\n", keyName);
+    }
+    printf("║                                                            ║\n");
+    if (tlsLevel == 2) {
+        printf("║  This enables:                                             ║\n");
+        printf("║  • Encrypted connection (TLS)                              ║\n");
+        printf("║  • Server identity verification (CA cert)                  ║\n");
+        printf("║  • Client identity verification (mutual TLS)               ║\n");
+    } else {
+        printf("║  This enables:                                             ║\n");
+        printf("║  • Encrypted connection (TLS)                              ║\n");
+        printf("║  • Server identity verification (CA cert)                  ║\n");
+    }
+    printf("╚════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    
+    printf("Use TLS with these certificates? (Y/n): ");
+    char response[10];
+    if (!fgets(response, sizeof(response), stdin) || tolower(response[0]) != 'n') {
+        // User wants to use TLS - copy cert names
+        if (selectedCA && hasCA) strncpy(selectedCA, caName, nameSize);
+        if (selectedClient && hasClient) strncpy(selectedClient, clientName, nameSize);
+        if (selectedKey && hasKey) strncpy(selectedKey, keyName, nameSize);
+        return true;
+    }
+    
+    return false;
+}
+
 static void tlsSetVersion(void)
 {
     if (!gUcxConnected) {
@@ -11660,11 +11859,9 @@ static void tlsShowCertificateDetails(void)
         return;
     }
     
-    printf("\n");
-    printf("\n");
-    printf("              CERTIFICATE DETAILS\n");
-    printf("\n");
-    printf("\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("CERTIFICATE DETAILS\n");
+    printf("─────────────────────────────────────────────────────────────\n\n");
     
     char certName[128];
     printf("Enter certificate name: ");
@@ -11675,31 +11872,118 @@ static void tlsShowCertificateDetails(void)
     
     if (strlen(certName) == 0) {
         printf("ERROR: Certificate name cannot be empty\n");
-        printf("\n");
+        printf("\nPress Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\nQuerying certificate details for: %s\n\n", certName);
+    
+    // Use AT+USECD to get certificate details
+    uCxSecReadAllCertificatesDetails_t details;
+    bool hasDetails = uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details);
+    
+    if (!hasDetails) {
+        int32_t err = uCxEnd(&gUcxHandle);
+        printf("ERROR: Certificate not found (error: %d)\n", err);
+        printf("\nTip: Use [3] to list all certificates first\n");
+        printf("\n─────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
     
-    printf("\n");
-    printf("Querying certificate details for: %s\n", certName);
-    printf("\n");
+    int detailCount = 0;
     
-    // Note: The UCX API might not provide detailed certificate info retrieval
-    // This is a placeholder for future implementation
-    printf("NOTE: Detailed certificate information retrieval is not fully\n");
-    printf("      supported by the current UCX API.\n");
-    printf("\n");
-    printf("Available actions:\n");
-    printf("  - View certificate list with [3]\n");
-    printf("  - Delete certificate with [6]\n");
-    printf("  - Upload new certificate with [5]\n");
-    printf("\n");
-    printf("For detailed certificate inspection, use OpenSSL tools:\n");
-    printf("  openssl x509 -in cert.pem -text -noout\n");
-    printf("\n");
-    printf("\n");
-    printf("\n");
+    do {
+        detailCount++;
+        
+        // Handle both response types
+        switch (details.type) {
+            case U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_BYTES: {
+                int32_t detailId = details.rsp.CertDetailIdBytes.cert_detail_id;
+                const uint8_t *hexData = details.rsp.CertDetailIdBytes.hex_value.pData;
+                size_t hexLen = details.rsp.CertDetailIdBytes.hex_value.length;
+                
+                switch (detailId) {
+                    case U_SEC_CERT_DETAIL_ID_FINGERPRINT: {
+                        // SHA256 Fingerprint (raw hex bytes)
+                        printf("SHA256 Fingerprint:\n");
+                        printf("  ");
+                        for (size_t i = 0; i < hexLen; i++) {
+                            printf("%02X", hexData[i]);
+                        }
+                        printf("\n  ");
+                        // Format with colons for OpenSSL compatibility
+                        for (size_t i = 0; i < hexLen; i++) {
+                            printf("%02X", hexData[i]);
+                            if (i < hexLen - 1) printf(":");
+                        }
+                        printf(" (OpenSSL format)\n");
+                        break;
+                    }
+                    case U_SEC_CERT_DETAIL_ID_NOT_BEFORE_DATE: {
+                        // Not Before date (Unix timestamp - 4 bytes big-endian)
+                        if (hexLen == 4) {
+                            uint32_t timestamp = (hexData[0] << 24) | (hexData[1] << 16) | 
+                                                (hexData[2] << 8) | hexData[3];
+                            time_t notBefore = (time_t)timestamp;
+                            printf("Valid From: %s", ctime(&notBefore));
+                        }
+                        break;
+                    }
+                    case U_SEC_CERT_DETAIL_ID_NOT_AFTER_DATE: {
+                        // Not After date (Unix timestamp - 4 bytes big-endian)
+                        if (hexLen == 4) {
+                            uint32_t timestamp = (hexData[0] << 24) | (hexData[1] << 16) | 
+                                                (hexData[2] << 8) | hexData[3];
+                            time_t notAfter = (time_t)timestamp;
+                            printf("Valid Until: %s", ctime(&notAfter));
+                            
+                            // Check if expired
+                            time_t now = time(NULL);
+                            if (notAfter < now) {
+                                printf("  ⚠ WARNING: Certificate has EXPIRED!\n");
+                            } else {
+                                double days = difftime(notAfter, now) / (24.0 * 3600.0);
+                                if (days < 30) {
+                                    printf("  ⚠ WARNING: Certificate expires in %.0f days\n", days);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                    default:
+                        printf("Unknown byte detail ID: %d\n", detailId);
+                        break;
+                }
+                break;
+            }
+            case U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_INT: {
+                int32_t detailId = details.rsp.CertDetailIdInt.cert_detail_id;
+                int32_t value = details.rsp.CertDetailIdInt.int_value;
+                
+                switch (detailId) {
+                    case U_SEC_CERT_DETAIL_ID_CERTIFICATE_SIZE:
+                        printf("Size: %d bytes\n", value);
+                        break;
+                    default:
+                        printf("Unknown int detail ID: %d = %d\n", detailId, value);
+                        break;
+                }
+                break;
+            }
+        }
+    } while (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details));
+    
+    uCxEnd(&gUcxHandle);
+    
+    if (detailCount == 0) {
+        printf("ERROR: Certificate not found or no details available\n");
+        printf("\nTip: Use [3] to list all certificates first\n");
+    }
+    
+    printf("\n─────────────────────────────────────────────────────────────\n");
     printf("Press Enter to continue...");
     getchar();
 }
@@ -11845,8 +12129,26 @@ static void tlsUploadCertificate(void)
     
     certData[fileSize] = '\0';  // Null terminate
     
-    printf("\n");
-    printf("Uploading certificate...\n");
+    // Calculate SHA256 fingerprint for verification (if it's a certificate)
+    char localFingerprint[65] = "";
+    char localFingerprintFormatted[96] = "";
+    if (certType == U_SEC_CERT_TYPE_ROOT || certType == U_SEC_CERT_TYPE_CLIENT) {
+        // Try to extract DER from PEM for fingerprint calculation
+        uint8_t *certDER = NULL;
+        size_t certDERLen = 0;
+        
+        if (extractCertFromPEM(certData, fileSize, &certDER, &certDERLen)) {
+            if (calculateSHA256Fingerprint(certDER, certDERLen, localFingerprint, sizeof(localFingerprint))) {
+                formatFingerprintWithColons(localFingerprint, localFingerprintFormatted, sizeof(localFingerprintFormatted));
+                printf("\nLocal SHA256 Fingerprint:\n");
+                printf("  %s\n", localFingerprint);
+                printf("  %s (OpenSSL format)\n", localFingerprintFormatted);
+            }
+            free(certDER);
+        }
+    }
+    
+    printf("\nUploading certificate...\n");
     printf("  Name: %s\n", certName);
     printf("  Type: %s\n", typeStr);
     printf("  Size: %ld bytes\n", fileSize);
@@ -11859,9 +12161,51 @@ static void tlsUploadCertificate(void)
     
     if (err == 0) {
         printf("✓ Certificate uploaded successfully!\n");
-        printf("\n");
-        printf("The certificate is now available for TLS connections.\n");
-        printf("Use option [3] to verify it appears in the certificate list.\n");
+        
+        // Verify fingerprint if we calculated it
+        if (localFingerprint[0] != '\0') {
+            printf("\nVerifying certificate on module...\n");
+            
+            // Query the certificate details to get module's fingerprint
+            uCxSecReadAllCertificatesDetails_t details;
+            if (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details)) {
+                bool fingerprintMatch = false;
+                
+                do {
+                    if (details.type == U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_BYTES &&
+                        details.rsp.CertDetailIdBytes.cert_detail_id == U_SEC_CERT_DETAIL_ID_FINGERPRINT) {
+                        
+                        // Convert module fingerprint to hex string
+                        char moduleFingerprint[65];
+                        const uint8_t *fpData = details.rsp.CertDetailIdBytes.hex_value.pData;
+                        size_t fpLen = details.rsp.CertDetailIdBytes.hex_value.length;
+                        
+                        for (size_t i = 0; i < fpLen && i < 32; i++) {
+                            sprintf(moduleFingerprint + (i * 2), "%02X", fpData[i]);
+                        }
+                        moduleFingerprint[64] = '\0';
+                        
+                        printf("Module SHA256 Fingerprint:\n");
+                        printf("  %s\n", moduleFingerprint);
+                        
+                        // Compare fingerprints (case-insensitive)
+                        if (_stricmp(localFingerprint, moduleFingerprint) == 0) {
+                            printf("\n✓ Fingerprints match! Certificate verified.\n");
+                            fingerprintMatch = true;
+                        } else {
+                            printf("\n⚠ WARNING: Fingerprints do NOT match!\n");
+                            printf("  This may indicate data corruption during upload.\n");
+                        }
+                        break;
+                    }
+                } while (uCxSecurityReadAllCertificatesDetailsBegin(&gUcxHandle, certName, &details));
+                
+                uCxEnd(&gUcxHandle);
+            }
+        }
+        
+        printf("\nThe certificate is now available for TLS connections.\n");
+        printf("Use option [4] to view full certificate details.\n");
     } else {
         printf("ERROR: Failed to upload certificate (error: %d)\n", err);
         printf("\n");
@@ -11872,9 +12216,7 @@ static void tlsUploadCertificate(void)
         printf("  - Certificate name already exists\n");
     }
     
-    printf("\n");
-    printf("\n");
-    printf("\n");
+    printf("\n─────────────────────────────────────────────────────────────\n");
     printf("Press Enter to continue...");
     getchar();
 }
@@ -12073,10 +12415,15 @@ int main(int argc, char *argv[])
     bool menuNeedsRedraw = true;
     
     while (gMenuState != MENU_EXIT) {
-        // Handle module restart immediately (don't wait for user input)
-        if (gModuleRestarted && gUcxConnected) {
-            gModuleRestarted = false;  // Clear flag
-            
+        // Handle module restart - check event flag like socket does
+        U_CX_MUTEX_LOCK(gUrcMutex);
+        bool startupPending = (gUrcEventFlags & URC_FLAG_STARTUP) != 0;
+        if (startupPending) {
+            gUrcEventFlags &= ~URC_FLAG_STARTUP;  // Clear the flag
+        }
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        if (startupPending && gUcxConnected) {
             printf("\n  Reconfiguring module after restart...\n");
             
             // Disable echo
@@ -12257,10 +12604,15 @@ static void printHelp(void)
     printf("    [g] GATT Client - 8 examples (CTS, ESS, LNS, NUS, SPS, BAS, DIS, AIO)\n");
     printf("\n");
     printf("  Wi-Fi Examples (NORA-W36 only):\n");
-    printf("    [p] HTTP Examples - REST API operations\n");
+    printf("    [h] HTTP Examples - REST API operations\n");
     printf("        - HTTP GET request with optional file save\n");
     printf("        - HTTP POST request with text or file data\n");
     printf("        - Automatic Wi-Fi connectivity validation\n");
+    printf("    [m] MQTT Examples - Message broker communication\n");
+    printf("        - Connect to MQTT broker (broker.emqx.io)\n");
+    printf("        - Subscribe to topics and receive messages\n");
+    printf("        - Publish messages with QoS levels\n");
+    printf("        - TLS/SSL support for secure connections\n");
     printf("    [y] NTP Examples - Network time synchronization\n");
     printf("        - Sync time with popular NTP servers\n");
     printf("        - Configure custom NTP server\n");
@@ -12271,10 +12623,10 @@ static void printHelp(void)
     printf("        - Wi-Fi positioning with Combain (indoor/outdoor)\n");
     printf("\n");
     printf("TOOLS & SETTINGS:\n");
-    printf("  [l] Toggle logging - Show/hide AT command traffic\n");
-    printf("  [t] Toggle timestamps - Add timing info to logs\n");
-    printf("  [m] List API commands - Show all available UCX APIs\n");
-    printf("  [h] Help - Show this help screen\n");
+    printf("  [91] Toggle logging - Show/hide AT command traffic\n");
+    printf("  [92] Toggle timestamps - Add timing info to logs\n");
+    printf("  [93] List API commands - Show all available UCX APIs\n");
+    printf("  [94] Help - Show this help screen\n");
     printf("  [0] Main menu - Return to main menu from submenus\n");
     printf("\n");
     printf("SAVED SETTINGS:\n");
@@ -12411,7 +12763,8 @@ static void printMenu(void)
                 
                 if (hasWiFi) {
                     printf("Wi-Fi EXAMPLES\n");
-                    printf("  [p]     HTTP Examples (GET, POST)\n");
+                    printf("  [h]     HTTP Examples (GET, POST)\n");
+                    printf("  [m]     MQTT Examples (Publish, Subscribe)\n");
                     printf("  [y]     NTP Examples (Time Sync)\n");
                     printf("  [k]     Location Examples (IP Geolocation, Wi-Fi Positioning)\n");
                     printf("\n");
@@ -12421,11 +12774,11 @@ static void printMenu(void)
             // === TOOLS & SETTINGS (always available) ===
             printf("TOOLS & SETTINGS\n");
             printf("  [l]     Toggle logging: %s\n", 
-                   uCxLogIsEnabled() ? "ON (disable for cleaner output)" : "OFF (enable to see AT commands)");
-            printf("  [m]     Toggle timestamps: %s\n",
-                   uCxLogTimestampIsEnabled() ? "ON" : "OFF");
-            printf("  [c]     List all UCX API commands\n");
-            printf("  [h]     Help & getting started\n");
+                   uCxLogIsEnabled() ? "ON (showing AT commands)" : "OFF (cleaner)");
+            printf("  [z]     Toggle timestamps: %s\n",
+                   uCxLogTimestampIsEnabled() ? "ON (shows timing)" : "OFF");
+            printf("  [v]     List all UCX API commands\n");
+            printf("  [?]     Help & getting started\n");
             printf("\n");
             
             printf("  [q]     Quit application\n");
@@ -12435,7 +12788,7 @@ static void printMenu(void)
             if (!gUcxConnected) {
                 printf("Tip: Connect a device to unlock all features\n");
             } else {
-                printf("Tip: Press [h] for help, [t] for AT terminal\n");
+                printf("Tip: Press [?] for help, [t] for AT terminal\n");
             }
             break;
             
@@ -12534,18 +12887,24 @@ static void printMenu(void)
             
         case MENU_MQTT:
             printf("\n");
-            printf("                 MQTT MENU (Publish/Subscribe)\n");
+            printf("           MQTT EXAMPLES (Message Broker Communication)\n");
             printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
-            printf("  Broker: %s:%d\n", MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
+            printf("  Broker: %s:%d (Plain TCP)\n", MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
+            printf("  TLS:    %s:8883 (Encrypted, requires certificates)\n", MQTT_DEFAULT_HOST);
             printf("\n");
+            printf("MQTT OPERATIONS\n");
             printf("  [1] Connect to MQTT broker\n");
             printf("  [2] Disconnect from broker\n");
             printf("  [3] Subscribe to topic\n");
             printf("  [4] Unsubscribe from topic\n");
             printf("  [5] Publish message\n");
+            printf("\n");
+            printf("TLS/SECURITY (Coming Soon)\n");
+            printf("  [ ] Enable TLS/SSL (port 8883)\n");
+            printf("  [ ] Configure certificates\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -12823,24 +13182,6 @@ static void handleUserInput(void)
             return;
         }
         
-        if (firstChar == 'h' && gMenuState == MENU_MAIN) {
-            printHelp();
-            return;
-        }
-        
-        // Handle 'm' for timestamp toggle (main menu only)
-        if (firstChar == 'm' && gMenuState == MENU_MAIN) {
-            if (uCxLogTimestampIsEnabled()) {
-                uCxLogTimestampDisable();
-                printf("✓ Log timestamps DISABLED (cleaner output)\n");
-            } else {
-                uCxLogTimestampEnable();
-                printf("✓ Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
-                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Timestamps enabled from menu");
-            }
-            return;
-        }
-        
         // Handle specific letter commands for main menu
         if (gMenuState == MENU_MAIN) {
             if (firstChar == 'w') {
@@ -12862,7 +13203,18 @@ static void handleUserInput(void)
             } else if (firstChar == 't') {
                 choice = 52;  // AT Terminal (interactive)
             } else if (firstChar == 'l') {
-                choice = 21;  // Toggle UCX logging
+                // Toggle logging - context sensitive
+                if (gUcxConnected) {
+                    choice = 1;  // When connected, 'l' = toggle logging (same as '1')
+                } else {
+                    choice = 21;  // Original toggle logging handler
+                }
+            } else if (firstChar == 'z' && gUcxConnected) {
+                choice = 2;  // When connected, 'z' = toggle timestamps (same as '2')
+            } else if (firstChar == 'v' && gUcxConnected) {
+                choice = 3;  // When connected, 'v' = list API commands (same as '3')
+            } else if (firstChar == '?' && gUcxConnected) {
+                choice = 4;  // When connected, '?' = help (same as '4')
             } else if (firstChar == 'c') {
                 choice = 12;  // List API commands
             } else if (firstChar == 'd') {
@@ -12871,8 +13223,10 @@ static void handleUserInput(void)
                 choice = 16;  // Firmware update
             } else if (firstChar == 'e') {
                 choice = 9;   // Examples (Heartbeat, HID)
-            } else if (firstChar == 'p') {
+            } else if (firstChar == 'h') {
                 choice = 15;  // HTTP Examples (GET, POST)
+            } else if (firstChar == 'm') {
+                choice = 20;  // MQTT Examples
             } else if (firstChar == 'y') {
                 choice = 17;  // NTP Examples (Time Sync)
             } else if (firstChar == 'k') {
@@ -12897,59 +13251,87 @@ static void handleUserInput(void)
         case MENU_MAIN:
             switch (choice) {
                 case 1: {
-                    // If we have saved settings, offer quick connect
-                    if (gComPort[0] != '\0' && !gUcxConnected) {
-                        printf("Quick connect to last device (%s", gComPort);
-                        if (gLastDeviceModel[0] != '\0') {
-                            printf(" - %s", gLastDeviceModel);
+                    // Context-sensitive: Connect if disconnected, Toggle logging if connected
+                    if (!gUcxConnected) {
+                        // If we have saved settings, offer quick connect
+                        if (gComPort[0] != '\0') {
+                            printf("Quick connect to last device (%s", gComPort);
+                            if (gLastDeviceModel[0] != '\0') {
+                                printf(" - %s", gLastDeviceModel);
+                            }
+                            printf(")? (Y/n): ");
+                            if (fgets(input, sizeof(input), stdin)) {
+                                input[strcspn(input, "\n")] = 0;
+                                // Default to Yes if Enter pressed or 'y' typed
+                                if (strlen(input) == 0 || tolower(input[0]) == 'y') {
+                                    quickConnectToLastDevice();
+                                    break;
+                                }
+                            }
                         }
-                        printf(")? (Y/n): ");
+                        
+                        // Manual port entry
+                        printf("Enter COM port (e.g., COM31): ");
                         if (fgets(input, sizeof(input), stdin)) {
                             input[strcspn(input, "\n")] = 0;
-                            // Default to Yes if Enter pressed or 'y' typed
-                            if (strlen(input) == 0 || tolower(input[0]) == 'y') {
-                                quickConnectToLastDevice();
-                                break;
+                            if (strlen(input) > 0) {
+                                // Basic COM port validation
+                                if (strncmp(input, "COM", 3) == 0 || strncmp(input, "com", 3) == 0) {
+                                    // Convert to uppercase
+                                    for (int i = 0; i < 3; i++) {
+                                        input[i] = (char)toupper(input[i]);
+                                    }
+                                    strncpy(gComPort, input, sizeof(gComPort) - 1);
+                                    if (ucxclientConnect(gComPort)) {
+                                        saveSettings();
+                                    }
+                                } else {
+                                    printf("ERROR: Invalid COM port format. Use format like 'COM31'\n");
+                                }
                             }
                         }
-                    }
-                    
-                    // Manual port entry
-                    printf("Enter COM port (e.g., COM31): ");
-                    if (fgets(input, sizeof(input), stdin)) {
-                        input[strcspn(input, "\n")] = 0;
-                        if (strlen(input) > 0) {
-                            // Basic COM port validation
-                            if (strncmp(input, "COM", 3) == 0 || strncmp(input, "com", 3) == 0) {
-                                // Convert to uppercase
-                                for (int i = 0; i < 3; i++) {
-                                    input[i] = (char)toupper(input[i]);
-                                }
-                                strncpy(gComPort, input, sizeof(gComPort) - 1);
-                                if (ucxclientConnect(gComPort)) {
-                                    saveSettings();
-                                }
-                            } else {
-                                printf("ERROR: Invalid COM port format. Use format like 'COM31'\n");
-                            }
+                    } else {
+                        // When connected, '1' = Toggle logging (same as 'l')
+                        if (uCxLogIsEnabled()) {
+                            uCxLogDisable();
+                            printf("✓ UCX logging DISABLED (cleaner output)\n");
+                        } else {
+                            uCxLogEnable();
+                            printf("✓ UCX logging ENABLED (showing AT commands)\n");
                         }
                     }
                     break;
                 }
                 case 2:
-                    ucxclientDisconnect();
+                    if (!gUcxConnected) {
+                        // Disconnect (though already disconnected)
+                        ucxclientDisconnect();
+                    } else {
+                        // When connected, '2' = Toggle timestamps (same as 'z')
+                        if (uCxLogTimestampIsEnabled()) {
+                            uCxLogTimestampDisable();
+                            printf("✓ Log timestamps DISABLED (cleaner output)\n");
+                        } else {
+                            uCxLogTimestampEnable();
+                            printf("✓ Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
+                        }
+                    }
                     break;
                 case 3:
                     if (!gUcxConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                        // When not connected, '3' = List API commands
+                        listAllApiCommands();
                     } else {
+                        // When connected, '3' = AT command test
                         executeAtTest();
                     }
                     break;
                 case 4:
                     if (!gUcxConnected) {
-                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                        // When not connected, '4' = Help
+                        printHelp();
                     } else {
+                        // When connected, '4' = Device information
                         executeAti9();
                     }
                     break;
@@ -12995,6 +13377,13 @@ static void handleUserInput(void)
                         gMenuState = MENU_HTTP;
                     }
                     break;
+                case 20:  // MQTT Examples (Publish, Subscribe)
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_MQTT;
+                    }
+                    break;
                 case 17:  // NTP Examples (Time Sync)
                     if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
@@ -13036,11 +13425,10 @@ static void handleUserInput(void)
                 case 21:  // Also accept 'l' or 'L' - Toggle UCX logging
                     if (uCxLogIsEnabled()) {
                         uCxLogDisable();
-                        printf("UCX logging DISABLED\n");
+                        printf("✓ UCX logging DISABLED (cleaner output)\n");
                     } else {
                         uCxLogEnable();
-                        printf("UCX logging ENABLED\n");
-                        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Logging re-enabled from menu");
+                        printf("✓ UCX logging ENABLED (showing AT commands)\n");
                     }
                     break;
                 case 16:  // Also accept 'f' or 'F' - Firmware update
@@ -13087,7 +13475,35 @@ static void handleUserInput(void)
                         gMenuState = MENU_SECURITY_TLS;
                     }
                     break;
-                case 18:  // Also accept 'h' or 'H' - Help (handled above but keep for consistency)
+                case 18:  // Also accept 'h' or 'H' - HTTP Examples  
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_HTTP;
+                    }
+                    break;
+                case 91:  // Toggle logging
+                    if (uCxLogIsEnabled()) {
+                        uCxLogDisable();
+                        printf("✓ UCX logging DISABLED (cleaner output)\n");
+                    } else {
+                        uCxLogEnable();
+                        printf("✓ UCX logging ENABLED (showing AT commands)\n");
+                    }
+                    break;
+                case 92:  // Toggle timestamps
+                    if (uCxLogTimestampIsEnabled()) {
+                        uCxLogTimestampDisable();
+                        printf("✓ Log timestamps DISABLED (cleaner output)\n");
+                    } else {
+                        uCxLogTimestampEnable();
+                        printf("✓ Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
+                    }
+                    break;
+                case 93:  // List API commands
+                    listAllApiCommands();
+                    break;
+                case 94:  // Help
                     printHelp();
                     break;
                 case 0:
