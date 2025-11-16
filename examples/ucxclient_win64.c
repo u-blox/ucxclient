@@ -740,10 +740,6 @@ static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddr
 static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t passkey);
 static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr);
 static void bluetoothPhyUpdateUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t phy_status, int32_t tx_phy, int32_t rx_phy);
-static void gattServerSetupHeartbeat(void);
-static void gattServerSetupHidKeyboard(void);
-static void gattServerSendKeyPress(void);
-static void gattServerSendMediaControl(void);
 static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uGattServerOptions_t options);
 static DWORD WINAPI heartbeatThread(LPVOID lpParam);
 static DWORD WINAPI gattNotificationThread(LPVOID lpParam);
@@ -9190,11 +9186,65 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
         if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
             if (wifiStatus.rsp.StatusIdInt.int_val != 2) {  // 2 = Connected
                 printf("ERROR: Wi-Fi is not connected!\n");
-                printf("Please connect to Wi-Fi first using the [w] Wi-Fi menu.\n");
                 uCxEnd(&gUcxHandle);
-                return false;
-            }
-            if (verbose) {
+                
+                // Offer to connect using saved profile
+                printf("\nWould you like to connect now? (y/n): ");
+                int ch = getchar();
+                if (ch != '\n') {
+                    getchar();  // consume newline
+                }
+                
+                if (ch == 'y' || ch == 'Y') {
+                    printf("\nAttempting to connect to saved Wi-Fi profile...\n");
+                    
+                    // Connect using profile 0
+                    err = uCxWifiStationConnect2(&gUcxHandle, 0);
+                    if (err < 0) {
+                        printf("ERROR: Failed to connect to Wi-Fi (error: %d)\n", err);
+                        printf("Please configure Wi-Fi settings using the [w] Wi-Fi menu.\n");
+                        return false;
+                    }
+                    
+                    // Wait for connection (up to 15 seconds)
+                    printf("Waiting for Wi-Fi connection");
+                    fflush(stdout);
+                    
+                    bool connected = false;
+                    for (int i = 0; i < 30; i++) {
+                        Sleep(500);
+                        printf(".");
+                        fflush(stdout);
+                        
+                        // Check connection status
+                        if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &wifiStatus)) {
+                            if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
+                                if (wifiStatus.rsp.StatusIdInt.int_val == 2) {
+                                    connected = true;
+                                    uCxEnd(&gUcxHandle);
+                                    break;
+                                }
+                            }
+                            uCxEnd(&gUcxHandle);
+                        }
+                    }
+                    
+                    printf("\n");
+                    
+                    if (!connected) {
+                        printf("ERROR: Wi-Fi connection timeout!\n");
+                        printf("Please check your Wi-Fi settings using the [w] Wi-Fi menu.\n");
+                        return false;
+                    }
+                    
+                    printf("✓ Wi-Fi connected successfully\n");
+                    
+                    // Continue to verify IP address and connectivity
+                } else {
+                    printf("Wi-Fi connection required. Returning to menu.\n");
+                    return false;
+                }
+            } else if (verbose) {
                 printf("✓ Wi-Fi is connected\n");
             }
         } else {
@@ -9552,8 +9602,16 @@ static bool getExternalIp(int32_t sessionId, char *ipBuffer, int32_t ipBufferSiz
     
     int32_t err;
     
-    // Configure HTTP for ipify
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, "api.ipify.org");
+    // Configure HTTPS for ipify
+    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    if (err < 0) {
+        if (verbose) {
+            printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+        }
+        return false;
+    }
+    
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "https://api.ipify.org", 443);
     if (err < 0) {
         if (verbose) {
             printf("ERROR: Failed to set connection parameters for ipify (error: %d)\n", err);
@@ -9698,26 +9756,38 @@ static void httpGetExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+    if (!checkWiFiConnectivity(false, true)) {  // Skip ping test, verbose output
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
     
-    printf("Enter hostname (e.g., httpbin.org): ");
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
+    
+    printf("Host (e.g., httpbin.org): ");
     if (!fgets(host, sizeof(host), stdin)) {
-        printf("ERROR: Failed to read hostname\n");
+        printf("ERROR: Failed to read host\n");
         return;
     }
     host[strcspn(host, "\r\n")] = 0;  // Remove newline
     
-    printf("Enter path (e.g., /get): ");
+    printf("Path (e.g., /get): ");
     if (!fgets(path, sizeof(path), stdin)) {
         printf("ERROR: Failed to read path\n");
         return;
     }
     path[strcspn(path, "\r\n")] = 0;  // Remove newline
+    
+    printf("Use HTTPS? (y/n): ");
+    char useHttps[10];
+    if (!fgets(useHttps, sizeof(useHttps), stdin)) {
+        printf("ERROR: Failed to read HTTPS option\n");
+        return;
+    }
+    bool isHttps = (useHttps[0] == 'y' || useHttps[0] == 'Y');
     
     printf("Save response to file (leave empty for display only): ");
     if (!fgets(filename, sizeof(filename), stdin)) {
@@ -9729,10 +9799,27 @@ static void httpGetExample(void)
     bool saveToFile = (strlen(filename) > 0);
     
     printf("\n");
-    printf("Configuring HTTP connection...\n");
+    printf("Configuring HTTP%s connection...\n", isHttps ? "S" : "");
     
-    // Step 1: Set connection parameters
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    // Enable TLS if HTTPS
+    if (isHttps) {
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+        if (err < 0) {
+            printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+            return;
+        }
+        printf("✓ TLS 1.2 enabled\n");
+    }
+    
+    // Step 1: Set connection parameters (must include http:// or https:// prefix)
+    char hostWithProtocol[256];
+    if (isHttps) {
+        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "https://%s", host);
+        err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, 443);
+    } else {
+        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "http://%s", host);
+        err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
+    }
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         return;
@@ -9763,7 +9850,11 @@ static void httpGetExample(void)
     uCxHttpGetHeader_t headerResp;
     if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
         printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
         printf("─────────────────────────────────────────────────\n");
         uCxEnd(&gUcxHandle);
     } else {
@@ -9846,12 +9937,16 @@ static void httpPostExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+    if (!checkWiFiConnectivity(false, true)) {  // Skip ping test, verbose output
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
     
     printf("Enter hostname (e.g., httpbin.org): ");
     if (!fgets(host, sizeof(host), stdin)) {
@@ -9866,6 +9961,14 @@ static void httpPostExample(void)
         return;
     }
     path[strcspn(path, "\r\n")] = 0;  // Remove newline
+    
+    printf("Use HTTPS? (y/n): ");
+    char useHttps[10];
+    if (!fgets(useHttps, sizeof(useHttps), stdin)) {
+        printf("ERROR: Failed to read HTTPS option\n");
+        return;
+    }
+    bool isHttps = (useHttps[0] == 'y' || useHttps[0] == 'Y');
     
     printf("\n");
     printf("Data source:\n");
@@ -9909,10 +10012,27 @@ static void httpPostExample(void)
     }
     
     printf("\n");
-    printf("Configuring HTTP connection...\n");
+    printf("Configuring HTTP%s connection...\n", isHttps ? "S" : "");
     
-    // Step 1: Set connection parameters
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    // Enable TLS if HTTPS
+    if (isHttps) {
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+        if (err < 0) {
+            printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+            return;
+        }
+        printf("✓ TLS 1.2 enabled\n");
+    }
+    
+    // Step 1: Set connection parameters (must include http:// or https:// prefix)
+    char hostWithProtocol[256];
+    if (isHttps) {
+        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "https://%s", host);
+        err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, 443);
+    } else {
+        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "http://%s", host);
+        err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
+    }
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         return;
@@ -9945,7 +10065,11 @@ static void httpPostExample(void)
     uCxHttpGetHeader_t headerResp;
     if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
         printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
         printf("─────────────────────────────────────────────────\n");
         uCxEnd(&gUcxHandle);
     } else {
@@ -9957,9 +10081,9 @@ static void httpPostExample(void)
     printf("Reading response body...\n");
     
     int32_t totalBytes = 0;
-    int32_t chunkSize = 2048;
+    int32_t chunkSize = 1000;
     int32_t moreToRead = 1;
-    uint8_t buffer[2048];
+    uint8_t buffer[1000];
     
     printf("─────────────────────────────────────────────────\n");
     while (moreToRead) {
@@ -10000,17 +10124,30 @@ static bool extractJsonString(const char *json, const char *key, char *value, si
         return false;
     }
     
-    // Build search pattern: "key":"
+    // Build search pattern: "key"
     char pattern[128];
-    snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
+    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
     
     const char *start = strstr(json, pattern);
     if (!start) {
         return false;
     }
     
-    // Move past the pattern
+    // Move past the key
     start += strlen(pattern);
+    
+    // Skip whitespace and colon
+    while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r' || *start == ':')) {
+        start++;
+    }
+    
+    // Check if value starts with quote (string value)
+    if (*start != '"') {
+        return false;
+    }
+    
+    // Move past opening quote
+    start++;
     
     // Find the closing quote
     const char *end = strchr(start, '"');
@@ -10196,7 +10333,10 @@ static bool configureHttpsConnection(int32_t sessionId, const char *hostname, co
     printf("✓ TLS 1.2 enabled\n");
     
     // Set connection parameters with HTTPS port 443
-    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostname, 443);
+    // Note: Hostname must include https:// prefix
+    char hostnameWithProtocol[256];
+    snprintf(hostnameWithProtocol, sizeof(hostnameWithProtocol), "https://%s", hostname);
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostnameWithProtocol, 443);
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         return false;
@@ -10230,12 +10370,16 @@ static void httpQuoteApiExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {
+    if (!checkWiFiConnectivity(false, true)) {
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
     
     printf("Configuring HTTPS connection to httpbin.org...\n");
     
@@ -10267,7 +10411,11 @@ static void httpQuoteApiExample(void)
     uCxHttpGetHeader_t headerResp;
     if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
         printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
         printf("─────────────────────────────────────────────────\n");
         uCxEnd(&gUcxHandle);
     } else {
@@ -10351,12 +10499,16 @@ static void httpTimeApiExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {
+    if (!checkWiFiConnectivity(false, true)) {
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
     
     // Get timezone from user
     char timezone[128];
@@ -10406,7 +10558,11 @@ static void httpTimeApiExample(void)
     uCxHttpGetHeader_t headerResp;
     if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
         printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
         printf("─────────────────────────────────────────────────\n");
         uCxEnd(&gUcxHandle);
     } else {
@@ -10500,12 +10656,16 @@ static void httpStatusCodeExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {
+    if (!checkWiFiConnectivity(false, true)) {
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
     
     // Get status code from user
     char statusInput[16];
@@ -10529,14 +10689,21 @@ static void httpStatusCodeExample(void)
     snprintf(path, sizeof(path), "/status/%d", statusCode);
     
     printf("\n");
-    printf("Configuring HTTP connection to httpbin.org...\n");
+    printf("Configuring HTTPS connection to httpbin.org...\n");
     
-    // Disconnect any previous HTTP session to ensure clean state
-    uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);  // Brief delay for disconnect to complete
+    // Enable TLS 1.2
+    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    if (err < 0) {
+        printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ TLS 1.2 enabled\n");
     
-    // Set connection parameters
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, "httpbin.org");
+    // Set connection parameters (must include https:// prefix)
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "https://httpbin.org", 443);
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         printf("\n");
@@ -10630,12 +10797,16 @@ static void httpJsonPostExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {
+    if (!checkWiFiConnectivity(false, true)) {
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
     
     // Get user input for JSON data
     char name[128];
@@ -10668,10 +10839,21 @@ static void httpJsonPostExample(void)
     printf("%s\n", jsonPayload);
     printf("\n");
     
-    printf("Configuring HTTP connection to httpbin.org...\n");
+    printf("Configuring HTTPS connection to httpbin.org...\n");
     
-    // Set connection parameters
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, "httpbin.org");
+    // Enable TLS 1.2
+    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    if (err < 0) {
+        printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ TLS 1.2 enabled\n");
+    
+    // Set connection parameters (must include https:// prefix)
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "https://httpbin.org", 443);
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         printf("\n");
@@ -10696,9 +10878,17 @@ static void httpJsonPostExample(void)
         printf("WARNING: Failed to set Content-Type header (error: %d)\n", err);
     }
     
+    // Set Content-Length header
+    char contentLength[32];
+    snprintf(contentLength, sizeof(contentLength), "%d", dataLen);
+    err = uCxHttpAddHeaderField(&gUcxHandle, sessionId, "Content-Length", contentLength);
+    if (err < 0) {
+        printf("WARNING: Failed to set Content-Length header (error: %d)\n", err);
+    }
+    
     printf("✓ Connection configured\n");
     printf("\n");
-    printf("Sending POST request to http://httpbin.org/post...\n");
+    printf("Sending POST request to https://httpbin.org/post...\n");
     
     // Send POST request with JSON data
     err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)jsonPayload, dataLen);
@@ -10716,16 +10906,27 @@ static void httpJsonPostExample(void)
     // Read response headers
     printf("Reading response headers...\n");
     uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    memset(&headerResp, 0, sizeof(headerResp));
+    
+    bool headerSuccess = uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp);
+    
+    if (headerSuccess) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 1) {
+            // Safely print the header data
+            fwrite(headerResp.byte_array_data.pData, 1, headerResp.byte_array_data.length, stdout);
+            printf("\n");
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
         uCxEnd(&gUcxHandle);
+    } else {
+        printf("WARNING: Failed to read response headers\n");
     }
+    
+    // Small delay to ensure response is ready
+    Sleep(100);
     
     // Read response body
     printf("\n");
@@ -10770,12 +10971,16 @@ static void httpJsonPlaceholderExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {
+    if (!checkWiFiConnectivity(false, true)) {
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
         return;
     }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
     
     // Menu for user to select endpoint
     printf("Select data to fetch:\n");
@@ -10851,7 +11056,11 @@ static void httpJsonPlaceholderExample(void)
     uCxHttpGetHeader_t headerResp;
     if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
         printf("─────────────────────────────────────────────────\n");
-        printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
+            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
         printf("─────────────────────────────────────────────────\n");
         uCxEnd(&gUcxHandle);
     } else {
@@ -10963,7 +11172,7 @@ static void ipGeolocationExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+    if (!checkWiFiConnectivity(false, true)) {  // Skip ping test, verbose output
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
@@ -11008,8 +11217,10 @@ static void ipGeolocationExample(void)
     
     printf("Configuring HTTP connection...\n");
     
-    // Set connection parameters
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    // Set connection parameters (must include http:// prefix)
+    char hostWithProtocol[256];
+    snprintf(hostWithProtocol, sizeof(hostWithProtocol), "http://%s", host);
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         printf("\n");
@@ -11153,7 +11364,7 @@ static void externalIpDetectionExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+    if (!checkWiFiConnectivity(false, true)) {  // Skip ping test, verbose output
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
@@ -11263,7 +11474,7 @@ static void wifiPositioningExample(void)
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
-    if (!checkWiFiConnectivity(true, true)) {  // Include ping test, verbose output
+    if (!checkWiFiConnectivity(false, true)) {  // Skip ping test, verbose output
         printf("\n");
         printf("Press Enter to continue...");
         getchar();
@@ -11405,8 +11616,23 @@ static void wifiPositioningExample(void)
     uCxHttpDisconnect(&gUcxHandle, sessionId);
     Sleep(100);
     
-    // Set connection parameters
-    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, host);
+    printf("Configuring HTTPS connection to Combain...\n");
+    
+    // Enable TLS 1.2
+    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    if (err < 0) {
+        printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ TLS 1.2 enabled\n");
+    
+    // Set connection parameters (must include https:// prefix)
+    char hostWithProtocol[256];
+    snprintf(hostWithProtocol, sizeof(hostWithProtocol), "https://%s", host);
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, 443);
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         printf("\n");
@@ -13829,8 +14055,6 @@ static void printMenu(void)
                 }
                 printf("  [s]     Serial Port Service (SPS)\n");
                 printf("  [u]     Bluetooth Functions (SPS, GATT Client, GATT Server)\n");
-                printf("  [e]     GATT Server Examples (9 profiles)\n");
-                printf("  [g]     GATT Client Examples (8 demos)\n");
                 printf("\n");
                 
                 // === Wi-Fi FEATURES (only for W3x modules) ===
