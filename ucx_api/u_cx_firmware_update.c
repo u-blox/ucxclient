@@ -203,10 +203,9 @@ int32_t uCxFirmwareUpdate(uCxHandle_t *puCxHandle,
     uPortAtPauseRx(puCxHandle->pAtClient);
     
     // Prepare progress callback context
-    progressCallbackContext_t callbackContext = {
-        .userCallback = progressCallback,
-        .pUserData = pUserData
-    };
+    progressCallbackContext_t callbackContext;
+    callbackContext.userCallback = progressCallback;
+    callbackContext.pUserData = pUserData;
     
     // Transfer firmware via XMODEM
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Starting XMODEM transfer...");
@@ -262,10 +261,9 @@ int32_t uCxFirmwareUpdateFromData(uCxHandle_t *puCxHandle,
     SLEEP_MS(1000);
     
     // Prepare progress callback context
-    progressCallbackContext_t callbackContext = {
-        .userCallback = progressCallback,
-        .pUserData = pUserData
-    };
+    progressCallbackContext_t callbackContext;
+    callbackContext.userCallback = progressCallback;
+    callbackContext.pUserData = pUserData;
     
     // Configure XMODEM
     uCxXmodemConfig_t config;

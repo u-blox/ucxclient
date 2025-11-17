@@ -245,6 +245,11 @@ static bool gUseBootKeyboard = false;              // True if Boot Keyboard is p
 static int gHeartRateValueHandle = -1;             // Heart Rate Measurement (0x2A37)
 static int gUartTxValueHandle = -1;                // UART TX from server (Notify)
 
+// GATT Client - Heart Rate Service (HRS)
+static int gHeartRateClientServiceIndex = -1;
+static int gHeartRateClientCharIndex    = -1;
+static int gHeartRateClientCccdHandle   = -1;
+
 // GATT Client - Current Time Service (CTS)
 static int gCtsClientServiceIndex      = -1;
 static int gCtsClientTimeCharIndex     = -1;
@@ -935,6 +940,10 @@ static DWORD WINAPI gattNotificationThread(LPVOID lpParam);
 static void gattClientNotificationUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
 static void handleHeartRateNotification(int connHandle, const uint8_t *data, size_t len);
 static void handleUartRxNotification(int connHandle, const uint8_t *data, size_t len);
+static bool gattClientFindHeartRateHandles(void);
+static void gattClientReadHeartRate(void);
+static void gattClientSubscribeHeartRate(void);
+static void gattClientHeartRateExample(void);
 static void ctsParseAndPrint(const uint8_t *data, size_t len);
 static bool gattClientFindCtsHandles(void);
 static void gattClientReadCtsTime(void);
@@ -5686,7 +5695,7 @@ static void handleHeartRateNotification(int connHandle, const uint8_t *data, siz
     (void)connHandle;
     
     if (len < 2) {
-        printf("[Heart Rate] Invalid data length: %zu\n", len);
+        printf("[HRS] Invalid data length: %zu\n", len);
         return;
     }
     
@@ -5700,7 +5709,123 @@ static void handleHeartRateNotification(int connHandle, const uint8_t *data, siz
         bpm = data[1];
     }
     
-    printf("[Heart Rate] BPM: %u\n", bpm);
+    printf("[HRS] BPM: %u\n", bpm);
+}
+
+// ----------------------------------------------------------------
+// Heart Rate Service (HRS) Client Functions
+// ----------------------------------------------------------------
+
+// Find Heart Rate Service (0x180D) and Measurement characteristic (0x2A37)
+static bool gattClientFindHeartRateHandles(void)
+{
+    // Reset cached handles
+    gHeartRateClientServiceIndex = -1;
+    gHeartRateClientCharIndex    = -1;
+    gHeartRateValueHandle        = -1;
+    gHeartRateClientCccdHandle   = -1;
+
+    // 1) Look for Heart Rate service 0x180D
+    gHeartRateClientServiceIndex = findServiceByUuid16(0x180D);
+    if (gHeartRateClientServiceIndex < 0) {
+        printf("[HRS] Service 0x180D not found\n");
+        return false;
+    }
+
+    // 2) Look for Heart Rate Measurement characteristic 0x2A37
+    gHeartRateClientCharIndex = findCharByUuid16InService(gHeartRateClientServiceIndex, 0x2A37);
+    if (gHeartRateClientCharIndex < 0) {
+        printf("[HRS] Characteristic 0x2A37 (Measurement) not found\n");
+        return false;
+    }
+
+    gHeartRateValueHandle      = gGattCharacteristics[gHeartRateClientCharIndex].valueHandle;
+    gHeartRateClientCccdHandle = gHeartRateValueHandle + 1;  // CCCD is usually valueHandle+1
+
+    printf("[HRS] Found Measurement handle=0x%04X  CCCD=0x%04X\n",
+           gHeartRateValueHandle, gHeartRateClientCccdHandle);
+
+    return true;
+}
+
+// Read Heart Rate once and decode locally
+static void gattClientReadHeartRate(void)
+{
+    if (gHeartRateValueHandle < 0) {
+        printf("[HRS] Value handle not set\n");
+        return;
+    }
+
+    uint8_t buf[8];
+    uByteArray_t value;
+    value.pData = buf;
+    value.length = 0;
+
+    int32_t r = uCxGattClientReadBegin(&gUcxHandle,
+                                       gCurrentGattConnHandle,
+                                       gHeartRateValueHandle,
+                                       &value);
+    if (r < 0) {
+        printf("[HRS] Read failed (%d)\n", r);
+        return;
+    }
+
+    printf("[HRS] Read %zu bytes\n", value.length);
+    // Reuse same parser as notifications
+    handleHeartRateNotification(gCurrentGattConnHandle, value.pData, value.length);
+
+    uCxEnd(&gUcxHandle);
+}
+
+// Subscribe to Heart Rate Measurement notifications
+static void gattClientSubscribeHeartRate(void)
+{
+    if (gHeartRateClientCccdHandle < 0) {
+        printf("[HRS] CCCD handle invalid\n");
+        return;
+    }
+
+    uint8_t enableNotify[2] = {0x01, 0x00};
+
+    int32_t r = uCxGattClientWriteNoRsp(&gUcxHandle,
+                                        gCurrentGattConnHandle,
+                                        gHeartRateClientCccdHandle,
+                                        enableNotify,
+                                        sizeof(enableNotify));
+    if (r < 0) {
+        printf("[HRS] Failed to write CCCD (%d)\n", r);
+        return;
+    }
+
+    printf("[HRS] Notifications ENABLED\n\n");
+}
+
+// Complete Heart Rate client example (discover, read, subscribe)
+static void gattClientHeartRateExample(void)
+{
+    printf("\n--- GATT Client: Heart Rate Service (HRS) ---\n");
+
+    if (!gUcxConnected || gCurrentGattConnHandle < 0) {
+        printf("ERROR: No active GATT connection\n");
+        return;
+    }
+
+    // 1) Discover services and characteristics
+    gattClientDiscoverServices();
+    gattClientDiscoverCharacteristics();
+
+    // 2) Locate Heart Rate Service handles
+    if (!gattClientFindHeartRateHandles())
+        return;
+
+    // 3) Read initial value
+    gattClientReadHeartRate();
+
+    // 4) Subscribe to notifications
+    gattClientSubscribeHeartRate();
+
+    printf("HRS Client running.\n");
+    printf("BPM updates will appear automatically.\n\n");
 }
 
 // Handle UART RX notifications (data from server TX characteristic)
@@ -5829,31 +5954,31 @@ static void gattClientSubscribeCts()
 }
 
 // Complete CTS client example (discover, read, subscribe)
-static void gattClientCtsExample()
+static void gattClientCtsExample(void)
 {
     printf("\n--- GATT Client: Current Time Service (CTS) ---\n");
 
     if (!gUcxConnected || gCurrentGattConnHandle < 0) {
-        printf("ERROR: No active GATT connection.\n");
+        printf("ERROR: No active GATT connection\n");
         return;
     }
 
-    // 1. Discover services + chars
+    // 1) Discover services and characteristics
     gattClientDiscoverServices();
     gattClientDiscoverCharacteristics();
 
-    // 2. Locate CTS
-    if (!gattClientFindCtsHandles()) {
+    // 2) Locate CTS handles
+    if (!gattClientFindCtsHandles())
         return;
-    }
 
-    // 3. Read once
+    // 3) Read initial value
     gattClientReadCtsTime();
 
-    // 4. Subscribe to updates
+    // 4) Subscribe to notifications
     gattClientSubscribeCts();
 
-    printf("CTS Client running. Time will update automatically.\n\n");
+    printf("CTS Client running.\n");
+    printf("Time updates will appear automatically.\n\n");
 }
 
 // ----------------------------------------------------------------
@@ -5987,31 +6112,31 @@ static void gattClientSubscribeEss()
 }
 
 // Complete ESS client example
-static void gattClientEssExample()
+static void gattClientEssExample(void)
 {
     printf("\n--- GATT Client: Environmental Sensing Service (ESS) ---\n");
 
     if (!gUcxConnected || gCurrentGattConnHandle < 0) {
-        printf("ERROR: No active GATT connection.\n");
+        printf("ERROR: No active GATT connection\n");
         return;
     }
 
-    // Step 1: Discover everything
+    // 1) Discover services and characteristics
     gattClientDiscoverServices();
     gattClientDiscoverCharacteristics();
 
-    // Step 2: Find Temperature/Humidity
+    // 2) Locate ESS handles
     if (!gattClientFindEssHandles())
         return;
 
-    // Step 3: Read once
+    // 3) Read initial values
     gattClientReadEssValues();
 
-    // Step 4: Subscribe to notifications
+    // 4) Subscribe to notifications
     gattClientSubscribeEss();
 
-    printf("ESS Client running...\n");
-    printf("Live Temperature + Humidity will appear as notifications.\n\n");
+    printf("ESS Client running.\n");
+    printf("Temperature and humidity updates will appear automatically.\n\n");
 }
 
 // ----------------------------------------------------------------
@@ -6124,7 +6249,7 @@ static void gattClientSubscribeLns()
 }
 
 // Complete LNS client example
-static void gattClientLnsExample()
+static void gattClientLnsExample(void)
 {
     printf("\n--- GATT Client: Location and Navigation (LNS) ---\n");
 
@@ -6133,22 +6258,22 @@ static void gattClientLnsExample()
         return;
     }
 
-    // 1) Discover services & characteristics
+    // 1) Discover services and characteristics
     gattClientDiscoverServices();
     gattClientDiscoverCharacteristics();
 
-    // 2) Find handles
+    // 2) Locate LNS handles
     if (!gattClientFindLnsHandles())
         return;
 
-    // 3) Read once
+    // 3) Read initial value
     gattClientReadLns();
 
-    // 4) Subscribe
+    // 4) Subscribe to notifications
     gattClientSubscribeLns();
 
     printf("LNS Client running.\n");
-    printf("Latitude / Longitude updates will appear automatically.\n\n");
+    printf("Location and navigation updates will appear automatically.\n\n");
 }
 
 // ============================================================================
@@ -6313,26 +6438,26 @@ static void gattClientAioExample(void)
     printf("\n--- GATT Client: Automation IO (AIO) ---\n");
 
     if (!gUcxConnected || gCurrentGattConnHandle < 0) {
-        printf("ERROR: No active GATT connection.\n");
+        printf("ERROR: No active GATT connection\n");
         return;
     }
 
-    // Step 1: Discover everything for this connection
+    // 1) Discover services and characteristics
     gattClientDiscoverServices();
     gattClientDiscoverCharacteristics();
 
-    // Step 2: Find AIO handles
-    if (!gattClientFindAioHandles()) {
+    // 2) Locate AIO handles
+    if (!gattClientFindAioHandles())
         return;
-    }
 
-    // Step 3: Read initial state
+    // 3) Read initial values
     gattClientReadAioValues();
 
-    // Step 4: Subscribe to notifications
+    // 4) Subscribe to notifications
     gattClientSubscribeAio();
 
-    printf("AIO Client running. Digital/Analog changes will show as notifications.\n\n");
+    printf("AIO Client running.\n");
+    printf("Digital and analog I/O updates will appear automatically.\n\n");
 }
 
 // ============================================================================
@@ -6913,18 +7038,18 @@ static void gattClientBasExample(void)
     gattClientDiscoverServices();
     gattClientDiscoverCharacteristics();
 
-    // 2) Locate Battery Service + Battery Level
+    // 2) Locate BAS handles
     if (!gattClientFindBasHandles())
         return;
 
-    // 3) Read battery once
+    // 3) Read initial value
     gattClientReadBattery();
 
-    // 4) Subscribe to continuous notifications
+    // 4) Subscribe to notifications
     gattClientSubscribeBattery();
 
     printf("BAS Client running.\n");
-    printf("Battery %% updates will appear automatically.\n\n");
+    printf("Battery percentage updates will appear automatically.\n\n");
 }
 
 // ============================================================================
@@ -7046,22 +7171,23 @@ static void gattClientDisExample(void)
         return;
     }
 
-    // Step 1: Discover everything
+    // 1) Discover services and characteristics
     gattClientDiscoverServices();
     gattClientDiscoverCharacteristics();
 
-    // Step 2: Find DIS service + chars
+    // 2) Locate DIS handles
     if (!gattClientFindDisHandles())
         return;
 
     printf("\nReading device information:\n");
 
-    // Step 3: Read each characteristic
+    // 3) Read each available characteristic
     for (int i = 0; i < gDisClientCharCount; i++) {
         disReadAndPrint(gDisClientChars[i].uuid, gDisClientChars[i].handle);
     }
 
-    printf("\nDIS Client finished. All available device info retrieved.\n\n");
+    printf("\nDIS Client finished.\n");
+    printf("All available device information retrieved.\n\n");
 }
 
 // ----------------------------------------------------------------
@@ -14838,6 +14964,11 @@ static void printMenu(void)
     
     switch (gMenuState) {
         case MENU_MAIN:
+            // Update device status before showing menu
+            if (gUcxConnected) {
+                queryDeviceStatus();
+            }
+            
             printf("\n");
             printf("─────────────────────────────────────────────────────────────\n");
             printf("u-blox UCX Client - Main Menu\n");
@@ -14845,7 +14976,7 @@ static void printMenu(void)
             
             // === STATUS DASHBOARD ===
             if (gUcxConnected) {
-                printf("\n✓ CONNECTED");
+                printf("\n✓ ucxclient CONNECTED");
                 if (gDeviceModel[0] != '\0') {
                     printf("  |  %s", gDeviceModel);
                     if (gDeviceFirmware[0] != '\0') {
@@ -14855,7 +14986,7 @@ static void printMenu(void)
                 printf("  |  Port: %s\n", gComPort);
                 printf("─────────────────────────────────────────────────────────────\n");
                 
-                // Show connection status in compact form
+                // Line 1: WiFi status + Sockets + Certificates
                 printf("WiFi: ");
                 if (gWifiConnected && gWifiSsid[0] != '\0') {
                     printf("✓ %s", gWifiSsid);
@@ -14865,8 +14996,12 @@ static void printMenu(void)
                 } else {
                     printf("○ Not connected");
                 }
+                printf("  |  Sockets: %d", gActiveSocketCount);
+                printf("  |  Certs: %d", gCertificateCount);
+                printf("\n");
                 
-                printf("  |  BT: ");
+                // Line 2: Bluetooth mode + connections + advertising + bonded
+                printf("BT: ");
                 const char* btModeStr = "Off";
                 if (gBluetoothMode == 1) btModeStr = "Central";
                 else if (gBluetoothMode == 2) btModeStr = "Peripheral";
@@ -14875,19 +15010,13 @@ static void printMenu(void)
                 
                 if (gBluetoothMode != 0) {
                     if (gBtConnectionCount > 0) {
-                        printf(", %d conn", gBtConnectionCount);
+                        printf("  |  %d conn", gBtConnectionCount);
                     }
-                    if (gBondedDeviceCount > 0) {
-                        printf(", %d bonded", gBondedDeviceCount);
-                    }
-                    if (gLegacyAdvertising) {
-                        printf(", Adv:ON");
-                    }
+                    printf("  |  Adv:%s", gLegacyAdvertising ? "ON" : "OFF");
+                    printf("  |  %d bonded", gBondedDeviceCount);
                 }
-                
-                printf("  |  Sockets: %d", gActiveSocketCount);
-                printf("  |  Certs: %d", gCertificateCount);
                 printf("\n");
+                printf("─────────────────────────────────────────────────────────────\n");
             } else {
                 printf("\n○ NOT CONNECTED");
                 if (gComPort[0] != '\0') {
@@ -14898,9 +15027,6 @@ static void printMenu(void)
                 }
                 printf("\n");
             }
-            
-            printf("─────────────────────────────────────────────────────────────\n");
-            printf("\n");
             
             // === QUICK ACTIONS (always visible) ===
             printf("QUICK ACTIONS\n");
@@ -14957,8 +15083,8 @@ static void printMenu(void)
                 
                 // === EXAMPLES ===
                 printf("BLUETOOTH EXAMPLES\n");
-                printf("  [e]     GATT Server Examples (9 profiles)\n");
-                printf("  [g]     GATT Client Examples (8 demos)\n");
+                printf("  [e]     GATT Server Profiles (9 examples)\n");
+                printf("  [g]     GATT Client Demos (9 examples)\n");
                 printf("\n");
                 
                 if (hasWiFi) {
@@ -15197,7 +15323,7 @@ static void printMenu(void)
             
         case MENU_GATT_EXAMPLES:
             printf("┌─────────────────────────────────────────────────────────────┐\n");
-            printf("│  GATT SERVER EXAMPLES (9 Profiles)                          │\n");
+            printf("│  GATT SERVER PROFILES (9 Examples)                          │\n");
             printf("│  This device provides services to remote BLE clients        │\n");
             printf("└─────────────────────────────────────────────────────────────┘\n");
             printf("\n");
@@ -15249,6 +15375,7 @@ static void printMenu(void)
             printf("  [5] Subscribe to notifications\n");
             printf("\n");
             printf("SERVICE-SPECIFIC CLIENT EXAMPLES\n");
+            printf("  [h] Heart Rate Service (HRS) - BPM notifications\n");
             printf("  [c] Current Time Service (CTS) - read + subscribe to time\n");
             printf("  [e] Environmental Sensing (ESS) - temp + humidity\n");
             printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
@@ -16154,6 +16281,10 @@ static void handleUserInput(void)
                     // Handle letter commands
                     if (strlen(input) > 0) {
                         char firstChar = (char)tolower(input[0]);
+                        if (firstChar == 'h') {
+                            gattClientHeartRateExample();
+                            break;
+                        }
                         if (firstChar == 'c') {
                             gattClientCtsExample();
                             break;
@@ -16742,13 +16873,15 @@ static void queryDeviceStatus(void)
     
     // Query Bluetooth mode
     uBtMode_t btMode;
-    if (uCxBluetoothGetMode(&gUcxHandle, &btMode) == 0) {
+    int32_t btModeResult = uCxBluetoothGetMode(&gUcxHandle, &btMode);
+    if (btModeResult == 0) {
         gBluetoothMode = (int)btMode;
         
         // Query legacy advertisement status if BT is enabled
         if (btMode != U_BT_MODE_DISABLED) {
             uCxBtGetAdvertiseInformation_t advInfo;
-            if (uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo) == 0) {
+            int32_t advResult = uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo);
+            if (advResult == 0) {
                 gLegacyAdvertising = (advInfo.legacy_adv != 0);
             }
         }
@@ -16831,6 +16964,9 @@ static bool ucxclientConnect(const char *comPort)
     enableAllUrcs();
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
+    
+    // Set connection flag BEFORE calling moduleStartupInit and queryDeviceStatus
+    gUcxConnected = true;
 
     // Perform common module initialization (echo, extended errors, device info)
     moduleStartupInit();
@@ -16841,7 +16977,6 @@ static bool ucxclientConnect(const char *comPort)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connected successfully!");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     
-    gUcxConnected = true;
     return true;
 }
 
