@@ -734,7 +734,8 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //
 // FIRMWARE UPDATE
 //   - downloadFirmwareFromGitHub()     Download firmware from GitHub
-//   - downloadFirmwareFromGitHubInteractive() Interactive download
+//   - downloadFirmwareFromGitHubInteractive() Interactive download (WinHTTP)
+//   - downloadFirmwareFromGitHubUcxApi() Download using UCX HTTP API
 //   - extractProductFromFilename()     Parse product from filename
 //   - extractZipFile()                 Extract ZIP archive
 //   - saveBinaryFile()                 Save binary to disk
@@ -824,6 +825,7 @@ static const char* getProductFirmwarePath(const char *productName);
 static void setProductFirmwarePath(const char *productName, const char *firmwarePath);
 static char* extractProductFromFilename(const char *filename);
 static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t pathSize);
+static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSize);
 static bool extractZipFile(const char *zipPath, const char *destFolder);
 static bool saveBinaryFile(const char *filepath, const char *data, size_t size);
 static void enableAllUrcs(void);
@@ -1756,6 +1758,239 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     extractFolder[sizeof(extractFolder) - 1] = '\0';
     char *zipExt = strstr(extractFolder, ".zip");
     if (zipExt) *zipExt = '\0'; // Remove .zip extension
+    
+    if (!extractZipFile(zipPath, extractFolder)) {
+        printf("ERROR: Failed to extract ZIP file\n");
+        return false;
+    }
+    
+    // Find .bin file in extracted folder
+    char findCommand[512];
+    snprintf(findCommand, sizeof(findCommand),
+             "dir /s /b \"%s\\*.bin\" > temp_bin_list.txt", extractFolder);
+    system(findCommand);
+    
+    FILE *binList = fopen("temp_bin_list.txt", "r");
+    if (!binList) {
+        printf("ERROR: Could not find firmware .bin file in extracted ZIP\n");
+        return false;
+    }
+    
+    char binPath[512];
+    if (fgets(binPath, sizeof(binPath), binList) == NULL) {
+        printf("ERROR: No .bin file found in extracted ZIP\n");
+        fclose(binList);
+        DeleteFileA("temp_bin_list.txt");
+        return false;
+    }
+    
+    fclose(binList);
+    DeleteFileA("temp_bin_list.txt");
+    
+    // Remove newline
+    binPath[strcspn(binPath, "\r\n")] = '\0';
+    
+    printf("Found firmware file: %s\n", binPath);
+    strncpy(downloadedPath, binPath, pathSize - 1);
+    downloadedPath[pathSize - 1] = '\0';
+    
+    return true;
+}
+
+static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSize)
+{
+    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("Download Firmware from GitHub (using UCX HTTP API)\n");
+    printf("─────────────────────────────────────────────────────────────\n\n");
+    
+    printf("NOTE: This method uses the module's WiFi connection to download firmware.\n");
+    printf("      Make sure you are connected to WiFi with internet access.\n\n");
+    
+    // For simplicity in this example, we'll fetch a predefined firmware file
+    // In a real application, you would implement the full GitHub API browsing
+    
+    printf("Enter product name (e.g., NORA-W36, NORA-B26): ");
+    char productName[64];
+    if (fgets(productName, sizeof(productName), stdin) == NULL) {
+        return false;
+    }
+    productName[strcspn(productName, "\r\n")] = '\0';
+    
+    if (strlen(productName) == 0) {
+        printf("ERROR: Product name cannot be empty\n");
+        return false;
+    }
+    
+    printf("Enter firmware version (e.g., 3.1.0) or 'latest': ");
+    char version[64];
+    if (fgets(version, sizeof(version), stdin) == NULL) {
+        return false;
+    }
+    version[strcspn(version, "\r\n")] = '\0';
+    
+    if (strlen(version) == 0) {
+        strcpy(version, "latest");
+    }
+    
+    // Create HTTP session
+    int32_t sessionId = 0;
+    int32_t result = uCxHttpConnect(&gUcxHandle, &sessionId);
+    if (result != 0) {
+        printf("ERROR: Failed to create HTTP session (error %d)\n", result);
+        return false;
+    }
+    
+    printf("Created HTTP session %d\n", sessionId);
+    
+    // Configure HTTPS connection to GitHub
+    // Set server name and port
+    result = uCxHttpSetServerName3(&gUcxHandle, sessionId, "github.com", 443);
+    if (result != 0) {
+        printf("ERROR: Failed to set server name (error %d)\n", result);
+        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        return false;
+    }
+    
+    // Enable HTTPS (TLS)
+    result = uCxHttpSetSecurityOn(&gUcxHandle, sessionId);
+    if (result != 0) {
+        printf("ERROR: Failed to enable HTTPS (error %d)\n", result);
+        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        return false;
+    }
+    
+    // Construct the download URL path
+    // Example: /u-blox/u-connectXpress/releases/download/v3.1.0/NORA-W36_3.1.0.zip
+    char urlPath[512];
+    if (strcmp(version, "latest") == 0) {
+        // For latest, we need to query the API first - simplified here
+        snprintf(urlPath, sizeof(urlPath), "/u-blox/u-connectXpress/releases/latest/download/%s.zip", productName);
+    } else {
+        snprintf(urlPath, sizeof(urlPath), "/u-blox/u-connectXpress/releases/download/v%s/%s_%s.zip", 
+                 version, productName, version);
+    }
+    
+    printf("Downloading from: https://github.com%s\n", urlPath);
+    printf("This may take several minutes depending on firmware size and WiFi speed...\n\n");
+    
+    // Send HTTP GET request
+    result = uCxHttpCommand3(&gUcxHandle, sessionId, U_HTTP_REQUEST_GET, urlPath);
+    if (result != 0) {
+        printf("ERROR: Failed to send HTTP GET request (error %d)\n", result);
+        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        return false;
+    }
+    
+    // Wait for response status
+    Sleep(2000);  // Give time for response headers
+    
+    // Read response headers
+    printf("Reading HTTP response...\n");
+    char headerBuffer[2048];
+    int32_t headerLen = 0;
+    
+    if (!readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
+        printf("ERROR: Failed to read HTTP headers\n");
+        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        return false;
+    }
+    
+    // Extract content length
+    int32_t contentLength = extractContentLength(headerBuffer);
+    if (contentLength <= 0) {
+        printf("ERROR: Could not determine content length\n");
+        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        return false;
+    }
+    
+    printf("Content-Length: %d bytes\n", contentLength);
+    
+    // Allocate buffer for firmware data
+    char *firmwareData = (char*)malloc(contentLength);
+    if (!firmwareData) {
+        printf("ERROR: Failed to allocate %d bytes for firmware data\n", contentLength);
+        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        return false;
+    }
+    
+    // Read the body in chunks
+    printf("Downloading firmware data...\n");
+    int32_t totalRead = 0;
+    int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+    
+    while (totalRead < contentLength) {
+        int32_t remainingBytes = contentLength - totalRead;
+        int32_t bytesToRead = (remainingBytes < chunkSize) ? remainingBytes : chunkSize;
+        
+        uByteArray_t responseData;
+        result = uCxHttpCommandWithResponse3(&gUcxHandle, sessionId, 
+                                             U_HTTP_REQUEST_GET, urlPath, &responseData);
+        
+        if (result == 0 && responseData.length > 0) {
+            // Copy received data
+            int32_t copyLen = (responseData.length < (contentLength - totalRead)) ? 
+                             responseData.length : (contentLength - totalRead);
+            memcpy(firmwareData + totalRead, responseData.pData, copyLen);
+            totalRead += copyLen;
+            
+            // Show progress
+            int percent = (totalRead * 100) / contentLength;
+            printf("\rProgress: %d%% (%d/%d bytes)", percent, totalRead, contentLength);
+            fflush(stdout);
+        } else {
+            // Try using getHttpBody helper
+            uint8_t tempBuffer[HTTP_MAX_CHUNK_SIZE];
+            int32_t bytesRead = getHttpBody(sessionId, tempBuffer, sizeof(tempBuffer), 
+                                           contentLength - totalRead, NULL);
+            if (bytesRead > 0) {
+                memcpy(firmwareData + totalRead, tempBuffer, bytesRead);
+                totalRead += bytesRead;
+                
+                int percent = (totalRead * 100) / contentLength;
+                printf("\rProgress: %d%% (%d/%d bytes)", percent, totalRead, contentLength);
+                fflush(stdout);
+            } else {
+                printf("\nERROR: Failed to read firmware data (error %d)\n", result);
+                break;
+            }
+        }
+        
+        if (totalRead >= contentLength) {
+            break;
+        }
+        
+        Sleep(100);  // Brief delay between chunks
+    }
+    
+    printf("\n");
+    
+    // Close HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    
+    if (totalRead != contentLength) {
+        printf("ERROR: Incomplete download (%d of %d bytes)\n", totalRead, contentLength);
+        free(firmwareData);
+        return false;
+    }
+    
+    printf("Download complete: %d bytes\n", totalRead);
+    
+    // Save ZIP file
+    char zipPath[256];
+    snprintf(zipPath, sizeof(zipPath), "%s_%s.zip", productName, version);
+    
+    if (!saveBinaryFile(zipPath, firmwareData, totalRead)) {
+        printf("ERROR: Failed to save ZIP file\n");
+        free(firmwareData);
+        return false;
+    }
+    
+    free(firmwareData);
+    printf("ZIP file saved: %s\n", zipPath);
+    
+    // Extract ZIP file
+    char extractFolder[256];
+    snprintf(extractFolder, sizeof(extractFolder), "%s_%s", productName, version);
     
     if (!extractZipFile(zipPath, extractFolder)) {
         printf("ERROR: Failed to extract ZIP file\n");
@@ -14920,7 +15155,8 @@ static void printMenu(void)
             }
             printf("\n");
             printf("  [1] Select firmware file and start update\n");
-            printf("  [2] Download latest firmware from GitHub\n");
+            printf("  [2] Download firmware from GitHub (WinHTTP)\n");
+            printf("  [3] Download firmware from GitHub (UCX HTTP API)\n");
             printf("\n");
             printf("  [0] Back to main menu\n");
             break;
@@ -16015,6 +16251,112 @@ static void handleUserInput(void)
                         }
                         
                         // Re-query device information
+                        printf("Querying new firmware version...\n");
+                        
+                        gDeviceModel[0] = '\0';
+                        gDeviceFirmware[0] = '\0';
+                        
+                        const char *model = NULL;
+                        if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+                            strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+                            gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+                            strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+                            gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        const char *fwVersion = NULL;
+                        if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+                            strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+                            gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
+                            uCxEnd(&gUcxHandle);
+                        } else {
+                            uCxEnd(&gUcxHandle);
+                        }
+                        
+                        gUcxConnected = true;
+                        
+                        printf("\nFirmware update complete!\n");
+                        if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
+                            printf("Device: %s\n", gDeviceModel);
+                            printf("New firmware version: %s\n", gDeviceFirmware);
+                            printf("\nThe device is ready to use!\n");
+                        } else {
+                            printf("Note: Could not read new firmware version.\n");
+                        }
+                        
+                        saveSettings();
+                    } else {
+                        printf("\n\nERROR: Firmware update failed with code %d\n", result);
+                        printf("The connection may still be active. Try using the device or reconnect if needed.\n");
+                    }
+                    
+                    break;
+                }
+                case 3: {
+                    // Download firmware from GitHub using UCX HTTP API
+                    
+                    // Check if device is connected
+                    if (!gUcxConnected) {
+                        printf("ERROR: Device not connected. Please connect first.\n");
+                        break;
+                    }
+                    
+                    // Check if WiFi is connected
+                    if (!gWifiConnected) {
+                        printf("ERROR: WiFi not connected. Please connect to WiFi first.\n");
+                        printf("Use WiFi menu (option 3 from main menu) to connect.\n");
+                        break;
+                    }
+                    
+                    char firmwarePath[512];
+                    if (!downloadFirmwareFromGitHubUcxApi(firmwarePath, sizeof(firmwarePath))) {
+                        printf("\nFirmware download cancelled or failed.\n");
+                        break;
+                    }
+                    
+                    printf("\nFirmware downloaded successfully!\n");
+                    printf("Path: %s\n", firmwarePath);
+                    printf("\nStarting firmware update...\n");
+                    printf("This will take several minutes. Please wait...\n\n");
+                    printf("NOTE: The connection will be closed and reopened for XMODEM transfer.\n");
+                    printf("      The device will reboot after successful update.\n\n");
+                    
+                    // Perform firmware update with progress callback
+                    int32_t result = uCxFirmwareUpdate(
+                        &gUcxHandle,
+                        firmwarePath,
+                        gComPort,
+                        115200,
+                        false,  // No flow control
+                        true,   // Use 1K blocks
+                        firmwareUpdateProgress,
+                        NULL
+                    );
+                    
+                    if (result == 0) {
+                        printf("\n\nFirmware update completed successfully!\n");
+                        printf("The module is rebooting...\n");
+                        printf("Waiting for +STARTUP URC");
+                        fflush(stdout);
+                        
+                        bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                        
+                        if (startupReceived) {
+                            printf(" Received!\n");
+                        } else {
+                            printf(" Timeout! Continuing anyway...\n");
+                        }
+                        fflush(stdout);
+                        
+                        printf("Disabling AT echo...\n");
+                        result = uCxSystemSetEchoOff(&gUcxHandle);
+                        if (result != 0) {
+                            printf("Warning: Failed to disable echo (error %d), continuing...\n", result);
+                        }
+                        
                         printf("Querying new firmware version...\n");
                         
                         gDeviceModel[0] = '\0';
