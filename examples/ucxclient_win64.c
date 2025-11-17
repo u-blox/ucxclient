@@ -1577,9 +1577,9 @@ static bool extractZipFile(const char *zipPath, const char *destFolder)
 
 static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t pathSize)
 {
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("Download Firmware from GitHub\n");
-    printf("─────────────────────────────────────────────────────────────\n\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
     
     // Fetch available products from GitHub repository
     printf("Fetching available products from GitHub...\n");
@@ -1946,9 +1946,9 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
 
 static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSize)
 {
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("Download Firmware from GitHub (using UCX HTTP API)\n");
-    printf("─────────────────────────────────────────────────────────────\n\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
     
     printf("NOTE: This method uses the module's WiFi connection to download firmware.\n");
     printf("      Make sure you are connected to WiFi with internet access.\n\n");
@@ -9422,9 +9422,9 @@ static void bluetoothSetPairing(void)
         return;
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("BLUETOOTH PAIRING CONFIGURATION\n");
-    printf("─────────────────────────────────────────────────────────────\n\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
     
     // Step 1: Pairing Mode
     printf("\n[1/3] Pairing Mode:\n");
@@ -9566,9 +9566,9 @@ static void bluetoothListBondedDevices(void)
         return;
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("BONDED DEVICES LIST\n");
-    printf("─────────────────────────────────────────────────────────────\n\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
     
     uCxBluetoothListBondedDevicesBegin(&gUcxHandle);
     uBtLeAddress_t bondedAddr;
@@ -9623,9 +9623,9 @@ static void bluetoothShowStatus(void)
         return;
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("BLUETOOTH STATUS\n");
-    printf("─────────────────────────────────────────────────────────────\n\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
     
     // Display status based on tracked state
     printf("Advertising:       %s\n", gBluetoothAdvertising ? "ENABLED (Discoverable)" : "DISABLED");
@@ -12160,9 +12160,9 @@ static void ipGeolocationExample(void)
     int32_t err;
     char externalIp[64] = {0};
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("IP GEOLOCATION\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
@@ -12350,9 +12350,9 @@ static void externalIpDetectionExample(void)
     int32_t sessionId = 0;
     char externalIp[64] = {0};
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("EXTERNAL IP DETECTION\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
@@ -12460,9 +12460,9 @@ static void wifiPositioningExample(void)
     char postData[4096];
     int dataLen = 0;
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("WI-FI POSITIONING (Combain)\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("\n");
     
     // Check Wi-Fi connectivity before proceeding
@@ -12490,7 +12490,7 @@ static void wifiPositioningExample(void)
     dataLen = (int)strlen(postData);
     
     printf("Collecting access point data...\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     
     while (uCxWifiStationScanDefaultGetNext(&gUcxHandle, &scanResult)) {
         // Convert MAC address to string format (XX:XX:XX:XX:XX:XX)
@@ -12523,7 +12523,7 @@ static void wifiPositioningExample(void)
     
     uCxEnd(&gUcxHandle);
     
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("✓ Scan complete: %d access points found\n", apCount);
     printf("\n");
     
@@ -12552,9 +12552,9 @@ static void wifiPositioningExample(void)
     
     // Check if we have a saved API key
     if (strlen(gCombainApiKey) == 0) {
-        printf("─────────────────────────────────────────────────────────────\n");
+        printf("────────────────────────────────────────────────────────────────────────────────\n");
         printf("COMBAIN API KEY REQUIRED\n");
-        printf("─────────────────────────────────────────────────────────────\n");
+        printf("────────────────────────────────────────────────────────────────────────────────\n");
         printf("\n");
         printf("This example requires a Combain API key to access the\n");
         printf("Wi-Fi positioning service.\n");
@@ -14108,9 +14108,9 @@ static void tlsShowCertificateDetails(void)
         return;
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("CERTIFICATE DETAILS\n");
-    printf("─────────────────────────────────────────────────────────────\n\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
     
     // First, list available certificates
     printf("Available certificates:\n\n");
@@ -14141,7 +14141,7 @@ static void tlsShowCertificateDetails(void)
     
     if (certCount == 0) {
         printf("  No certificates installed.\n");
-        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("\n────────────────────────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
@@ -14159,7 +14159,7 @@ static void tlsShowCertificateDetails(void)
     
     if (strlen(certName) == 0) {
         printf("Cancelled.\n");
-        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("\n────────────────────────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
@@ -14260,7 +14260,7 @@ static void tlsShowCertificateDetails(void)
         printf("\nTip: Use [3] to list all certificates first\n");
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("Press Enter to continue...");
     getchar();
 }
@@ -14499,7 +14499,7 @@ static void tlsUploadCertificate(void)
         printf("  - Certificate name already exists\n");
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("Press Enter to continue...");
     getchar();
 }
@@ -14511,9 +14511,9 @@ static void tlsDeleteCertificate(void)
         return;
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("DELETE CERTIFICATE\n");
-    printf("─────────────────────────────────────────────────────────────\n\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
     
     // List available certificates
     printf("Available certificates:\n\n");
@@ -14544,7 +14544,7 @@ static void tlsDeleteCertificate(void)
     
     if (certCount == 0) {
         printf("  No certificates installed.\n");
-        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("\n────────────────────────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
@@ -14562,7 +14562,7 @@ static void tlsDeleteCertificate(void)
     
     if (strlen(certName) == 0) {
         printf("Cancelled.\n");
-        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("\n────────────────────────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
@@ -14579,7 +14579,7 @@ static void tlsDeleteCertificate(void)
     
     if (tolower(confirm[0]) != 'y') {
         printf("Cancelled.\n");
-        printf("\n─────────────────────────────────────────────────────────────\n");
+        printf("\n────────────────────────────────────────────────────────────────────────────────\n");
         printf("Press Enter to continue...");
         getchar();
         return;
@@ -14611,7 +14611,7 @@ static void tlsDeleteCertificate(void)
         printf("  - Certificate is currently in use by an active connection\n");
     }
     
-    printf("\n─────────────────────────────────────────────────────────────\n");
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("Press Enter to continue...");
     getchar();
 }
@@ -14801,9 +14801,9 @@ int main(int argc, char *argv[])
 static void printHeader(void)
 {
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "─────────────────────────────────────────────────────────────");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "───────────────────────────────────────────────────────────────────────────────────────────────────");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "u-connectXpress ucxclient App v%s", APP_VERSION);
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "─────────────────────────────────────────────────────────────");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "───────────────────────────────────────────────────────────────────────────────────────────────────");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Simple C application for NORA-B26 and NORA-W36");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "NOTE: UCX Logging is %s", uCxLogIsEnabled() ? "ENABLED" : "DISABLED");
@@ -14815,9 +14815,9 @@ static void printHeader(void)
 static void printWelcomeGuide(void)
 {
     printf("\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("WELCOME - Getting Started Guide\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("\n");
     printf("This is a simple example application to help you get\n");
     printf("started with u-connectXpress modules (NORA-B26/NORA-W36).\n");
@@ -14856,9 +14856,9 @@ static void printWelcomeGuide(void)
 static void printHelp(void)
 {
     printf("\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("HELP & TIPS\n");
-    printf("─────────────────────────────────────────────────────────────\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
     printf("\n");
     printf("QUICK ACTIONS:\n");
     printf("  [c] Connect      - Select and connect to your UCX device\n");
@@ -14982,9 +14982,9 @@ static void printMenu(void)
             }
             
             printf("\n");
-            printf("─────────────────────────────────────────────────────────────\n");
+            printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
             printf("u-blox UCX Client - Main Menu\n");
-            printf("─────────────────────────────────────────────────────────────\n");
+            printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
             
             // === STATUS DASHBOARD ===
             if (gUcxConnected) {
@@ -14996,7 +14996,7 @@ static void printMenu(void)
                     }
                 }
                 printf("  |  Port: %s\n", gComPort);
-                printf("─────────────────────────────────────────────────────────────\n");
+                printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
                 
                 // Line 1: WiFi status + Sockets + Certificates
                 printf("WiFi: ");
@@ -15028,7 +15028,7 @@ static void printMenu(void)
                     printf("  |  %d bonded", gBondedDeviceCount);
                 }
                 printf("\n");
-                printf("─────────────────────────────────────────────────────────────\n");
+                printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
             } else {
                 printf("\n○ NOT CONNECTED");
                 if (gComPort[0] != '\0') {
@@ -15335,10 +15335,10 @@ static void printMenu(void)
             break;
             
         case MENU_GATT_EXAMPLES:
-            printf("┌─────────────────────────────────────────────────────────────┐\n");
+            printf("┌────────────────────────────────────────────────────────────────────────────────┐\n");
             printf("│  GATT SERVER PROFILES (9 Examples)                          │\n");
             printf("│  This device provides services to remote BLE clients        │\n");
-            printf("└─────────────────────────────────────────────────────────────┘\n");
+            printf("└────────────────────────────────────────────────────────────────────────────────┘\n");
             printf("\n");
             printf("  [h] Heart Rate Service - Heartbeat notifications\n");
             printf("  [k] HID Keyboard + Media + Battery - Full HID device\n");
@@ -16983,9 +16983,6 @@ static bool ucxclientConnect(const char *comPort)
 
     // Perform common module initialization (echo, extended errors, device info)
     moduleStartupInit();
-    
-    // Query device status (WiFi, BT, sockets, certificates, etc.)
-    queryDeviceStatus();
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connected successfully!");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
@@ -18929,9 +18926,9 @@ static void showGattServerConnectionInfo(void)
         uMacAddress_t btAddr;
         if (uCxSystemGetLocalAddress(&gUcxHandle, U_INTERFACE_ID_BLUETOOTH, &btAddr) == 0) {
             printf("\n");
-            printf("┌─────────────────────────────────────────────────────────────┐\n");
+            printf("┌────────────────────────────────────────────────────────────────────────────────┐\n");
             printf("│  GATT Server Ready - Connect from GATT Client              │\n");
-            printf("└─────────────────────────────────────────────────────────────┘\n");
+            printf("└────────────────────────────────────────────────────────────────────────────────┘\n");
             printf("\n");
             printf("  Device Name: %s\n", deviceNameCopy[0] ? deviceNameCopy : "Unknown");
             printf("  BT Address:  %02X:%02X:%02X:%02X:%02X:%02X\n",
