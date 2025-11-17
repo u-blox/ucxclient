@@ -404,6 +404,9 @@ static char gWifiSsid[64] = "";                    // Connected network SSID
 static char gWifiIpAddress[16] = "";               // Device IP address
 static int gWifiChannel = 0;                       // Wi-Fi channel (1-13)
 
+// HTTP configuration
+#define HTTP_MAX_CHUNK_SIZE 1000                   // Maximum bytes per HTTP read/write operation
+
 // Settings (saved to file)
 static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
@@ -679,6 +682,7 @@ static void wifiManageProfiles(void);
 static void wifiSaveProfile(const char *name, const char *ssid, const char *password, const char *ipPrefix);
 static int wifiSuggestProfile(void);
 static void wifiListProfiles(void);
+static bool connectToWifiProfile(int profileIndex, bool quickConnect, bool verbose);
 static void wifiApEnable(void);
 static void wifiApDisable(void);
 static void wifiApShowStatus(void);
@@ -811,8 +815,9 @@ static void pingCompleteUrc(struct uCxHandle *puCxHandle, int32_t transmitted_pa
                            int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_output);
 
-// URC handler for HTTP
+// URC handlers for HTTP
 static void httpRequestStatusUrc(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char *description);
+static void httpDisconnectUrc(struct uCxHandle *puCxHandle, int32_t session_id);
 
 // HTTP and REST API example functions
 static void httpGetExample(void);
@@ -836,6 +841,18 @@ static bool configureHttpsConnection(int32_t sessionId, const char *hostname, co
 
 // REST API Examples
 static void httpJsonPlaceholderExample(void);
+
+// HTTP helper functions
+static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t bufferSize, int32_t *pHeaderLen);
+static int32_t getHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSize, 
+                            int32_t expectedLength, void (*outputCallback)(const uint8_t *data, int32_t len));
+static int32_t postHttpBody(int32_t sessionId, const char *data, int32_t dataLength);
+static bool configureHttpSession(int32_t sessionId, const char *host, const char *path, bool useHttps, bool verbose);
+static int32_t extractContentLength(const char *headers);
+static bool httpRequestWithResponse(int32_t sessionId, bool isPost, const uint8_t *postData, int32_t postDataLen,
+                                     char *headerBuffer, int32_t headerBufferSize, int32_t *pHeaderLen,
+                                     uint8_t *bodyBuffer, int32_t bodyBufferSize, int32_t *pBodyLen,
+                                     void (*bodyCallback)(const uint8_t *data, int32_t len));
 
 // ============================================================================
 // BLUETOOTH HELPER FUNCTIONS
@@ -2078,6 +2095,12 @@ static void httpRequestStatusUrc(struct uCxHandle *puCxHandle, int32_t session_i
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "HTTP response: session %d, status %d %s", 
                    session_id, status_code, description ? description : "");
+}
+
+static void httpDisconnectUrc(struct uCxHandle *puCxHandle, int32_t session_id)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "HTTP disconnected: session %d", session_id);
 }
 
 static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id)
@@ -6510,6 +6533,7 @@ static void enableAllUrcs(void)
     
     // HTTP events
     uCxHttpRegisterRequestStatus(&gUcxHandle, httpRequestStatusUrc);
+    uCxHttpRegisterDisconnect(&gUcxHandle, httpDisconnectUrc);
     
     // MQTT events
     uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
@@ -9190,19 +9214,31 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
                 
                 // Show available profiles and offer to connect
                 if (gWifiProfileCount > 0) {
-                    // Try to suggest profile based on PC IP
+                    // Try to suggest profile based on PC IP or use active profile
                     int suggestedIdx = wifiSuggestProfile();
+                    bool suggestedByIP = (suggestedIdx >= 0);  // Track if IP matched
+                    int profileIndex = -1;
+                    bool verifyConnection = false;
+                    
+                    // If no IP-based suggestion, check for active profile
+                    if (suggestedIdx < 0 && gActiveProfileIndex >= 0 && gActiveProfileIndex < gWifiProfileCount) {
+                        suggestedIdx = gActiveProfileIndex;
+                    }
                     
                     if (suggestedIdx >= 0) {
-                        char currentIP[40];
-                        getCurrentPCIPAddress(currentIP, sizeof(currentIP));
-                        printf("\nRecommended: Profile '%s' matches your network (%s)\n", 
-                               gWifiProfiles[suggestedIdx].name, currentIP);
-                        printf("  [Enter] Connect to '%s' now (quick, no verification)\n", gWifiProfiles[suggestedIdx].name);
-                        printf("  [v]     Connect with verification (check IP/gateway)\n");
-                        printf("  [s]     Show all profiles\n");
-                        printf("  [c]     Cancel\n");
-                        printf("\nChoice: ");
+                        // Found a recommended profile (either IP match or active profile)
+                        if (suggestedByIP) {
+                            char currentIP[40];
+                            getCurrentPCIPAddress(currentIP, sizeof(currentIP));
+                            printf("\nRecommended: Profile '%s' matches your network (%s)\n", 
+                                   gWifiProfiles[suggestedIdx].name, currentIP);
+                        } else {
+                            printf("\nActive profile: '%s' (SSID: %s)\n",
+                                   gWifiProfiles[suggestedIdx].name,
+                                   gWifiProfiles[suggestedIdx].ssid);
+                        }
+                        
+                        printf("Use this profile? (Y/n/s=show all): ");
                         
                         char choice[10];
                         if (!fgets(choice, sizeof(choice), stdin)) {
@@ -9211,104 +9247,26 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
                         }
                         choice[strcspn(choice, "\r\n")] = 0;
                         
-                        if (choice[0] == 'c' || choice[0] == 'C') {
-                            printf("Connection cancelled. Returning to menu.\n");
-                            return false;
+                        if (choice[0] == 'n' || choice[0] == 'N') {
+                            // Show all profiles - fall through to profile selection below
+                            suggestedIdx = -1;
                         } else if (choice[0] == 's' || choice[0] == 'S') {
                             // Show all profiles - fall through to profile selection below
                             suggestedIdx = -1;
-                        } else if (choice[0] == 'v' || choice[0] == 'V' || choice[0] == '\0') {
-                            // Use suggested profile
-                            int profileIndex = suggestedIdx;
-                            bool verifyConnection = (choice[0] == 'v' || choice[0] == 'V');
-                            
-                            printf("\nConnecting to '%s' (SSID: %s)...\n", 
-                                   gWifiProfiles[profileIndex].name, 
-                                   gWifiProfiles[profileIndex].ssid);
-                            
-                            // Set connection parameters
-                            if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, gWifiProfiles[profileIndex].ssid) != 0) {
-                                printf("ERROR: Failed to set connection parameters\n");
-                                return false;
-                            }
-                            
-                            // Set security
-                            if (strlen(gWifiProfiles[profileIndex].password) > 0) {
-                                if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, gWifiProfiles[profileIndex].password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
-                                    printf("ERROR: Failed to set WPA security\n");
-                                    return false;
-                                }
-                            } else {
-                                if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
-                                    printf("ERROR: Failed to set open security\n");
-                                    return false;
-                                }
-                            }
-                            
-                            // Clear event flags
-                            U_CX_MUTEX_LOCK(gUrcMutex);
-                            gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
-                            U_CX_MUTEX_UNLOCK(gUrcMutex);
-                            
-                            // Connect
-                            err = uCxWifiStationConnect(&gUcxHandle, 0);
-                            if (err < 0) {
-                                printf("ERROR: Failed to initiate connection (error: %d)\n", err);
-                                return false;
-                            }
-                            
-                            // Wait for network up event
-                            if (!verifyConnection) {
-                                printf("Connecting");
-                                fflush(stdout);
-                            } else {
-                                printf("Waiting for network up event");
-                                fflush(stdout);
-                            }
-                            
-                            bool connected = false;
-                            for (int i = 0; i < 40; i++) {
-                                Sleep(500);
-                                printf(".");
-                                fflush(stdout);
-                                
-                                U_CX_MUTEX_LOCK(gUrcMutex);
-                                bool netUp = (gUrcEventFlags & URC_FLAG_NETWORK_UP) != 0;
-                                U_CX_MUTEX_UNLOCK(gUrcMutex);
-                                
-                                if (netUp) {
-                                    connected = true;
-                                    break;
-                                }
-                            }
-                            
-                            printf("\n");
-                            
-                            if (!connected) {
-                                printf("ERROR: Connection timeout - no network up event received\n");
-                                return false;
-                            }
-                            
-                            printf("✓ Wi-Fi connected successfully\n");
-                            
-                            // Skip verification if quick connect
-                            if (!verifyConnection) {
-                                printf("\n");
-                                return true;
-                            }
-                            
-                            // Otherwise continue with IP/gateway checks below
+                        } else {
+                            // Use suggested profile (default on Enter or 'y')
+                            profileIndex = suggestedIdx;
                         }
                     }
                     
                     // Show all profiles if not using suggested one
-                    if (suggestedIdx < 0) {
-                        printf("\nAvailable Wi-Fi profiles:\n");
+                    if (profileIndex < 0) {
+                        printf("\nSelect Wi-Fi profile to connect:\n");
                         for (int i = 0; i < gWifiProfileCount; i++) {
                             printf("  [%d] %s (SSID: %s)\n", i + 1, gWifiProfiles[i].name, gWifiProfiles[i].ssid);
                         }
                         printf("  [0] Cancel\n");
-                        printf("\nSelect profile to connect (0-%d): ", gWifiProfileCount);
+                        printf("\nEnter profile number (0-%d): ", gWifiProfileCount);
                         
                         int profileChoice = -1;
                         if (scanf("%d", &profileChoice) != 1) {
@@ -9328,70 +9286,39 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
                             return false;
                         }
                         
-                        int profileIndex = profileChoice - 1;
-                        printf("\nConnecting to '%s' (SSID: %s)...\n", 
+                        profileIndex = profileChoice - 1;
+                        
+                        // Ask for connection mode
+                        printf("\nConnect to '%s' (SSID: %s)\n", 
                                gWifiProfiles[profileIndex].name, 
                                gWifiProfiles[profileIndex].ssid);
+                        printf("  [Enter] Quick connect (no verification)\n");
+                        printf("  [v]     Connect with verification\n");
+                        printf("Choice: ");
                         
-                        // Set connection parameters
-                        if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, gWifiProfiles[profileIndex].ssid) != 0) {
-                            printf("ERROR: Failed to set connection parameters\n");
+                        char modeChoice[10];
+                        if (!fgets(modeChoice, sizeof(modeChoice), stdin)) {
+                            printf("Invalid input. Returning to menu.\n");
+                            return false;
+                        }
+                        modeChoice[strcspn(modeChoice, "\r\n")] = 0;
+                        
+                        verifyConnection = (modeChoice[0] == 'v' || modeChoice[0] == 'V');
+                    }
+                    
+                    // Connect to selected profile using shared function
+                    if (profileIndex >= 0) {
+                        bool quickConnect = !verifyConnection;
+                        if (!connectToWifiProfile(profileIndex, quickConnect, true)) {
                             return false;
                         }
                         
-                        // Set security
-                        if (strlen(gWifiProfiles[profileIndex].password) > 0) {
-                            if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, gWifiProfiles[profileIndex].password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
-                                printf("ERROR: Failed to set WPA security\n");
-                                return false;
-                            }
-                        } else {
-                            if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
-                                printf("ERROR: Failed to set open security\n");
-                                return false;
-                            }
+                        // If quick connect, we're done
+                        if (quickConnect) {
+                            return true;
                         }
                         
-                        // Clear event flags
-                        U_CX_MUTEX_LOCK(gUrcMutex);
-                        gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
-                        U_CX_MUTEX_UNLOCK(gUrcMutex);
-                        
-                        // Connect
-                        err = uCxWifiStationConnect(&gUcxHandle, 0);
-                        if (err < 0) {
-                            printf("ERROR: Failed to initiate connection (error: %d)\n", err);
-                            return false;
-                        }
-                        
-                        // Wait for network up event
-                        printf("Waiting for network up event");
-                        fflush(stdout);
-                        
-                        bool connected = false;
-                        for (int i = 0; i < 40; i++) {
-                            Sleep(500);
-                            printf(".");
-                            fflush(stdout);
-                            
-                            U_CX_MUTEX_LOCK(gUrcMutex);
-                            bool netUp = (gUrcEventFlags & URC_FLAG_NETWORK_UP) != 0;
-                            U_CX_MUTEX_UNLOCK(gUrcMutex);
-                            
-                            if (netUp) {
-                                connected = true;
-                                break;
-                            }
-                        }
-                        
-                        printf("\n");
-                        
-                        if (!connected) {
-                            printf("ERROR: Connection timeout - no network up event received\n");
-                            return false;
-                        }
-                        
-                        printf("✓ Wi-Fi connected successfully\n");
+                        // Otherwise continue with full connectivity checks below
                     }
                     
                     // Continue to verify IP address and connectivity below
@@ -9551,35 +9478,220 @@ static int32_t parseContentLength(const char *headers, int32_t headersLen)
         return -1;  // No digits found
     }
     
-    // Parse with overflow protection
-    uint64_t tmp = 0;
-    const uint64_t MAX_ALLOWED = 10000000;  // 10MB max for embedded device
+    // Parse the number - accept any valid Content-Length per HTTP spec
+    int64_t tmp = 0;
     p = digitStart;
     
     while (*p >= '0' && *p <= '9') {
         int digit = *p - '0';
-        
-        // Check for overflow before multiplying
-        if (tmp > MAX_ALLOWED / 10) {
-            return -1;  // Overflow, reject
-        }
-        
         tmp = tmp * 10 + digit;
-        
-        // Check if result exceeds max
-        if (tmp > MAX_ALLOWED) {
-            return -1;  // Too large, reject
+    }
+    
+    // Return 0 for Content-Length: 0, or the parsed value
+    // Note: Values > INT32_MAX will wrap, but HTTP body reading handles this via chunking
+    return (int32_t)tmp;
+}
+
+// ============================================================================
+// HTTP HELPER FUNCTIONS
+// ============================================================================
+// 
+// These helpers simplify HTTP request/response operations and reduce code duplication.
+//
+// QUICK START GUIDE:
+//
+// 1. SIMPLE GET REQUEST (all-in-one):
+//    char headers[2048];
+//    uint8_t body[4096];
+//    int32_t headerLen = 0, bodyLen = 0;
+//    
+//    configureHttpSession(0, "api.example.com", "/data", true, true);
+//    httpRequestWithResponse(0, false, NULL, 0,
+//                            headers, sizeof(headers), &headerLen,
+//                            body, sizeof(body), &bodyLen, NULL);
+//    printf("Received: %d bytes\n", bodyLen);
+//
+// 2. SIMPLE POST REQUEST:
+//    const char *postData = "{\"key\":\"value\"}";
+//    httpRequestWithResponse(0, true, (uint8_t*)postData, strlen(postData),
+//                            headers, sizeof(headers), &headerLen,
+//                            body, sizeof(body), &bodyLen, NULL);
+//
+// 3. MANUAL STEP-BY-STEP (more control):
+//    // Configure session
+//    configureHttpSession(0, "httpbin.org", "/get", true, true);
+//    
+//    // Send request
+//    uCxHttpGetRequest(&gUcxHandle, 0);
+//    
+//    // Read headers
+//    char headers[2048];
+//    int32_t headerLen = 0;
+//    readHttpHeaders(0, headers, sizeof(headers), &headerLen);
+//    
+//    // Extract content length
+//    int32_t contentLen = extractContentLength(headers);
+//    printf("Expecting %d bytes\n", contentLen);
+//    
+//    // Read body (to stdout)
+//    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
+//    getHttpBody(0, buffer, sizeof(buffer), contentLen, httpBodyToStdout);
+//    
+//    // Or read body to buffer
+//    uint8_t bodyBuffer[4096];
+//    int32_t totalBytes = getHttpBody(0, bodyBuffer, sizeof(bodyBuffer), contentLen, NULL);
+//
+// ============================================================================
+
+// Extract Content-Length from HTTP headers
+// Returns -1 if not found, otherwise the content length value
+// This is a simplified wrapper around parseContentLength for common use
+static int32_t extractContentLength(const char *headers)
+{
+    if (!headers) {
+        return -1;
+    }
+    return parseContentLength(headers, (int32_t)strlen(headers));
+}
+
+// Configure HTTP or HTTPS session with host, path, and TLS settings
+// Returns true on success, false on error
+//
+// Usage example:
+//   if (configureHttpSession(0, "httpbin.org", "/get", true, true)) {
+//       // Session configured for HTTPS to httpbin.org/get
+//       // Now you can send requests using uCxHttpGetRequest() or uCxHttpPostRequest()
+//   }
+//
+static bool configureHttpSession(int32_t sessionId, const char *host, const char *path, bool useHttps, bool verbose)
+{
+    if (!host || !path) {
+        return false;
+    }
+    
+    int32_t err;
+    char hostWithProtocol[256];
+    
+    // Enable TLS if HTTPS
+    if (useHttps) {
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+        if (err < 0) {
+            if (verbose) {
+                printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+            }
+            return false;
         }
-        
-        p++;
+        if (verbose) {
+            printf("✓ TLS 1.2 enabled\n");
+        }
     }
     
-    // Only accept if in valid range
-    if (tmp > 0 && tmp <= MAX_ALLOWED) {
-        return (int32_t)tmp;
+    // Set connection parameters with protocol prefix
+    if (useHttps) {
+        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "https://%s", host);
+        err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, 443);
+    } else {
+        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "http://%s", host);
+        err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
     }
     
-    return -1;
+    if (err < 0) {
+        if (verbose) {
+            printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        }
+        return false;
+    }
+    
+    if (verbose) {
+        printf("✓ Connection configured for %s\n", host);
+    }
+    
+    // Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        if (verbose) {
+            printf("ERROR: Failed to set request path (error: %d)\n", err);
+        }
+        return false;
+    }
+    
+    if (verbose) {
+        printf("✓ Request path set to %s\n", path);
+    }
+    
+    return true;
+}
+
+// Complete HTTP request/response cycle
+// Handles: send request → read headers → read body
+// Returns true on success, false on error
+// Set bodyCallback to NULL to read body into bodyBuffer, or provide callback to process chunks
+//
+// Usage example (simple GET):
+//   char headers[2048];
+//   uint8_t body[4096];
+//   int32_t headerLen = 0, bodyLen = 0;
+//   
+//   if (configureHttpSession(0, "api.example.com", "/data", true, true)) {
+//       if (httpRequestWithResponse(0, false, NULL, 0, 
+//                                    headers, sizeof(headers), &headerLen,
+//                                    body, sizeof(body), &bodyLen, NULL)) {
+//           printf("Success! Headers: %d bytes, Body: %d bytes\n", headerLen, bodyLen);
+//           int32_t contentLen = extractContentLength(headers);
+//           printf("Content-Length: %d\n", contentLen);
+//       }
+//   }
+//
+// Usage example (POST with callback):
+//   const char *postData = "{\"key\":\"value\"}";
+//   if (httpRequestWithResponse(0, true, (uint8_t*)postData, strlen(postData),
+//                                headers, sizeof(headers), &headerLen,
+//                                body, sizeof(body), &bodyLen, httpBodyToStdout)) {
+//       // Body was printed to stdout via callback
+//   }
+//
+static bool httpRequestWithResponse(int32_t sessionId, bool isPost, const uint8_t *postData, int32_t postDataLen,
+                                     char *headerBuffer, int32_t headerBufferSize, int32_t *pHeaderLen,
+                                     uint8_t *bodyBuffer, int32_t bodyBufferSize, int32_t *pBodyLen,
+                                     void (*bodyCallback)(const uint8_t *data, int32_t len))
+{
+    if (!headerBuffer || !pHeaderLen || !bodyBuffer || !pBodyLen) {
+        return false;
+    }
+    
+    int32_t err;
+    
+    // Send request
+    if (isPost) {
+        if (!postData || postDataLen <= 0) {
+            return false;
+        }
+        err = uCxHttpPostRequest(&gUcxHandle, sessionId, postData, postDataLen);
+    } else {
+        err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    }
+    
+    if (err < 0) {
+        return false;
+    }
+    
+    // Read response headers
+    if (!readHttpHeaders(sessionId, headerBuffer, headerBufferSize, pHeaderLen)) {
+        return false;
+    }
+    
+    // Extract content length from headers
+    int32_t contentLength = extractContentLength(headerBuffer);
+    
+    // Read response body
+    int32_t totalBytes = getHttpBody(sessionId, bodyBuffer, bodyBufferSize, contentLength, bodyCallback);
+    if (totalBytes < 0) {
+        *pBodyLen = 0;
+        return false;
+    }
+    
+    *pBodyLen = totalBytes;
+    return true;
 }
 
 // Read HTTP response headers, accumulating all chunks
@@ -9597,7 +9709,7 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
     while (true) {
         memset(&headerResp, 0, sizeof(headerResp));
         
-        if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+        if (uCxHttpGetHeader2Begin(&gUcxHandle, sessionId, HTTP_MAX_CHUNK_SIZE, &headerResp)) {
             // Collect header data
             if (headerResp.byte_array_data.length > 0 && 
                 headerResp.byte_array_data.pData != NULL &&
@@ -9628,11 +9740,11 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
     return true;
 }
 
-// Read HTTP response body in chunks
+// Get HTTP response body in chunks
 // Returns total bytes read, or negative on error
-// If expectedLength > 0, reads exactly that many bytes (respecting 1000 byte API limit per chunk)
+// If expectedLength > 0, reads exactly that many bytes (respecting HTTP_MAX_CHUNK_SIZE per chunk)
 // If expectedLength <= 0, reads until moreToRead flag is false
-static int32_t readHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSize, 
+static int32_t getHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSize, 
                             int32_t expectedLength, void (*outputCallback)(const uint8_t *data, int32_t len))
 {
     if (!buffer || bufferSize <= 0) {
@@ -9648,14 +9760,14 @@ static int32_t readHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSi
         if (expectedLength > 0) {
             // Read based on Content-Length, but respect API limit
             int32_t remaining = expectedLength - totalBytes;
-            chunkSize = (remaining < 1000) ? remaining : 1000;
+            chunkSize = (remaining < HTTP_MAX_CHUNK_SIZE) ? remaining : HTTP_MAX_CHUNK_SIZE;
             
             if (chunkSize <= 0) {
                 break;  // We've read everything we expected
             }
         } else {
             // No Content-Length, use default chunk size
-            chunkSize = (bufferSize < 1000) ? bufferSize : 1000;
+            chunkSize = (bufferSize < HTTP_MAX_CHUNK_SIZE) ? bufferSize : HTTP_MAX_CHUNK_SIZE;
         }
         
         int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
@@ -9681,6 +9793,40 @@ static int32_t readHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSi
 static void httpBodyToStdout(const uint8_t *data, int32_t len)
 {
     fwrite(data, 1, len, stdout);
+}
+
+// Post HTTP request body for POST/PUT requests in chunks
+// Note: Use this when Content-Length is pre-configured via uCxHttpAddHeaderField
+// For simple POST, use uCxHttpPostRequest directly which sends all data at once
+// Returns total bytes written, or negative on error
+static int32_t postHttpBody(int32_t sessionId, const char *data, int32_t dataLength)
+{
+    if (!data || dataLength <= 0) {
+        return -1;
+    }
+    
+    int32_t totalWritten = 0;
+    int32_t remaining = dataLength;
+    
+    while (remaining > 0) {
+        // Write in chunks (max HTTP_MAX_CHUNK_SIZE bytes per API call)
+        int32_t chunkSize = (remaining < HTTP_MAX_CHUNK_SIZE) ? remaining : HTTP_MAX_CHUNK_SIZE;
+        
+        // Use uCxHttpPostRequest for each chunk
+        // When Content-Length is pre-configured, multiple calls accumulate the body
+        int32_t bytesWritten = uCxHttpPostRequest(&gUcxHandle, sessionId, 
+                                                   (const uint8_t*)(data + totalWritten), 
+                                                   chunkSize);
+        
+        if (bytesWritten < 0) {
+            return bytesWritten;  // Return error code
+        }
+        
+        totalWritten += bytesWritten;
+        remaining -= bytesWritten;
+    }
+    
+    return totalWritten;
 }
 
 // Extract IP address from ipify JSON response: {"ip":"123.45.67.89"}
@@ -9813,7 +9959,7 @@ static bool getExternalIp(int32_t sessionId, char *ipBuffer, int32_t ipBufferSiz
     while (moreToRead && ipifyResponseLen < sizeof(ipifyResponse) - 1) {
         int32_t chunkSize = (contentLength > 0) ? 
             ((contentLength - ipifyResponseLen < 256) ? contentLength - ipifyResponseLen : 256) : 256;
-        if (chunkSize > 1000) chunkSize = 1000;  // API limit
+        if (chunkSize > HTTP_MAX_CHUNK_SIZE) chunkSize = HTTP_MAX_CHUNK_SIZE;  // API limit
         
         int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
         if (bytesRead < 0) {
@@ -10003,16 +10149,16 @@ static void httpGetExample(void)
     // Step 4: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
@@ -10026,41 +10172,40 @@ static void httpGetExample(void)
         remove(filename);
     }
     
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Max 1000 bytes per read
-    int32_t moreToRead = 1;
-    uint8_t buffer[1000];
     
-    while (moreToRead) {
-        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
-        
-        if (bytesRead < 0) {
-            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
-            break;
-        }
-        
-        if (bytesRead > 0) {
-            totalBytes += bytesRead;
-            
-            if (saveToFile) {
-                // Append to file
-                FILE *fp = fopen(filename, totalBytes > bytesRead ? "ab" : "wb");
-                if (fp) {
-                    fwrite(buffer, 1, bytesRead, fp);
-                    fclose(fp);
-                } else {
-                    printf("\nERROR: Failed to open file '%s'\n", filename);
+    if (saveToFile) {
+        // Read body to file
+        FILE *fp = fopen(filename, "wb");
+        if (fp) {
+            int32_t moreToRead = 1;
+            while (moreToRead) {
+                int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+                int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+                if (bytesRead < 0) {
+                    printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
                     break;
                 }
-            } else {
-                // Display to console
-                fwrite(buffer, 1, bytesRead, stdout);
+                if (bytesRead > 0) {
+                    fwrite(buffer, 1, bytesRead, fp);
+                    totalBytes += bytesRead;
+                    if (moreToRead) {
+                        printf(".");
+                        fflush(stdout);
+                    }
+                }
             }
-            
-            if (moreToRead) {
-                printf(".");  // Progress indicator
-                fflush(stdout);
-            }
+            fclose(fp);
+        } else {
+            printf("\nERROR: Failed to open file '%s'\n", filename);
+        }
+    } else {
+        // Read body to console
+        totalBytes = getHttpBody(sessionId, buffer, sizeof(buffer), 0, httpBodyToStdout);
+        if (totalBytes < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", totalBytes);
+            totalBytes = 0;
         }
     }
     
@@ -10218,16 +10363,16 @@ static void httpPostExample(void)
     // Step 4: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
@@ -10236,22 +10381,12 @@ static void httpPostExample(void)
     printf("\n");
     printf("Reading response body...\n");
     
-    int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;
-    int32_t moreToRead = 1;
-    uint8_t buffer[1000];
-    
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     printf("─────────────────────────────────────────────────\n");
-    while (moreToRead) {
-        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
-        if (bytesRead < 0) {
-            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
-            break;
-        }
-        if (bytesRead > 0) {
-            totalBytes += bytesRead;
-            fwrite(buffer, 1, bytesRead, stdout);
-        }
+    int32_t totalBytes = getHttpBody(sessionId, buffer, sizeof(buffer), 0, httpBodyToStdout);
+    if (totalBytes < 0) {
+        printf("\nERROR: Failed to read response body (error: %d)\n", totalBytes);
+        totalBytes = 0;
     }
     printf("\n─────────────────────────────────────────────────\n");
     printf("✓ Response received: %d bytes total\n", totalBytes);
@@ -10564,16 +10699,16 @@ static void httpQuoteApiExample(void)
     
     // Read response headers
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
@@ -10581,27 +10716,26 @@ static void httpQuoteApiExample(void)
     printf("\n");
     printf("Reading response body...\n");
     
-    // Read response body (max 1000 bytes per read)
-    int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
-    int32_t moreToRead = 1;
-    uint8_t buffer[1000];
+    // Read response body into JSON buffer
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     char jsonResponse[4096] = {0};
+    int32_t totalBytes = 0;
+    int32_t moreToRead = 1;
     
     while (moreToRead && totalBytes < (int32_t)(sizeof(jsonResponse) - 1)) {
+        int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
         int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
         if (bytesRead < 0) {
             printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
             break;
         }
         if (bytesRead > 0) {
-            // Append to JSON response buffer
             if (totalBytes + bytesRead < (int32_t)sizeof(jsonResponse)) {
                 memcpy(jsonResponse + totalBytes, buffer, bytesRead);
                 totalBytes += bytesRead;
             }
             if (moreToRead) {
-                printf(".");  // Progress indicator
+                printf(".");
                 fflush(stdout);
             }
         }
@@ -10711,16 +10845,16 @@ static void httpTimeApiExample(void)
     
     // Read response headers
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
@@ -10728,11 +10862,11 @@ static void httpTimeApiExample(void)
     printf("\n");
     printf("Reading response body...\n");
     
-    // Read response body (max 1000 bytes per read)
+    // Read response body
     int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;  // Maximum bytes per uCxHttpGetBody call
     int32_t moreToRead = 1;
-    uint8_t buffer[1000];
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     char jsonResponse[4096] = {0};
     
     while (moreToRead && totalBytes < (int32_t)(sizeof(jsonResponse) - 1)) {
@@ -10897,16 +11031,16 @@ static void httpStatusCodeExample(void)
     
     // Read response headers
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
@@ -10916,9 +11050,9 @@ static void httpStatusCodeExample(void)
     printf("Reading response body...\n");
     
     int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
     int32_t moreToRead = 1;
-    uint8_t buffer[1000];
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     
     while (moreToRead) {
         int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
@@ -11061,22 +11195,17 @@ static void httpJsonPostExample(void)
     
     // Read response headers
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    memset(&headerResp, 0, sizeof(headerResp));
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
     
-    bool headerSuccess = uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp);
-    
-    if (headerSuccess) {
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 1) {
-            // Safely print the header data
-            fwrite(headerResp.byte_array_data.pData, 1, headerResp.byte_array_data.length, stdout);
-            printf("\n");
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
@@ -11089,9 +11218,9 @@ static void httpJsonPostExample(void)
     printf("Reading response body...\n");
     
     int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;  // Maximum bytes per uCxHttpGetBody call
     int32_t moreToRead = 1;
-    uint8_t buffer[1000];
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     
     printf("─────────────────────────────────────────────────\n");
     while (moreToRead) {
@@ -11209,16 +11338,16 @@ static void httpJsonPlaceholderExample(void)
     
     // Read response headers
     printf("Reading response headers...\n");
-    uCxHttpGetHeader_t headerResp;
-    if (uCxHttpGetHeader1Begin(&gUcxHandle, sessionId, &headerResp)) {
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
         printf("─────────────────────────────────────────────────\n");
-        if (headerResp.byte_array_data.pData != NULL && headerResp.byte_array_data.length > 0) {
-            printf("%.*s", (int)headerResp.byte_array_data.length, headerResp.byte_array_data.pData);
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
         } else {
             printf("(No headers or empty response)\n");
         }
         printf("─────────────────────────────────────────────────\n");
-        uCxEnd(&gUcxHandle);
     } else {
         printf("WARNING: Failed to read response headers\n");
     }
@@ -11226,11 +11355,11 @@ static void httpJsonPlaceholderExample(void)
     printf("\n");
     printf("Reading response body...\n");
     
-    // Read response body (max 1000 bytes per read)
+    // Read response body
     int32_t totalBytes = 0;
-    int32_t chunkSize = 1000;  // Maximum 1000 bytes per uCxHttpGetBody call
+    int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;  // Maximum bytes per uCxHttpGetBody call
     int32_t moreToRead = 1;
-    uint8_t buffer[1000];
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     char jsonResponse[4096] = {0};
     
     while (moreToRead && totalBytes < (int32_t)(sizeof(jsonResponse) - 1)) {
@@ -11350,9 +11479,7 @@ static void ipGeolocationExample(void)
     
     printf("\n");
     
-    // Small delay to allow previous HTTP session to fully close
-    Sleep(500);
-    
+ 
     // ============================================================
     // STEP 2: Get Geolocation for the IP from ip-api.com
     // ============================================================
@@ -11458,10 +11585,10 @@ static void ipGeolocationExample(void)
     //   "query": "35.192.x.x"
     // }
     
-    uint8_t bodyBuffer[1000];
+    uint8_t bodyBuffer[HTTP_MAX_CHUNK_SIZE];
     
     printf("─────────────────────────────────────────────────\n");
-    int32_t totalBytes = readHttpBody(sessionId, bodyBuffer, sizeof(bodyBuffer), contentLength, httpBodyToStdout);
+    int32_t totalBytes = getHttpBody(sessionId, bodyBuffer, sizeof(bodyBuffer), contentLength, httpBodyToStdout);
     printf("\n─────────────────────────────────────────────────\n");
     
     if (totalBytes > 0) {
@@ -11887,12 +12014,12 @@ static void wifiPositioningExample(void)
     char jsonBuffer[1000] = {0};
     int32_t jsonLen = 0;
     int32_t moreToRead = 1;
-    uint8_t buffer[1000];
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     
     printf("Position Data:\n");
     printf("─────────────────────────────────────────────────\n");
     while (moreToRead && jsonLen < sizeof(jsonBuffer) - 1) {
-        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, 1000, buffer, &moreToRead);
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, HTTP_MAX_CHUNK_SIZE, buffer, &moreToRead);
         if (bytesRead < 0) {
             printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
             break;
@@ -18970,6 +19097,158 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
     printf("\n");
 }
 
+// ============================================================================
+// SHARED WI-FI CONNECTION FUNCTION
+// ============================================================================
+
+/**
+ * Connect to a Wi-Fi profile with optional quick connect mode
+ * 
+ * @param profileIndex  Index into gWifiProfiles array
+ * @param quickConnect  If true, return immediately after NETWORK_UP event (no IP verification)
+ * @param verbose       If true, print detailed status messages
+ * @return true if connection successful, false otherwise
+ */
+static bool connectToWifiProfile(int profileIndex, bool quickConnect, bool verbose)
+{
+    if (profileIndex < 0 || profileIndex >= gWifiProfileCount) {
+        if (verbose) {
+            printf("ERROR: Invalid profile index\n");
+        }
+        return false;
+    }
+    
+    const char *ssid = gWifiProfiles[profileIndex].ssid;
+    const char *password = gWifiProfiles[profileIndex].password;
+    
+    if (verbose) {
+        printf("\nConnecting to '%s' (SSID: %s)...\n", 
+               gWifiProfiles[profileIndex].name, ssid);
+    }
+    
+    // Set connection parameters
+    if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
+        if (verbose) {
+            printf("ERROR: Failed to set connection parameters\n");
+        }
+        return false;
+    }
+    
+    // Set security
+    if (strlen(password) > 0) {
+        if (uCxWifiStationSetSecurityWpa(&gUcxHandle, 0, password, U_WIFI_WPA_THRESHOLD_WPA2) != 0) {
+            if (verbose) {
+                printf("ERROR: Failed to set WPA security\n");
+            }
+            return false;
+        }
+    } else {
+        if (uCxWifiStationSetSecurityOpen(&gUcxHandle, 0) != 0) {
+            if (verbose) {
+                printf("ERROR: Failed to set open security\n");
+            }
+            return false;
+        }
+    }
+    
+    // Clear event flags
+    U_CX_MUTEX_LOCK(gUrcMutex);
+    gUrcEventFlags &= ~(URC_FLAG_NETWORK_UP | URC_FLAG_NETWORK_DOWN);
+    U_CX_MUTEX_UNLOCK(gUrcMutex);
+    
+    // Connect
+    int32_t err = uCxWifiStationConnect(&gUcxHandle, 0);
+    if (err < 0) {
+        if (verbose) {
+            printf("ERROR: Failed to initiate connection (error: %d)\n", err);
+        }
+        return false;
+    }
+    
+    // Wait for network up event
+    if (verbose) {
+        if (quickConnect) {
+            printf("Connecting");
+        } else {
+            printf("Waiting for network up event");
+        }
+        fflush(stdout);
+    }
+    
+    bool connected = false;
+    for (int i = 0; i < 40; i++) {
+        Sleep(500);
+        if (verbose) {
+            printf(".");
+            fflush(stdout);
+        }
+        
+        U_CX_MUTEX_LOCK(gUrcMutex);
+        bool netUp = (gUrcEventFlags & URC_FLAG_NETWORK_UP) != 0;
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        if (netUp) {
+            connected = true;
+            break;
+        }
+    }
+    
+    if (verbose) {
+        printf("\n");
+    }
+    
+    if (!connected) {
+        if (verbose) {
+            printf("ERROR: Connection timeout - no network up event received\n");
+        }
+        return false;
+    }
+    
+    if (verbose) {
+        printf("✓ Wi-Fi connected successfully\n");
+    }
+    
+    // Quick connect mode: return immediately without verification
+    if (quickConnect) {
+        if (verbose) {
+            printf("\n");
+        }
+        return true;
+    }
+    
+    // Full verification mode: check IP/gateway
+    if (verbose) {
+        // Get IP address
+        uSockIpAddress_t ipAddr;
+        char ipStr[40];
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_IPV4, &ipAddr) == 0) {
+            if (uCxIpAddressToString(&ipAddr, ipStr, sizeof(ipStr)) > 0) {
+                printf("✓ IP address: %s\n", ipStr);
+            }
+        }
+        
+        // Get subnet
+        char subnetStr[40];
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_SUBNET, &ipAddr) == 0) {
+            if (uCxIpAddressToString(&ipAddr, subnetStr, sizeof(subnetStr)) > 0) {
+                printf("  Subnet mask: %s\n", subnetStr);
+            }
+        }
+        
+        // Get gateway
+        char gatewayStr[40];
+        if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_GATE_WAY, &ipAddr) == 0) {
+            if (uCxIpAddressToString(&ipAddr, gatewayStr, sizeof(gatewayStr)) > 0) {
+                printf("  Gateway: %s\n", gatewayStr);
+            }
+        }
+        
+        printf("\n");
+    }
+    
+    return true;
+}
+
 static void wifiConnect(void)
 {
     if (!gUcxConnected) {
@@ -20082,4 +20361,8 @@ static void wifiManageProfiles(void)
         }
     }
 }
+
+
+
+
 
