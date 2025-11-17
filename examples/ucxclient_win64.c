@@ -512,6 +512,8 @@ static char gSettingsFilePath[MAX_PATH] = "";
 // UTILITY & INITIALIZATION
 //   - main()                           Application entry point
 //   - getExecutableDirectory()         Get path to executable
+//   - moduleStartupInit()              Initialize module after startup
+//   - parseBluetoothAddress()          Parse BT address from string
 //
 // UI & MENU SYSTEM
 //   - printHeader()                    Display welcome banner
@@ -522,8 +524,9 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - bluetoothMenu()                  Bluetooth operations menu
 //   - wifiMenu()                       WiFi operations menu
 //   - socketMenu()                     Socket operations menu
-//   - mqttMenu()                       MQTT menu (placeholder)
-//   - httpMenu()                       HTTP menu (placeholder)
+//   - mqttMenu()                       MQTT operations menu
+//   - httpMenu()                       HTTP operations menu
+//   - diagnosticsMenu()                Diagnostics menu
 //   - securityTlsMenu()                Security/TLS menu
 //   - bluetoothFunctionsMenu()         BT functions submenu
 //   - wifiFunctionsMenu()              WiFi functions submenu
@@ -536,27 +539,49 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - ucxclientDisconnect()            Disconnect and cleanup
 //   - listAvailableComPorts()          Enumerate COM ports with device info
 //   - selectComPortFromList()          Interactive COM port selection
-//   - initFtd2xxLibrary()              Load FTDI D2XX DLL
-//   - getFtdiDeviceInfo()              Get device info via FTDI library
-//   - getDeviceInfoFromSetupAPI()      Get device info via Windows API
-//   - getComPortFriendlyName()         Get friendly name for COM port
 //
 // AT COMMANDS & DIAGNOSTICS
 //   - executeAtTest()                  Basic AT command test
+//   - executeAtTerminal()              Interactive AT terminal mode
 //   - executeAti9()                    Query device information
 //   - executeModuleReboot()            Reboot module with timing
+//   - executeFactoryReset()            Factory reset module
 //
 // BLUETOOTH OPERATIONS
-//   - showBluetoothStatus()            Display BT connection status
 //   - bluetoothScan()                  Scan for BT devices
 //   - bluetoothConnect()               Connect to BT device
+//   - bluetoothDisconnect()            Disconnect BT device
+//   - bluetoothSyncConnections()       Sync BT connection list
+//   - bluetoothSetAdvertising()        Enable/disable advertising
+//   - bluetoothSetPairing()            Configure pairing mode
+//   - bluetoothListBondedDevices()     List bonded devices
+//   - bluetoothShowStatus()            Display BT connection status
+//   - showBluetoothStatus()            Show BT status (alternate)
+//   - showGattServerConnectionInfo()   Show GATT server connections
+//   - showLegacyAdvertisementStatus()  Show legacy advertising status
+//   - ensureLegacyAdvertisementEnabled() Enable legacy advertising
+//   - syncGattConnectionOnly()         Sync GATT connections
+//   - decodeAdvertisingData()          Parse advertising data
 //
 // WIFI OPERATIONS
-//   - showWifiStatus()                 Display WiFi status
 //   - wifiScan()                       Scan WiFi networks with analysis
 //   - wifiConnect()                    Connect to WiFi network
 //   - wifiDisconnect()                 Disconnect from WiFi
+//   - wifiManageProfiles()             Manage saved WiFi profiles
+//   - wifiSaveProfile()                Save WiFi profile
+//   - wifiSuggestProfile()             Suggest WiFi profile
+//   - wifiListProfiles()               List saved profiles
+//   - connectToWifiProfile()           Connect using profile
+//   - wifiApEnable()                   Enable WiFi AP mode
+//   - wifiApDisable()                  Disable WiFi AP mode
+//   - wifiApShowStatus()               Show AP status
+//   - wifiApGenerateQrCode()           Generate QR code for AP
+//   - wifiApConfigure()                Configure AP settings
+//   - wifiPositioningExample()         WiFi positioning example
+//   - showWifiStatus()                 Display WiFi status
 //   - testConnectivity()               Test gateway/internet connectivity
+//   - testConnectivityWrapper()        Connectivity test wrapper
+//   - getCurrentPCIPAddress()          Get PC IP address
 //
 // SOCKET OPERATIONS (TCP/UDP)
 //   - socketCreateTcp()                Create TCP socket
@@ -565,26 +590,151 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - socketSendData()                 Send data on socket
 //   - socketReadData()                 Read data from socket
 //   - socketClose()                    Close socket
+//   - socketCloseByHandle()            Close socket by handle
 //   - socketListStatus()               List all sockets
+//
+// MQTT OPERATIONS
+//   - mqttConnect()                    Connect to MQTT broker
+//   - mqttDisconnect()                 Disconnect from MQTT
+//   - mqttPublish()                    Publish MQTT message
+//   - mqttSubscribe()                  Subscribe to MQTT topic
+//   - mqttUnsubscribe()                Unsubscribe from topic
+//
+// HTTP OPERATIONS & EXAMPLES
+//   - httpGetExample()                 HTTP GET example
+//   - httpPostExample()                HTTP POST example
+//   - httpQuoteApiExample()            Quote API example
+//   - httpTimeApiExample()             Time API example
+//   - httpStatusCodeExample()          HTTP status code example
+//   - httpJsonPostExample()            JSON POST example
+//   - httpJsonPlaceholderExample()     JSONPlaceholder API example
+//
+// HTTP HELPER FUNCTIONS
+//   - httpGetRequest()                 HTTP GET (text)
+//   - httpGetBinaryRequest()           HTTP GET (binary)
+//   - readHttpHeaders()                Read HTTP response headers
+//   - getHttpBody()                    Read HTTP response body
+//   - postHttpBody()                   Send HTTP POST data
+//   - configureHttpSession()           Configure HTTP session
+//   - configureHttpsConnection()       Configure HTTPS with TLS
+//   - extractContentLength()           Parse Content-Length header
+//   - httpRequestWithResponse()        Complete HTTP request/response
+//
+// JSON PARSING UTILITIES
+//   - extractJsonString()              Extract string from JSON
+//   - extractJsonNumber()              Extract number from JSON
+//   - extractJsonNestedString()        Extract nested string from JSON
+//   - extractJsonNestedNumber()        Extract nested number from JSON
 //
 // SPS (SERIAL PORT SERVICE)
 //   - spsEnableService()               Enable SPS service
 //   - spsConnect()                     Connect SPS on BT connection
 //   - spsSendData()                    Send data via SPS
 //   - spsReadData()                    Read data from SPS
+//   - spsParseFifoData()               Parse SPS FIFO data
+//   - spsParseCredits()                Parse SPS credits
 //
-// GATT CLIENT
+// GATT CLIENT OPERATIONS
 //   - gattClientDiscoverServices()     Discover GATT services
+//   - gattClientDiscoverCharacteristics() Discover characteristics
 //   - gattClientReadCharacteristic()   Read characteristic
 //   - gattClientWriteCharacteristic()  Write characteristic
 //
-// GATT SERVER
+// GATT CLIENT SERVICE EXAMPLES
+//   - gattClientCtsExample()           Current Time Service example
+//   - gattClientFindCtsHandles()       Find CTS handles
+//   - gattClientReadCtsTime()          Read current time
+//   - gattClientSubscribeCts()         Subscribe to CTS
+//   - gattClientReadCurrentTime()      Read current time (alternate)
+//   - gattClientEssExample()           Environmental Sensing example
+//   - gattClientFindEssHandles()       Find ESS handles
+//   - gattClientReadEssValues()        Read ESS values
+//   - gattClientSubscribeEss()         Subscribe to ESS
+//   - gattClientLnsExample()           Location & Navigation example
+//   - gattClientFindLnsHandles()       Find LNS handles
+//   - gattClientReadLns()              Read LNS location
+//   - gattClientSubscribeLns()         Subscribe to LNS
+//   - gattClientAioExample()           Automation IO example
+//   - gattClientFindAioHandles()       Find AIO handles
+//   - gattClientReadAioValues()        Read AIO values
+//   - gattClientSubscribeAio()         Subscribe to AIO
+//   - gattClientUartExample()          UART service example
+//   - gattClientFindUartHandles()      Find UART handles
+//   - gattClientSubscribeUart()        Subscribe to UART
+//   - gattClientUartSend()             Send UART data
+//   - gattClientSpsExample()           SPS service example
+//   - gattClientFindSpsHandles()       Find SPS handles
+//   - gattClientSubscribeSps()         Subscribe to SPS
+//   - gattClientSpsSend()              Send SPS data
+//   - gattClientSpsSendCredits()       Send SPS credits
+//   - gattClientBasExample()           Battery Service example
+//   - gattClientFindBasHandles()       Find BAS handles
+//   - gattClientReadBattery()          Read battery level
+//   - gattClientSubscribeBattery()     Subscribe to battery
+//   - gattClientDisExample()           Device Info Service example
+//   - gattClientFindDisHandles()       Find DIS handles
+//
+// GATT CLIENT PARSERS
+//   - ctsParseAndPrint()               Parse CTS time data
+//   - essParseTemperature()            Parse ESS temperature
+//   - essParseHumidity()               Parse ESS humidity
+//   - lnsParseLocation()               Parse LNS location
+//   - aioParseDigital()                Parse AIO digital
+//   - aioParseAnalog()                 Parse AIO analog
+//   - uartParseRxData()                Parse UART RX data
+//   - basParseBatteryLevel()           Parse battery level
+//   - disReadAndPrint()                Read and print DIS characteristic
+//
+// GATT SERVER OPERATIONS
 //   - gattServerAddService()           Add GATT service
+//   - gattServerAddCharacteristic()    Add characteristic
 //   - gattServerSetCharacteristic()    Set characteristic value
+//   - gattServerSendNotification()     Send notification
+//
+// GATT SERVER SERVICE SETUP
+//   - gattServerSetupHeartbeat()       Setup Heart Rate service
+//   - gattServerSetupHidKeyboard()     Setup HID keyboard
+//   - gattServerSetupBatteryOnly()     Setup Battery service
+//   - gattServerSetupEnvSensing()      Setup Environmental Sensing
+//   - gattServerSetupUartService()     Setup UART service
+//   - gattServerSetupSpsService()      Setup SPS service
+//   - gattServerSetupLocationService() Setup Location service
+//   - gattServerSetupCtsService()      Setup Current Time service
+//   - gattServerSetupAutomationIo()    Setup Automation IO service
+//
+// GATT SERVER HID OPERATIONS
+//   - gattServerSendKeyPress()         Send HID key press
+//   - gattServerSendMediaControl()     Send HID media control
+//   - gattServerSendHelloWorld()       Send "Hello World" via HID
+//
+// GATT SERVER UTILITIES
+//   - heartbeatThread()                Background heartbeat thread
+//   - gattNotificationThread()         Unified notification thread
+//   - ctsNotifyIfEnabled()             Notify CTS if enabled
+//   - ctsBuildTimePayload()            Build CTS time payload
+//   - handleHeartRateNotification()    Handle heart rate notification
+//   - handleUartRxNotification()       Handle UART RX notification
+//   - automationIoNotifyDigital()      Notify AIO digital change
+//   - automationIoNotifyAnalog()       Notify AIO analog change
+//
+// DIAGNOSTICS
+//   - pingExample()                    Ping test example
+//   - iperfClientExample()             iPerf client test
+//   - iperfServerExample()             iPerf server test
+//   - iperfStopExample()               Stop iPerf test
+//   - dnsLookupExample()               DNS lookup example
+//
+// SECURITY & TLS
+//   - tlsSetVersion()                  Set TLS version
+//   - tlsShowConfig()                  Show TLS configuration
+//   - tlsListCertificates()            List certificates
+//   - tlsShowCertificateDetails()      Show certificate details
+//   - tlsUploadCertificate()           Upload certificate
+//   - tlsDeleteCertificate()           Delete certificate
 //
 // FIRMWARE UPDATE
 //   - downloadFirmwareFromGitHub()     Download firmware from GitHub
-//   - downloadFirmwareFromGitHubInteractive()  Interactive download
+//   - downloadFirmwareFromGitHubInteractive() Interactive download
 //   - extractProductFromFilename()     Parse product from filename
 //   - extractZipFile()                 Extract ZIP archive
 //   - saveBinaryFile()                 Save binary to disk
@@ -599,10 +749,6 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - parseYamlCommands()              Parse YAML API definitions
 //   - freeApiCommands()                Free API command memory
 //
-// HTTP CLIENT HELPERS
-//   - httpGetRequest()                 HTTP GET (text)
-//   - httpGetBinaryRequest()           HTTP GET (binary)
-//
 // SETTINGS MANAGEMENT
 //   - loadSettings()                   Load settings from INI file
 //   - saveSettings()                   Save settings to INI file
@@ -610,18 +756,43 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - deobfuscatePassword()            Decode obfuscated password
 //
 // URC (UNSOLICITED RESULT CODE) HANDLERS
-//   - wifiStationNetworkUpUrc()        WiFi network up (IP assigned)
-//   - wifiStationNetworkDownUrc()      WiFi network down (IP lost)
-//   - wifiLinkConnectedUrc()           WiFi link connected (AP)
-//   - wifiLinkDisconnectedUrc()        WiFi link disconnected (AP)
-//   - socketDataAvailableUrc()         Socket data received
-//   - socketConnectUrc()               Socket connected
-//   - spsConnectUrc()                  SPS connected
-//   - spsDisconnectUrc()               SPS disconnected
-//   - spsDataAvailableUrc()            SPS data available
-//   - systemStartupUrc()               System startup notification
+//   - networkUpUrc()                   WiFi network up (IP assigned)
+//   - networkDownUrc()                 WiFi network down (IP lost)
+//   - linkUpUrc()                      WiFi link up (connected to AP)
+//   - linkDownUrc()                    WiFi link down (disconnected)
+//   - apNetworkUpUrc()                 AP network up
+//   - apNetworkDownUrc()               AP network down
+//   - apUpUrc()                        AP enabled
+//   - apDownUrc()                      AP disabled
+//   - apStationAssociatedUrc()         Station connected to AP
+//   - apStationDisassociatedUrc()      Station disconnected from AP
+//   - socketConnected()                Socket connected
+//   - socketDataAvailable()            Socket data received
+//   - spsDataAvailable()               SPS data available
+//   - spsConnected()                   SPS connected
+//   - spsDisconnected()                SPS disconnected
+//   - startupUrc()                     System startup notification
 //   - pingResponseUrc()                Ping response received
 //   - pingCompleteUrc()                Ping test complete
+//   - iperfOutputUrc()                 iPerf output received
+//   - httpRequestStatusUrc()           HTTP request status
+//   - httpDisconnectUrc()              HTTP disconnected
+//   - mqttConnectedUrc()               MQTT connected
+//   - mqttDataAvailableUrc()           MQTT data available
+//   - bluetoothPairUrc()               Bluetooth pairing event
+//   - bluetoothUserConfirmationUrc()   BT user confirmation
+//   - bluetoothPasskeyDisplayUrc()     BT passkey display
+//   - bluetoothPasskeyRequestUrc()     BT passkey request
+//   - bluetoothPhyUpdateUrc()          BT PHY update
+//   - gattServerCharWriteUrc()         GATT server char written
+//   - gattServerCharReadUrc()          GATT server char read
+//   - gattClientNotificationUrc()      GATT client notification
+//   - btConnected()                    Bluetooth connected
+//   - btDisconnected()                 Bluetooth disconnected
+//
+// UTILITY & EVENT FUNCTIONS
+//   - enableAllUrcs()                  Enable all URC handlers
+//   - disableAllUrcs()                 Disable all URC handlers
 //
 // ============================================================================
 
