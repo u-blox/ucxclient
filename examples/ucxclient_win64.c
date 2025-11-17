@@ -19495,15 +19495,15 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
         printf("   Warm-up complete (%d ms)\n", gPingAvgTime);
     }
     
-    // Test 1: Ping gateway (local network) - 2 pings
+    // Test 1: Ping gateway (local network) - 1 ping
     printf("\n1. Testing local network (gateway: %s)...\n", gateway);
-    printf("   Sending 2 pings...\n");
+    printf("   Sending 1 ping...\n");
     gPingSuccess = 0;
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 2) == 0) {
-        // Wait for ping complete URC event (max 10 seconds for 2 pings)
+    if (uCxDiagnosticsPing2(&gUcxHandle, gateway, 1) == 0) {
+        // Wait for ping complete URC event (max 10 seconds)
         if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
             if (gPingSuccess > 0) {
                 localPingAvg = gPingAvgTime;
@@ -19525,15 +19525,15 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    // Test 2: Ping Google DNS (internet connectivity) - 2 pings
+    // Test 2: Ping Google DNS (internet connectivity) - 1 ping
     printf("\n2. Testing internet connectivity (8.8.8.8)...\n");
-    printf("   Sending 2 pings...\n");
+    printf("   Sending 1 ping...\n");
     gPingSuccess = 0;
     gPingFailed = 0;
     gPingAvgTime = 0;
     
-    if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 2) == 0) {
-        // Wait for ping complete URC event (max 10 seconds for 2 pings)
+    if (uCxDiagnosticsPing2(&gUcxHandle, "8.8.8.8", 1) == 0) {
+        // Wait for ping complete URC event (max 10 seconds)
         if (waitEvent(URC_FLAG_PING_COMPLETE, 10)) {
             if (gPingSuccess > 0) {
                 internetPingAvg = gPingAvgTime;
