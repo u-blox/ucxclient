@@ -291,7 +291,8 @@ static int gLnsClientLocCharIndex  = -1;
 static int gLnsClientLocValueHandle = -1;
 static int gLnsClientLocCccdHandle  = -1;
 
-// GATT Client - UART Service (NUS-style)
+// GATT Client - Nordic UART Service (NUS)
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/nus.html
 static int gUartClientServiceIndex = -1;
 static int gUartClientTxCharIndex  = -1;
 static int gUartClientTxValueHandle = -1;
@@ -300,6 +301,7 @@ static int gUartClientRxCharIndex  = -1;
 static int gUartClientRxValueHandle = -1;
 
 // GATT Client - u-blox Serial Port Service (SPS)
+// Spec: https://www.u-blox.com/docs/UBX-16011192
 static int gSpsClientServiceIndex = -1;
 static int gSpsClientFifoCharIndex  = -1;
 static int gSpsClientFifoValueHandle = -1;
@@ -341,14 +343,16 @@ static const int kDisCharUuidCount = sizeof(kDisCharUuids) / sizeof(kDisCharUuid
 static int32_t gLnsServerServiceHandle = -1;
 static int32_t gLnsServerLocSpeedHandle = -1;
 
-// GATT Server - UART Service (NUS-style)
+// GATT Server - Nordic UART Service (NUS)
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/nus.html
 static int32_t gUartServerServiceHandle = -1;
 static int32_t gUartServerTxHandle = -1;
 static int32_t gUartServerTxCccdHandle = -1;
 static int32_t gUartServerRxHandle = -1;
 static bool gUartServerTxNotificationsEnabled = false;
 
-// GATT Server - Serial Port Service (SPS - u-blox)
+// GATT Server - u-blox Serial Port Service (SPS)
+// Spec: https://www.u-blox.com/docs/UBX-16011192
 static int32_t gSpsServerServiceHandle = -1;
 static int32_t gSpsServerFifoHandle = -1;
 static int32_t gSpsServerFifoCccdHandle = -1;
@@ -370,7 +374,8 @@ static int32_t gCtsServerTimeValueHandle  = -1;
 static int32_t gCtsServerTimeCccdHandle   = -1;
 static ULONGLONG gCtsServerLastTick = 0;
 
-// 128-bit UUIDs for UART service & chars (Nordic-like)
+// 128-bit UUIDs for Nordic UART Service (NUS)
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/nus.html
 static const uint8_t kUartServiceUuid[16] = {
     0x6E,0x40,0x00,0x01,0xB5,0xA3,0xF3,0x93,
     0xE0,0xA9,0xE5,0x0E,0x24,0xDC,0xCA,0x9E
@@ -384,7 +389,8 @@ static const uint8_t kUartRxCharUuid[16] = {
     0xE0,0xA9,0xE5,0x0E,0x24,0xDC,0xCA,0x9E
 };
 
-// 128-bit UUIDs for u-blox SPS service & characteristics
+// 128-bit UUIDs for u-blox Serial Port Service (SPS)
+// Spec: https://www.u-blox.com/docs/UBX-16011192
 static const uint8_t kSpsServiceUuid[16] = {
     0x24,0x56,0xe1,0xb9,0x26,0xe2,0x8f,0x83,
     0xe7,0x44,0xf3,0x4f,0x01,0xe9,0xd7,0x01
@@ -671,11 +677,11 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattClientFindAioHandles()       Find AIO handles
 //   - gattClientReadAioValues()        Read AIO values
 //   - gattClientSubscribeAio()         Subscribe to AIO
-//   - gattClientUartExample()          UART service example
-//   - gattClientFindUartHandles()      Find UART handles
-//   - gattClientSubscribeUart()        Subscribe to UART
-//   - gattClientUartSend()             Send UART data
-//   - gattClientSpsExample()           SPS service example
+//   - gattClientUartExample()          Nordic UART Service (NUS) example
+//   - gattClientFindUartHandles()      Find NUS handles
+//   - gattClientSubscribeUart()        Subscribe to NUS
+//   - gattClientUartSend()             Send NUS data
+//   - gattClientSpsExample()           u-blox Serial Port Service (SPS) example
 //   - gattClientFindSpsHandles()       Find SPS handles
 //   - gattClientSubscribeSps()         Subscribe to SPS
 //   - gattClientSpsSend()              Send SPS data
@@ -709,8 +715,8 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattServerSetupHidKeyboard()     Setup HID keyboard
 //   - gattServerSetupBatteryOnly()     Setup Battery service
 //   - gattServerSetupEnvSensing()      Setup Environmental Sensing
-//   - gattServerSetupUartService()     Setup UART service
-//   - gattServerSetupSpsService()      Setup SPS service
+//   - gattServerSetupUartService()     Setup Nordic UART Service (NUS)
+//   - gattServerSetupSpsService()      Setup u-blox Serial Port Service (SPS)
 //   - gattServerSetupLocationService() Setup Location service
 //   - gattServerSetupCtsService()      Setup Current Time service
 //   - gattServerSetupAutomationIo()    Setup Automation IO service
@@ -6461,7 +6467,8 @@ static void gattClientAioExample(void)
 }
 
 // ============================================================================
-// GATT CLIENT - UART SERVICE (NUS-STYLE)
+// GATT CLIENT - NORDIC UART SERVICE (NUS)
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/nus.html
 // ============================================================================
 
 // Parse incoming UART TX (Notify) data from remote server
@@ -6577,10 +6584,10 @@ static void gattClientUartSend(const char *msg)
     }
 }
 
-// Complete UART client example with interactive send loop
+// Complete Nordic UART Service (NUS) client example with interactive send loop
 static void gattClientUartExample(void)
 {
-    printf("\n--- GATT Client: UART Service (NUS-style) ---\n");
+    printf("\n--- GATT Client: Nordic UART Service (NUS) ---\n");
 
     if (!gUcxConnected || gCurrentGattConnHandle < 0) {
         printf("ERROR: No active GATT connection\n");
@@ -6624,7 +6631,8 @@ static void gattClientUartExample(void)
 }
 
 // ============================================================================
-// GATT CLIENT - SERIAL PORT SERVICE (SPS - u-blox)
+// GATT CLIENT - u-blox SERIAL PORT SERVICE (SPS)
+// Spec: https://www.u-blox.com/docs/UBX-16011192
 // ============================================================================
 
 // Parse SPS FIFO data notification (similar to UART RX)
@@ -6843,7 +6851,8 @@ static void gattClientSpsSendCredits(int8_t credits)
 static void gattClientSpsExample(void)
 {
     printf("\n--- GATT Client: u-blox Serial Port Service (SPS) ---\n");
-    printf("This demonstrates SPS works similarly to NUS (Nordic UART Service)\n");
+    printf("Spec: https://www.u-blox.com/docs/UBX-16011192\n");
+    printf("This works similarly to Nordic UART Service (NUS) with credit-based flow control\n");
     printf("Key differences:\n");
     printf("  - SPS uses u-blox UUIDs (2456e1b9-...)\n");
     printf("  - SPS includes mandatory Credits characteristic for flow control\n");
@@ -8203,7 +8212,8 @@ static void gattServerSetupEnvSensing(void)
     printf("You can now read Temperature/Humidity or subscribe to notifications.\n\n");
 }
 
-// Setup Custom UART Service (NUS-style)
+// Setup Nordic UART Service (NUS)
+// Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/nus.html
 static void gattServerSetupUartService(void)
 {
     if (!gUcxConnected) {
@@ -8211,7 +8221,8 @@ static void gattServerSetupUartService(void)
         return;
     }
 
-    printf("\n--- GATT Server: Custom UART Service ---\n");
+    printf("\n--- GATT Server: Nordic UART Service (NUS) ---\n");
+    printf("Spec: https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/libraries/bluetooth/services/nus.html\n\n");
     
     // Ensure legacy advertisements are enabled for incoming connections
     if (!ensureLegacyAdvertisementEnabled()) {
@@ -8351,7 +8362,8 @@ static void gattServerSetupSpsService(void)
     }
 
     printf("\n--- GATT Server: u-blox Serial Port Service (SPS) ---\n");
-    printf("This is similar to NUS but includes optional credit-based flow control\n\n");
+    printf("Spec: https://www.u-blox.com/docs/UBX-16011192\n");
+    printf("Similar to Nordic UART Service (NUS) with optional credit-based flow control\n\n");
     
     // Ensure legacy advertisements are enabled for incoming connections
     if (!ensureLegacyAdvertisementEnabled()) {
@@ -14818,10 +14830,10 @@ static void printWelcomeGuide(void)
     printf("\n");
     printf("BLUETOOTH OPERATIONS (NORA-B26 and NORA-W36):\n");
     printf("  - [b] Bluetooth - Scan, connect, pair, status\n");
-    printf("  - [s] SPS - Serial Port Service data transfer\n");
+    printf("  - [s] SPS - u-blox Serial Port Service data transfer\n");
     printf("  - [u] Bluetooth Functions - GATT Client/Server operations\n");
-    printf("  - [e] GATT Server Examples - 9 profiles\n");
-    printf("  - [g] GATT Client Examples - 8 demos\n");
+    printf("  - [e] GATT Server Profiles - 9 examples\n");
+    printf("  - [g] GATT Client Demos - 9 examples\n");
     printf("\n");
     printf("WI-FI OPERATIONS (NORA-W36 only):\n");
     printf("  - [w] Wi-Fi Station - Scan, connect, disconnect, status\n");
@@ -14863,15 +14875,15 @@ static void printHelp(void)
     printf("      - Connect/disconnect devices\n");
     printf("      - Configure pairing settings (security, IO capabilities)\n");
     printf("      - Manage bonded devices\n");
-    printf("  [s] Serial Port Service (SPS)\n");
+    printf("  [s] u-blox Serial Port Service (SPS)\n");
     printf("      - Enable SPS for wireless serial data transfer\n");
-    printf("      - Send/receive data over Bluetooth\n");
+    printf("      - Send/receive data with optional flow control\n");
     printf("  [u] Bluetooth Functions\n");
     printf("      - GATT Client: Discover and interact with remote services\n");
     printf("      - GATT Server: Host custom services and characteristics\n");
-    printf("  [e] GATT Server Examples - 9 profiles\n");
+    printf("  [e] GATT Server Profiles - 9 examples\n");
     printf("      - Heart Rate, HID, Automation IO, Battery, ESS, NUS, SPS, LNS, CTS\n");
-    printf("  [g] GATT Client Examples - 8 demos\n");
+    printf("  [g] GATT Client Demos - 9 examples\n");
     printf("      - Discover and interact with remote GATT servers\n");
     printf("      - CTS, ESS, LNS, NUS, SPS, BAS, DIS, AIO clients\n");
     printf("\n");
@@ -15057,7 +15069,7 @@ static void printMenu(void)
                     printf("          └─ %d active connection%s\n", 
                            gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
                 }
-                printf("  [s]     Serial Port Service (SPS)\n");
+                printf("  [s]     u-blox Serial Port Service (SPS) - Wireless serial\n");
                 printf("  [u]     Bluetooth Functions (SPS, GATT Client, GATT Server)\n");
                 printf("\n");
                 
@@ -15198,7 +15210,8 @@ static void printMenu(void)
             
         case MENU_SPS:
             printf("\n");
-            printf("           SPS MENU (Bluetooth Serial Port Service)\n");
+            printf("       u-blox SERIAL PORT SERVICE (SPS) MENU\n");
+            printf("       Spec: https://www.u-blox.com/docs/UBX-16011192\n");
             printf("\n");
             printf("\n");
             printf("NOTE: Requires active Bluetooth connection\n");
@@ -15331,8 +15344,8 @@ static void printMenu(void)
             printf("  [k] HID Keyboard + Media + Battery - Full HID device\n");
             printf("  [b] Battery Service only - Simple battery reporting\n");
             printf("  [e] Environmental Sensing - Temperature + Humidity\n");
-            printf("  [u] UART Service (NUS) - Bidirectional text data\n");
-            printf("  [s] Serial Port Service (SPS) - u-blox, like NUS + credits\n");
+            printf("  [u] Nordic UART Service (NUS) - Bidirectional text data\n");
+            printf("  [s] u-blox Serial Port Service (SPS) - Like NUS + flow control\n");
             printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
             printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
@@ -15379,8 +15392,8 @@ static void printMenu(void)
             printf("  [c] Current Time Service (CTS) - read + subscribe to time\n");
             printf("  [e] Environmental Sensing (ESS) - temp + humidity\n");
             printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
-            printf("  [u] UART Service (NUS) - bidirectional text data\n");
-            printf("  [s] Serial Port Service (SPS) - u-blox, like NUS + credits\n");
+            printf("  [u] Nordic UART Service (NUS) - bidirectional text data\n");
+            printf("  [s] u-blox Serial Port Service (SPS) - Like NUS + flow control\n");
             printf("  [b] Battery Service (BAS) - battery percentage\n");
             printf("  [d] Device Information Service (DIS) - device details\n");
             printf("  [a] Automation IO (AIO) - digital + analog I/O\n");
@@ -15413,8 +15426,8 @@ static void printMenu(void)
             printf("  - Heart Rate Service (Heartbeat)\n");
             printf("  - HID Keyboard + Media + Battery\n");
             printf("  - Environmental Sensing (Temp + Humidity)\n");
-            printf("  - UART Service (NUS)\n");
-            printf("  - Serial Port Service (SPS - u-blox)\n");
+            printf("  - Nordic UART Service (NUS)\n");
+            printf("  - u-blox Serial Port Service (SPS)\n");
             printf("  - Location & Navigation Service (LNS)\n");
             printf("  - Current Time Service (CTS)\n");
             printf("\n");
