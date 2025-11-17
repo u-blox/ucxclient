@@ -440,6 +440,13 @@ static int gProductFirmwarePathCount = 0;
 static char gDeviceModel[64] = "";            // Device model (e.g., "NORA-W36")
 static char gDeviceFirmware[64] = "";         // Firmware version (e.g., "3.1.0")
 
+// Device status (queried at startup/connection)
+static int gActiveSocketCount = 0;            // Number of active sockets
+static int gBondedDeviceCount = 0;            // Number of bonded BT devices
+static int gCertificateCount = 0;              // Number of installed certificates
+static int gBluetoothMode = 0;                 // Bluetooth mode (0=disabled, 1=central, 2=peripheral, 3=both)
+static bool gLegacyAdvertising = false;        // Legacy advertisement enabled status
+
 // URC event handling
 static U_CX_MUTEX_HANDLE gUrcMutex;
 static volatile uint32_t gUrcEventFlags = 0;
@@ -513,6 +520,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - main()                           Application entry point
 //   - getExecutableDirectory()         Get path to executable
 //   - moduleStartupInit()              Initialize module after startup
+//   - queryDeviceStatus()              Query device status (WiFi, BT, sockets, certs)
 //   - parseBluetoothAddress()          Parse BT address from string
 //
 // UI & MENU SYSTEM
@@ -808,6 +816,7 @@ static bool ucxclientConnect(const char *comPort);
 static bool quickConnectToLastDevice(void);
 static void ucxclientDisconnect(void);
 static void moduleStartupInit(void);
+static void queryDeviceStatus(void);
 static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortSize, 
                                    char *recommendedDevice, size_t recommendedDeviceSize);
 static char* selectComPortFromList(const char *recommendedPort);
@@ -828,6 +837,9 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
 static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSize);
 static bool extractZipFile(const char *zipPath, const char *destFolder);
 static bool saveBinaryFile(const char *filepath, const char *data, size_t size);
+static bool calculateSHA256Fingerprint(const uint8_t *data, size_t dataLen, char *fingerprintHex, size_t fingerprintHexSize);
+static bool verifySHA256FromGitHubRelease(const char *releaseBody, const char *calculatedHash);
+static bool extractFirmwareBinFromZip(const char *zipPath, const char *productName, const char *version, char *binPath, size_t binPathSize);
 static void enableAllUrcs(void);
 static void disableAllUrcs(void);
 static void executeAtTest(void);
@@ -1309,6 +1321,114 @@ static bool saveBinaryFile(const char *filepath, const char *data, size_t size)
     return true;
 }
 
+// Helper: Verify SHA256 hash against GitHub release body
+static bool verifySHA256FromGitHubRelease(const char *releaseBody, const char *calculatedHash)
+{
+    if (!releaseBody || !calculatedHash) {
+        return false;
+    }
+    
+    // Look for SHA256 in release body
+    char *bodyStart = strstr((char*)releaseBody, "\"body\":");
+    if (!bodyStart) {
+        printf("WARNING: Could not find body field in release info\n");
+        return false;
+    }
+    
+    bodyStart += 8; // Skip "body":
+    while (*bodyStart == ' ' || *bodyStart == '"') bodyStart++;
+    
+    // Look for sha256: followed by hash (support multiple formats)
+    char *sha256Marker = strstr(bodyStart, "sha256:");
+    if (!sha256Marker) sha256Marker = strstr(bodyStart, "SHA256:");
+    if (!sha256Marker) sha256Marker = strstr(bodyStart, "sha-256:");
+    
+    if (!sha256Marker) {
+        printf("WARNING: No SHA256 checksum found in release notes\n");
+        return false;
+    }
+    
+    sha256Marker += 7; // Skip "sha256:" prefix
+    while (*sha256Marker == ' ' || *sha256Marker == '\\\\' || *sha256Marker == 'n') sha256Marker++;
+    
+    char expectedSHA256[65];
+    int i = 0;
+    while (i < 64 && (isxdigit((unsigned char)*sha256Marker))) {
+        expectedSHA256[i++] = (char)tolower((unsigned char)*sha256Marker++);
+    }
+    expectedSHA256[i] = '\0';
+    
+    if (i != 64) {
+        printf("WARNING: Could not parse complete SHA256 hash (found %d chars)\n", i);
+        return false;
+    }
+    
+    printf("Expected SHA256:   %s\n", expectedSHA256);
+    
+    if (strcmp(calculatedHash, expectedSHA256) == 0) {
+        printf("✓ SHA256 verification PASSED\n");
+        return true;
+    } else {
+        printf("✗ SHA256 verification FAILED!\n");
+        printf("  Downloaded file may be corrupted or tampered with.\n");
+        
+        printf("\nDo you want to continue anyway? (yes/no): ");
+        char response[10];
+        if (fgets(response, sizeof(response), stdin)) {
+            if (strncmp(response, "yes", 3) == 0) {
+                printf("WARNING: Proceeding with potentially corrupted firmware\n");
+                return true;  // User chose to continue
+            }
+        }
+        return false;  // Abort
+    }
+}
+
+// Helper: Extract .bin firmware file from ZIP archive
+static bool extractFirmwareBinFromZip(const char *zipPath, const char *productName, const char *version, char *binPath, size_t binPathSize)
+{
+    // Extract ZIP file (use product_version as folder name)
+    char extractFolder[256];
+    snprintf(extractFolder, sizeof(extractFolder), "%s_%s", productName, version);
+    
+    if (!extractZipFile(zipPath, extractFolder)) {
+        printf("ERROR: Failed to extract ZIP file\n");
+        return false;
+    }
+    
+    // Find .bin file in extracted folder
+    char findCommand[512];
+    snprintf(findCommand, sizeof(findCommand),
+             "dir /s /b \"%s\\*.bin\" > temp_bin_list.txt", extractFolder);
+    system(findCommand);
+    
+    FILE *binList = fopen("temp_bin_list.txt", "r");
+    if (!binList) {
+        printf("ERROR: Could not find firmware .bin file in extracted ZIP\n");
+        return false;
+    }
+    
+    char tempBinPath[512];
+    if (fgets(tempBinPath, sizeof(tempBinPath), binList) == NULL) {
+        printf("ERROR: No .bin file found in extracted ZIP\n");
+        fclose(binList);
+        DeleteFileA("temp_bin_list.txt");
+        return false;
+    }
+    
+    fclose(binList);
+    DeleteFileA("temp_bin_list.txt");
+    
+    // Remove newline
+    tempBinPath[strcspn(tempBinPath, "\r\n")] = '\0';
+    
+    printf("Found firmware file: %s\n", tempBinPath);
+    strncpy(binPath, tempBinPath, binPathSize - 1);
+    binPath[binPathSize - 1] = '\0';
+    
+    return true;
+}
+
 // ============================================================================
 // FIRMWARE UPDATE (GitHub Download, XMODEM Transfer)
 // ============================================================================
@@ -1742,6 +1862,39 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     
     printf("Downloaded %zu bytes\n", zipSize);
     
+    // Calculate SHA256 hash of downloaded file
+    char calculatedSHA256[65];
+    if (!calculateSHA256Fingerprint((const uint8_t*)zipData, zipSize, calculatedSHA256, sizeof(calculatedSHA256))) {
+        printf("ERROR: Failed to calculate SHA256 hash\n");
+        free(zipData);
+        return false;
+    }
+    
+    // Convert to lowercase for comparison
+    for (int i = 0; calculatedSHA256[i]; i++) {
+        calculatedSHA256[i] = (char)tolower((unsigned char)calculatedSHA256[i]);
+    }
+    
+    printf("Calculated SHA256: %s\n", calculatedSHA256);
+    
+    // Fetch and verify SHA256 from GitHub release page
+    printf("Fetching SHA256 checksum from GitHub...\n");
+    wchar_t sha256Path[512];
+    swprintf(sha256Path, 512, L"/repos/u-blox/u-connectXpress/releases/tags/%S", selectedTag);
+    
+    char *releaseInfo = httpGetRequest(L"api.github.com", sha256Path);
+    if (releaseInfo) {
+        if (!verifySHA256FromGitHubRelease(releaseInfo, calculatedSHA256)) {
+            free(releaseInfo);
+            free(zipData);
+            printf("Firmware download aborted.\n");
+            return false;
+        }
+        free(releaseInfo);
+    } else {
+        printf("WARNING: Could not fetch release info for SHA256 verification\n");
+    }
+    
     // Save ZIP file (zipPath already declared and set earlier)
     if (!saveBinaryFile(zipPath, zipData, zipSize)) {
         printf("ERROR: Failed to save ZIP file\n");
@@ -1752,47 +1905,26 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     free(zipData);
     printf("ZIP file saved: %s\n", zipPath);
     
-    // Extract ZIP file (use asset name without .zip extension as folder name)
-    char extractFolder[256];
-    strncpy(extractFolder, assetName, sizeof(extractFolder) - 1);
-    extractFolder[sizeof(extractFolder) - 1] = '\0';
-    char *zipExt = strstr(extractFolder, ".zip");
-    if (zipExt) *zipExt = '\0'; // Remove .zip extension
-    
-    if (!extractZipFile(zipPath, extractFolder)) {
-        printf("ERROR: Failed to extract ZIP file\n");
-        return false;
+    // Extract firmware .bin file from ZIP
+    // Parse product name and version from asset name (e.g., "NORA-W36_3.1.0.zip")
+    char parsedProduct[64], parsedVersion[64];
+    if (sscanf(assetName, "%63[^_]_%63[^.].zip", parsedProduct, parsedVersion) == 2) {
+        if (!extractFirmwareBinFromZip(zipPath, parsedProduct, parsedVersion, downloadedPath, pathSize)) {
+            return false;
+        }
+    } else {
+        printf("WARNING: Could not parse product/version from asset name: %s\n", assetName);
+        // Fall back to using asset name without .zip
+        char extractFolder[256];
+        strncpy(extractFolder, assetName, sizeof(extractFolder) - 1);
+        extractFolder[sizeof(extractFolder) - 1] = '\0';
+        char *zipExt = strstr(extractFolder, ".zip");
+        if (zipExt) *zipExt = '\0';
+        
+        if (!extractFirmwareBinFromZip(zipPath, extractFolder, "firmware", downloadedPath, pathSize)) {
+            return false;
+        }
     }
-    
-    // Find .bin file in extracted folder
-    char findCommand[512];
-    snprintf(findCommand, sizeof(findCommand),
-             "dir /s /b \"%s\\*.bin\" > temp_bin_list.txt", extractFolder);
-    system(findCommand);
-    
-    FILE *binList = fopen("temp_bin_list.txt", "r");
-    if (!binList) {
-        printf("ERROR: Could not find firmware .bin file in extracted ZIP\n");
-        return false;
-    }
-    
-    char binPath[512];
-    if (fgets(binPath, sizeof(binPath), binList) == NULL) {
-        printf("ERROR: No .bin file found in extracted ZIP\n");
-        fclose(binList);
-        DeleteFileA("temp_bin_list.txt");
-        return false;
-    }
-    
-    fclose(binList);
-    DeleteFileA("temp_bin_list.txt");
-    
-    // Remove newline
-    binPath[strcspn(binPath, "\r\n")] = '\0';
-    
-    printf("Found firmware file: %s\n", binPath);
-    strncpy(downloadedPath, binPath, pathSize - 1);
-    downloadedPath[pathSize - 1] = '\0';
     
     return true;
 }
@@ -1805,9 +1937,6 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     
     printf("NOTE: This method uses the module's WiFi connection to download firmware.\n");
     printf("      Make sure you are connected to WiFi with internet access.\n\n");
-    
-    // For simplicity in this example, we'll fetch a predefined firmware file
-    // In a real application, you would implement the full GitHub API browsing
     
     printf("Enter product name (e.g., NORA-W36, NORA-B26): ");
     char productName[64];
@@ -1832,81 +1961,89 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
         strcpy(version, "latest");
     }
     
-    // Create HTTP session
+    // HTTP session ID (always 0 - only one session supported)
     int32_t sessionId = 0;
-    int32_t result = uCxHttpConnect(&gUcxHandle, &sessionId);
-    if (result != 0) {
-        printf("ERROR: Failed to create HTTP session (error %d)\n", result);
-        return false;
-    }
-    
-    printf("Created HTTP session %d\n", sessionId);
+    int32_t result;
     
     // Configure HTTPS connection to GitHub
-    // Set server name and port
-    result = uCxHttpSetServerName3(&gUcxHandle, sessionId, "github.com", 443);
+    printf("Configuring HTTPS connection to github.com...\n");
+    result = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "github.com", 443);
     if (result != 0) {
-        printf("ERROR: Failed to set server name (error %d)\n", result);
-        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        printf("ERROR: Failed to set connection parameters (error %d)\n", result);
         return false;
     }
     
-    // Enable HTTPS (TLS)
-    result = uCxHttpSetSecurityOn(&gUcxHandle, sessionId);
+    // Enable TLS (HTTPS)
+    result = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
     if (result != 0) {
-        printf("ERROR: Failed to enable HTTPS (error %d)\n", result);
-        uCxHttpDisconnect(&gUcxHandle, sessionId);
+        printf("ERROR: Failed to enable TLS (error %d)\n", result);
         return false;
     }
     
     // Construct the download URL path
-    // Example: /u-blox/u-connectXpress/releases/download/v3.1.0/NORA-W36_3.1.0.zip
     char urlPath[512];
     if (strcmp(version, "latest") == 0) {
-        // For latest, we need to query the API first - simplified here
         snprintf(urlPath, sizeof(urlPath), "/u-blox/u-connectXpress/releases/latest/download/%s.zip", productName);
     } else {
         snprintf(urlPath, sizeof(urlPath), "/u-blox/u-connectXpress/releases/download/v%s/%s_%s.zip", 
                  version, productName, version);
     }
     
-    printf("Downloading from: https://github.com%s\n", urlPath);
-    printf("This may take several minutes depending on firmware size and WiFi speed...\n\n");
+    printf("Setting request path: %s\n", urlPath);
+    result = uCxHttpSetRequestPath(&gUcxHandle, sessionId, urlPath);
+    if (result != 0) {
+        printf("ERROR: Failed to set request path (error %d)\n", result);
+        return false;
+    }
     
-    // Send HTTP GET request
-    result = uCxHttpCommand3(&gUcxHandle, sessionId, U_HTTP_REQUEST_GET, urlPath);
+    printf("Sending HTTP GET request to https://github.com%s\n", urlPath);
+    printf("This may take a moment...\n\n");
+    
+    // Send HTTP GET request (this will connect and send the request)
+    result = uCxHttpGetRequest(&gUcxHandle, sessionId);
     if (result != 0) {
         printf("ERROR: Failed to send HTTP GET request (error %d)\n", result);
         uCxHttpDisconnect(&gUcxHandle, sessionId);
         return false;
     }
     
-    // Wait for response status
-    Sleep(2000);  // Give time for response headers
+    // Wait for response
+    Sleep(3000);
     
-    // Read response headers
-    printf("Reading HTTP response...\n");
-    char headerBuffer[2048];
-    int32_t headerLen = 0;
+    // Read response headers to get content length
+    printf("Reading HTTP response headers...\n");
+    uCxHttpGetGetRequestHeader_t headerResp;
+    int32_t contentLength = 0;
+    bool foundContentLength = false;
     
-    if (!readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
-        printf("ERROR: Failed to read HTTP headers\n");
+    if (uCxHttpGetGetRequestHeaderBegin(&gUcxHandle, sessionId, &headerResp)) {
+        // Parse headers for Content-Length
+        const char *headerStr = headerResp.header_data;
+        
+        if (headerStr != NULL) {
+            // Look for Content-Length header
+            const char *contentLenStr = strstr(headerStr, "Content-Length:");
+            if (!contentLenStr) {
+                contentLenStr = strstr(headerStr, "content-length:");
+            }
+            if (contentLenStr) {
+                contentLength = atoi(contentLenStr + 15);
+                foundContentLength = true;
+            }
+        }
+        uCxEnd(&gUcxHandle);
+    }
+    
+    if (!foundContentLength || contentLength <= 0) {
+        printf("ERROR: Could not determine content length from headers\n");
         uCxHttpDisconnect(&gUcxHandle, sessionId);
         return false;
     }
     
-    // Extract content length
-    int32_t contentLength = extractContentLength(headerBuffer);
-    if (contentLength <= 0) {
-        printf("ERROR: Could not determine content length\n");
-        uCxHttpDisconnect(&gUcxHandle, sessionId);
-        return false;
-    }
-    
-    printf("Content-Length: %d bytes\n", contentLength);
+    printf("Content-Length: %d bytes (%.2f MB)\n", contentLength, contentLength / (1024.0 * 1024.0));
     
     // Allocate buffer for firmware data
-    char *firmwareData = (char*)malloc(contentLength);
+    uint8_t *firmwareData = (uint8_t*)malloc(contentLength);
     if (!firmwareData) {
         printf("ERROR: Failed to allocate %d bytes for firmware data\n", contentLength);
         uCxHttpDisconnect(&gUcxHandle, sessionId);
@@ -1916,50 +2053,31 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     // Read the body in chunks
     printf("Downloading firmware data...\n");
     int32_t totalRead = 0;
-    int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+    int32_t chunkSize = 4096;  // Read in 4KB chunks
+    int32_t moreToRead = 1;
     
-    while (totalRead < contentLength) {
+    while (totalRead < contentLength && moreToRead) {
         int32_t remainingBytes = contentLength - totalRead;
         int32_t bytesToRead = (remainingBytes < chunkSize) ? remainingBytes : chunkSize;
         
-        uByteArray_t responseData;
-        result = uCxHttpCommandWithResponse3(&gUcxHandle, sessionId, 
-                                             U_HTTP_REQUEST_GET, urlPath, &responseData);
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, bytesToRead, 
+                                          firmwareData + totalRead, &moreToRead);
         
-        if (result == 0 && responseData.length > 0) {
-            // Copy received data
-            int32_t copyLen = (responseData.length < (contentLength - totalRead)) ? 
-                             responseData.length : (contentLength - totalRead);
-            memcpy(firmwareData + totalRead, responseData.pData, copyLen);
-            totalRead += copyLen;
+        if (bytesRead > 0) {
+            totalRead += bytesRead;
             
             // Show progress
             int percent = (totalRead * 100) / contentLength;
             printf("\rProgress: %d%% (%d/%d bytes)", percent, totalRead, contentLength);
             fflush(stdout);
-        } else {
-            // Try using getHttpBody helper
-            uint8_t tempBuffer[HTTP_MAX_CHUNK_SIZE];
-            int32_t bytesRead = getHttpBody(sessionId, tempBuffer, sizeof(tempBuffer), 
-                                           contentLength - totalRead, NULL);
-            if (bytesRead > 0) {
-                memcpy(firmwareData + totalRead, tempBuffer, bytesRead);
-                totalRead += bytesRead;
-                
-                int percent = (totalRead * 100) / contentLength;
-                printf("\rProgress: %d%% (%d/%d bytes)", percent, totalRead, contentLength);
-                fflush(stdout);
-            } else {
-                printf("\nERROR: Failed to read firmware data (error %d)\n", result);
-                break;
-            }
+        } else if (bytesRead < 0) {
+            printf("\nERROR: Failed to read firmware data (error %d)\n", bytesRead);
+            break;
         }
         
         if (totalRead >= contentLength) {
             break;
         }
-        
-        Sleep(100);  // Brief delay between chunks
     }
     
     printf("\n");
@@ -1975,11 +2093,88 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     
     printf("Download complete: %d bytes\n", totalRead);
     
+    // Calculate SHA256 hash of downloaded file
+    char calculatedSHA256[65];
+    if (!calculateSHA256Fingerprint(firmwareData, totalRead, calculatedSHA256, sizeof(calculatedSHA256))) {
+        printf("ERROR: Failed to calculate SHA256 hash\n");
+        free(firmwareData);
+        return false;
+    }
+    
+    // Convert to lowercase for comparison
+    for (int i = 0; calculatedSHA256[i]; i++) {
+        calculatedSHA256[i] = (char)tolower((unsigned char)calculatedSHA256[i]);
+    }
+    
+    printf("Calculated SHA256: %s\n", calculatedSHA256);
+    
+    // Fetch and verify SHA256 from GitHub release page using UCX HTTP API
+    printf("Fetching SHA256 checksum from GitHub via module WiFi...\n");
+    
+    bool sha256Verified = false;
+    result = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "api.github.com", 443);
+    if (result == 0) {
+        result = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+        if (result == 0) {
+            char apiPath[512];
+            if (strcmp(version, "latest") == 0) {
+                snprintf(apiPath, sizeof(apiPath), "/repos/u-blox/u-connectXpress/releases/latest");
+            } else {
+                snprintf(apiPath, sizeof(apiPath), "/repos/u-blox/u-connectXpress/releases/tags/%s-%s", productName, version);
+            }
+            
+            result = uCxHttpSetRequestPath(&gUcxHandle, sessionId, apiPath);
+            if (result == 0) {
+                result = uCxHttpGetRequest(&gUcxHandle, sessionId);
+                if (result == 0) {
+                    Sleep(2000);  // Wait for API response
+                    
+                    // Read the response body
+                    uint8_t *releaseData = (uint8_t*)malloc(16384);
+                    if (releaseData) {
+                        int32_t releaseSize = 0;
+                        int32_t apiMoreToRead = 1;
+                        
+                        while (apiMoreToRead && releaseSize < 15360) {
+                            int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, 1024,
+                                                              releaseData + releaseSize, &apiMoreToRead);
+                            if (bytesRead > 0) {
+                                releaseSize += bytesRead;
+                            } else {
+                                break;
+                            }
+                        }
+                        
+                        if (releaseSize > 0) {
+                            releaseData[releaseSize] = '\0';
+                            if (!verifySHA256FromGitHubRelease((char*)releaseData, calculatedSHA256)) {
+                                free(releaseData);
+                                free(firmwareData);
+                                uCxHttpDisconnect(&gUcxHandle, sessionId);
+                                printf("Firmware download aborted.\n");
+                                return false;
+                            }
+                            sha256Verified = true;
+                        }
+                        free(releaseData);
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!sha256Verified) {
+        printf("WARNING: Could not verify SHA256 via module WiFi\n");
+    }
+    
+    // Disconnect from GitHub API
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    
     // Save ZIP file
     char zipPath[256];
     snprintf(zipPath, sizeof(zipPath), "%s_%s.zip", productName, version);
     
-    if (!saveBinaryFile(zipPath, firmwareData, totalRead)) {
+    if (!saveBinaryFile(zipPath, (char*)firmwareData, totalRead)) {
         printf("ERROR: Failed to save ZIP file\n");
         free(firmwareData);
         return false;
@@ -1988,44 +2183,10 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     free(firmwareData);
     printf("ZIP file saved: %s\n", zipPath);
     
-    // Extract ZIP file
-    char extractFolder[256];
-    snprintf(extractFolder, sizeof(extractFolder), "%s_%s", productName, version);
-    
-    if (!extractZipFile(zipPath, extractFolder)) {
-        printf("ERROR: Failed to extract ZIP file\n");
+    // Extract firmware .bin file from ZIP using helper function
+    if (!extractFirmwareBinFromZip(zipPath, productName, version, downloadedPath, pathSize)) {
         return false;
     }
-    
-    // Find .bin file in extracted folder
-    char findCommand[512];
-    snprintf(findCommand, sizeof(findCommand),
-             "dir /s /b \"%s\\*.bin\" > temp_bin_list.txt", extractFolder);
-    system(findCommand);
-    
-    FILE *binList = fopen("temp_bin_list.txt", "r");
-    if (!binList) {
-        printf("ERROR: Could not find firmware .bin file in extracted ZIP\n");
-        return false;
-    }
-    
-    char binPath[512];
-    if (fgets(binPath, sizeof(binPath), binList) == NULL) {
-        printf("ERROR: No .bin file found in extracted ZIP\n");
-        fclose(binList);
-        DeleteFileA("temp_bin_list.txt");
-        return false;
-    }
-    
-    fclose(binList);
-    DeleteFileA("temp_bin_list.txt");
-    
-    // Remove newline
-    binPath[strcspn(binPath, "\r\n")] = '\0';
-    
-    printf("Found firmware file: %s\n", binPath);
-    strncpy(downloadedPath, binPath, pathSize - 1);
-    downloadedPath[pathSize - 1] = '\0';
     
     return true;
 }
@@ -2317,6 +2478,8 @@ static void networkUpUrc(struct uCxHandle *puCxHandle)
     (void)puCxHandle;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Network UP");
     signalEvent(URC_FLAG_NETWORK_UP);
+    // Note: Cannot call queryDeviceStatus() from URC callback as it makes AT commands
+    // which causes URC queue assertion failure. Status will be updated on next menu refresh.
 }
 
 static void networkDownUrc(struct uCxHandle *puCxHandle)
@@ -2324,6 +2487,8 @@ static void networkDownUrc(struct uCxHandle *puCxHandle)
     (void)puCxHandle;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Network DOWN");
     signalEvent(URC_FLAG_NETWORK_DOWN);
+    // Note: Cannot call queryDeviceStatus() from URC callback as it makes AT commands
+    // which causes URC queue assertion failure. Status will be updated on next menu refresh.
 }
 
 static void linkUpUrc(struct uCxHandle *puCxHandle, int32_t wlan_handle, uMacAddress_t *bssid, int32_t channel)
@@ -14688,17 +14853,41 @@ static void printMenu(void)
                     }
                 }
                 printf("  |  Port: %s\n", gComPort);
+                printf("─────────────────────────────────────────────────────────────\n");
                 
-                // Show active connections summary
-                bool hasActivity = false;
-                if (gBtConnectionCount > 0) {
-                    printf("  Bluetooth: %d connection%s", gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
-                    hasActivity = true;
+                // Show connection status in compact form
+                printf("WiFi: ");
+                if (gWifiConnected && gWifiSsid[0] != '\0') {
+                    printf("✓ %s", gWifiSsid);
+                    if (gWifiIpAddress[0] != '\0') {
+                        printf(" (%s)", gWifiIpAddress);
+                    }
+                } else {
+                    printf("○ Not connected");
                 }
-                // TODO: Add Wi-Fi status when available
-                if (hasActivity) {
-                    printf("\n");
+                
+                printf("  |  BT: ");
+                const char* btModeStr = "Off";
+                if (gBluetoothMode == 1) btModeStr = "Central";
+                else if (gBluetoothMode == 2) btModeStr = "Peripheral";
+                else if (gBluetoothMode == 3) btModeStr = "Central+Peripheral";
+                printf("%s", btModeStr);
+                
+                if (gBluetoothMode != 0) {
+                    if (gBtConnectionCount > 0) {
+                        printf(", %d conn", gBtConnectionCount);
+                    }
+                    if (gBondedDeviceCount > 0) {
+                        printf(", %d bonded", gBondedDeviceCount);
+                    }
+                    if (gLegacyAdvertising) {
+                        printf(", Adv:ON");
+                    }
                 }
+                
+                printf("  |  Sockets: %d", gActiveSocketCount);
+                printf("  |  Certs: %d", gCertificateCount);
+                printf("\n");
             } else {
                 printf("\n○ NOT CONNECTED");
                 if (gComPort[0] != '\0') {
@@ -16514,6 +16703,100 @@ static void moduleStartupInit(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
 }
 
+static void queryDeviceStatus(void)
+{
+    if (!gUcxConnected) {
+        return;
+    }
+    
+    // Reset counters
+    gActiveSocketCount = 0;
+    gBondedDeviceCount = 0;
+    gCertificateCount = 0;
+    gBluetoothMode = 0;
+    gLegacyAdvertising = false;
+    
+    // Query active sockets using actual API
+    uCxSocketListStatusBegin(&gUcxHandle);
+    uCxSocketListStatus_t socketInfo;
+    while (uCxSocketListStatusGetNext(&gUcxHandle, &socketInfo)) {
+        gActiveSocketCount++;
+    }
+    uCxEnd(&gUcxHandle);
+    
+    // Query bonded devices using actual API
+    uCxBluetoothListBondedDevicesBegin(&gUcxHandle);
+    uBtLeAddress_t bondedAddr;
+    while (uCxBluetoothListBondedDevicesGetNext(&gUcxHandle, &bondedAddr)) {
+        gBondedDeviceCount++;
+    }
+    uCxEnd(&gUcxHandle);
+    
+    // Query certificates using actual API
+    uCxSecurityListCertificatesBegin(&gUcxHandle);
+    uCxSecListCertificates_t certInfo;
+    while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
+        gCertificateCount++;
+    }
+    uCxEnd(&gUcxHandle);
+    
+    // Query Bluetooth mode
+    uBtMode_t btMode;
+    if (uCxBluetoothGetMode(&gUcxHandle, &btMode) == 0) {
+        gBluetoothMode = (int)btMode;
+        
+        // Query legacy advertisement status if BT is enabled
+        if (btMode != U_BT_MODE_DISABLED) {
+            uCxBtGetAdvertiseInformation_t advInfo;
+            if (uCxBluetoothGetAdvertiseInformation(&gUcxHandle, &advInfo) == 0) {
+                gLegacyAdvertising = (advInfo.legacy_adv != 0);
+            }
+        }
+    }
+    
+    // Query WiFi connection status using actual API (if WiFi-capable device)
+    bool hasWiFi = gDeviceModel[0] != '\0' && strstr(gDeviceModel, "W3") != NULL;
+    if (hasWiFi) {
+        uCxWifiStationStatus_t wifiStatus;
+        // Query connection status
+        if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &wifiStatus)) {
+            if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
+                // 1 = not connected, 2 = connected
+                gWifiConnected = (wifiStatus.rsp.StatusIdInt.int_val == 2);
+            }
+            uCxEnd(&gUcxHandle);
+        }
+        
+        if (gWifiConnected) {
+            // Get SSID
+            if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_SSID, &wifiStatus)) {
+                if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_STR) {
+                    const char* ssid = wifiStatus.rsp.StatusIdStr.ssid;
+                    if (ssid != NULL) {
+                        strncpy(gWifiSsid, ssid, sizeof(gWifiSsid) - 1);
+                        gWifiSsid[sizeof(gWifiSsid) - 1] = '\0';
+                    }
+                }
+                uCxEnd(&gUcxHandle);
+            }
+            
+            // Get IP address
+            uSockIpAddress_t ipAddr;
+            if (uCxWifiStationGetNetworkStatus(&gUcxHandle, U_WIFI_NET_STATUS_ID_IPV4, &ipAddr) == 0) {
+                if (ipAddr.type == U_SOCK_ADDRESS_TYPE_V4) {
+                    uint32_t ip = ipAddr.address.ipv4;
+                    snprintf(gWifiIpAddress, sizeof(gWifiIpAddress), "%d.%d.%d.%d",
+                             (ip >> 0) & 0xFF, (ip >> 8) & 0xFF,
+                             (ip >> 16) & 0xFF, (ip >> 24) & 0xFF);
+                }
+            }
+        } else {
+            gWifiSsid[0] = '\0';
+            gWifiIpAddress[0] = '\0';
+        }
+    }
+}
+
 static bool ucxclientConnect(const char *comPort)
 {
     if (gUcxConnected) {
@@ -16551,6 +16834,9 @@ static bool ucxclientConnect(const char *comPort)
 
     // Perform common module initialization (echo, extended errors, device info)
     moduleStartupInit();
+    
+    // Query device status (WiFi, BT, sockets, certificates, etc.)
+    queryDeviceStatus();
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connected successfully!");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
