@@ -176,7 +176,7 @@ int main(int argc, char **argv)
     sleepMs(4000);
     uCxSystemSetEchoOff(&ucxHandle);
 
-    uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WPA_THRESHOLD_WPA2);
+    uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WIFI_WPA_THRESHOLD_WPA2);
     uCxWifiStationSetConnectionParams(&ucxHandle, 0, pSsid);
     uCxWifiStationConnect(&ucxHandle, 0);
     waitEvent(URC_FLAG_NETWORK_UP, 20);
@@ -184,7 +184,7 @@ int main(int argc, char **argv)
     int32_t ret;
     int32_t sockHandle;
 
-    uCxSocketCreate1(&ucxHandle, U_PROTOCOL_TCP, &sockHandle);
+    uCxSocketCreate1(&ucxHandle, U_SOCKET_PROTOCOL_TCP, &sockHandle);
     uCxSocketConnect(&ucxHandle, sockHandle, EXAMPLE_URL, 80);
     waitEvent(URC_FLAG_SOCK_CONNECTED, 5);
     ret = uCxSocketWrite(&ucxHandle, sockHandle, (uint8_t *)"GET /\r\n", 7);
