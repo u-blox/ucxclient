@@ -221,6 +221,20 @@ int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list
                 *ppStr = pParam;
             }
             break;
+            case '$': {
+                // Binary string (with explicit length)
+                uBinaryString_t *pBinStr = va_arg(args, uBinaryString_t *);
+                U_CX_AT_PORT_ASSERT(pBinStr != U_CX_AT_UTIL_PARAM_LAST);
+                if (*pParam == '"') {
+                    pParam++;
+                    if (pParamEnd > pParam && pParamEnd[-1] == '"') {
+                        pParamEnd[-1] = 0;
+                    }
+                }
+                pBinStr->pData = pParam;
+                pBinStr->length = (size_t)(pParamEnd - pParam - 1);
+            }
+            break;
             case 'i': {
                 uSockIpAddress_t *pIpAddr = va_arg(args, uSockIpAddress_t *);
                 U_CX_AT_PORT_ASSERT(pIpAddr != U_CX_AT_UTIL_PARAM_LAST);

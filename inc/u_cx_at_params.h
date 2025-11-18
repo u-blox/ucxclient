@@ -82,6 +82,11 @@ typedef struct {
 } uByteArray_t;
 
 typedef struct {
+    char *pData;
+    size_t length;
+} uBinaryString_t;
+
+typedef struct {
     int16_t *pIntValues;
     size_t length;
 } uIntList_t;

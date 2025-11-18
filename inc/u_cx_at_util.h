@@ -153,6 +153,7 @@ char *uCxAtUtilFindParamEnd(char *pStr);
   * 'd'    int32_t *            Integer
   * 'l'    uIntList_t *         Integer list
   * 's'    const char **        Null terminated string
+  * '$'    uBinaryString_t *    Binary string with explicit length
   * 'i'    uSockIpAddress_t *   IP address
   * 'm'    uMacAddress_t *      MAC address
   * 'b'    uBtLeAddress_t *     Bluetooth address

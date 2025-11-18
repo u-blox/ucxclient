@@ -313,6 +313,46 @@ void test_uCxAtUtilParseParamsVaList_withByteArray(void)
     TEST_ASSERT_EQUAL(1, ret);
 }
 
+void test_uCxAtUtilParseParamsF_withBinaryString_expectSuccess(void)
+{
+    char buf[] = "\"test\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(4, binStr.length);
+    TEST_ASSERT_EQUAL_MEMORY("test", binStr.pData, 4);
+}
+
+void test_uCxAtUtilParseParamsF_withBinaryStringWithEscapes_expectSuccess(void)
+{
+    char buf[] = "\"te\\\"st\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(5, binStr.length);
+    TEST_ASSERT_EQUAL_MEMORY("te\"st", binStr.pData, 5);
+}
+
+void test_uCxAtUtilParseParamsF_withBinaryStringWithNullChar_expectSuccess(void)
+{
+    char buf[] = "\"te\\0st\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(5, binStr.length);
+    char expected[] = "te\0st";
+    TEST_ASSERT_EQUAL_MEMORY(expected, binStr.pData, 5);
+}
+
+void test_uCxAtUtilParseParamsF_withEmptyBinaryString_expectSuccess(void)
+{
+    char buf[] = "\"\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(0, binStr.length);
+}
+
 void test_uCxAtUtilReplaceChar_withTestString_replaceSwithB()
 {
     char str[] = "MyTeststring";

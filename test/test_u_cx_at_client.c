@@ -246,6 +246,34 @@ void test_uCxAtClientSendCmdVaList_withNegativeIntList(void)
     TEST_ASSERT_EQUAL_STRING("AT+FOO=[-1,-100,50]\r", &gTxBuffer[0]);
 }
 
+void test_uCxAtClientSendCmdVaList_withBinaryString(void)
+{
+    char str[] = "test";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "$",
+                                   str, (size_t)4, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=\"test\"\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withBinaryStringWithEscapes(void)
+{
+    char str[] = "te\"st";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "$",
+                                   str, (size_t)5, U_CX_AT_UTIL_PARAM_LAST);
+    // Expected: AT+FOO="te\"st"\r where \" is backslash-quote (escaped quote)
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','\"','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withBinaryStringWithNullChar(void)
+{
+    char str[] = {'t', 'e', '\0', 's', 't'};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "$",
+                                   str, (size_t)5, U_CX_AT_UTIL_PARAM_LAST);
+    // Expected: AT+FOO="te\0st"\r where \0 is backslash followed by '0' (escaped null)
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','0','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_MEMORY(expected, &gTxBuffer[0], sizeof(expected) - 1);
+}
+
 void test_uCxAtClientExecSimpleCmdF_withStatusOk_expectSuccess(void)
 {
     char rxData[] = { "\r\nOK\r\n" };

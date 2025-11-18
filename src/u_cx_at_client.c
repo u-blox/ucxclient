@@ -551,6 +551,15 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 writeAndLog(pClient, "\"", 1);
             }
             break;
+            case '$': {
+                // Binary string (uses a length arg instead)
+                char *pStr = va_arg(args, char *);
+                size_t len = va_arg(args, size_t);
+                writeAndLog(pClient, "\"", 1);
+                writeAndLog(pClient, pStr, len);
+                writeAndLog(pClient, "\"", 1);
+            }
+            break;
             case 'i': {
                 // IP address
                 uSockIpAddress_t *pIpAddr = va_arg(args, uSockIpAddress_t *);
