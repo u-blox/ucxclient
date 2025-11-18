@@ -81,6 +81,12 @@ typedef struct {
     size_t length;
 } uByteArray_t;
 
+typedef struct {
+    int16_t *pIntValues;
+    size_t length;
+} uIntList_t;
+
+
 /* ----------------------------------------------------------------
  * VARIABLES
  * -------------------------------------------------------------- */
@@ -160,5 +166,25 @@ int32_t uCxStringToMacAddress(const char *pMacString, uMacAddress_t *pMac);
  *                      error code.
  */
 int32_t uCxMacAddressToString(const uMacAddress_t *pMac, char *pBuffer, size_t sizeBytes);
+
+/** Convert an integer list string into a struct.
+ *
+ * @param pIntListString the null terminated string to convert (e.g., "[1,2,3]").
+ * @param[out] pIntList  a pointer to a place to put the integer list.
+ * @return               zero on success else negative error code.
+ */
+int32_t uCxStringToIntList(const char *pIntListString, uIntList_t *pIntList);
+
+/** Convert an integer list struct into a string.
+ *
+ * @param pIntList      a pointer to the integer list to convert.
+ * @param[out] pBuffer  a buffer in which to place the string.
+ * @param sizeBytes     the amount of memory pointed to by pBuffer.
+ * @return              on success the length of the string, not
+ *                      including the terminator (i.e. what
+ *                      strlen() would return) else negative
+ *                      error code.
+ */
+int32_t uCxIntListToString(const uIntList_t *pIntList, char *pBuffer, size_t sizeBytes);
 
 #endif // U_CX_AT_PARAMS_H

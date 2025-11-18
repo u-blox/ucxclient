@@ -22,6 +22,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <limits.h>
 
 #include "u_cx_at_params.h"
 #include "u_cx_at_util.h"
@@ -304,4 +305,109 @@ int32_t uCxMacAddressToString(const uMacAddress_t *pMac, char *pBuffer, size_t s
         return -1;
     }
     return (int32_t)strlen(pBuffer);
+}
+
+int32_t uCxStringToIntList(const char *pIntListString, uIntList_t *pIntList)
+{
+    U_CX_AT_PORT_ASSERT(pIntListString != NULL);
+    U_CX_AT_PORT_ASSERT(pIntList != NULL);
+
+    const char *pStr = pIntListString;
+    size_t len = strlen(pStr);
+
+    // Check for empty list []
+    if (len >= 2 && pStr[0] == '[' && pStr[1] == ']') {
+        pIntList->length = 0;
+        pIntList->pIntValues = NULL;
+        return 0;
+    }
+
+    // Must start with '['
+    if (len < 3 || pStr[0] != '[') {
+        return -1;
+    }
+
+    // Count commas to determine list size
+    size_t count = 1;
+    for (size_t i = 1; i < len - 1; i++) {
+        if (pStr[i] == ',') {
+            count++;
+        }
+    }
+
+    // Allocate space for values in the original string buffer
+    // We'll reuse the string memory for storing the parsed integers
+    pIntList->pIntValues = (int16_t *)pStr;
+    pIntList->length = count;
+
+    // Parse the integers
+    char *pParse = (char *)&pStr[1]; // Skip '['
+    for (size_t i = 0; i < count; i++) {
+        char *pEnd;
+        long value = strtol(pParse, &pEnd, 10);
+        if (pParse == pEnd || value < INT16_MIN || value > INT16_MAX) {
+            return -1;
+        }
+        pIntList->pIntValues[i] = (int16_t)value;
+        pParse = pEnd;
+        if (i < count - 1) {
+            if (*pParse != ',') {
+                return -1;
+            }
+            pParse++; // Skip comma
+        }
+    }
+
+    // Must end with ']'
+    if (*pParse != ']') {
+        return -1;
+    }
+
+    return 0;
+}
+
+int32_t uCxIntListToString(const uIntList_t *pIntList, char *pBuffer, size_t sizeBytes)
+{
+    U_CX_AT_PORT_ASSERT(pIntList != NULL);
+    U_CX_AT_PORT_ASSERT(pBuffer != NULL);
+
+    if (sizeBytes < 3) {
+        return -1;
+    }
+
+    if (pIntList->length == 0) {
+        pBuffer[0] = '[';
+        pBuffer[1] = ']';
+        pBuffer[2] = '\0';
+        return 2;
+    }
+
+    char *pWrite = pBuffer;
+    char *pEnd = pBuffer + sizeBytes;
+
+    // Start with '['
+    *pWrite++ = '[';
+
+    for (size_t i = 0; i < pIntList->length; i++) {
+        if (i > 0) {
+            if (pWrite >= pEnd - 1) {
+                return -1;
+            }
+            *pWrite++ = ',';
+        }
+        int written = snprintf(pWrite, (size_t)(pEnd - pWrite), "%d", pIntList->pIntValues[i]);
+        if (written < 0 || pWrite + written >= pEnd - 1) {
+            return -1;
+        }
+        pWrite += written;
+    }
+
+    // End with ']'
+    if (pWrite >= pEnd - 1) {
+        return -1;
+    }
+    *pWrite++ = ']';
+    *pWrite = '\0';
+
+    return (int32_t)(pWrite - pBuffer);
 }

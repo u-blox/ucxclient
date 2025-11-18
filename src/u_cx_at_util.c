@@ -245,6 +245,14 @@ int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list
                 }
             }
             break;
+            case 'l': {
+                uIntList_t *pIntList = va_arg(args, uIntList_t *);
+                U_CX_AT_PORT_ASSERT(pIntList != U_CX_AT_UTIL_PARAM_LAST);
+                if (uCxStringToIntList(pParam, pIntList) < 0) {
+                    return -ret;
+                }
+            }
+            break;
             case 'h': {
                 uByteArray_t *pByteArray = va_arg(args, uByteArray_t *);
                 U_CX_AT_PORT_ASSERT(pByteArray != U_CX_AT_UTIL_PARAM_LAST);

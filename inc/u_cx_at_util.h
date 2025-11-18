@@ -151,6 +151,7 @@ char *uCxAtUtilFindParamEnd(char *pStr);
   * Char   Type                 Desc
   * ---------------------------------------------
   * 'd'    int32_t *            Integer
+  * 'l'    uIntList_t *         Integer list
   * 's'    const char **        Null terminated string
   * 'i'    uSockIpAddress_t *   IP address
   * 'm'    uMacAddress_t *      MAC address

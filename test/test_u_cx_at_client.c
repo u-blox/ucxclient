@@ -222,6 +222,30 @@ void test_uCxAtClientSendCmdVaList_withBinary(void)
     TEST_ASSERT_EQUAL(sizeof(expected), gTxBufferPos);
 }
 
+void test_uCxAtClientSendCmdVaList_withIntList(void)
+{
+    int16_t values[] = {1, 2, 3};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "l",
+                                   values, (size_t)3, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=[1,2,3]\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withEmptyIntList(void)
+{
+    int16_t *values = NULL;
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "l",
+                                   values, (size_t)0, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=[]\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withNegativeIntList(void)
+{
+    int16_t values[] = {-1, -100, 50};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "l",
+                                   values, (size_t)3, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=[-1,-100,50]\r", &gTxBuffer[0]);
+}
+
 void test_uCxAtClientExecSimpleCmdF_withStatusOk_expectSuccess(void)
 {
     char rxData[] = { "\r\nOK\r\n" };
@@ -304,7 +328,7 @@ void test_uCxAtClientCmdGetRspParamLine_withReadError_expectNull(void)
 void test_uCxAtClientCmdGetRspParamLine_withBinary(void)
 {
     uint8_t binaryBuf[6] = {0};
-    size_t binaryLen = sizeof(binaryBuf);
+    uint16_t binaryLen = sizeof(binaryBuf);
     uint8_t rxData[] = { '+','F','O','O',':','\"','f','o','o','\"',BIN_HDR(6),0x00,0x11,0x22,0x33,0x44,0x55};
     uint8_t expectedBinData[] = {0x00,0x11,0x22,0x33,0x44,0x55};
 

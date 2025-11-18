@@ -524,6 +524,25 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 writeAndLog(pClient, buf, (size_t)len);
             }
             break;
+            case 'l': {
+                // Integer list
+                int16_t *pValues = va_arg(args, int16_t *);
+                size_t len = va_arg(args, size_t);
+
+                if (len == 0) {
+                    writeAndLog(pClient, "[]", 2);
+                } else {
+                    buf[0] = '['; // reserve first char for `[` and `,`
+
+                    for (size_t i = 0; i < len; i++) {
+                        int32_t len = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
+                        writeAndLog(pClient, buf, (size_t)len);
+                        buf[0] = ',';
+                    }
+                    writeAndLog(pClient, "]", 1);
+                }
+            }
+            break;
             case 's': {
                 // String
                 char *pStr = va_arg(args, char *);
