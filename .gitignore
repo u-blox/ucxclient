@@ -1,4 +1,8 @@
 build/
+# Exception: Allow signed release builds for distribution
+!build/Release_Signed/
+!build/Release_Signed/*.exe
+!build/Release_Signed/*.dll
 
 # Python
 __pycache__/
@@ -19,7 +23,7 @@ examples/python_gui/temp_*.py
 
 # User settings (contains credentials)
 settings.json
-ucxclient_win64_settings.ini
+ucxclient-x64_settings.ini
 .ucxclient/
 
 # OS

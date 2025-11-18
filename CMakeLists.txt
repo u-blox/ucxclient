@@ -108,24 +108,24 @@ if(WIN32)
   target_include_directories(ucxclient_basic_wifi PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
   target_link_libraries(ucxclient_basic_wifi PRIVATE setupapi ${FTDI_LIBRARY})
 
-  # Windows Console Application - ucxclient_win64 (Monolithic)
-  add_executable(ucxclient_win64
-    examples/ucxclient_win64.c
+  # Windows Console Application - ucxclient-x64 (Monolithic)
+  add_executable(ucxclient-x64
+    examples/ucxclient-x64.c
     examples/port/u_port_windows.c
-    examples/ucxclient_win64.rc
+    examples/ucxclient-x64.rc
     examples/qrcodegen/qrcodegen.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(ucxclient_win64 PRIVATE /W4 /FS /wd4200)
-  target_compile_definitions(ucxclient_win64 PRIVATE
+  target_compile_options(ucxclient-x64 PRIVATE /W4 /FS /wd4200)
+  target_compile_definitions(ucxclient-x64 PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
-  target_include_directories(ucxclient_win64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/examples)
-  target_link_libraries(ucxclient_win64 PRIVATE setupapi ${FTDI_LIBRARY})
+  target_include_directories(ucxclient-x64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/examples)
+  target_link_libraries(ucxclient-x64 PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Firmware Update Standalone Application
   add_executable(firmware_update

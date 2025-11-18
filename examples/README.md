@@ -6,8 +6,8 @@ This directory contains application examples of how to use ucxclient. The exampl
 | -------------------- | ----------- | ---- |
 | http_example.c       | Example of doing a HTTP GET request using the uCx API. | Linux (POSIX) |
 | http_example_no_os.c | Same example as http_example.c but illustrating how it could be done on a bare-metal system with no OS. | No OS (bare-metal) |
-| ucxclient_win64.c    | **Comprehensive Windows console application** with menu-driven interface for Bluetooth, Wi-Fi, HTTP, Location Services, Network operations, and more. | Windows |
-| windows_app.c        | Legacy Windows console application (superseded by ucxclient_win64). | Windows |
+| ucxclient-x64.c    | **Comprehensive Windows console application** with menu-driven interface for Bluetooth, Wi-Fi, HTTP, Location Services, Network operations, and more. | Windows |
+| windows_app.c        | Legacy Windows console application (superseded by ucxclient-x64). | Windows |
 | windows_basic.c      | Simple Windows test application for basic AT command validation. | Windows |
 
 ## Available Ports
@@ -75,7 +75,7 @@ start build\ucxclient.sln
 #### Windows Executables
 
 After building, you'll find:
-- `build\Release\ucxclient_win64.exe` - **Comprehensive application with Location Services** (Recommended)
+- `build\Release\ucxclient-x64.exe` - **Comprehensive application with Location Services** (Recommended)
 - `build\Debug\windows_app.exe` - Legacy interactive menu-driven application
 - `build\Debug\windows_basic.exe` - Simple test application
 - `build\Debug\http_example_windows.exe` - HTTP example for Windows
@@ -273,15 +273,15 @@ Choice: 7
 Choice: 3
 ```
 
-### Windows: ucxclient_win64.exe (Recommended)
+### Windows: ucxclient-x64.exe (Recommended)
 
-The **ucxclient_win64** is a comprehensive Windows console application with an enhanced menu system and extensive feature set.
+The **ucxclient-x64** is a comprehensive Windows console application with an enhanced menu system and extensive feature set.
 
 #### Quick Start
 
 **Using the launcher (recommended):**
 ```powershell
-.\launch_ucxclient_win64.cmd
+.\launch_ucxclient-x64.cmd
 ```
 The launcher automatically:
 - Checks build status and rebuilds if needed
@@ -291,7 +291,7 @@ The launcher automatically:
 
 **Direct execution:**
 ```powershell
-.\build\Release\ucxclient_win64.exe [COM_PORT]
+.\build\Release\ucxclient-x64.exe [COM_PORT]
 ```
 
 #### Features
@@ -386,7 +386,7 @@ The application automatically saves and restores:
 - Recent connection addresses
 - Logging preferences
 
-Settings stored in: `ucxclient_win64_settings.ini`
+Settings stored in: `ucxclient-x64_settings.ini`
 
 #### Example: Location Services
 

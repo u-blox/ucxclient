@@ -103,7 +103,7 @@ Edit `examples/port/u_port_windows.c` and uncomment the desired mode in the "COM
 
 Then rebuild:
 ```powershell
-cmake --build build --config Release --target ucxclient_win64
+cmake --build build --config Release --target ucxclient-x64
 ```
 
 ---

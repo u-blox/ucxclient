@@ -341,7 +341,7 @@ APIMapping(
 
 ## GATT Server and Client Features
 
-The ucxclient Windows application (`ucxclient_win64.c`) includes comprehensive **GATT Server** and **GATT Client** implementations, demonstrating advanced Bluetooth Low Energy capabilities with multiple profile support.
+The ucxclient Windows application (`ucxclient-x64.c`) includes comprehensive **GATT Server** and **GATT Client** implementations, demonstrating advanced Bluetooth Low Energy capabilities with multiple profile support.
 
 ### GATT Server Profiles
 

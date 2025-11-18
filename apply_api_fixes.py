@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Apply API fixes to ucxclient_win64.c based on the new UCX API structure changes.
+Apply API fixes to ucxclient-x64.c based on the new UCX API structure changes.
 This script fixes the structure member access patterns and comments out unavailable APIs.
 """
 
@@ -44,4 +44,4 @@ def apply_fixes(filename):
     print("  - Fixed NTP function names")
 
 if __name__ == '__main__':
-    apply_fixes('examples/ucxclient_win64.c')
+    apply_fixes('examples/ucxclient-x64.c')

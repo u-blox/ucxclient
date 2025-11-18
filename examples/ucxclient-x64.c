@@ -117,7 +117,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define APP_VERSION "1.0.0"
 
 // Settings file (will be placed next to executable)
-#define SETTINGS_FILENAME "ucxclient_win64_settings.ini"
+#define SETTINGS_FILENAME "ucxclient-x64_settings.ini"
 
 // Buffer size constants
 #define MAX_DATA_BUFFER 1000
@@ -12599,7 +12599,7 @@ static void wifiPositioningExample(void)
     // Note: Using HTTP instead of HTTPS to avoid certificate requirements
     const char *host = "apiv2.combain.com";
     char path[256];
-    snprintf(path, sizeof(path), "/?key=%s&id=ucxclient_win64", gCombainApiKey);
+    snprintf(path, sizeof(path), "/?key=%s&id=ucxclient-x64", gCombainApiKey);
     
     printf("Configuring HTTP connection to Combain...\n");
     printf("Note: Using HTTP (not HTTPS) - Combain supports both\n");
@@ -17413,7 +17413,7 @@ static void saveSettings(void)
 }
 
 // Initialize FTD2XX library (dynamic loading)
-// Resource ID for embedded FTDI DLL (must match ucxclient_win64.rc)
+// Resource ID for embedded FTDI DLL (must match ucxclient-x64.rc)
 #define IDR_FTD2XX_DLL 101
 
 static bool initFtd2xxLibrary(void)
