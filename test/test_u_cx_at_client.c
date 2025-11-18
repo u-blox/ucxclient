@@ -274,6 +274,34 @@ void test_uCxAtClientSendCmdVaList_withBinaryStringWithNullChar(void)
     TEST_ASSERT_EQUAL_MEMORY(expected, &gTxBuffer[0], sizeof(expected) - 1);
 }
 
+void test_uCxAtClientSendCmdVaList_withHexSmallData(void)
+{
+    uint8_t data[] = {0x01, 0x02, 0x03};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "h",
+                                   data, (int32_t)sizeof(data), U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=010203\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withHexLargeData(void)
+{
+    // Test with data larger than chunk size to verify chunking works
+    uint8_t data[30];
+    for (int i = 0; i < 30; i++) {
+        data[i] = (uint8_t)i;
+    }
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "h",
+                                   data, (int32_t)sizeof(data), U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withHexEmptyData(void)
+{
+    uint8_t data[] = {0x00};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "h",
+                                   data, (int32_t)0, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=\r", &gTxBuffer[0]);
+}
+
 void test_uCxAtClientExecSimpleCmdF_withStatusOk_expectSuccess(void)
 {
     char rxData[] = { "\r\nOK\r\n" };

@@ -353,6 +353,40 @@ void test_uCxAtUtilParseParamsF_withEmptyBinaryString_expectSuccess(void)
     TEST_ASSERT_EQUAL(0, binStr.length);
 }
 
+void test_uCxAtUtilParseParamsF_withHexSmallData_expectSuccess(void)
+{
+    char buf[] = "010203";
+    uByteArray_t byteArray;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "h", &byteArray, U_CX_AT_UTIL_PARAM_LAST);
+    uint8_t expected[] = {0x01, 0x02, 0x03};
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(3, byteArray.length);
+    TEST_ASSERT_EQUAL_MEMORY(expected, byteArray.pData, 3);
+}
+
+void test_uCxAtUtilParseParamsF_withHexLargeData_expectSuccess(void)
+{
+    char buf[] = "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D";
+    uByteArray_t byteArray;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "h", &byteArray, U_CX_AT_UTIL_PARAM_LAST);
+    uint8_t expected[30];
+    for (int i = 0; i < 30; i++) {
+        expected[i] = (uint8_t)i;
+    }
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(30, byteArray.length);
+    TEST_ASSERT_EQUAL_MEMORY(expected, byteArray.pData, 30);
+}
+
+void test_uCxAtUtilParseParamsF_withHexEmptyData_expectSuccess(void)
+{
+    char buf[] = "";
+    uByteArray_t byteArray;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "h", &byteArray, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(0, byteArray.length);
+}
+
 void test_uCxAtUtilReplaceChar_withTestString_replaceSwithB()
 {
     char str[] = "MyTeststring";

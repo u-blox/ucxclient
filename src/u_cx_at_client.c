@@ -607,9 +607,17 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 // Binary data transferred as hex string
                 uint8_t *pData = va_arg(args, uint8_t *);
                 int32_t len = va_arg(args, int32_t);
-                for (int32_t i = 0; i < len; i++) {
-                    uCxAtUtilByteToHex(pData[i], buf);
-                    writeAndLog(pClient, buf, 2);
+                // Try to optimize to some degree by writing in chunks
+                const size_t chunkSize = (sizeof(buf) - 1) / 2;
+                while (len > 0) {
+                    int32_t bytesToConvert = (int32_t)U_MIN((size_t)len, chunkSize);
+                    if (!uCxAtUtilBinaryToHex(pData, (size_t)bytesToConvert, buf, sizeof(buf))) {
+                        U_CX_AT_PORT_ASSERT(false); // Should never happen - but to be on the safe side
+                    }
+                    size_t hexLen = (size_t)bytesToConvert * 2;
+                    writeAndLog(pClient, buf, hexLen);
+                    len -= bytesToConvert;
+                    pData += bytesToConvert;
                 }
             }
             break;
