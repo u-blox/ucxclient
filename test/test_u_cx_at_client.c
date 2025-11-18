@@ -302,6 +302,69 @@ void test_uCxAtClientSendCmdVaList_withHexEmptyData(void)
     TEST_ASSERT_EQUAL_STRING("AT+FOO=\r", &gTxBuffer[0]);
 }
 
+void test_uCxAtClientSendCmdVaList_withStringEscapeQuote(void)
+{
+    char str[] = "te\"st";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','\"','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeBackslash(void)
+{
+    char str[] = "te\\\\st";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','\\','\\','\\','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeNewline(void)
+{
+    char str[] = "te\nst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','n','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeCarriageReturn(void)
+{
+    char str[] = "te\rst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','r','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeTab(void)
+{
+    char str[] = "te\tst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','t','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeBackspace(void)
+{
+    char str[] = "te\bst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','b','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeNonPrintable(void)
+{
+    char str[] = {'t','e','\x01','s','t','\0'};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','x','0','1','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
 void test_uCxAtClientExecSimpleCmdF_withStatusOk_expectSuccess(void)
 {
     char rxData[] = { "\r\nOK\r\n" };

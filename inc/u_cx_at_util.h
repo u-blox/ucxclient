@@ -201,4 +201,18 @@ int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list
   */
 void uCxAtUtilReplaceChar(char *pData, size_t dataLen, char from, char to);
 
+/**
+  * @brief  Write an escaped string with quotes
+  *
+  * Escapes special characters (\r, \n, \t, \b, ", \, \0) and wraps the string in quotes.
+  * Non-printable characters are escaped as \xNN.
+  *
+  * @param[in]  pStr:        the string to escape.
+  * @param      length:      the length of the string.
+  * @param[out] pOutBuf:     buffer to write the escaped string to.
+  * @param      outBufSize:  size of the output buffer.
+  * @retval                  the number of bytes written to pOutBuf, or 0 if buffer too small.
+  */
+size_t uCxAtUtilWriteEscString(const char *pStr, size_t length, char *pOutBuf, size_t outBufSize);
+
 #endif // U_CX_AT_UTIL_H

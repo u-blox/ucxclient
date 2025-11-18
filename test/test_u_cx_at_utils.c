@@ -387,6 +387,70 @@ void test_uCxAtUtilParseParamsF_withHexEmptyData_expectSuccess(void)
     TEST_ASSERT_EQUAL(0, byteArray.length);
 }
 
+void test_uCxAtUtilParseParamsF_withStringEscapeQuote_expectSuccess(void)
+{
+    char buf[] = "\"te\\\"st\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\"st", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeBackslash_expectSuccess(void)
+{
+    char buf[] = "\"te\\\\st\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\\st", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeNewline_expectSuccess(void)
+{
+    char buf[] = "\"te\\nst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\nst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeCarriageReturn_expectSuccess(void)
+{
+    char buf[] = "\"te\\rst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\rst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeTab_expectSuccess(void)
+{
+    char buf[] = "\"te\\tst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\tst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeBackspace_expectSuccess(void)
+{
+    char buf[] = "\"te\\bst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\bst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeHex_expectSuccess(void)
+{
+    char buf[] = "\"te\\x01st\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    char expected[] = {'t','e','\x01','s','t','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, pStr);
+}
+
 void test_uCxAtUtilReplaceChar_withTestString_replaceSwithB()
 {
     char str[] = "MyTeststring";

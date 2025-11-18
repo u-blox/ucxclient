@@ -38,6 +38,9 @@
  * STATIC PROTOTYPES
  * -------------------------------------------------------------- */
 
+static int32_t hexToNibble(char c);
+static size_t unescapeString(char *pStr);
+
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
@@ -218,6 +221,7 @@ int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list
                     pParam++;
                     pParamEnd[-1] = 0;
                 }
+                (void)unescapeString(pParam);
                 *ppStr = pParam;
             }
             break;
@@ -231,8 +235,9 @@ int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list
                         pParamEnd[-1] = 0;
                     }
                 }
+                size_t len = unescapeString(pParam);
                 pBinStr->pData = pParam;
-                pBinStr->length = (size_t)(pParamEnd - pParam - 1);
+                pBinStr->length = len;
             }
             break;
             case 'i': {
@@ -315,4 +320,153 @@ void uCxAtUtilReplaceChar(char *pData, size_t dataLen, char from, char to)
             pData[i] = to;
         }
     }
+}
+
+static size_t escapeCharacter(char c, char *escapeBuffer)
+{
+    size_t escapedLength = 0;
+
+    switch (c) {
+        case '\r':
+            escapedLength = 2;
+            escapeBuffer[0] = '\\';
+            escapeBuffer[1] = 'r';
+            break;
+        case '\n':
+            escapedLength = 2;
+            escapeBuffer[0] = '\\';
+            escapeBuffer[1] = 'n';
+            break;
+        case '\t':
+            escapedLength = 2;
+            escapeBuffer[0] = '\\';
+            escapeBuffer[1] = 't';
+            break;
+        case '\b':
+            escapedLength = 2;
+            escapeBuffer[0] = '\\';
+            escapeBuffer[1] = 'b';
+            break;
+        case '"':
+            escapedLength = 2;
+            escapeBuffer[0] = '\\';
+            escapeBuffer[1] = '"';
+            break;
+        case '\\':
+            escapedLength = 2;
+            escapeBuffer[0] = '\\';
+            escapeBuffer[1] = '\\';
+            break;
+        case '\x00':
+            escapedLength = 2;
+            escapeBuffer[0] = '\\';
+            escapeBuffer[1] = '0';
+            break;
+        default:
+            if (isprint((int)c)) {
+                // No escaping needed for this character
+                escapeBuffer[0] = c;
+                escapedLength = 1;
+            } else {
+                escapeBuffer[0] = '\\';
+                escapeBuffer[1] = 'x';
+                escapeBuffer[2] = nibbleToHex((unsigned char)c >> 4);
+                escapeBuffer[3] = nibbleToHex((unsigned char)c & 0xF);
+                escapedLength = 4;
+            }
+            break;
+    }
+
+    return escapedLength;
+}
+
+static size_t unescapeString(char *pStr)
+{
+    char *pRead = pStr;
+    char *pWrite = pStr;
+    char *pStart = pStr;
+
+    while (*pRead != '\0') {
+        if (*pRead == '\\' && pRead[1] != '\0') {
+            pRead++;
+            switch (*pRead) {
+                case 'r':
+                    *pWrite++ = '\r';
+                    break;
+                case 'n':
+                    *pWrite++ = '\n';
+                    break;
+                case 't':
+                    *pWrite++ = '\t';
+                    break;
+                case 'b':
+                    *pWrite++ = '\b';
+                    break;
+                case '"':
+                    *pWrite++ = '"';
+                    break;
+                case '\\':
+                    *pWrite++ = '\\';
+                    break;
+                case '0':
+                    *pWrite++ = '\0';
+                    break;
+                case 'x':
+                    // Hex escape sequence \xNN
+                    if (pRead[1] != '\0' && pRead[2] != '\0') {
+                        int32_t high = hexToNibble(pRead[1]);
+                        int32_t low = hexToNibble(pRead[2]);
+                        if (high >= 0 && low >= 0) {
+                            *pWrite++ = (char)((high << 4) | low);
+                            pRead += 2;
+                        } else {
+                            *pWrite++ = *pRead;
+                        }
+                    } else {
+                        *pWrite++ = *pRead;
+                    }
+                    break;
+                default:
+                    // Unknown escape, keep the backslash
+                    *pWrite++ = '\\';
+                    *pWrite++ = *pRead;
+                    break;
+            }
+            pRead++;
+        } else {
+            *pWrite++ = *pRead++;
+        }
+    }
+    *pWrite = '\0';
+    return (size_t)(pWrite - pStart);
+}
+
+size_t uCxAtUtilWriteEscString(const char *pStr, size_t length, char *pOutBuf, size_t outBufSize)
+{
+    if (outBufSize < 3) {
+        return 0; // Not enough space for quotes
+    }
+
+    char *pWrite = pOutBuf;
+    char *pEnd = pOutBuf + outBufSize;
+    char escapedChar[4];
+
+    // Opening quote
+    *pWrite++ = '"';
+
+    for (size_t i = 0; i < length; i++) {
+        size_t escapedLen = escapeCharacter(pStr[i], escapedChar);
+        if (pWrite + escapedLen + 1 >= pEnd) {
+            // Not enough space for escaped char and closing quote
+            return 0;
+        }
+        for (size_t j = 0; j < escapedLen; j++) {
+            *pWrite++ = escapedChar[j];
+        }
+    }
+
+    // Closing quote
+    *pWrite++ = '"';
+
+    return (size_t)(pWrite - pOutBuf);
 }

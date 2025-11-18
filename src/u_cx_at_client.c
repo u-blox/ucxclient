@@ -546,18 +546,30 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
             case 's': {
                 // String
                 char *pStr = va_arg(args, char *);
-                writeAndLog(pClient, "\"", 1);
-                writeAndLog(pClient, pStr, strlen(pStr));
-                writeAndLog(pClient, "\"", 1);
+                size_t len = uCxAtUtilWriteEscString(pStr, strlen(pStr), buf, sizeof(buf));
+                if (len > 0) {
+                    writeAndLog(pClient, buf, len);
+                } else {
+                    // Buffer too small, fall back to unescaped
+                    writeAndLog(pClient, "\"", 1);
+                    writeAndLog(pClient, pStr, strlen(pStr));
+                    writeAndLog(pClient, "\"", 1);
+                }
             }
             break;
             case '$': {
                 // Binary string (uses a length arg instead)
                 char *pStr = va_arg(args, char *);
-                size_t len = va_arg(args, size_t);
-                writeAndLog(pClient, "\"", 1);
-                writeAndLog(pClient, pStr, len);
-                writeAndLog(pClient, "\"", 1);
+                size_t strLen = va_arg(args, size_t);
+                size_t len = uCxAtUtilWriteEscString(pStr, strLen, buf, sizeof(buf));
+                if (len > 0) {
+                    writeAndLog(pClient, buf, len);
+                } else {
+                    // Buffer too small, fall back to unescaped
+                    writeAndLog(pClient, "\"", 1);
+                    writeAndLog(pClient, pStr, strLen);
+                    writeAndLog(pClient, "\"", 1);
+                }
             }
             break;
             case 'i': {
