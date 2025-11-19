@@ -132,21 +132,6 @@ bool uCxGeneralGetSerialNumberBegin(uCxHandle_t * puCxHandle, const char ** ppSe
 bool uCxGeneralGetIdentInfoBegin(uCxHandle_t * puCxHandle, uCxGeneralGetIdentInfo_t * pGeneralGetIdentInfoRsp);
 
 /**
- * Read MCU ID.
- * 
- * Output AT command:
- * > ATI10
- *
- * @param[in]  puCxHandle: uCX API handle
- * @param[out] ppMcuId:    Two byte hex string representing the MCU ID.
- * @return                 true on success, false on error (error code will be returned by uCxEnd()).
- *
- * NOTES:
- * Must be terminated by calling uCxEnd()
- */
-bool uCxGeneralGetMcuIdBegin(uCxHandle_t * puCxHandle, const char ** ppMcuId);
-
-/**
  * Read type code.
  * 
  * Output AT command:
@@ -174,7 +159,7 @@ bool uCxGeneralGetTypeCodeBegin(uCxHandle_t * puCxHandle, const char ** ppTypeCo
  * @param      greeting_mode: 
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode);
+int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGeneralGreetingMode_t greeting_mode);
 
 /**
  * Set the greeting text and mode.
@@ -191,7 +176,7 @@ int32_t uCxGeneralSetGreetingText1(uCxHandle_t * puCxHandle, uGreetingMode_t gre
  *                            Note: Can not be an empty string.
  * @return                    0 on success, negative value on error.
  */
-int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGreetingMode_t greeting_mode, const char * text);
+int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGeneralGreetingMode_t greeting_mode, const char * text);
 
 /**
  * Read the greeting text.
@@ -207,6 +192,16 @@ int32_t uCxGeneralSetGreetingText2(uCxHandle_t * puCxHandle, uGreetingMode_t gre
  * Must be terminated by calling uCxEnd()
  */
 bool uCxGeneralGetGreetingTextBegin(uCxHandle_t * puCxHandle, uCxGeneralGetGreetingText_t * pGeneralGetGreetingTextRsp);
+
+/**
+ * Register Startup event callback
+ * 
+ * Indicates the startup of the device and that it is ready to receive commands.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxGeneralRegisterStartup(uCxHandle_t * puCxHandle, uSTARTUP_t callback);
 
 
 #ifdef __cplusplus

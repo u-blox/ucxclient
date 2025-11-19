@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -151,7 +151,9 @@ char *uCxAtUtilFindParamEnd(char *pStr);
   * Char   Type                 Desc
   * ---------------------------------------------
   * 'd'    int32_t *            Integer
+  * 'l'    uIntList_t *         Integer list
   * 's'    const char **        Null terminated string
+  * '$'    uBinaryString_t *    Binary string with explicit length
   * 'i'    uSockIpAddress_t *   IP address
   * 'm'    uMacAddress_t *      MAC address
   * 'b'    uBtLeAddress_t *     Bluetooth address
@@ -198,5 +200,19 @@ int32_t uCxAtUtilParseParamsVaList(char *pParams, const char *pParamFmt, va_list
   * @param         to:       the character to replace to.
   */
 void uCxAtUtilReplaceChar(char *pData, size_t dataLen, char from, char to);
+
+/**
+  * @brief  Write an escaped string with quotes
+  *
+  * Escapes special characters (\r, \n, \t, \b, ", \, \0) and wraps the string in quotes.
+  * Non-printable characters are escaped as \xNN.
+  *
+  * @param[in]  pStr:        the string to escape.
+  * @param      length:      the length of the string.
+  * @param[out] pOutBuf:     buffer to write the escaped string to.
+  * @param      outBufSize:  size of the output buffer.
+  * @retval                  the number of bytes written to pOutBuf, or 0 if buffer too small.
+  */
+size_t uCxAtUtilWriteEscString(const char *pStr, size_t length, char *pOutBuf, size_t outBufSize);
 
 #endif // U_CX_AT_UTIL_H

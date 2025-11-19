@@ -26,18 +26,18 @@ int32_t uCxSpsConnect2(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t fl
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USPSC=", "dd", conn_handle, flow_control, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSpsSetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t sps_service_option)
+int32_t uCxSpsSetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t service_option)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USPS=", "d", sps_service_option, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USPS=", "d", service_option, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * pSpsServiceOption)
+int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * pServiceOption)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USPS?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPS:", NULL, NULL, "d", pSpsServiceOption, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPS:", NULL, NULL, "d", pServiceOption, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
@@ -48,12 +48,12 @@ int32_t uCxSpsGetServiceEnable(uCxHandle_t * puCxHandle, uSpsServiceOption_t * p
     return ret;
 }
 
-int32_t uCxSpsWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, uint8_t * pWData, size_t wDataLen)
+int32_t uCxSpsWrite(uCxHandle_t * puCxHandle, int32_t conn_handle, const uint8_t * binary_data, int32_t binary_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t written_length;
     int32_t ret;
-    uCxAtClientCmdBeginF(pAtClient, "AT+USPSWB=", "dB", conn_handle, pWData, wDataLen, U_CX_AT_UTIL_PARAM_LAST);
+    uCxAtClientCmdBeginF(pAtClient, "AT+USPSWB=", "dB", conn_handle, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSWB:", NULL, NULL, "-d", &written_length, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
@@ -94,7 +94,7 @@ int32_t uCxSpsRead(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     uint8_t *pBinBuffer = pDataBuf;
-    size_t binBufferLen = length;
+    uint16_t binBufferLen = (uint16_t)length;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+USPSRB=", "dd", conn_handle, length, U_CX_AT_UTIL_PARAM_LAST);
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USPSRB:", pBinBuffer, &binBufferLen, "-", U_CX_AT_UTIL_PARAM_LAST);
@@ -106,7 +106,7 @@ int32_t uCxSpsRead(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t length
         }
     }
     if (ret >= 0) {
-        ret = binBufferLen;
+        ret = (int32_t)binBufferLen;
     }
     return ret;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@
  * -------------------------------------------------------------- */
 
 #define U_URC_ENTRY_SIZE(ENTRY) \
-    (ENTRY->strLineLen + 1 + ENTRY->payloadSize)
+    ((size_t)(ENTRY->strLineLen + 1 + ENTRY->payloadSize))
 
 /* ----------------------------------------------------------------
  * TYPES
@@ -82,7 +82,7 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
     U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry == NULL);
 
-    int32_t availableDataSpace = (int32_t)getUnusedBuf(pUrcQueue) - sizeof(uUrcEntry_t);
+    int32_t availableDataSpace = (int32_t)(getUnusedBuf(pUrcQueue) - sizeof(uUrcEntry_t));
     if (availableDataSpace >= (int32_t)urcLineLen + 1) {
         uUrcEntry_t *pEntry = (uUrcEntry_t *)&pUrcQueue->pBuffer[pUrcQueue->bufferPos];
         memcpy(&pEntry->data[0], pUrcLine, urcLineLen);
@@ -101,16 +101,16 @@ bool uCxAtUrcQueueEnqueueBegin(uCxAtUrcQueue_t *pUrcQueue, const char *pUrcLine,
     return ret;
 }
 
-size_t uCxAtUrcQueueEnqueueGetPayloadPtr(uCxAtUrcQueue_t *pUrcQueue, uint8_t **ppPayload)
+uint16_t uCxAtUrcQueueEnqueueGetPayloadPtr(uCxAtUrcQueue_t *pUrcQueue, uint8_t **ppPayload)
 {
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry);
 
     uUrcEntry_t *pEntry = pUrcQueue->pEnqueueEntry;
     *ppPayload = &pEntry->data[pEntry->strLineLen + 1];
-    return getUnusedBuf(pUrcQueue);
+    return (uint16_t)getUnusedBuf(pUrcQueue);
 }
 
-void uCxAtUrcQueueEnqueueEnd(uCxAtUrcQueue_t *pUrcQueue, size_t payloadSize)
+void uCxAtUrcQueueEnqueueEnd(uCxAtUrcQueue_t *pUrcQueue, uint16_t payloadSize)
 {
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry);
     U_CX_AT_PORT_ASSERT(getUnusedBuf(pUrcQueue) >= payloadSize);
@@ -127,7 +127,7 @@ void uCxAtUrcQueueEnqueueAbort(uCxAtUrcQueue_t *pUrcQueue)
     U_CX_AT_PORT_ASSERT(pUrcQueue->pEnqueueEntry);
 
     uint8_t *pEntry = (uint8_t *)pUrcQueue->pEnqueueEntry;
-    pUrcQueue->bufferPos = pEntry - pUrcQueue->pBuffer;
+    pUrcQueue->bufferPos = (size_t)(pEntry - pUrcQueue->pBuffer);
     pUrcQueue->pEnqueueEntry = NULL;
     U_CX_MUTEX_UNLOCK(pUrcQueue->queueMutex);
 }
@@ -163,11 +163,11 @@ void uCxAtUrcQueueDequeueEnd(uCxAtUrcQueue_t *pUrcQueue, uUrcEntry_t *pEntry)
 
     U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
     size_t totEntrySize = sizeof(uUrcEntry_t) + U_URC_ENTRY_SIZE(pEntry);
-    remainingData = pUrcQueue->bufferPos - totEntrySize;
+    remainingData = (int32_t)pUrcQueue->bufferPos - (int32_t)totEntrySize;
     if (remainingData > 0) {
         // Move the remaining data to start of buffer
         // TODO: Replace with ring buffer to improve performance
-        memmove(pUrcQueue->pBuffer, &pUrcQueue->pBuffer[totEntrySize], remainingData);
+        memmove(pUrcQueue->pBuffer, &pUrcQueue->pBuffer[totEntrySize], (size_t)remainingData);
         pUrcQueue->bufferPos -= totEntrySize;
     } else {
         // This was the only entry so no need to move anything

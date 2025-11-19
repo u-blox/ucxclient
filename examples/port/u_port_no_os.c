@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ typedef struct {
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
 
-static uint64_t gBootTime = 0;
+static int32_t gBootTime = 0;
 static int gUartFd;
 static uCxAtClientConfig_t *gPConfig = NULL;
 
@@ -70,7 +70,7 @@ static int32_t getTickTimeMs(void)
 {
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC_RAW, &time);
-    uint64_t timeMs = (time.tv_sec * 1000) + (time.tv_nsec / (1000 * 1000));
+    int64_t timeMs = (time.tv_sec * 1000) + (time.tv_nsec / (1000 * 1000));
     return (int32_t)(timeMs % (1000 * 60 * 60 * 24));
 }
 
@@ -222,7 +222,7 @@ void uPortAtClose(uCxAtClient_t *pClient)
     pCtx->uartFd = -1;
 }
 
-int32_t uCxMutexTryLock(bool *pMutex, int32_t timeoutMs)
+int32_t uCxMutexTryLock(bool *pMutex, uint32_t timeoutMs)
 {
     (void)timeoutMs;
     int32_t ret = *pMutex ? -1 : 0;

@@ -28,26 +28,26 @@ extern "C" {
  * ---------------------------------------------------------- */
 typedef enum
 {
-    U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION_STR_STR_STR,
-    U_CX_MQTT_GET_TLS_CONFIG_RSP_TYPE_TLS_VERSION
-} uCxMqttGetTlsConfigRspType_t;
+    U_CX_MQTT_GET_TLS_RSP_TYPE_TLS_VERSION_STR_STR_STR,
+    U_CX_MQTT_GET_TLS_RSP_TYPE_TLS_VERSION
+} uCxMqttGetTLSRspType_t;
 
 typedef struct {
-    uCxMqttGetTlsConfigRspType_t type;
+    uCxMqttGetTLSRspType_t type;
     union {
         struct
         {
-            int32_t tls_version;           /**< Minimum TLS version to use */
+            int32_t tls_version;           /**< TLS version to use */
             const char * ca_name;          /**< Name of the certificate authority (CA) certificate to use */
             const char * client_cert_name; /**< Name of the client certificate to use */
             const char * client_key_name;  /**< Name of the private key for client certificate */
-        } rspTlsVersionStrStrStr;
+        } TlsVersionStrStrStr;
         struct
         {
-            int32_t tls_version; /**< Minimum TLS version to use */
-        } rspTlsVersion;
-    };
-} uCxMqttGetTlsConfig_t;
+            int32_t tls_version; /**< TLS version to use */
+        } TlsVersion;
+    } rsp;
+} uCxMqttGetTLS_t;
 
 
 typedef struct
@@ -239,7 +239,7 @@ int32_t uCxMqttSetLastWillAndTestament3(uCxHandle_t * puCxHandle, int32_t mqtt_i
  * @param      qos:        Quality of Service (QoS) for the message or topic
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxMqttSetLastWillAndTestament4(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uQos_t qos);
+int32_t uCxMqttSetLastWillAndTestament4(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uMqttQos_t qos);
 
 /**
  * Add last will and testament configuration for the client
@@ -258,7 +258,7 @@ int32_t uCxMqttSetLastWillAndTestament4(uCxHandle_t * puCxHandle, int32_t mqtt_i
  * @param      retain:     Retain flag for message
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxMqttSetLastWillAndTestament5(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uQos_t qos, uRetain_t retain);
+int32_t uCxMqttSetLastWillAndTestament5(uCxHandle_t * puCxHandle, int32_t mqtt_id, const char * topic, const char * will_msg, uMqttQos_t qos, uMqttRetain_t retain);
 
 /**
  * Get last will and testament configuration for the client
@@ -287,10 +287,10 @@ bool uCxMqttGetLastWillAndTestamentBegin(uCxHandle_t * puCxHandle, int32_t mqtt_
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      mqtt_id:     MQTT Config ID
- * @param      tls_version: Minimum TLS version to use
+ * @param      tls_version: TLS version to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxMqttSetTlsConfig2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version);
+int32_t uCxMqttSetTLS2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uWifiTlsVersion_t tls_version);
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
@@ -303,11 +303,11 @@ int32_t uCxMqttSetTlsConfig2(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
  *
  * @param[in]  puCxHandle:  uCX API handle
  * @param      mqtt_id:     MQTT Config ID
- * @param      tls_version: Minimum TLS version to use
+ * @param      tls_version: TLS version to use
  * @param      ca_name:     Name of the certificate authority (CA) certificate to use
  * @return                  0 on success, negative value on error.
  */
-int32_t uCxMqttSetTlsConfig3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name);
+int32_t uCxMqttSetTLS3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uWifiTlsVersion_t tls_version, const char * ca_name);
 
 /**
  * Setup MQTT TLS config. Certs do not have to be uploaded until connection.
@@ -320,13 +320,13 @@ int32_t uCxMqttSetTlsConfig3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
  *
  * @param[in]  puCxHandle:       uCX API handle
  * @param      mqtt_id:          MQTT Config ID
- * @param      tls_version:      Minimum TLS version to use
+ * @param      tls_version:      TLS version to use
  * @param      ca_name:          Name of the certificate authority (CA) certificate to use
  * @param      client_cert_name: Name of the client certificate to use
  * @param      client_key_name:  Name of the private key for client certificate
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxMqttSetTlsConfig5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
+int32_t uCxMqttSetTLS5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uWifiTlsVersion_t tls_version, const char * ca_name, const char * client_cert_name, const char * client_key_name);
 
 /**
  * Get TLS config
@@ -334,15 +334,15 @@ int32_t uCxMqttSetTlsConfig5(uCxHandle_t * puCxHandle, int32_t mqtt_id, uTlsVers
  * Output AT command:
  * > AT+UMQTLS=<mqtt_id>
  *
- * @param[in]  puCxHandle:           uCX API handle
- * @param      mqtt_id:              MQTT Config ID
- * @param[out] pMqttGetTlsConfigRsp: Please see \ref uCxMqttGetTlsConfig_t
- * @return                           true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param      mqtt_id:        MQTT Config ID
+ * @param[out] pMqttGetTLSRsp: Please see \ref uCxMqttGetTLS_t
+ * @return                     true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxMqttGetTlsConfigBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTlsConfig_t * pMqttGetTlsConfigRsp);
+bool uCxMqttGetTLSBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uCxMqttGetTLS_t * pMqttGetTLSRsp);
 
 /**
  * Disconnect the MQTT client from the broker.
@@ -361,18 +361,19 @@ int32_t uCxMqttDisconnect(uCxHandle_t * puCxHandle, int32_t mqtt_id);
  * Publish an MQTT message in binary format to the specified topic.
  * 
  * Output AT command:
- * > AT+UMQPB=<mqtt_id>,<qos>,<retain>,<topic>
+ * > AT+UMQPB=<mqtt_id>,<qos>,<retain>,<topic>,<binary_data>,<binary_data_len>
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param      mqtt_id:    MQTT Config ID
- * @param      qos:        Quality of Service (QoS) for the message or topic
- * @param      retain:     Retain flag for message
- * @param      topic:      Topic name or filter (wildcard allowed)
- * @param[in]  pWData:     binary data to write
- * @param      wDataLen:   number of bytes to write
- * @return                 0 on success, negative value on error.
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      mqtt_id:         MQTT Config ID
+ * @param      qos:             Quality of Service (QoS) for the message or topic
+ * @param      retain:          Retain flag for message
+ * @param      topic:           Topic name or filter (wildcard allowed)
+ * @param      binary_data:     The MQTT message data.
+ * @param      binary_data_len: length of binary_data
+ * @return                      Negative value on error. On success:
+ *                              Packet ID of the message
  */
-int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uRetain_t retain, const char * topic, uint8_t * pWData, size_t wDataLen);
+int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttQos_t qos, uMqttRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len);
 
 /**
  * Subscribe or unsubscribe to/from MQTT topic.
@@ -382,11 +383,11 @@ int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uQos_t qos, uR
  *
  * @param[in]  puCxHandle:       uCX API handle
  * @param      mqtt_id:          MQTT Config ID
- * @param      subscribe_action: 
+ * @param      subscribe_action: Subscribe or unsubscribe action
  * @param      topic:            Topic name or filter (wildcard allowed)
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action, const char * topic);
+int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttSubscribeAction_t subscribe_action, const char * topic);
 
 /**
  * Subscribe or unsubscribe to/from MQTT topic.
@@ -396,12 +397,12 @@ int32_t uCxMqttSubscribe3(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeA
  *
  * @param[in]  puCxHandle:       uCX API handle
  * @param      mqtt_id:          MQTT Config ID
- * @param      subscribe_action: 
+ * @param      subscribe_action: Subscribe or unsubscribe action
  * @param      topic:            Topic name or filter (wildcard allowed)
  * @param      qos:              Quality of Service (QoS) for the message or topic
  * @return                       0 on success, negative value on error.
  */
-int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeAction_t subscribe_action, const char * topic, uQos_t qos);
+int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttSubscribeAction_t subscribe_action, const char * topic, uMqttQos_t qos);
 
 /**
  * Read available MQTT message in binary format.
@@ -419,7 +420,7 @@ int32_t uCxMqttSubscribe4(uCxHandle_t * puCxHandle, int32_t mqtt_id, uSubscribeA
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, size_t dataBufLength, const char ** ppTopic);
+int32_t uCxMqttReadBegin(uCxHandle_t * puCxHandle, int32_t mqtt_id, uint8_t * pDataBuf, uint16_t dataBufLength, const char ** ppTopic);
 
 /**
  * Register Connect event callback
@@ -449,6 +450,33 @@ void uCxMqttRegisterDisconnect(uCxHandle_t * puCxHandle, uUEMQDC_t callback);
  * @param      callback:   callback to register. Set to NULL to unregister.
  */
 void uCxMqttRegisterDataAvailable(uCxHandle_t * puCxHandle, uUEMQDA_t callback);
+
+/**
+ * Register DataDropped event callback
+ * 
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxMqttRegisterDataDropped(uCxHandle_t * puCxHandle, uUEMQDD_t callback);
+
+/**
+ * Register PublishCompleted event callback
+ * 
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxMqttRegisterPublishCompleted(uCxHandle_t * puCxHandle, uUEMQPC_t callback);
+
+/**
+ * Register SubscribeCompleted event callback
+ * 
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxMqttRegisterSubscribeCompleted(uCxHandle_t * puCxHandle, uUEMQSC_t callback);
 
 
 #ifdef __cplusplus

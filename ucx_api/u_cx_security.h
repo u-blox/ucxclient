@@ -26,18 +26,62 @@ extern "C" {
 /* ------------------------------------------------------------
  * RESPONSES
  * ---------------------------------------------------------- */
+typedef enum
+{
+    U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_BYTES,
+    U_CX_SECURITY_READ_ALL_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_INT
+} uCxSecurityReadAllCertificatesDetailsRspType_t;
+
+typedef struct {
+    uCxSecurityReadAllCertificatesDetailsRspType_t type;
+    union {
+        struct
+        {
+            int32_t cert_detail_id;
+            uByteArray_t hex_value; /**< Hex value */
+        } CertDetailIdBytes;
+        struct
+        {
+            int32_t cert_detail_id;
+            int32_t int_value;      /**< Integer value */
+        } CertDetailIdInt;
+    } rsp;
+} uCxSecReadAllCertificatesDetails_t;
+
+typedef enum
+{
+    U_CX_SECURITY_READ_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_BYTES,
+    U_CX_SECURITY_READ_CERTIFICATES_DETAILS_RSP_TYPE_CERT_DETAIL_ID_INT
+} uCxSecurityReadCertificatesDetailsRspType_t;
+
+typedef struct {
+    uCxSecurityReadCertificatesDetailsRspType_t type;
+    union {
+        struct
+        {
+            int32_t cert_detail_id;
+            uByteArray_t hex_value; /**< Hex value */
+        } CertDetailIdBytes;
+        struct
+        {
+            int32_t cert_detail_id;
+            int32_t int_value;      /**< Integer value */
+        } CertDetailIdInt;
+    } rsp;
+} uCxSecReadCertificatesDetails_t;
+
 
 typedef struct
 {
     int32_t cert_type;
     const char * name;
-} uCxSecurityListCertificates_t;
+} uCxSecListCertificates_t;
 
 typedef struct
 {
     int32_t extension;
     int32_t enabled;
-} uCxSecurityListTlsExtensions_t;
+} uCxSecListTlsExtensions_t;
 
 
 /* ------------------------------------------------------------
@@ -55,7 +99,7 @@ typedef struct
  * @param      name:       
  * @return                 0 on success, negative value on error.
  */
-int32_t uCxSecurityCertificateRemove(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name);
+int32_t uCxSecurityCertificateRemove(uCxHandle_t * puCxHandle, uSecCertType_t cert_type, const char * name);
 
 /**
  * Remove all X.509 certificates and private keys.
@@ -72,34 +116,34 @@ int32_t uCxSecurityCertificateRemoveAll(uCxHandle_t * puCxHandle);
  * Write an X.509 certificate or private key using binary transfer.
  * 
  * Output AT command:
- * > AT+USECUB=<cert_type>,<name>
+ * > AT+USECUB=<cert_type>,<name>,<binary_data>,<binary_data_len>
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param      cert_type:  
- * @param      name:       
- * @param[in]  pWData:     binary data to write
- * @param      wDataLen:   number of bytes to write
- * @return                 0 on success, negative value on error.
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      cert_type:       
+ * @param      name:            
+ * @param      binary_data:     The certificate data.
+ * @param      binary_data_len: length of binary_data
+ * @return                      0 on success, negative value on error.
  */
-int32_t uCxSecurityCertificateUpload2(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, uint8_t * pWData, size_t wDataLen);
+int32_t uCxSecurityCertificateUpload(uCxHandle_t * puCxHandle, uSecCertType_t cert_type, const char * name, const uint8_t * binary_data, int32_t binary_data_len);
 
 /**
- * Write an X.509 certificate or private key using binary transfer.
+ * Write an X.509 certificate or private key with password using binary transfer.
  * 
  * Output AT command:
- * > AT+USECUB=<cert_type>,<name>,<password>
+ * > AT+USECUB=<cert_type>,<name>,<password>,<binary_data>,<binary_data_len>
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param      cert_type:  
- * @param      name:       
- * @param      password:   Decryption password; applicable only for PKCS8 encrypted client private keys. The maximum
- *                         length is 64 characters.
- *                         NOTE: Supported Encryption method for private keys is AES only
- * @param[in]  pWData:     binary data to write
- * @param      wDataLen:   number of bytes to write
- * @return                 0 on success, negative value on error.
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      cert_type:       
+ * @param      name:            
+ * @param      password:        Decryption password; applicable only for PKCS8 encrypted client private keys. The maximum
+ *                              length is 64 characters.
+ *                              NOTE: Supported Encryption method for private keys is AES only
+ * @param      binary_data:     The certificate data.
+ * @param      binary_data_len: length of binary_data
+ * @return                      0 on success, negative value on error.
  */
-int32_t uCxSecurityCertificateUpload3(uCxHandle_t * puCxHandle, uCertType_t cert_type, const char * name, const char * password, uint8_t * pWData, size_t wDataLen);
+int32_t uCxSecurityCertificateUploadPW(uCxHandle_t * puCxHandle, uSecCertType_t cert_type, const char * name, const char * password, const uint8_t * binary_data, int32_t binary_data_len);
 
 /**
  * Read all uploaded certificate names
@@ -118,12 +162,45 @@ void uCxSecurityListCertificatesBegin(uCxHandle_t * puCxHandle);
 /**
  * 
  *
- * @param[in]  puCxHandle:                   uCX API handle
- * @param[out] pSecurityListCertificatesRsp: Please see \ref uCxSecurityListCertificates_t
- * @return                                   true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                           error code in this case).
+ * @param[in]  puCxHandle:              uCX API handle
+ * @param[out] pSecListCertificatesRsp: Please see \ref uCxSecListCertificates_t
+ * @return                              true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                      error code in this case).
  */
-bool uCxSecurityListCertificatesGetNext(uCxHandle_t * puCxHandle, uCxSecurityListCertificates_t * pSecurityListCertificatesRsp);
+bool uCxSecurityListCertificatesGetNext(uCxHandle_t * puCxHandle, uCxSecListCertificates_t * pSecListCertificatesRsp);
+
+/**
+ * Read certificate details
+ * 
+ * Output AT command:
+ * > AT+USECD=<name>
+ *
+ * @param[in]  puCxHandle:                        uCX API handle
+ * @param      name:                              
+ * @param[out] pSecReadAllCertificatesDetailsRsp: Please see \ref uCxSecReadAllCertificatesDetails_t
+ * @return                                        true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxSecurityReadAllCertificatesDetailsBegin(uCxHandle_t * puCxHandle, const char * name, uCxSecReadAllCertificatesDetails_t * pSecReadAllCertificatesDetailsRsp);
+
+/**
+ * Read certificate details
+ * 
+ * Output AT command:
+ * > AT+USECD=<name>,<cert_detail_id>
+ *
+ * @param[in]  puCxHandle:                     uCX API handle
+ * @param      name:                           
+ * @param      cert_detail_id:                 
+ * @param[out] pSecReadCertificatesDetailsRsp: Please see \ref uCxSecReadCertificatesDetails_t
+ * @return                                     true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxSecurityReadCertificatesDetailsBegin(uCxHandle_t * puCxHandle, const char * name, uSecCertDetailId_t cert_detail_id, uCxSecReadCertificatesDetails_t * pSecReadCertificatesDetailsRsp);
 
 /**
  * Read all TLS extension settings
@@ -142,12 +219,12 @@ void uCxSecurityListTlsExtensionsBegin(uCxHandle_t * puCxHandle);
 /**
  * 
  *
- * @param[in]  puCxHandle:                    uCX API handle
- * @param[out] pSecurityListTlsExtensionsRsp: Please see \ref uCxSecurityListTlsExtensions_t
- * @return                                    true on success, false when there are no more entries or on error (uCxEnd() will return
- *                                            error code in this case).
+ * @param[in]  puCxHandle:               uCX API handle
+ * @param[out] pSecListTlsExtensionsRsp: Please see \ref uCxSecListTlsExtensions_t
+ * @return                               true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                       error code in this case).
  */
-bool uCxSecurityListTlsExtensionsGetNext(uCxHandle_t * puCxHandle, uCxSecurityListTlsExtensions_t * pSecurityListTlsExtensionsRsp);
+bool uCxSecurityListTlsExtensionsGetNext(uCxHandle_t * puCxHandle, uCxSecListTlsExtensions_t * pSecListTlsExtensionsRsp);
 
 /**
  * Turn Server Name Indication TLS extension on and off on a system level

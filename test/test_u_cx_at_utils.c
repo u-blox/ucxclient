@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -311,6 +311,198 @@ void test_uCxAtUtilParseParamsVaList_withByteArray(void)
     TEST_ASSERT_EQUAL_UINT8_ARRAY(byteArray.pData, expData, sizeof(expData));
     TEST_ASSERT_EQUAL(sizeof(expData), byteArray.length);
     TEST_ASSERT_EQUAL(1, ret);
+}
+
+void test_uCxAtUtilParseParamsF_withBinaryString_expectSuccess(void)
+{
+    char buf[] = "\"test\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(4, binStr.length);
+    TEST_ASSERT_EQUAL_MEMORY("test", binStr.pData, 4);
+}
+
+void test_uCxAtUtilParseParamsF_withBinaryStringWithEscapes_expectSuccess(void)
+{
+    char buf[] = "\"te\\\"st\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(5, binStr.length);
+    TEST_ASSERT_EQUAL_MEMORY("te\"st", binStr.pData, 5);
+}
+
+void test_uCxAtUtilParseParamsF_withBinaryStringWithNullChar_expectSuccess(void)
+{
+    char buf[] = "\"te\\0st\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(5, binStr.length);
+    char expected[] = "te\0st";
+    TEST_ASSERT_EQUAL_MEMORY(expected, binStr.pData, 5);
+}
+
+void test_uCxAtUtilParseParamsF_withEmptyBinaryString_expectSuccess(void)
+{
+    char buf[] = "\"\"";
+    uBinaryString_t binStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "$", &binStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(0, binStr.length);
+}
+
+void test_uCxAtUtilParseParamsF_withHexSmallData_expectSuccess(void)
+{
+    char buf[] = "010203";
+    uByteArray_t byteArray;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "h", &byteArray, U_CX_AT_UTIL_PARAM_LAST);
+    uint8_t expected[] = {0x01, 0x02, 0x03};
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(3, byteArray.length);
+    TEST_ASSERT_EQUAL_MEMORY(expected, byteArray.pData, 3);
+}
+
+void test_uCxAtUtilParseParamsF_withHexLargeData_expectSuccess(void)
+{
+    char buf[] = "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D";
+    uByteArray_t byteArray;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "h", &byteArray, U_CX_AT_UTIL_PARAM_LAST);
+    uint8_t expected[30];
+    for (int i = 0; i < 30; i++) {
+        expected[i] = (uint8_t)i;
+    }
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(30, byteArray.length);
+    TEST_ASSERT_EQUAL_MEMORY(expected, byteArray.pData, 30);
+}
+
+void test_uCxAtUtilParseParamsF_withHexEmptyData_expectSuccess(void)
+{
+    char buf[] = "";
+    uByteArray_t byteArray;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "h", &byteArray, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(0, byteArray.length);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeQuote_expectSuccess(void)
+{
+    char buf[] = "\"te\\\"st\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\"st", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeBackslash_expectSuccess(void)
+{
+    char buf[] = "\"te\\\\st\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\\st", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeNewline_expectSuccess(void)
+{
+    char buf[] = "\"te\\nst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\nst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeCarriageReturn_expectSuccess(void)
+{
+    char buf[] = "\"te\\rst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\rst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeTab_expectSuccess(void)
+{
+    char buf[] = "\"te\\tst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\tst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeBackspace_expectSuccess(void)
+{
+    char buf[] = "\"te\\bst\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL_STRING("te\bst", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withStringEscapeHex_expectSuccess(void)
+{
+    char buf[] = "\"te\\x01st\"";
+    const char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "s", &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    char expected[] = {'t','e','\x01','s','t','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withIntListShort_expectSuccess(void)
+{
+    char buf[] = "[1,2,3]";
+    uIntList_t intList;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "l", &intList, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(3, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(2, intList.pIntValues[1]);
+    TEST_ASSERT_EQUAL(3, intList.pIntValues[2]);
+}
+
+void test_uCxAtUtilParseParamsF_withIntListLong_expectSuccess(void)
+{
+    char buf[] = "[1,2,3,4,5,6,7,8,9,10,11,36,40,44,48,52,56,60,64]";
+    uIntList_t intList;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "l", &intList, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(19, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(10, intList.pIntValues[9]);
+    TEST_ASSERT_EQUAL(64, intList.pIntValues[18]);
+}
+
+void test_uCxAtUtilParseParamsF_withIntListAndOtherParams_expectSuccess(void)
+{
+    char buf[] = "123,[1,2,3,4,5],\"test\"";
+    int32_t num;
+    uIntList_t intList;
+    char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "dls", &num, &intList, &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(3, ret);
+    TEST_ASSERT_EQUAL(123, num);
+    TEST_ASSERT_EQUAL(5, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(5, intList.pIntValues[4]);
+    TEST_ASSERT_EQUAL_STRING("test", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withLongIntListAndOtherParams_expectSuccess(void)
+{
+    char buf[] = "456,[1,2,3,4,5,6,7,8,9,10,11,36,40,44,48,52,56,60,64],\"long test\"";
+    int32_t num;
+    uIntList_t intList;
+    char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "dls", &num, &intList, &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(3, ret);
+    TEST_ASSERT_EQUAL(456, num);
+    TEST_ASSERT_EQUAL(19, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(64, intList.pIntValues[18]);
+    TEST_ASSERT_EQUAL_STRING("long test", pStr);
 }
 
 void test_uCxAtUtilReplaceChar_withTestString_replaceSwithB()

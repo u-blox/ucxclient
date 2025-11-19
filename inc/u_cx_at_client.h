@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,13 +55,13 @@ typedef struct {
     uint8_t rxHeaderCount;
     uint16_t remainingDataBytes;
     uint8_t *pBuffer;
-    size_t bufferSize;
-    size_t bufferPos;
+    uint16_t bufferSize;
+    uint16_t bufferPos;
 } uCxAtBinaryRx_t;
 
 typedef struct {
     uint8_t *pBuffer;
-    size_t *pBufferLength;
+    uint16_t *pBufferLength;
 } uCxAtBinaryResponseBuf_t;
 
 typedef struct uCxAtClient {
@@ -170,7 +170,15 @@ int32_t uCxAtClientExecSimpleCmd(uCxAtClient_t *pClient, const char *pCmd);
   * Char   Type                 Desc
   * ---------------------------------------------
   * 'd'    int32_t              Integer
+  * 'l'    int16_t *, size_t    Integer list
+  *                             Note: Takes two args:
+  *                             - int16_t *pValues
+  *                             - size_t length
   * 's'    const char *         Null terminated string
+  * '$'    const char *, size_t Binary string
+  *                             Note: Takes two args:
+  *                             - const char *pString
+  *                             - size_t stringLength
   * 'i'    uSockIpAddress_t *   IP address
   * 'm'    uMacAddress_t *      MAC address
   * 'b'    uBtLeAddress_t *     Bluetooth address
@@ -250,7 +258,7 @@ void uCxAtClientCmdBeginF(uCxAtClient_t *pClient, const char *pCmd, const char *
   *                                 NOTE: The pExpectedRsp part will not be included in this string.
   */
 char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpectedRsp,
-                                    uint8_t *pBinaryBuf, size_t *pBinaryBufLength);
+                                    uint8_t *pBinaryBuf, uint16_t *pBinaryBufLength);
 
 /**
   * @brief  Get parsed AT response parameters for AT command started with uCxAtClientCmdBeginF()
@@ -274,7 +282,7 @@ char *uCxAtClientCmdGetRspParamLine(uCxAtClient_t *pClient, const char *pExpecte
   * @retval                         the number of parsed parameters on success otherwise negative value.
   */
 int32_t uCxAtClientCmdGetRspParamsF(uCxAtClient_t *pClient, const char *pExpectedRsp,
-                                    uint8_t *pBinaryBuf, size_t *pBinaryBufLength,
+                                    uint8_t *pBinaryBuf, uint16_t *pBinaryBufLength,
                                     const char *pParamFmt, ...);
 
 /**

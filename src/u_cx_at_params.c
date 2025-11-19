@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
+#include <limits.h>
 
 #include "u_cx_at_params.h"
 #include "u_cx_at_util.h"
@@ -158,7 +159,7 @@ static bool ipv6StringToIpAddress(const char *pAddressString,
 static int32_t findBdAddressType(const char *pStr,
                                  uBdAddressType_t *pBdAddressType)
 {
-    uint32_t length = strlen(pStr);
+    size_t length = strlen(pStr);
 
     switch (pStr[length - 1]) {
         case 'r':
@@ -229,7 +230,7 @@ int32_t uCxIpAddressToString(const uSockIpAddress_t *pIpAddress,
             }
             break;
         case U_SOCK_ADDRESS_TYPE_V6:
-            ret = strlen("[0000:0000:1111:1111:2222:2222:3333:3333]");
+            ret = (int32_t)strlen("[0000:0000:1111:1111:2222:2222:3333:3333]");
             if (ret >= (int32_t) sizeBytes) {
                 return -1;
             }
@@ -240,7 +241,7 @@ int32_t uCxIpAddressToString(const uSockIpAddress_t *pIpAddress,
                     *pWritePtr = ':';
                     pWritePtr++;
                 }
-                int len = snprintf(pWritePtr, pBufEnd - pWritePtr,
+                int len = snprintf(pWritePtr, (size_t)(pBufEnd - pWritePtr),
                                    "%04x:%04x",
                                    (unsigned int) ((pIpAddress->address.ipv6[3 - i] >> 16) & 0xFFFF),
                                    (unsigned int) ((pIpAddress->address.ipv6[3 - i] >> 0)  & 0xFFFF));
@@ -284,7 +285,7 @@ int32_t uCxBdAddressToString(const uBtLeAddress_t *pBtLeAddr, char *pBuffer, siz
     size_t pos = strlen(pBuffer);
     pBuffer[pos++] = (pBtLeAddr->type == U_BD_ADDRESS_TYPE_RANDOM) ? 'r' : 'p';
     pBuffer[pos] = 0;
-    return pos;
+    return (int32_t)pos;
 }
 
 int32_t uCxStringToMacAddress(const char *pMacString, uMacAddress_t *pMac)
@@ -303,5 +304,110 @@ int32_t uCxMacAddressToString(const uMacAddress_t *pMac, char *pBuffer, size_t s
     if (!uCxAtUtilBinaryToHex(&pMac->address[0], U_MAC_ADDR_LEN, pBuffer, sizeBytes)) {
         return -1;
     }
-    return strlen(pBuffer);
+    return (int32_t)strlen(pBuffer);
+}
+
+int32_t uCxStringToIntList(const char *pIntListString, uIntList_t *pIntList)
+{
+    U_CX_AT_PORT_ASSERT(pIntListString != NULL);
+    U_CX_AT_PORT_ASSERT(pIntList != NULL);
+
+    const char *pStr = pIntListString;
+    size_t len = strlen(pStr);
+
+    // Check for empty list []
+    if (len >= 2 && pStr[0] == '[' && pStr[1] == ']') {
+        pIntList->length = 0;
+        pIntList->pIntValues = NULL;
+        return 0;
+    }
+
+    // Must start with '['
+    if (len < 3 || pStr[0] != '[') {
+        return -1;
+    }
+
+    // Count commas to determine list size
+    size_t count = 1;
+    for (size_t i = 1; i < len - 1; i++) {
+        if (pStr[i] == ',') {
+            count++;
+        }
+    }
+
+    // Allocate space for values in the original string buffer
+    // We'll reuse the string memory for storing the parsed integers
+    pIntList->pIntValues = (int16_t *)pStr;
+    pIntList->length = count;
+
+    // Parse the integers
+    char *pParse = (char *)&pStr[1]; // Skip '['
+    for (size_t i = 0; i < count; i++) {
+        char *pEnd;
+        long value = strtol(pParse, &pEnd, 10);
+        if (pParse == pEnd || value < INT16_MIN || value > INT16_MAX) {
+            return -1;
+        }
+        pIntList->pIntValues[i] = (int16_t)value;
+        pParse = pEnd;
+        if (i < count - 1) {
+            if (*pParse != ',') {
+                return -1;
+            }
+            pParse++; // Skip comma
+        }
+    }
+
+    // Must end with ']'
+    if (*pParse != ']') {
+        return -1;
+    }
+
+    return 0;
+}
+
+int32_t uCxIntListToString(const uIntList_t *pIntList, char *pBuffer, size_t sizeBytes)
+{
+    U_CX_AT_PORT_ASSERT(pIntList != NULL);
+    U_CX_AT_PORT_ASSERT(pBuffer != NULL);
+
+    if (sizeBytes < 3) {
+        return -1;
+    }
+
+    if (pIntList->length == 0) {
+        pBuffer[0] = '[';
+        pBuffer[1] = ']';
+        pBuffer[2] = '\0';
+        return 2;
+    }
+
+    char *pWrite = pBuffer;
+    char *pEnd = pBuffer + sizeBytes;
+
+    // Start with '['
+    *pWrite++ = '[';
+
+    for (size_t i = 0; i < pIntList->length; i++) {
+        if (i > 0) {
+            if (pWrite >= pEnd - 1) {
+                return -1;
+            }
+            *pWrite++ = ',';
+        }
+        int written = snprintf(pWrite, (size_t)(pEnd - pWrite), "%d", pIntList->pIntValues[i]);
+        if (written < 0 || pWrite + written >= pEnd - 1) {
+            return -1;
+        }
+        pWrite += written;
+    }
+
+    // End with ']'
+    if (pWrite >= pEnd - 1) {
+        return -1;
+    }
+    *pWrite++ = ']';
+    *pWrite = '\0';
+
+    return (int32_t)(pWrite - pBuffer);
 }
