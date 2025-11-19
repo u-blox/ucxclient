@@ -133,11 +133,13 @@ typedef enum
 
 typedef enum
 {
-    U_WIFI_SECURITY_MODE_OPEN,    /**< Open security */
-    U_WIFI_SECURITY_MODE_WPA = 1, /**< WPA security */
-    U_WIFI_SECURITY_MODE_EAP = 2, /**< EAP-TLS security */
-    U_WIFI_SECURITY_MODE_PEAP = 3 /**< PEAP security */
-} uWifiSecurityMode_t;
+    U_BT_SECURITY_MODE_NONE,                                    /**< Security not required. No encryption enforced. */
+    U_BT_SECURITY_MODE_UNAUTHENTICATED = 1,                     /**< Require at least unauthenticated bonding. */
+    U_BT_SECURITY_MODE_AUTHENTICATED = 2,                       /**< Require authenticated bonding. No secure connections. */
+    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION = 3,     /**< Require authenticated bonding. Support secure connections. Fallback to simple pairing if
+                                                                     the remote side does not support secure connections. */
+    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION_ONLY = 4 /**< Require authenticated bonding. Strictly uses secure connections. */
+} uBtSecurityMode_t;
 
 typedef enum
 {
@@ -150,15 +152,6 @@ typedef enum
     U_BT_CONFIRM_NO,     /**< Deny bonding. */
     U_BT_CONFIRM_YES = 1 /**< Confirm bonding. */
 } uBtConfirm_t;
-
-typedef enum
-{
-    U_BT_SECURITY_MODE_NONE,                                    /**< No security required. */
-    U_BT_SECURITY_MODE_UNAUTHENTICATED = 1,                    /**< Unauthenticated encryption required. */
-    U_BT_SECURITY_MODE_AUTHENTICATED = 2,                       /**< Authenticated encryption required. */
-    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION = 3,     /**< Authenticated Secure Connection required. */
-    U_BT_SECURITY_MODE_AUTHENTICATED_SECURE_CONNECTION_ONLY = 4 /**< Authenticated Secure Connection Only. */
-} uBtSecurityMode_t;
 
 typedef enum
 {
@@ -226,6 +219,14 @@ typedef enum
     U_WIFI_TLS_VERSION_TLS1_3 = 2,          /**< TLS 1.3 */
     U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3 = 3 /**< TLS 1.2 or 1.3 (negotiate highest) */
 } uWifiTlsVersion_t;
+
+typedef enum
+{
+    U_WIFI_SECURITY_MODE_OPEN,    /**< Open security */
+    U_WIFI_SECURITY_MODE_WPA = 1, /**< WPA security */
+    U_WIFI_SECURITY_MODE_EAP = 2, /**< EAP-TLS security */
+    U_WIFI_SECURITY_MODE_PEAP = 3 /**< PEAP security */
+} uWifiSecurityMode_t;
 
 typedef enum
 {
@@ -503,12 +504,6 @@ typedef enum
     U_SEC_EXTENSION_SNI,              /**< Server Name Extension */
     U_SEC_EXTENSION_FRAGMENTATION = 1 /**< Handshake fragmentation */
 } uSecExtension_t;
-
-typedef enum
-{
-    U_TLS_EXT_DISABLED,   /**< TLS extension disabled */
-    U_TLS_EXT_ENABLED = 1 /**< TLS extension enabled */
-} uTlsExt_t;
 
 typedef enum
 {

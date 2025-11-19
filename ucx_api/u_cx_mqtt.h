@@ -66,12 +66,6 @@ typedef struct
     int32_t retain;        /**< Retain flag for message */
 } uCxMqttGetLastWillAndTestament_t;
 
-typedef struct
-{
-    int32_t mqtt_id;   /**< MQTT Config ID */
-    int32_t packet_id; /**< Packet ID of the message */
-} uCxMqttPublish_t;
-
 
 /* ------------------------------------------------------------
  * PUBLIC FUNCTIONS
@@ -376,10 +370,10 @@ int32_t uCxMqttDisconnect(uCxHandle_t * puCxHandle, int32_t mqtt_id);
  * @param      topic:           Topic name or filter (wildcard allowed)
  * @param      binary_data:     The MQTT message data.
  * @param      binary_data_len: length of binary_data
- * @param[out] pMqttPublishRsp: Please see \ref uCxMqttPublish_t
- * @return                      0 on success, negative value on error.
+ * @return                      Negative value on error. On success:
+ *                              Packet ID of the message
  */
-int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttQos_t qos, uMqttRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len, uCxMqttPublish_t * pMqttPublishRsp);
+int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttQos_t qos, uMqttRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len);
 
 /**
  * Subscribe or unsubscribe to/from MQTT topic.

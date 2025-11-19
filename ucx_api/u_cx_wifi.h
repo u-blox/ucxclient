@@ -569,6 +569,48 @@ int32_t uCxWifiSetRegulatoryDomain(uCxHandle_t * puCxHandle, uWifiRegDomain_t re
 int32_t uCxWifiGetRegulatoryDomain(uCxHandle_t * puCxHandle, uWifiRegDomain_t * pRegDomain);
 
 /**
+ * Together with the regulatory domain, the channel list determines which channels to used during scanning and connection,
+ * a mix of 2.4 and 5 GHz channels is possible. Note that the brackets [ ] must be included in the command, example
+ * AT+UWCL=[1,6,11,48,64]
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UWCL=<channel_list>,<channel_list_len>
+ *
+ * @param[in]  puCxHandle:       uCX API handle
+ * @param      channel_list:     
+ * @param      channel_list_len: length of channel_list
+ * @return                       0 on success, negative value on error.
+ */
+int32_t uCxWifiSetChannelList(uCxHandle_t * puCxHandle, const int16_t * channel_list, int32_t channel_list_len);
+
+/**
+ * Read the current channel list
+ * 
+ * Output AT command:
+ * > AT+UWCL?
+ *
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param[out] pChannelList: 
+ * @return                   0 on success, negative value on error.
+ */
+int32_t uCxWifiGetChannelList(uCxHandle_t * puCxHandle, uIntList_t * pChannelList);
+
+/**
+ * Get the active channels that are used for scan and connection
+ * 
+ * Output AT command:
+ * > AT+UWAC?
+ *
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param[out] pChannelList: 
+ * @return                   0 on success, negative value on error.
+ */
+int32_t uCxWifiGetActiveChannels(uCxHandle_t * puCxHandle, uIntList_t * pChannelList);
+
+/**
  * Initiate synchronous Wi-Fi scan (will lock AT interface until scan has finished)
  * 
  * Output AT command:

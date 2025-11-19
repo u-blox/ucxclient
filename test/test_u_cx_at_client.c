@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -222,6 +222,149 @@ void test_uCxAtClientSendCmdVaList_withBinary(void)
     TEST_ASSERT_EQUAL(sizeof(expected), gTxBufferPos);
 }
 
+void test_uCxAtClientSendCmdVaList_withIntList(void)
+{
+    int16_t values[] = {1, 2, 3};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "l",
+                                   values, (size_t)3, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=[1,2,3]\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withEmptyIntList(void)
+{
+    int16_t *values = NULL;
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "l",
+                                   values, (size_t)0, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=[]\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withNegativeIntList(void)
+{
+    int16_t values[] = {-1, -100, 50};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "l",
+                                   values, (size_t)3, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=[-1,-100,50]\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withBinaryString(void)
+{
+    char str[] = "test";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "$",
+                                   str, (size_t)4, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=\"test\"\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withBinaryStringWithEscapes(void)
+{
+    char str[] = "te\"st";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "$",
+                                   str, (size_t)5, U_CX_AT_UTIL_PARAM_LAST);
+    // Expected: AT+FOO="te\"st"\r where \" is backslash-quote (escaped quote)
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','\"','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withBinaryStringWithNullChar(void)
+{
+    char str[] = {'t', 'e', '\0', 's', 't'};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "$",
+                                   str, (size_t)5, U_CX_AT_UTIL_PARAM_LAST);
+    // Expected: AT+FOO="te\0st"\r where \0 is backslash followed by '0' (escaped null)
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','0','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_MEMORY(expected, &gTxBuffer[0], sizeof(expected) - 1);
+}
+
+void test_uCxAtClientSendCmdVaList_withHexSmallData(void)
+{
+    uint8_t data[] = {0x01, 0x02, 0x03};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "h",
+                                   data, (int32_t)sizeof(data), U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=010203\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withHexLargeData(void)
+{
+    // Test with data larger than chunk size to verify chunking works
+    uint8_t data[30];
+    for (int i = 0; i < 30; i++) {
+        data[i] = (uint8_t)i;
+    }
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "h",
+                                   data, (int32_t)sizeof(data), U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withHexEmptyData(void)
+{
+    uint8_t data[] = {0x00};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "h",
+                                   data, (int32_t)0, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL_STRING("AT+FOO=\r", &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeQuote(void)
+{
+    char str[] = "te\"st";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','\"','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeBackslash(void)
+{
+    char str[] = "te\\\\st";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','\\','\\','\\','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeNewline(void)
+{
+    char str[] = "te\nst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','n','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeCarriageReturn(void)
+{
+    char str[] = "te\rst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','r','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeTab(void)
+{
+    char str[] = "te\tst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','t','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeBackspace(void)
+{
+    char str[] = "te\bst";
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','b','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
+void test_uCxAtClientSendCmdVaList_withStringEscapeNonPrintable(void)
+{
+    char str[] = {'t','e','\x01','s','t','\0'};
+    uAtClientSendCmdVaList_wrapper(&gClient, "AT+FOO=", "s",
+                                   str, U_CX_AT_UTIL_PARAM_LAST);
+    const char expected[] = {'A','T','+','F','O','O','=','"','t','e','\\','x','0','1','s','t','"','\r','\0'};
+    TEST_ASSERT_EQUAL_STRING(expected, &gTxBuffer[0]);
+}
+
 void test_uCxAtClientExecSimpleCmdF_withStatusOk_expectSuccess(void)
 {
     char rxData[] = { "\r\nOK\r\n" };
@@ -304,7 +447,7 @@ void test_uCxAtClientCmdGetRspParamLine_withReadError_expectNull(void)
 void test_uCxAtClientCmdGetRspParamLine_withBinary(void)
 {
     uint8_t binaryBuf[6] = {0};
-    size_t binaryLen = sizeof(binaryBuf);
+    uint16_t binaryLen = sizeof(binaryBuf);
     uint8_t rxData[] = { '+','F','O','O',':','\"','f','o','o','\"',BIN_HDR(6),0x00,0x11,0x22,0x33,0x44,0x55};
     uint8_t expectedBinData[] = {0x00,0x11,0x22,0x33,0x44,0x55};
 

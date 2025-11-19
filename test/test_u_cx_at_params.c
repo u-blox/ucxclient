@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -279,5 +279,96 @@ void test_uCxBdAddressToString_withTooSmallBuffer_expectError(void)
     };
     char buffer[U_BD_STRING_MAX_LENGTH_BYTES - 1];
     int32_t ret = uCxBdAddressToString(&btLeAddress, &buffer[0], sizeof(buffer));
+    TEST_ASSERT_LESS_THAN(0, ret);
+}
+
+void test_uCxStringToIntList_withValidList_expectSuccess(void)
+{
+    char testStr[] = "[1,2,3]";
+    uIntList_t intList;
+    int32_t ret = uCxStringToIntList(testStr, &intList);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL(3, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(2, intList.pIntValues[1]);
+    TEST_ASSERT_EQUAL(3, intList.pIntValues[2]);
+}
+
+void test_uCxStringToIntList_withEmptyList_expectSuccess(void)
+{
+    char testStr[] = "[]";
+    uIntList_t intList;
+    int32_t ret = uCxStringToIntList(testStr, &intList);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL(0, intList.length);
+}
+
+void test_uCxStringToIntList_withNegativeValues_expectSuccess(void)
+{
+    char testStr[] = "[-1,-100,50]";
+    uIntList_t intList;
+    int32_t ret = uCxStringToIntList(testStr, &intList);
+    TEST_ASSERT_EQUAL(0, ret);
+    TEST_ASSERT_EQUAL(3, intList.length);
+    TEST_ASSERT_EQUAL(-1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(-100, intList.pIntValues[1]);
+    TEST_ASSERT_EQUAL(50, intList.pIntValues[2]);
+}
+
+void test_uCxStringToIntList_withInvalidFormat_expectError(void)
+{
+    char testStr[] = "1,2,3";
+    uIntList_t intList;
+    int32_t ret = uCxStringToIntList(testStr, &intList);
+    TEST_ASSERT_LESS_THAN(0, ret);
+}
+
+void test_uCxIntListToString_withValidList_expectSuccess(void)
+{
+    int16_t values[] = {1, 2, 3};
+    uIntList_t intList = {
+        .pIntValues = values,
+        .length = 3
+    };
+    char buffer[64];
+    int32_t ret = uCxIntListToString(&intList, buffer, sizeof(buffer));
+    TEST_ASSERT_GREATER_THAN(0, ret);
+    TEST_ASSERT_EQUAL_STRING("[1,2,3]", buffer);
+}
+
+void test_uCxIntListToString_withEmptyList_expectSuccess(void)
+{
+    uIntList_t intList = {
+        .pIntValues = NULL,
+        .length = 0
+    };
+    char buffer[64];
+    int32_t ret = uCxIntListToString(&intList, buffer, sizeof(buffer));
+    TEST_ASSERT_EQUAL(2, ret);
+    TEST_ASSERT_EQUAL_STRING("[]", buffer);
+}
+
+void test_uCxIntListToString_withNegativeValues_expectSuccess(void)
+{
+    int16_t values[] = {-1, -100, 50};
+    uIntList_t intList = {
+        .pIntValues = values,
+        .length = 3
+    };
+    char buffer[64];
+    int32_t ret = uCxIntListToString(&intList, buffer, sizeof(buffer));
+    TEST_ASSERT_GREATER_THAN(0, ret);
+    TEST_ASSERT_EQUAL_STRING("[-1,-100,50]", buffer);
+}
+
+void test_uCxIntListToString_withTooSmallBuffer_expectError(void)
+{
+    int16_t values[] = {1, 2, 3};
+    uIntList_t intList = {
+        .pIntValues = values,
+        .length = 3
+    };
+    char buffer[5];
+    int32_t ret = uCxIntListToString(&intList, buffer, sizeof(buffer));
     TEST_ASSERT_LESS_THAN(0, ret);
 }

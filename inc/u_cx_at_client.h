@@ -170,7 +170,15 @@ int32_t uCxAtClientExecSimpleCmd(uCxAtClient_t *pClient, const char *pCmd);
   * Char   Type                 Desc
   * ---------------------------------------------
   * 'd'    int32_t              Integer
+  * 'l'    int16_t *, size_t    Integer list
+  *                             Note: Takes two args:
+  *                             - int16_t *pValues
+  *                             - size_t length
   * 's'    const char *         Null terminated string
+  * '$'    const char *, size_t Binary string
+  *                             Note: Takes two args:
+  *                             - const char *pString
+  *                             - size_t stringLength
   * 'i'    uSockIpAddress_t *   IP address
   * 'm'    uMacAddress_t *      MAC address
   * 'b'    uBtLeAddress_t *     Bluetooth address

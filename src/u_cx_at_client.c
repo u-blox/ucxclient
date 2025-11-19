@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -524,12 +524,52 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 writeAndLog(pClient, buf, (size_t)len);
             }
             break;
+            case 'l': {
+                // Integer list
+                int16_t *pValues = va_arg(args, int16_t *);
+                size_t len = va_arg(args, size_t);
+
+                if (len == 0) {
+                    writeAndLog(pClient, "[]", 2);
+                } else {
+                    buf[0] = '['; // reserve first char for `[` and `,`
+
+                    for (size_t i = 0; i < len; i++) {
+                        int32_t len = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
+                        writeAndLog(pClient, buf, (size_t)len);
+                        buf[0] = ',';
+                    }
+                    writeAndLog(pClient, "]", 1);
+                }
+            }
+            break;
             case 's': {
                 // String
                 char *pStr = va_arg(args, char *);
-                writeAndLog(pClient, "\"", 1);
-                writeAndLog(pClient, pStr, strlen(pStr));
-                writeAndLog(pClient, "\"", 1);
+                size_t len = uCxAtUtilWriteEscString(pStr, strlen(pStr), buf, sizeof(buf));
+                if (len > 0) {
+                    writeAndLog(pClient, buf, len);
+                } else {
+                    // Buffer too small, fall back to unescaped
+                    writeAndLog(pClient, "\"", 1);
+                    writeAndLog(pClient, pStr, strlen(pStr));
+                    writeAndLog(pClient, "\"", 1);
+                }
+            }
+            break;
+            case '$': {
+                // Binary string (uses a length arg instead)
+                char *pStr = va_arg(args, char *);
+                size_t strLen = va_arg(args, size_t);
+                size_t len = uCxAtUtilWriteEscString(pStr, strLen, buf, sizeof(buf));
+                if (len > 0) {
+                    writeAndLog(pClient, buf, len);
+                } else {
+                    // Buffer too small, fall back to unescaped
+                    writeAndLog(pClient, "\"", 1);
+                    writeAndLog(pClient, pStr, strLen);
+                    writeAndLog(pClient, "\"", 1);
+                }
             }
             break;
             case 'i': {
@@ -560,10 +600,11 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 // Binary data transfer
                 uint8_t *pData = va_arg(args, uint8_t *);
                 int32_t len = va_arg(args, int32_t);
-                char binHeader[3];
-                binHeader[0] = U_CX_SOH_CHAR;
-                binHeader[1] = (char)(len >> 8);
-                binHeader[2] = (char)(len & 0xFF);
+                char binHeader[3] = {
+                    U_CX_SOH_CHAR,
+                    (char)(len >> 8),
+                    (char)(len & 0xFF),
+                };
                 U_CX_AT_PORT_ASSERT(len > 0);
                 writeNoLog(pClient, binHeader, sizeof(binHeader));
                 writeNoLog(pClient, pData, (size_t)len);
@@ -578,9 +619,17 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 // Binary data transferred as hex string
                 uint8_t *pData = va_arg(args, uint8_t *);
                 int32_t len = va_arg(args, int32_t);
-                for (int32_t i = 0; i < len; i++) {
-                    uCxAtUtilByteToHex(pData[i], buf);
-                    writeAndLog(pClient, buf, 2);
+                // Try to optimize to some degree by writing in chunks
+                const size_t chunkSize = (sizeof(buf) - 1) / 2;
+                while (len > 0) {
+                    int32_t bytesToConvert = (int32_t)U_MIN((size_t)len, chunkSize);
+                    if (!uCxAtUtilBinaryToHex(pData, (size_t)bytesToConvert, buf, sizeof(buf))) {
+                        U_CX_AT_PORT_ASSERT(false); // Should never happen - but to be on the safe side
+                    }
+                    size_t hexLen = (size_t)bytesToConvert * 2;
+                    writeAndLog(pClient, buf, hexLen);
+                    len -= bytesToConvert;
+                    pData += bytesToConvert;
                 }
             }
             break;

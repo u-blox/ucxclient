@@ -162,18 +162,22 @@ int32_t uCxMqttDisconnect(uCxHandle_t * puCxHandle, int32_t mqtt_id)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMQDC=", "d", mqtt_id, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttQos_t qos, uMqttRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len, uCxMqttPublish_t * pMqttPublishRsp)
+int32_t uCxMqttPublish(uCxHandle_t * puCxHandle, int32_t mqtt_id, uMqttQos_t qos, uMqttRetain_t retain, const char * topic, const uint8_t * binary_data, int32_t binary_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t packet_id;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UMQPB=", "dddsB", mqtt_id, qos, retain, topic, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQPB:", NULL, NULL, "dd", &pMqttPublishRsp->mqtt_id, &pMqttPublishRsp->packet_id, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMQPB:", NULL, NULL, "-d", &packet_id, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
         if (ret >= 0) {
             ret = endRet;
         }
+    }
+    if (ret >= 0) {
+        ret = packet_id;
     }
     return ret;
 }

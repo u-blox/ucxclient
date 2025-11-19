@@ -257,6 +257,44 @@ int32_t uCxWifiGetRegulatoryDomain(uCxHandle_t * puCxHandle, uWifiRegDomain_t * 
     return ret;
 }
 
+int32_t uCxWifiSetChannelList(uCxHandle_t * puCxHandle, const int16_t * channel_list, int32_t channel_list_len)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWCL=", "l", channel_list, channel_list_len, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiGetChannelList(uCxHandle_t * puCxHandle, uIntList_t * pChannelList)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWCL?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWCL:", NULL, NULL, "l", pChannelList, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxWifiGetActiveChannels(uCxHandle_t * puCxHandle, uIntList_t * pChannelList)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWAC?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWAC:", NULL, NULL, "l", pChannelList, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
 void uCxWifiStationScanDefaultBegin(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
