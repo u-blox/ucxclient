@@ -898,6 +898,10 @@ static void bluetoothScan(void);
 static void bluetoothConnect(void);
 static void bluetoothDisconnect(void);
 static void bluetoothSyncConnections(void);
+static void btManageProfiles(void);
+static void btSaveProfile(const char *name, const char *address);
+static bool connectToBtProfile(int profileIndex);
+static void btListProfiles(void);
 static void syncGattConnectionOnly(void);
 static void decodeAdvertisingData(const uint8_t *data, size_t dataLen);
 static void wifiMenu(void);
@@ -19840,6 +19844,240 @@ static void bluetoothSyncConnections(void)
     uCxEnd(&gUcxHandle);
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Bluetooth sync complete: %d connection(s) tracked", gBtConnectionCount);
+}
+
+static void btListProfiles(void)
+{
+    printf("\n=== Saved Bluetooth Device Profiles ===\n");
+    
+    if (gBtProfileCount == 0) {
+        printf("No saved profiles.\n");
+        return;
+    }
+    
+    for (int i = 0; i < gBtProfileCount; i++) {
+        printf("[%d] %s\n", i + 1, gBtProfiles[i].name);
+        printf("    Address: %s\n", gBtProfiles[i].address);
+        if (i == gActiveBtProfileIndex) {
+            printf("    [ACTIVE]\n");
+        }
+    }
+    printf("\n");
+}
+
+// Save a Bluetooth device profile
+static void btSaveProfile(const char *name, const char *address)
+{
+    if (gBtProfileCount >= MAX_BT_PROFILES) {
+        printf("ERROR: Maximum number of Bluetooth profiles (%d) reached.\n", MAX_BT_PROFILES);
+        printf("Please delete a profile before adding a new one.\n");
+        return;
+    }
+    
+    // Check for duplicate address
+    for (int i = 0; i < gBtProfileCount; i++) {
+        if (strcmp(gBtProfiles[i].address, address) == 0) {
+            // Update existing profile name
+            strncpy(gBtProfiles[i].name, name, sizeof(gBtProfiles[i].name) - 1);
+            gBtProfiles[i].name[sizeof(gBtProfiles[i].name) - 1] = '\0';
+            
+            saveSettings();
+            printf("Profile '%s' updated successfully.\n", name);
+            return;
+        }
+    }
+    
+    // Add new profile
+    BluetoothDeviceProfile_t *profile = &gBtProfiles[gBtProfileCount];
+    
+    strncpy(profile->name, name, sizeof(profile->name) - 1);
+    profile->name[sizeof(profile->name) - 1] = '\0';
+    
+    strncpy(profile->address, address, sizeof(profile->address) - 1);
+    profile->address[sizeof(profile->address) - 1] = '\0';
+    
+    gBtProfileCount++;
+    saveSettings();
+    
+    printf("Profile '%s' added successfully. (Total: %d/%d)\n", name, gBtProfileCount, MAX_BT_PROFILES);
+}
+
+// Connect to a Bluetooth device using a saved profile
+static bool connectToBtProfile(int profileIndex)
+{
+    if (profileIndex < 0 || profileIndex >= gBtProfileCount) {
+        printf("ERROR: Invalid profile index\n");
+        return false;
+    }
+    
+    const char *name = gBtProfiles[profileIndex].name;
+    const char *address = gBtProfiles[profileIndex].address;
+    
+    printf("\nConnecting to '%s' (Address: %s)...\n", name, address);
+    
+    // Parse address (might include type, e.g., "00:11:22:33:44:55,1")
+    uBtLeAddress_t addr;
+    char addrStr[18];
+    int addrType = 0;
+    
+    if (sscanf(address, "%17[^,],%d", addrStr, &addrType) >= 1) {
+        // Parse the MAC address
+        if (sscanf(addrStr, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+                   &addr.address[0], &addr.address[1], &addr.address[2],
+                   &addr.address[3], &addr.address[4], &addr.address[5]) == 6) {
+            addr.type = addrType;
+            
+            printf("Connecting GATT client to %s (type %d)...\n", addrStr, addrType);
+            
+            int32_t connHandle = uCxBluetoothConnect(&gUcxHandle, &addr);
+            if (connHandle >= 0) {
+                printf("✓ Connected successfully (handle: %d)\n", connHandle);
+                
+                // Track connection
+                if (gBtConnectionCount < MAX_BT_CONNECTIONS) {
+                    gBtConnections[gBtConnectionCount].handle = connHandle;
+                    memcpy(&gBtConnections[gBtConnectionCount].address, &addr, sizeof(uBtLeAddress_t));
+                    gBtConnections[gBtConnectionCount].active = true;
+                    gBtConnectionCount++;
+                }
+                
+                // Set as active profile
+                gActiveBtProfileIndex = profileIndex;
+                saveSettings();
+                
+                return true;
+            } else {
+                printf("ERROR: Failed to connect (error: %d)\n", connHandle);
+                return false;
+            }
+        } else {
+            printf("ERROR: Invalid MAC address format in profile\n");
+            return false;
+        }
+    } else {
+        printf("ERROR: Invalid address format in profile\n");
+        return false;
+    }
+}
+
+// Manage Bluetooth device profiles (add, edit, delete, select)
+static void btManageProfiles(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    char input[128];
+    
+    while (1) {
+        printf("\n=== Bluetooth Device Profile Management ===\n");
+        printf("[1] List all profiles\n");
+        printf("[2] Add new profile\n");
+        printf("[3] Delete profile\n");
+        printf("[4] Select profile for connection\n");
+        printf("[0] Back to Bluetooth menu\n");
+        printf("Choice: ");
+        
+        if (!fgets(input, sizeof(input), stdin)) {
+            continue;
+        }
+        
+        int choice = atoi(input);
+        
+        switch (choice) {
+            case 0:
+                return;
+                
+            case 1:  // List profiles
+                btListProfiles();
+                break;
+                
+            case 2: {  // Add new profile
+                char name[64], address[32];
+                
+                printf("\nAdd New Bluetooth Device Profile\n");
+                printf("Device name (e.g., Heart Rate Monitor, Thermometer): ");
+                if (!fgets(name, sizeof(name), stdin)) break;
+                name[strcspn(name, "\n")] = '\0';
+                if (strlen(name) == 0) {
+                    printf("ERROR: Device name cannot be empty.\n");
+                    break;
+                }
+                
+                printf("Bluetooth address (e.g., 00:11:22:33:44:55 or 00:11:22:33:44:55,1): ");
+                if (!fgets(address, sizeof(address), stdin)) break;
+                address[strcspn(address, "\n")] = '\0';
+                if (strlen(address) == 0) {
+                    printf("ERROR: Address cannot be empty.\n");
+                    break;
+                }
+                
+                btSaveProfile(name, address);
+                break;
+            }
+                
+            case 3: {  // Delete profile
+                btListProfiles();
+                if (gBtProfileCount == 0) break;
+                
+                printf("Select profile to delete (1-%d): ", gBtProfileCount);
+                if (!fgets(input, sizeof(input), stdin)) break;
+                int profileIdx = atoi(input) - 1;
+                
+                if (profileIdx < 0 || profileIdx >= gBtProfileCount) {
+                    printf("ERROR: Invalid profile number.\n");
+                    break;
+                }
+                
+                printf("Delete profile '%s'? (y/N): ", gBtProfiles[profileIdx].name);
+                if (fgets(input, sizeof(input), stdin)) {
+                    if (tolower(input[0]) == 'y') {
+                        // Shift remaining profiles down
+                        for (int i = profileIdx; i < gBtProfileCount - 1; i++) {
+                            gBtProfiles[i] = gBtProfiles[i + 1];
+                        }
+                        gBtProfileCount--;
+                        
+                        if (gActiveBtProfileIndex == profileIdx) {
+                            gActiveBtProfileIndex = -1;
+                        } else if (gActiveBtProfileIndex > profileIdx) {
+                            gActiveBtProfileIndex--;
+                        }
+                        
+                        saveSettings();
+                        printf("Profile deleted successfully.\n");
+                    }
+                }
+                break;
+            }
+                
+            case 4: {  // Select profile
+                btListProfiles();
+                if (gBtProfileCount == 0) break;
+                
+                printf("Select profile (1-%d, 0=manual): ", gBtProfileCount);
+                if (!fgets(input, sizeof(input), stdin)) break;
+                int profileIdx = atoi(input) - 1;
+                
+                if (profileIdx == -1) {
+                    gActiveBtProfileIndex = -1;
+                    printf("Manual mode selected.\n");
+                } else if (profileIdx >= 0 && profileIdx < gBtProfileCount) {
+                    gActiveBtProfileIndex = profileIdx;
+                    printf("Profile '%s' selected.\n", gBtProfiles[profileIdx].name);
+                    saveSettings();
+                } else {
+                    printf("ERROR: Invalid profile number.\n");
+                }
+                break;
+            }
+                
+            default:
+                printf("Invalid choice. Try again.\n");
+                break;
+        }
+    }
 }
 
 static void configureRegulatoryDomain(void)
