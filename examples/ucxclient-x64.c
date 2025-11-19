@@ -14918,7 +14918,7 @@ static void printWelcomeGuide(void)
     printf("  - [s] SPS - u-blox Serial Port Service data transfer\n");
     printf("  - [u] Bluetooth Functions - GATT Client/Server operations\n");
     printf("  - [e] GATT Server Profiles - 9 examples\n");
-    printf("  - [g] GATT Client Demos - 9 examples\n");
+    printf("  - [g] GATT Client Profiles - 9 examples\n");
     printf("\n");
     printf("WI-FI OPERATIONS (NORA-W36 only):\n");
     printf("  - [w] Wi-Fi Station - Scan, connect, disconnect, status\n");
@@ -14968,7 +14968,7 @@ static void printHelp(void)
     printf("      - GATT Server: Host custom services and characteristics\n");
     printf("  [e] GATT Server Profiles - 9 examples\n");
     printf("      - Heart Rate, HID, Automation IO, Battery, ESS, NUS, SPS, LNS, CTS\n");
-    printf("  [g] GATT Client Demos - 9 examples\n");
+    printf("  [g] GATT Client Profiles - 9 examples\n");
     printf("      - Discover and interact with remote GATT servers\n");
     printf("      - CTS, ESS, LNS, NUS, SPS, BAS, DIS, AIO clients\n");
     printf("\n");
@@ -15204,7 +15204,7 @@ static void printMenu(void)
                 // === EXAMPLES ===
                 printf("BLUETOOTH EXAMPLES\n");
                 printf("  [e]     GATT Server Profiles (9 examples)\n");
-                printf("  [g]     GATT Client Demos (9 examples)\n");
+                printf("  [g]     GATT Client Profiles (9 examples)\n");
                 printf("\n");
                 
                 if (hasWiFi) {
@@ -15447,13 +15447,11 @@ static void printMenu(void)
             break;
             
         case MENU_GATT_EXAMPLES:
-            printf("┌────────────────────────────────────────────────────────────────────────────────┐\n");
-            printf("│  GATT SERVER PROFILES (9 Examples)                          │\n");
-            printf("│  This device provides services to remote BLE clients        │\n");
-            printf("└────────────────────────────────────────────────────────────────────────────────┘\n");
+            printf("\n");
+            printf("         GATT SERVER (Provides services to remote BLE clients)\n");
+            printf("\n");
             printf("\n");
             printf("  [h] Heart Rate Service - Heartbeat notifications\n");
-            printf("  [k] HID Keyboard + Media + Battery - Full HID device\n");
             printf("  [b] Battery Service only - Simple battery reporting\n");
             printf("  [e] Environmental Sensing - Temperature + Humidity\n");
             printf("  [u] Nordic UART Service (NUS) - Bidirectional text data\n");
@@ -15461,6 +15459,8 @@ static void printMenu(void)
             printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
             printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
+            printf("\n");
+            printf("  [k] HID Keyboard + Media + Battery - Full HID device [Not working yet]\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -19084,9 +19084,9 @@ static void showGattServerConnectionInfo(void)
         uMacAddress_t btAddr;
         if (uCxSystemGetLocalAddress(&gUcxHandle, U_INTERFACE_ID_BLUETOOTH, &btAddr) == 0) {
             printf("\n");
-            printf("┌────────────────────────────────────────────────────────────────────────────────┐\n");
-            printf("│  GATT Server Ready - Connect from GATT Client              │\n");
-            printf("└────────────────────────────────────────────────────────────────────────────────┘\n");
+            printf("────────────────────────────────────────────────────────────────────────────────\n");
+            printf("GATT Server Ready - Connect from GATT Client\n");
+            printf("────────────────────────────────────────────────────────────────────────────────\n");
             printf("\n");
             printf("  Device Name: %s\n", deviceNameCopy[0] ? deviceNameCopy : "Unknown");
             printf("  BT Address:  %02X:%02X:%02X:%02X:%02X:%02X\n",
@@ -19824,8 +19824,8 @@ static void bluetoothConnect(void)
     int32_t connHandle = uCxBluetoothConnect(&gUcxHandle, &addr);
     
     if (connHandle >= 0) {
-        printf("\u2713 Connected successfully! Connection handle: %d\n", connHandle);
-        printf("  Wait for +UEBTC URC to confirm connection...\n\n");
+        printf("Connected successfully! Connection handle: %d\n", connHandle);
+        printf("Wait for +UEBTC URC to confirm connection...\n\n");
         
         // Offer to save as profile if it's not already saved
         if (deviceName[0] != '\0') {
@@ -19851,7 +19851,7 @@ static void bluetoothConnect(void)
                     char fullAddr[32];
                     snprintf(fullAddr, sizeof(fullAddr), "%s,%d", addrStr, addr.type);
                     btSaveProfile(deviceName, fullAddr);
-                    printf("\u2713 Profile saved\n");
+                    printf("Profile saved\n");
                 }
             }
         }
