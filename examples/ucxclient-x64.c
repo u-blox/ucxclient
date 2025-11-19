@@ -20887,6 +20887,13 @@ static void bluetoothScan(void)
             printf("\n");
         }
     }
+    
+    // Store scan results in global array for use in bluetoothConnect()
+    gLastScanDeviceCount = deviceCount;
+    if (deviceCount > 0) {
+        memcpy(gLastScanDevices, devices, sizeof(BtScanDevice_t) * deviceCount);
+        printf("(Scan results saved - use Bluetooth Connect to select a device)\n\n");
+    }
 }
 
 static void bluetoothConnect(void)
