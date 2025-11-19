@@ -16055,12 +16055,18 @@ static void printMenu(void)
             } else {
                 printf("  [a]     AT command test\n");
                 printf("  [i]     Device information (ATI9)\n");
-                printf("  [p]     Power & System - Reboot, power save, deep sleep\n");
                 printf("  [t]     AT Terminal (interactive)\n");
             }
             printf("\n");
             
             if (gUcxConnected) {
+                // === POWER & SYSTEM ===
+                printf("POWER & SYSTEM\n");
+                printf("  [r]     Reboot module\n");
+                printf("  [j]     Factory reset (restore defaults)\n");
+                printf("  [p]     Power Management - Power save, deep sleep\n");
+                printf("\n");
+                
                 // === BLUETOOTH FEATURES (only when connected) ===
                 printf("BLUETOOTH FEATURES\n");
                 
@@ -16607,6 +16613,10 @@ static void handleUserInput(void)
                 choice = 19;  // Location Examples
             } else if (firstChar == 'p') {
                 choice = 62;  // Power & System menu
+            } else if (firstChar == 'r') {
+                choice = 5;   // Reboot module
+            } else if (firstChar == 'j') {
+                choice = 53;  // Factory reset
             } else if (firstChar == 'a') {
                 choice = 3;   // AT command test
             } else if (firstChar == 'i') {
