@@ -5077,16 +5077,20 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
     }
     printf("\n");
     
-    // Log the current CCCD handles for debugging
+    // Log the current CCCD handles (conditional debug output)
+#ifdef DEBUG_GATT_VERBOSE
     printf("[DEBUG] Known CCCD handles: BootKbd=%d, Keyboard=%d, Battery=%d, Heartbeat=%d, CTS=%d, ESS_Temp=%d, ESS_Hum=%d\n", 
            gHidBootKbdCccdHandle, gHidKeyboardCccdHandle, gBatteryCccdHandle, 
            gHeartbeatCccdHandle, gCtsServerTimeCccdHandle, 
            gEnvServerTempCccdHandle, gEnvServerHumCccdHandle);
+#endif
     
     // Update current connection handle (client is connected!)
     if (gCurrentGattConnHandle != conn_handle) {
         gCurrentGattConnHandle = conn_handle;
+#ifdef DEBUG_GATT_VERBOSE
         printf("[DEBUG] Updated GATT connection handle to %d\n", conn_handle);
+#endif
     }
     
     // Check if this is a CCCD write for Boot Keyboard Input
@@ -5398,8 +5402,10 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
             uint16_t cccdValue = value->pData[0] | (value->pData[1] << 8);
             
             U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "CCCD value: 0x%04X", cccdValue);
+#ifdef DEBUG_GATT_VERBOSE
             printf("[DEBUG] Heartbeat CCCD write: conn=%d, char_handle=%d, cccd_handle=%d, value=0x%04X\n",
                    conn_handle, gHeartbeatCharHandle, gHeartbeatCccdHandle, cccdValue);
+#endif
             
             if (cccdValue & 0x0001) {  // Bit 0 = Notifications enabled
                 // Client enabled notifications

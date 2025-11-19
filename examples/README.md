@@ -199,6 +199,29 @@ The Windows app provides:
    - Connect to Wi-Fi (credentials saved securely)
    - Disconnect from Wi-Fi
 
+3.5. **Time Synchronization**
+   - **NTP Time Sync**: Synchronize system time with NTP servers (±1 second accuracy)
+   - **TimeAPI.io Integration**: 7 comprehensive endpoints for time and timezone data
+     * Get current time by timezone (e.g., Europe/Stockholm)
+     * Get current time by IP address (auto-detect external IP)
+     * Get current time by coordinates (latitude/longitude)
+     * Get timezone info by name (IANA timezone database)
+     * Get timezone info by IP address
+     * Get timezone info by coordinates
+     * Health check (API status verification)
+   - **Automatic Time Tracking**: Updates from multiple sources (PC, HTTP headers, NTP, TimeAPI.io)
+   - **Source Provenance**: Displays time source and accuracy (e.g., "±1s, NTP")
+   - **Timezone-to-Position**: Estimates geographic position from timezone (60+ IANA zones mapped)
+   - **HTTPS Support**: TLS 1.2 for secure time synchronization
+
+3.6. **Location Services**
+   - **External IP Detection**: Discover public IP address via ipify.org
+   - **IP Geolocation**: Approximate location from IP address (±20 km accuracy via ip-api.com)
+   - **Wi-Fi Positioning**: Precise positioning using nearby access points (±48 m accuracy via Combain API)
+   - **Timezone Position Estimation**: Geographic position from timezone data (±300-2000 km depending on zone)
+   - **Position Tracking**: Real-time position display with source and accuracy metadata
+   - **Status Dashboard**: Shows current position: "59.3293, 18.0686 (±500m, Wi-Fi)"
+
 4. **Socket Operations (TCP/UDP)**
    - Create TCP or UDP sockets
    - Connect to remote servers
