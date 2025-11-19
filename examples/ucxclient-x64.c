@@ -451,6 +451,20 @@ static BluetoothDeviceProfile_t gBtProfiles[MAX_BT_PROFILES];
 static int gBtProfileCount = 0;
 static int gActiveBtProfileIndex = -1;  // Currently selected profile (-1 = none/manual)
 
+// Last Bluetooth scan results (shared between scan and connect operations)
+#define MAX_BT_SCAN_DEVICES 100
+#define MAX_ADV_DATA 256
+typedef struct {
+    uBtLeAddress_t addr;
+    char name[64];
+    int8_t rssi;
+    uint8_t advData[MAX_ADV_DATA];
+    size_t advDataLen;
+} BtScanDevice_t;
+
+static BtScanDevice_t gLastScanDevices[MAX_BT_SCAN_DEVICES];
+static int gLastScanDeviceCount = 0;
+
 // Dynamic firmware path storage per product
 typedef struct {
     char productName[64];      // e.g., "NORA-W36", "NORA-B26"
