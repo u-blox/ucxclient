@@ -439,6 +439,18 @@ static WiFiProfile_t gWifiProfiles[MAX_WIFI_PROFILES];
 static int gWifiProfileCount = 0;
 static int gActiveProfileIndex = -1;  // Currently selected profile (-1 = none/manual)
 
+// GATT Client Profile Management (up to 10 saved devices)
+// Also used for SPS connections - shared Bluetooth device profiles
+typedef struct {
+    char name[64];              // Profile name / Device name (e.g., "Heart Rate Monitor", "Thermometer")
+    char address[32];           // Bluetooth address (e.g., "00:11:22:33:44:55" or "00:11:22:33:44:55,1")
+} BluetoothDeviceProfile_t;
+
+#define MAX_BT_PROFILES 10
+static BluetoothDeviceProfile_t gBtProfiles[MAX_BT_PROFILES];
+static int gBtProfileCount = 0;
+static int gActiveBtProfileIndex = -1;  // Currently selected profile (-1 = none/manual)
+
 // Dynamic firmware path storage per product
 typedef struct {
     char productName[64];      // e.g., "NORA-W36", "NORA-B26"
@@ -17330,11 +17342,14 @@ static void loadSettings(void)
     // Reset profile data
     gWifiProfileCount = 0;
     gActiveProfileIndex = -1;
+    gBtProfileCount = 0;
+    gActiveBtProfileIndex = -1;
     
     FILE *f = fopen(gSettingsFilePath, "r");
     if (f) {
         char line[256];
         int tempProfileCount = 0;
+        int tempBtProfileCount = 0;
         
         while (fgets(line, sizeof(line), f)) {
             // Remove trailing newline/whitespace
@@ -17363,6 +17378,34 @@ static void loadSettings(void)
             }
             else if (strncmp(line, "wifi_active_profile=", 20) == 0) {
                 gActiveProfileIndex = atoi(line + 20);
+            }
+            else if (strncmp(line, "bt_profile_count=", 17) == 0) {
+                tempBtProfileCount = atoi(line + 17);
+                if (tempBtProfileCount > MAX_BT_PROFILES) {
+                    tempBtProfileCount = MAX_BT_PROFILES;
+                }
+            }
+            else if (strncmp(line, "bt_profile_", 11) == 0) {
+                // Parse profile field: bt_profile_N_field=value
+                int profileIdx;
+                char field[32];
+                if (sscanf(line + 11, "%d_%31[^=]", &profileIdx, field) == 2) {
+                    if (profileIdx >= 0 && profileIdx < MAX_BT_PROFILES) {
+                        char *value = strchr(line, '=');
+                        if (value) {
+                            value++;  // Skip '='
+                            
+                            if (strcmp(field, "name") == 0) {
+                                strncpy(gBtProfiles[profileIdx].name, value, sizeof(gBtProfiles[profileIdx].name) - 1);
+                                gBtProfiles[profileIdx].name[sizeof(gBtProfiles[profileIdx].name) - 1] = '\0';
+                            }
+                            else if (strcmp(field, "address") == 0) {
+                                strncpy(gBtProfiles[profileIdx].address, value, sizeof(gBtProfiles[profileIdx].address) - 1);
+                                gBtProfiles[profileIdx].address[sizeof(gBtProfiles[profileIdx].address) - 1] = '\0';
+                            }
+                        }
+                    }
+                }
             }
             else if (strncmp(line, "wifi_profile_", 13) == 0) {
                 // Parse profile field: wifi_profile_N_field=value
@@ -17405,6 +17448,12 @@ static void loadSettings(void)
                     printf("Loaded Combain API key from settings\n");
                 }
             }
+            else if (strncmp(line, "reg_domain=", 11) == 0) {
+                gRegDomain = atoi(line + 11);
+                if (gRegDomain < 0 || gRegDomain > 10) {
+                    gRegDomain = 0;  // Default to World if invalid
+                }
+            }
             else if (strncmp(line, "firmware_path_", 14) == 0) {
                 // Dynamic firmware path: firmware_path_<PRODUCT>=<path>
                 // e.g., "firmware_path_NORA-W36=/path/to/firmware.bin"
@@ -17435,6 +17484,11 @@ static void loadSettings(void)
             printf("Loaded %d Wi-Fi profile(s)\n", gWifiProfileCount);
         }
         
+        gBtProfileCount = tempBtProfileCount;
+        if (gBtProfileCount > 0) {
+            printf("Loaded %d Bluetooth profile(s)\n", gBtProfileCount);
+        }
+        
         fclose(f);
     }
 }
@@ -17447,6 +17501,7 @@ static void saveSettings(void)
         fprintf(f, "last_port=%s\n", gComPort);
         fprintf(f, "last_device=%s\n", gLastDeviceModel);
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
+        fprintf(f, "reg_domain=%d\n", gRegDomain);
         
         // Save Combain API key (obfuscated)
         if (strlen(gCombainApiKey) > 0) {
@@ -17468,6 +17523,13 @@ static void saveSettings(void)
             fprintf(f, "wifi_profile_%d_password=%s\n", i, obfuscatedProfilePassword);
             
             fprintf(f, "wifi_profile_%d_ip_prefix=%s\n", i, gWifiProfiles[i].ipPrefix);
+        }
+        
+        // Save Bluetooth profiles (up to 10)
+        fprintf(f, "bt_profile_count=%d\n", gBtProfileCount);
+        for (int i = 0; i < gBtProfileCount; i++) {
+            fprintf(f, "bt_profile_%d_name=%s\n", i, gBtProfiles[i].name);
+            fprintf(f, "bt_profile_%d_address=%s\n", i, gBtProfiles[i].address);
         }
         
         // Save dynamic per-product firmware paths
