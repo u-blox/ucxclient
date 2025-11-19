@@ -16353,6 +16353,25 @@ static void printMenu(void)
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
+        case MENU_POWER_SYSTEM:
+            printf("\n");
+            printf("           POWER & SYSTEM MANAGEMENT\n");
+            printf("\n");
+            printf("\n");
+            printf("POWER MANAGEMENT\n");
+            printf("  [4] Get current power save level\n");
+            printf("  [5] Set power save level (0=disabled, 1=deep sleep, 2=power save)\n");
+            printf("  [7] Set power save timeout (seconds)\n");
+            printf("  [8] Enter deep sleep with GPIO wakeup\n");
+            printf("\n");
+            printf("SYSTEM COMMANDS\n");
+            printf("  [1] Reboot module\n");
+            printf("  [2] Factory reset (restore defaults)\n");
+            printf("  [3] Read crash/assert info (AT+USYCI?)\n");
+            printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
         case MENU_BLUETOOTH_FUNCTIONS:
             printf("\n");
             printf("                   BLUETOOTH FUNCTIONS\n");
@@ -16543,18 +16562,29 @@ static void handleUserInput(void)
     // Remove newline
     input[strcspn(input, "\n")] = 0;
     
+    // Trim leading whitespace
+    char *trimmedInput = input;
+    while (*trimmedInput == ' ' || *trimmedInput == '\t') {
+        trimmedInput++;
+    }
+    // Trim trailing whitespace
+    size_t len = strlen(trimmedInput);
+    while (len > 0 && (trimmedInput[len-1] == ' ' || trimmedInput[len-1] == '\t')) {
+        trimmedInput[--len] = '\0';
+    }
+    
     // Handle ENTER key (empty input) for quick connect
-    if (strlen(input) == 0 && gMenuState == MENU_MAIN && !gUcxConnected && gComPort[0] != '\0') {
+    if (strlen(trimmedInput) == 0 && gMenuState == MENU_MAIN && !gUcxConnected && gComPort[0] != '\0') {
         quickConnectToLastDevice();
         return;
     }
     
     // Parse choice
-    int choice = atoi(input);
+    int choice = atoi(trimmedInput);
     
     // Handle letter inputs (convert to numbers)
-    if (choice == 0 && strlen(input) > 0) {
-        char firstChar = (char)tolower(input[0]);
+    if (choice == 0 && strlen(trimmedInput) > 0) {
+        char firstChar = (char)tolower(trimmedInput[0]);
         
         // Handle special commands available in all menus
         if (firstChar == 'q') {
@@ -16907,7 +16937,7 @@ static void handleUserInput(void)
                 case 0:
                     // Don't exit on Enter/0 in main menu - only 'q' should quit
                     // This prevents accidental exits
-                    if (strlen(input) > 0) {
+                    if (strlen(trimmedInput) > 0) {
                         printf("Invalid choice! Use [q] to quit.\n");
                     }
                     break;
