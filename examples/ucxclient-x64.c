@@ -569,6 +569,7 @@ typedef enum {
     MENU_LOCATION,
     MENU_DIAGNOSTICS,
     MENU_SECURITY_TLS,
+    MENU_POWER_SYSTEM,
     MENU_FIRMWARE_UPDATE,
     MENU_API_LIST,
     MENU_AT_TERMINAL,
@@ -910,6 +911,11 @@ static void executeAtTerminal(void);
 static void executeAti9(void);
 static void executeModuleReboot(void);
 static void executeFactoryReset(void);
+static void executeCrashInfo(void);
+static void executeGetPowerSaveLevel(void);
+static void executeSetPowerSaveLevel(void);
+static void executeSetPowerSaveTimeout(void);
+static void executeDeepSleep(void);
 static void showLegacyAdvertisementStatus(void);
 static bool ensureLegacyAdvertisementEnabled(void);
 static void showGattServerConnectionInfo(void);
@@ -16048,8 +16054,7 @@ static void printMenu(void)
             } else {
                 printf("  [a]     AT command test\n");
                 printf("  [i]     Device information (ATI9)\n");
-                printf("  [r]     Reboot module\n");
-                printf("  [j]     Factory reset (restore defaults)\n");
+                printf("  [p]     Power & System - Reboot, power save, deep sleep\n");
                 printf("  [t]     AT Terminal (interactive)\n");
             }
             printf("\n");
@@ -16599,14 +16604,12 @@ static void handleUserInput(void)
                 choice = 17;  // Time Sync Examples
             } else if (firstChar == 'k') {
                 choice = 19;  // Location Examples
+            } else if (firstChar == 'p') {
+                choice = 62;  // Power & System menu
             } else if (firstChar == 'a') {
                 choice = 3;   // AT command test
             } else if (firstChar == 'i') {
                 choice = 4;   // Device information (ATI9)
-            } else if (firstChar == 'r') {
-                choice = 5;   // Reboot module
-            } else if (firstChar == 'j') {
-                choice = 53;  // Factory reset
             }
         }
         
@@ -16850,6 +16853,13 @@ static void handleUserInput(void)
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         gMenuState = MENU_SECURITY_TLS;
+                    }
+                    break;
+                case 62:  // Also accept 'p' or 'P' - Power & System
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        gMenuState = MENU_POWER_SYSTEM;
                     }
                     break;
                 case 18:  // Also accept 'h' or 'H' - HTTP Examples  
@@ -17206,6 +17216,42 @@ static void handleUserInput(void)
                     break;
                 default:
                     printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_POWER_SYSTEM:
+            switch (choice) {
+                case 1:
+                    executeModuleReboot();
+                    break;
+                case 2:
+                    executeFactoryReset();
+                    break;
+                case 3:
+                    executeCrashInfo();
+                    break;
+                case 4:
+                    executeGetPowerSaveLevel();
+                    break;
+                case 5:
+                    executeSetPowerSaveLevel();
+                    break;
+                case 6:
+                    // Get power save timeout - will implement
+                    printf("\\nGet power save timeout not yet implemented\\n");
+                    break;
+                case 7:
+                    executeSetPowerSaveTimeout();
+                    break;
+                case 8:
+                    executeDeepSleep();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\\n");
                     break;
             }
             break;
@@ -19743,6 +19789,177 @@ static void executeFactoryReset(void)
         printf("Module may have shut down completely (no +STARTUP received).\n");
     } else {
         printf("ERROR: Failed to send AT+CPWROFF (error %d)\n", result);
+    }
+}
+
+static void executeCrashInfo(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Crash/Assert Information (AT+USYCI?) ---\n");
+    
+    // Send AT+USYCI? to read crash information
+    // This is a custom AT command to query crash/assert data
+    int32_t result = uCxAtClientExecSimpleCmd(gUcxHandle.pAtClient, "AT+USYCI?");
+    
+    if (result == 0) {
+        printf("✓ Command executed successfully\n");
+        printf("Note: Check output above for crash/assert information\n");
+    } else {
+        printf("✗ ERROR: Failed to read crash info (error %d)\n", result);
+        printf("Tip: This command may not be supported on all firmware versions\n");
+    }
+}
+
+static void executeGetPowerSaveLevel(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Get Power Save Level ---\n");
+    
+    int32_t level;
+    int32_t result = uCxPowerGetPowerSaveLevel(&gUcxHandle, &level);
+    
+    if (result == 0) {
+        printf("Current power save level: %d\n", level);
+        printf("\nPower save levels:\n");
+        printf("  0 = Power save disabled (maximum performance)\n");
+        printf("  1 = Light sleep (moderate power savings)\n");
+        printf("  2 = Deep sleep (maximum power savings)\n");
+    } else {
+        printf("ERROR: Failed to get power save level (error %d)\n", result);
+    }
+}
+
+static void executeSetPowerSaveLevel(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Set Power Save Level ---\n");
+    printf("\nPower save levels:\n");
+    printf("  [0] Power save disabled (maximum performance)\n");
+    printf("  [1] Light sleep (moderate power savings)\n");
+    printf("  [2] Deep sleep (maximum power savings)\n");
+    printf("\nEnter level (0-2): ");
+    
+    char input[32];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    int level = atoi(input);
+    
+    if (level < 0 || level > 2) {
+        printf("ERROR: Invalid level. Must be 0, 1, or 2\n");
+        return;
+    }
+    
+    int32_t result = uCxPowerSetPowerSaveLevel(&gUcxHandle, level);
+    
+    if (result == 0) {
+        printf("✓ Power save level set to %d\n", level);
+        if (level == 0) {
+            printf("Power saving is now DISABLED (maximum performance)\n");
+        } else if (level == 1) {
+            printf("Light sleep mode enabled (moderate power savings)\n");
+        } else {
+            printf("Deep sleep mode enabled (maximum power savings)\n");
+        }
+    } else {
+        printf("✗ ERROR: Failed to set power save level (error %d)\n", result);
+    }
+}
+
+static void executeSetPowerSaveTimeout(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n--- Set Power Save Timeout ---\n");
+    printf("\nEnter timeout in milliseconds (e.g., 5000 for 5 seconds): ");
+    
+    char input[32];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    int timeoutMs = atoi(input);
+    
+    if (timeoutMs < 0) {
+        printf("ERROR: Invalid timeout. Must be positive\n");
+        return;
+    }
+    
+    int32_t result = uCxPowerSetPowerSaveTimeout(&gUcxHandle, timeoutMs);
+    
+    if (result == 0) {
+        printf("✓ Power save timeout set to %d ms (%.1f seconds)\n", 
+               timeoutMs, timeoutMs / 1000.0);
+        printf("Module will enter power save mode after %.1f seconds of inactivity\n",
+               timeoutMs / 1000.0);
+    } else {
+        printf("✗ ERROR: Failed to set power save timeout (error %d)\n", result);
+    }
+}
+
+static void executeDeepSleep(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("╔═══════════════════════════════════════════════════════════╗\n");
+    printf("║                 DEEP SLEEP MODE WARNING                   ║\n");
+    printf("╠═══════════════════════════════════════════════════════════╣\n");
+    printf("║  The module will enter deep sleep and disconnect.         ║\n");
+    printf("║  You will need to manually wake it up or power cycle it.  ║\n");
+    printf("║                                                           ║\n");
+    printf("║  Wakeup options:                                          ║\n");
+    printf("║  • GPIO wakeup (if configured)                            ║\n");
+    printf("║  • Timer wakeup (if configured)                           ║\n");
+    printf("║  • Power cycle (remove and restore power)                 ║\n");
+    printf("╚═══════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    
+    printf("Type 'SLEEP' (in uppercase) to confirm deep sleep, or anything else to cancel: ");
+    char confirm[32];
+    if (!fgets(confirm, sizeof(confirm), stdin)) {
+        return;
+    }
+    confirm[strcspn(confirm, "\\r\\n")] = 0;  // Remove newline
+    
+    if (strcmp(confirm, "SLEEP") != 0) {
+        printf("\\nDeep sleep cancelled.\\n");
+        return;
+    }
+    
+    printf("\\n--- Entering Deep Sleep Mode ---\\n");
+    printf("Sending AT+UPDSLP (deep sleep with GPIO wakeup)...\\n");
+    
+    // Use GPIO wakeup mode (most common)
+    int32_t result = uCxPowerDeepSleepWithGpioWakeup(&gUcxHandle);
+    
+    if (result == 0) {
+        printf("✓ Deep sleep command sent successfully\\n");
+        printf("Module is entering deep sleep mode...\\n");
+        printf("\\nTo wake up the module:\\n");
+        printf("  1. Configure GPIO wakeup pin\\n");
+        printf("  2. Or power cycle the device\\n");
+    } else {
+        printf("✗ ERROR: Failed to enter deep sleep (error %d)\\n", result);
     }
 }
 
