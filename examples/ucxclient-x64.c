@@ -95,6 +95,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_http.h"
 #include "u_cx_network_time.h"
 #include "u_cx_security.h"
+#include "u_cx_power.h"
 #include "u_cx_diagnostics.h"
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
