@@ -20203,42 +20203,47 @@ static void btManageProfiles(void)
 
 static void configureRegulatoryDomain(void)
 {
-    const char *domainNames[] = {
-        "World     (Ch 1-11, 36-165)",
-        "ETSI      (Ch 1-13, 36-140)",
-        "FCC       (Ch 1-11, 36-165)",
-        "IC        (Ch 1-11, 36-165)",
-        "NZ        (Ch 1-13, 36-165)",
-        "MKK       (Ch 1-14, 36-140)",
-        "NCC       (Ch 1-11, 56-165)",
-        "ACMA      (Ch 1-13, 36-165)",
-        "KCC       (Ch 1-13, 36-165)",
-        "SA        (Ch 1-13, 36-165)",
-        "Brazil    (Ch 1-13, 36-165)"
-    };
-    const int numDomains = sizeof(domainNames) / sizeof(domainNames[0]);
-
-    printf("\n=== Configure Regulatory Domain ===\n\n");
-
-    // Show current setting
-    printf("Current regulatory domain: ");
-    if (gRegDomain >= 0 && gRegDomain < numDomains) {
-        printf("%d - %s\n\n", gRegDomain, domainNames[gRegDomain]);
+    printf("\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("                        REGULATORY DOMAIN CONFIGURATION\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    
+    // Get current regulatory domain
+    uWifiRegDomain_t currentDomain;
+    if (uCxWifiGetRegulatoryDomain(&gUcxHandle, &currentDomain) == 0) {
+        const char *domainNames[] = {
+            "World", "ETSI (Europe)", "FCC (USA)", "IC/ISED (Canada)",
+            "NZ (New Zealand)", "MKK (Japan)", "NCC (Taiwan)", "ACMA (Australia)",
+            "KCC (South Korea)", "SA (South Africa)", "Brazil"
+        };
+        printf("Current Regulatory Domain: [%d] %s\n", currentDomain,
+               (currentDomain <= 10) ? domainNames[currentDomain] : "Unknown");
     } else {
-        printf("Unknown (%d)\n\n", gRegDomain);
+        printf("Failed to get current regulatory domain\n");
     }
+    
+    printf("\n");
+    printf("REGULATORY DOMAINS:\n");
+    printf("  [0] World (Channels: 1-11, 36,40,44,48, 52,56,60,64)\n");
+    printf("  [1] ETSI - Europe (Channels: 1-13, 36-64, 100-165)\n");
+    printf("  [2] FCC - USA (Channels: 1-11, 36-144, 149-165)\n");
+    printf("  [3] IC/ISED - Canada (Channels: 1-11, 36-64, 100-165)\n");
+    printf("  [4] NZ - New Zealand (Channels: 1-13, 36-64, 100-165)\n");
+    printf("  [5] MKK - Japan (Channels: 1-14, 36-144)\n");
+    printf("  [6] NCC - Taiwan (Channels: 1-11, 36-144, 149-165)\n");
+    printf("  [7] ACMA - Australia (Channels: 1-13, 36-64, 100-165)\n");
+    printf("  [8] KCC - South Korea (Channels: 1-13, 36-144, 149-165)\n");
+    printf("  [9] SA - South Africa (Channels: 1-13, 36-64, 100-140)\n");
+    printf(" [10] Brazil (Channels: 1-13, 36-64, 100-165)\n");
+    printf("\n");
+    printf("  [c] Show active channels\n");
+    printf("  [0] Cancel\n");
+    printf("\n");
+    printf("Choice: ");
 
-    // List available domains
-    printf("Available regulatory domains:\n");
-    for (int i = 0; i < numDomains; i++) {
-        printf("  %d. %s\n", i, domainNames[i]);
-    }
-
-    printf("\nOptions:\n");
-    printf("  0-10: Set regulatory domain\n");
-    printf("  c:    View configured channel list\n");
-    printf("  Enter: Return to Wi-Fi menu\n");
-    printf("\nEnter choice: ");
+    printf("\n");
+    printf("Choice: ");
 
     char input[10];
     if (fgets(input, sizeof(input), stdin) == NULL) {
@@ -20261,8 +20266,8 @@ static void configureRegulatoryDomain(void)
     char *endptr;
     long domain = strtol(input, &endptr, 10);
 
-    if (*endptr != '\0' || domain < 0 || domain >= numDomains) {
-        printf("\nInvalid domain number. Please enter 0-%d.\n", numDomains - 1);
+    if (*endptr != '\0' || domain < 0 || domain > 10) {
+        printf("\nInvalid domain number. Please enter 0-10.\n");
         return;
     }
 
