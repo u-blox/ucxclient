@@ -16579,8 +16579,8 @@ static void handleUserInput(void)
                 }
             } else if (firstChar == 'z' && gUcxConnected) {
                 choice = 2;  // When connected, 'z' = toggle timestamps (same as '2')
-            } else if (firstChar == 'v' && gUcxConnected) {
-                choice = 3;  // When connected, 'v' = list API commands (same as '3')
+            } else if (firstChar == 'v') {
+                choice = 12;  // List UCX API commands (works when connected or not)
             } else if (firstChar == '?' && gUcxConnected) {
                 choice = 4;  // When connected, '?' = help (same as '4')
             } else if (firstChar == 'c') {
