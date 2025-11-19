@@ -20,6 +20,42 @@ int32_t uCxSystemReboot(uCxHandle_t * puCxHandle)
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+CPWROFF", "", U_CX_AT_UTIL_PARAM_LAST);
 }
 
+int32_t uCxSystemStartSerialFirmwareUpdate1(uCxHandle_t * puCxHandle, int32_t baud_rate)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYFWUS=", "d", baud_rate, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxSystemStartSerialFirmwareUpdate2(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYFWUS=", "dd", baud_rate, flow_control, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxSystemStartSerialFirmwareUpdateDefault(uCxHandle_t * puCxHandle)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYFWUS", "", U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxSystemStartBootLoader1(uCxHandle_t * puCxHandle, int32_t baud_rate)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYBL=", "d", baud_rate, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxSystemStartBootLoader2(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYBL=", "dd", baud_rate, flow_control, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxSystemStartBootLoaderDefault(uCxHandle_t * puCxHandle)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USYBL", "", U_CX_AT_UTIL_PARAM_LAST);
+}
+
 int32_t uCxSystemStoreConfiguration(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
