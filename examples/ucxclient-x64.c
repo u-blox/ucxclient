@@ -16146,14 +16146,18 @@ static void printHelp(void)
     printf("        - Subscribe to topics and receive messages\n");
     printf("        - Publish messages with QoS levels\n");
     printf("        - TLS/SSL support for secure connections\n");
-    printf("    [y] NTP Examples - Network time synchronization\n");
-    printf("        - Sync time with popular NTP servers\n");
-    printf("        - Configure custom NTP server\n");
-    printf("        - Display synchronized system time\n");
+    printf("    [y] Time Sync Examples - Multi-source time synchronization\n");
+    printf("        - NTP time sync with automatic system time update (±1 second accuracy)\n");
+    printf("        - TimeAPI.io integration (7 endpoints: time by timezone/IP/coordinates)\n");
+    printf("        - Automatic HTTP Date header parsing for time tracking\n");
+    printf("        - Source provenance tracking (PC, HTTP, NTP, TimeAPI.io)\n");
+    printf("        - Timezone-to-position estimation (60+ IANA timezones mapped)\n");
     printf("    [k] Location Examples - IP & Wi-Fi based positioning\n");
-    printf("        - External IP detection\n");
-    printf("        - IP-based geolocation\n");
-    printf("        - Wi-Fi positioning with Combain (indoor/outdoor)\n");
+    printf("        - External IP detection via ipify.org\n");
+    printf("        - IP-based geolocation (±20 km accuracy via ip-api.com)\n");
+    printf("        - Wi-Fi positioning with Combain API (±48 m accuracy)\n");
+    printf("        - Position estimation from timezone data (±300-2000 km)\n");
+    printf("        - Real-time position tracking with accuracy metadata\n");
     printf("\n");
     printf("TOOLS & SETTINGS:\n");
     printf("  [91] Toggle logging - Show/hide AT command traffic\n");
@@ -16352,7 +16356,7 @@ static void printMenu(void)
                     printf("Wi-Fi EXAMPLES\n");
                     printf("  [h]     HTTP Examples (GET, POST)\n");
                     printf("  [m]     MQTT Examples (Publish, Subscribe)\n");
-                    printf("  [y]     Time Sync Examples (NTP, World Time API)\n");
+                    printf("  [y]     Time Sync Examples (NTP, TimeAPI.io)\n");
                     printf("  [k]     Location Examples (IP Geolocation, Wi-Fi Positioning)\n");
                     printf("\n");
                 }
