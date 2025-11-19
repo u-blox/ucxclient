@@ -153,6 +153,7 @@ bool uCxAtUtilReverseBinaryToHex(const uint8_t *pData, size_t dataLen, char *pBu
 char *uCxAtUtilFindParamEnd(char *pStr)
 {
     bool insideString = false;
+    bool insideBracket = false;
     bool escape = false;
 
     char *pIter = pStr;
@@ -167,13 +168,17 @@ char *uCxAtUtilFindParamEnd(char *pStr)
             }
         } else if (*pIter == '"') {
             insideString = true;
-        } else if (*pIter == ',') {
+        } else if (*pIter == '[') {
+            insideBracket = true;
+        } else if (*pIter == ']') {
+            insideBracket = false;
+        } else if (*pIter == ',' && !insideBracket) {
             break;
         }
         pIter++;
     }
 
-    if (insideString || escape) {
+    if (insideString || escape || insideBracket) {
         return NULL;
     }
 

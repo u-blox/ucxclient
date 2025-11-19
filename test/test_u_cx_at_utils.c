@@ -451,6 +451,60 @@ void test_uCxAtUtilParseParamsF_withStringEscapeHex_expectSuccess(void)
     TEST_ASSERT_EQUAL_STRING(expected, pStr);
 }
 
+void test_uCxAtUtilParseParamsF_withIntListShort_expectSuccess(void)
+{
+    char buf[] = "[1,2,3]";
+    uIntList_t intList;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "l", &intList, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(3, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(2, intList.pIntValues[1]);
+    TEST_ASSERT_EQUAL(3, intList.pIntValues[2]);
+}
+
+void test_uCxAtUtilParseParamsF_withIntListLong_expectSuccess(void)
+{
+    char buf[] = "[1,2,3,4,5,6,7,8,9,10,11,36,40,44,48,52,56,60,64]";
+    uIntList_t intList;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "l", &intList, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(1, ret);
+    TEST_ASSERT_EQUAL(19, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(10, intList.pIntValues[9]);
+    TEST_ASSERT_EQUAL(64, intList.pIntValues[18]);
+}
+
+void test_uCxAtUtilParseParamsF_withIntListAndOtherParams_expectSuccess(void)
+{
+    char buf[] = "123,[1,2,3,4,5],\"test\"";
+    int32_t num;
+    uIntList_t intList;
+    char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "dls", &num, &intList, &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(3, ret);
+    TEST_ASSERT_EQUAL(123, num);
+    TEST_ASSERT_EQUAL(5, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(5, intList.pIntValues[4]);
+    TEST_ASSERT_EQUAL_STRING("test", pStr);
+}
+
+void test_uCxAtUtilParseParamsF_withLongIntListAndOtherParams_expectSuccess(void)
+{
+    char buf[] = "456,[1,2,3,4,5,6,7,8,9,10,11,36,40,44,48,52,56,60,64],\"long test\"";
+    int32_t num;
+    uIntList_t intList;
+    char *pStr;
+    int32_t ret = uCxAtUtilParseParamsF(buf, "dls", &num, &intList, &pStr, U_CX_AT_UTIL_PARAM_LAST);
+    TEST_ASSERT_EQUAL(3, ret);
+    TEST_ASSERT_EQUAL(456, num);
+    TEST_ASSERT_EQUAL(19, intList.length);
+    TEST_ASSERT_EQUAL(1, intList.pIntValues[0]);
+    TEST_ASSERT_EQUAL(64, intList.pIntValues[18]);
+    TEST_ASSERT_EQUAL_STRING("long test", pStr);
+}
+
 void test_uCxAtUtilReplaceChar_withTestString_replaceSwithB()
 {
     char str[] = "MyTeststring";
