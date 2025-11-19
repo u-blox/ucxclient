@@ -28,6 +28,7 @@
 #include <ctype.h>   // isprint()
 
 #include "u_cx_at_config.h"
+#include "u_cx_error_codes.h"  // For friendly error names
 
 #include "u_cx_log.h"
 #include "u_cx_at_util.h"
@@ -130,7 +131,20 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 int code = (int)strtol(pCodeStr, &pEnd, 10);
                 if (isdigit((int) * pCodeStr) && (*pEnd == 0)) {
                     pClient->status = U_CX_EXTENDED_ERROR_OFFSET - code;
-                    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Command failed with error code: %d", code);
+                    
+                    // Get friendly error name if available
+                    const char *errorName = uCxGetErrorName(-code);
+                    const char *errorModule = uCxGetErrorModule(-code);
+                    
+                    if (errorName && errorModule) {
+                        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                                       "Command failed with error code: %d (%s [%s])", 
+                                       code, errorName, errorModule);
+                    } else {
+                        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
+                                       "Command failed with error code: %d", code);
+                    }
+                    
                     ret = AT_PARSER_GOT_STATUS;
                 }
             }
@@ -535,8 +549,8 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                     buf[0] = '['; // reserve first char for `[` and `,`
 
                     for (size_t i = 0; i < len; i++) {
-                        int32_t len = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
-                        writeAndLog(pClient, buf, (size_t)len);
+                        int32_t written = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
+                        writeAndLog(pClient, buf, (size_t)written);
                         buf[0] = ',';
                     }
                     writeAndLog(pClient, "]", 1);
@@ -600,11 +614,10 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 // Binary data transfer
                 uint8_t *pData = va_arg(args, uint8_t *);
                 int32_t len = va_arg(args, int32_t);
-                char binHeader[3] = {
-                    U_CX_SOH_CHAR,
-                    (char)(len >> 8),
-                    (char)(len & 0xFF),
-                };
+                char binHeader[3];
+                binHeader[0] = U_CX_SOH_CHAR;
+                binHeader[1] = (char)(len >> 8);
+                binHeader[2] = (char)(len & 0xFF);
                 U_CX_AT_PORT_ASSERT(len > 0);
                 writeNoLog(pClient, binHeader, sizeof(binHeader));
                 writeNoLog(pClient, pData, (size_t)len);

@@ -230,7 +230,7 @@ int32_t uCxIpAddressToString(const uSockIpAddress_t *pIpAddress,
             }
             break;
         case U_SOCK_ADDRESS_TYPE_V6:
-            ret = (int32_t) strlen("[0000:0000:1111:1111:2222:2222:3333:3333]");
+            ret = (int32_t)strlen("[0000:0000:1111:1111:2222:2222:3333:3333]");
             if (ret >= (int32_t) sizeBytes) {
                 return -1;
             }

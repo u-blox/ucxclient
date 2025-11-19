@@ -101,6 +101,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_sps.h"
 #include "u_cx_firmware_update.h"
 #include "u_cx_version.h"
+#include "u_cx_error_codes.h"
 #include "qrcodegen/qrcodegen.h"
 
 // Port layer
@@ -139,6 +140,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_MQTT_DATA          (1 << 12) // MQTT data received (+UEMQDA)
 #define URC_FLAG_BT_CONNECTED       (1 << 13) // Bluetooth connected (+UEBTC)
 #define URC_FLAG_BT_DISCONNECTED    (1 << 14) // Bluetooth disconnected (+UEBTDC)
+#define URC_FLAG_HTTP_RESPONSE_READY (1 << 15) // HTTP response ready (+UEHTCRS)
 
 // Global handles
 static uCxAtClient_t gUcxAtClient;
@@ -494,6 +496,10 @@ static volatile uint32_t gUrcEventFlags = 0;
 static volatile bool gPasskeyRequestPending = false;
 static uBtLeAddress_t gPasskeyRequestAddress;
 
+// HTTP status tracking (set by URC, waited on by HTTP operations)
+static volatile int32_t gHttpLastStatusCode = 0;
+static volatile int32_t gHttpLastSessionId = -1;
+
 // Ping test results
 static volatile int32_t gPingSuccess = 0;
 static volatile int32_t gPingFailed = 0;
@@ -509,6 +515,39 @@ static char gIperfOutputBuffer[1024] = "";
 // Reboot timing
 static volatile ULONGLONG gStartupTimestamp = 0;
 static volatile ULONGLONG gLastStartupConfigTime = 0;
+
+// ============================================================================
+// TIME AND POSITION TRACKING
+// ============================================================================
+
+// Time tracking with multiple sources
+typedef struct {
+    time_t unixTime;           // Unix timestamp (seconds since Jan 1, 1970)
+    char source[32];           // Source: "PC", "HTTP Header", "World Time API", "NTP", etc.
+    int accuracySeconds;       // Estimated accuracy in seconds
+    bool valid;                // Is this time valid?
+} TimeInfo_t;
+
+static TimeInfo_t gCurrentTime = {0};
+
+// Position tracking with multiple sources
+typedef struct {
+    double latitude;           // Latitude in degrees
+    double longitude;          // Longitude in degrees
+    int accuracyMeters;        // Estimated accuracy in meters
+    char source[32];           // Source: "Manual", "IP Geo", "Wi-Fi Positioning", "GPS", etc.
+    bool valid;                // Is this position valid?
+} PositionInfo_t;
+
+static PositionInfo_t gCurrentPosition = {0};
+
+// Helper functions to update time and position
+static void updateTime(time_t unixTime, const char *source, int accuracySeconds);
+static void updatePosition(double lat, double lon, int accuracyMeters, const char *source);
+static void getTimeString(char *buffer, size_t bufferSize);
+static void getPositionString(char *buffer, size_t bufferSize);
+static bool parseHttpDateHeader(const char *headers, time_t *outTime);
+static bool estimatePositionFromTimezone(const char *timezone, double *lat, double *lon, int *accuracyMeters);
 
 // Menu state
 typedef enum {
@@ -526,6 +565,7 @@ typedef enum {
     MENU_HID,
     MENU_MQTT,
     MENU_HTTP,
+    MENU_TIME_SYNC,
     MENU_LOCATION,
     MENU_DIAGNOSTICS,
     MENU_SECURITY_TLS,
@@ -633,11 +673,13 @@ static char gSettingsFilePath[MAX_PATH] = "";
 // SOCKET OPERATIONS (TCP/UDP)
 //   - socketCreateTcp()                Create TCP socket
 //   - socketCreateUdp()                Create UDP socket
-//   - socketConnect()                  Connect socket
+//   - socketConnect()                  Connect socket (client)
+//   - socketBind()                     Bind socket to local port
+//   - socketListen()                   Start TCP server (listen for connections)
 //   - socketSendData()                 Send data on socket
 //   - socketReadData()                 Read data from socket
-//   - socketClose()                    Close socket
-//   - socketCloseByHandle()            Close socket by handle
+//   - socketClose()                    Close socket (current session)
+//   - socketCloseByHandle()            Close socket by handle (any socket)
 //   - socketListStatus()               List all sockets
 //
 // MQTT OPERATIONS
@@ -934,6 +976,8 @@ static void socketCreateUdp(void);
 static void socketConnect(void);
 static void socketSendData(void);
 static void socketReadData(void);
+static void socketBind(void);
+static void socketListen(void);
 static void socketClose(void);
 static void socketCloseByHandle(void);
 static void socketListStatus(void);
@@ -1034,6 +1078,7 @@ static void httpMenu(void);
 static void diagnosticsMenu(void);
 static void securityTlsMenu(void);
 static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi, int32_t channel);
+static bool checkWiFiConnectivity(bool checkInternet, bool verbose);
 
 // Diagnostics functions
 static void pingExample(void);
@@ -1084,10 +1129,29 @@ static int32_t getHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSiz
 static int32_t postHttpBody(int32_t sessionId, const char *data, int32_t dataLength);
 static bool configureHttpSession(int32_t sessionId, const char *host, const char *path, bool useHttps, bool verbose);
 static int32_t extractContentLength(const char *headers);
+static bool isChunkedTransferEncoding(const char *headers);
 static bool httpRequestWithResponse(int32_t sessionId, bool isPost, const uint8_t *postData, int32_t postDataLen,
                                      char *headerBuffer, int32_t headerBufferSize, int32_t *pHeaderLen,
                                      uint8_t *bodyBuffer, int32_t bodyBufferSize, int32_t *pBodyLen,
                                      void (*bodyCallback)(const uint8_t *data, int32_t len));
+
+// ============================================================================
+// ERROR FORMATTING HELPER
+// ============================================================================
+
+// Format error code in user-friendly way: "ERROR: <description> (error code: -123 / U_ERROR_NAME)"
+// If error name/module not found, just shows the numeric code
+static void printError(const char *message, int32_t errorCode)
+{
+    const char *errorName = uCxGetErrorName(errorCode);
+    const char *errorModule = uCxGetErrorModule(errorCode);
+    
+    if (errorName && errorModule) {
+        printf("ERROR: %s (error: %d / %s [%s])\n", message, errorCode, errorName, errorModule);
+    } else {
+        printf("ERROR: %s (error: %d)\n", message, errorCode);
+    }
+}
 
 // ============================================================================
 // BLUETOOTH HELPER FUNCTIONS
@@ -2717,9 +2781,25 @@ static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_outpu
 static void httpRequestStatusUrc(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char *description)
 {
     (void)puCxHandle;
+    
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
-                   "HTTP response: session %d, status %d %s", 
+                   "*** httpRequestStatusUrc CALLED: session=%d, status=%d, desc='%s' ***", 
+                   session_id, status_code, description ? description : "NULL");
+    
+    // Track session and status code
+    gHttpLastSessionId = session_id;
+    gHttpLastStatusCode = status_code;
+    
+    // Add newline before debug output to avoid mixing with AT TX lines
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "\nHTTP response ready: session %d, status %d %s", 
                    session_id, status_code, description ? description : "");
+    
+    // Signal that HTTP response is ready to read
+    signalEvent(URC_FLAG_HTTP_RESPONSE_READY);
+    
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "*** httpRequestStatusUrc signaled event flag 0x%X ***", URC_FLAG_HTTP_RESPONSE_READY);
 }
 
 static void httpDisconnectUrc(struct uCxHandle *puCxHandle, int32_t session_id)
@@ -3326,6 +3406,97 @@ static void socketListStatus(void)
             printf("\nNote: Socket(s) listed above were created outside this session.\n");
             printf("      Use option [8] to close any socket by handle.\n");
         }
+    }
+    
+    printf("─────────────────────────────────────────────────\n");
+}
+
+static void socketBind(void)
+{
+    char input[64];
+    int localPort;
+    
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created. Create a socket first.\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("BIND SOCKET TO LOCAL PORT\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("Socket handle: %d\n", gCurrentSocket);
+    printf("\nEnter local port (1-65535): ");
+    
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    input[strcspn(input, "\n")] = 0;
+    localPort = atoi(input);
+    
+    if (localPort < 1 || localPort > 65535) {
+        printf("ERROR: Invalid port number (must be 1-65535)\n");
+        printf("─────────────────────────────────────────────────\n");
+        return;
+    }
+    
+    printf("\nBinding socket %d to local port %d...\n", gCurrentSocket, localPort);
+    
+    int32_t result = uCxSocketBind(&gUcxHandle, gCurrentSocket, localPort);
+    
+    if (result == 0) {
+        printf("✓ Socket %d bound to local port %d\n", gCurrentSocket, localPort);
+    } else {
+        printf("✗ Failed to bind socket (error code: %d)\n", result);
+        printf("\nPossible reasons:\n");
+        printf("  - Port %d is already in use\n", localPort);
+        printf("  - Socket is already bound\n");
+        printf("  - Invalid port number\n");
+    }
+    
+    printf("─────────────────────────────────────────────────\n");
+}
+
+static void socketListen(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created. Create a TCP socket first.\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("START TCP SERVER (LISTEN)\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("Socket handle: %d\n", gCurrentSocket);
+    printf("\nStarting TCP server on socket %d...\n", gCurrentSocket);
+    printf("NOTE: Socket must be bound to a port first (use option [6])\n");
+    printf("\n");
+    
+    int32_t result = uCxSocketListen1(&gUcxHandle, gCurrentSocket);
+    
+    if (result == 0) {
+        printf("✓ Socket %d is now listening for connections\n", gCurrentSocket);
+        printf("\nServer is ready to accept incoming TCP connections.\n");
+        printf("Connections will trigger +UUSOCO URC events.\n");
+    } else {
+        printf("✗ Failed to start listening (error code: %d)\n", result);
+        printf("\nPossible reasons:\n");
+        printf("  - Socket is not bound to a port (use option [6] first)\n");
+        printf("  - Socket is not a TCP socket\n");
+        printf("  - Socket is already listening or connected\n");
     }
     
     printf("─────────────────────────────────────────────────\n");
@@ -9967,11 +10138,10 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
     
     // Step 2: If station not connected, check if Access Point is active
     if (!stationConnected) {
-        // Try to list AP stations - this only works if AP is running
-        // If the command succeeds, AP is active (even if no stations connected)
-        if (uCxWifiApListStationsBegin(&gUcxHandle) == 0) {
+        // Try to get AP connection params - this only works if AP is running
+        uCxWifiApGetConnectionParams_t apParams;
+        if (uCxWifiApGetConnectionParamsBegin(&gUcxHandle, &apParams)) {
             apActive = true;
-            // Don't need to actually iterate - just end the list
             uCxEnd(&gUcxHandle);
         }
     }
@@ -10256,6 +10426,7 @@ static int32_t parseContentLength(const char *headers, int32_t headersLen)
     while (*p >= '0' && *p <= '9') {
         int digit = *p - '0';
         tmp = tmp * 10 + digit;
+        p++;  // CRITICAL: Advance pointer to next character
     }
     
     // Return 0 for Content-Length: 0, or the parsed value
@@ -10323,6 +10494,42 @@ static int32_t extractContentLength(const char *headers)
         return -1;
     }
     return parseContentLength(headers, (int32_t)strlen(headers));
+}
+
+// Check if response uses chunked transfer encoding
+// Returns true if "Transfer-Encoding: chunked" is present in headers
+static bool isChunkedTransferEncoding(const char *headers)
+{
+    if (!headers) {
+        return false;
+    }
+    
+    // Look for "Transfer-Encoding:" header (case-insensitive)
+    const char *ptr = headers;
+    while (*ptr) {
+        // Find next line
+        if (_strnicmp(ptr, "Transfer-Encoding:", 18) == 0) {
+            // Skip header name and whitespace
+            ptr += 18;
+            while (*ptr == ' ' || *ptr == '\t') {
+                ptr++;
+            }
+            
+            // Check if value contains "chunked" (case-insensitive)
+            if (_strnicmp(ptr, "chunked", 7) == 0) {
+                return true;
+            }
+        }
+        
+        // Move to next line
+        ptr = strchr(ptr, '\n');
+        if (!ptr) {
+            break;
+        }
+        ptr++;
+    }
+    
+    return false;
 }
 
 // Configure HTTP or HTTPS session with host, path, and TLS settings
@@ -10451,8 +10658,14 @@ static bool httpRequestWithResponse(int32_t sessionId, bool isPost, const uint8_
         return false;
     }
     
-    // Extract content length from headers
+    // Check transfer encoding and content length
+    bool isChunked = isChunkedTransferEncoding(headerBuffer);
     int32_t contentLength = extractContentLength(headerBuffer);
+    
+    // For chunked encoding, ignore content-length and read until complete
+    if (isChunked) {
+        contentLength = -1;  // Signal to read until moreToRead is false
+    }
     
     // Read response body
     int32_t totalBytes = getHttpBody(sessionId, bodyBuffer, bodyBufferSize, contentLength, bodyCallback);
@@ -10474,6 +10687,20 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
     }
     
     *pHeaderLen = 0;
+    
+    // Wait for HTTP response ready URC (timeout: 30 seconds)
+    //if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 30)) {
+    //    printf("ERROR: Timeout waiting for HTTP response ready\n");
+    //    return false;
+    //}
+    
+    // Verify the URC was for our session
+    //if (gHttpLastSessionId != sessionId) {
+    //    printf("ERROR: HTTP response ready for wrong session (expected %d, got %d)\n", 
+    //           sessionId, gHttpLastSessionId);
+    //    return false;
+    //}
+    
     uCxHttpGetHeader_t headerResp;
     
     // Loop to read all header chunks
@@ -10491,11 +10718,14 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
                 *pHeaderLen += (int32_t)headerResp.byte_array_data.length;
             }
             
+            // Check if there's more data BEFORE calling uCxEnd()
+            bool hasMoreData = (headerResp.more_to_read != 0);
+            
             uCxEnd(&gUcxHandle);
             
-            // Continue reading if there's more
-            if (headerResp.more_to_read == 0) {
-                break;  // All headers received
+            // Break if all headers received
+            if (!hasMoreData) {
+                break;
             }
         } else {
             return false;  // Failed to read headers
@@ -10505,6 +10735,24 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
     // Null-terminate for parsing
     if (*pHeaderLen < bufferSize) {
         headerBuffer[*pHeaderLen] = '\0';
+    }
+    
+    // Parse Date header to update time
+    time_t httpTime;
+    if (parseHttpDateHeader(headerBuffer, &httpTime)) {
+        updateTime(httpTime, "HTTP Header", 2);  // ±2 seconds accuracy
+    }
+    
+    // Print transfer encoding information
+    bool isChunked = isChunkedTransferEncoding(headerBuffer);
+    int32_t contentLen = extractContentLength(headerBuffer);
+    
+    if (isChunked) {
+        printf("✓ Transfer-Encoding: chunked (will read until complete)\n");
+    } else if (contentLen > 0) {
+        printf("✓ Content-Length: %d bytes\n", contentLen);
+    } else if (contentLen == 0) {
+        printf("✓ Content-Length: 0 bytes (empty response)\n");
     }
     
     // Success if we completed reading (more_to_read reached 0)
@@ -10675,8 +10923,8 @@ static bool getExternalIp(int32_t sessionId, char *ipBuffer, int32_t ipBufferSiz
     
     int32_t err;
     
-    // Configure HTTPS for ipify
-    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    // Configure HTTP for ipify
+    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_NO_TLS);
     if (err < 0) {
         if (verbose) {
             printf("ERROR: Failed to enable TLS (error: %d)\n", err);
@@ -10684,7 +10932,7 @@ static bool getExternalIp(int32_t sessionId, char *ipBuffer, int32_t ipBufferSiz
         return false;
     }
     
-    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "https://api.ipify.org", 443);
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "http://api.ipify.org", 80);
     if (err < 0) {
         if (verbose) {
             printf("ERROR: Failed to set connection parameters for ipify (error: %d)\n", err);
@@ -10766,6 +11014,9 @@ static bool getExternalIp(int32_t sessionId, char *ipBuffer, int32_t ipBufferSiz
     if (verbose) {
         printf("✓ External IP detected: %s\n", ipBuffer);
     }
+    
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
     
     return true;
 }
@@ -10987,6 +11238,9 @@ static void httpGetExample(void)
         printf("✓ Response saved to '%s'\n", filename);
     }
     
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -11161,6 +11415,9 @@ static void httpPostExample(void)
     }
     printf("\n─────────────────────────────────────────────────\n");
     printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -11542,6 +11799,9 @@ static void httpQuoteApiExample(void)
         printf("%s\n", jsonResponse);
     }
     
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -11699,6 +11959,9 @@ static void httpTimeApiExample(void)
         printf("%s\n", jsonResponse);
     }
     
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -11839,6 +12102,9 @@ static void httpStatusCodeExample(void)
     
     printf("\n");
     printf("✓ Response received: %d bytes\n", totalBytes);
+    
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -11997,7 +12263,7 @@ static void httpJsonPostExample(void)
     while (moreToRead) {
         int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
         if (bytesRead < 0) {
-            printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
+            printError("Failed to read response body", bytesRead);
             break;
         }
         if (bytesRead > 0) {
@@ -12007,6 +12273,9 @@ static void httpJsonPostExample(void)
     }
     printf("\n─────────────────────────────────────────────────\n");
     printf("✓ Response received: %d bytes\n", totalBytes);
+    
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -12037,8 +12306,11 @@ static void httpZenQuotesExample(void)
         return;
     }
     
-    // Disconnect any existing HTTP session
-    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    // Disconnect any existing HTTP session (ignore error if not connected)
+    err = uCxHttpDisconnect(&gUcxHandle, sessionId);
+    if (err < 0 && err != -20) {  // -20 = U_ERROR_COMMON_NOT_CONFIGURED (no active session)
+        printError("Failed to disconnect HTTP session", err);
+    }
     Sleep(100);
     
     printf("Configuring HTTPS connection to zenquotes.io...\n");
@@ -12169,6 +12441,9 @@ static void httpZenQuotesExample(void)
         printf("\nRaw JSON Response:\n");
         printf("%s\n", jsonResponse);
     }
+    
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
     
     printf("\n");
     printf("About ZenQuotes API:\n");
@@ -12380,6 +12655,9 @@ static void httpJsonPlaceholderExample(void)
         printf("%s\n", jsonResponse);
     }
     
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
@@ -12525,11 +12803,21 @@ static void ipGeolocationExample(void)
     //   "query": "35.192.x.x"
     // }
     
-    uint8_t bodyBuffer[HTTP_MAX_CHUNK_SIZE];
+    uint8_t bodyBuffer[2048];
+    char jsonBuffer[2048] = {0};
+    int32_t jsonLen = 0;
     
     printf("─────────────────────────────────────────────────\n");
-    int32_t totalBytes = getHttpBody(sessionId, bodyBuffer, sizeof(bodyBuffer), contentLength, httpBodyToStdout);
-    printf("\n─────────────────────────────────────────────────\n");
+    int32_t totalBytes = getHttpBody(sessionId, bodyBuffer, sizeof(bodyBuffer), contentLength, NULL);
+    
+    // Store body in buffer for parsing
+    if (totalBytes > 0 && totalBytes < sizeof(jsonBuffer)) {
+        memcpy(jsonBuffer, bodyBuffer, totalBytes);
+        jsonLen = totalBytes;
+        jsonBuffer[jsonLen] = '\0';
+    }
+    
+    printf("─────────────────────────────────────────────────\n");
     
     if (totalBytes > 0) {
         printf("✓ Response received: %d bytes total", totalBytes);
@@ -12538,38 +12826,144 @@ static void ipGeolocationExample(void)
         } else if (contentLength > 0) {
             printf(" (expected %d)", contentLength);
         }
+        printf("\n\n");
+        
+        // Parse JSON fields
+        char status[32] = {0};
+        char country[64] = {0};
+        char countryCode[8] = {0};
+        char region[8] = {0};
+        char regionName[64] = {0};
+        char city[64] = {0};
+        char zip[32] = {0};
+        char timezone[64] = {0};
+        char isp[128] = {0};
+        char org[128] = {0};
+        char as[128] = {0};
+        char query[64] = {0};
+        double lat = 0.0, lon = 0.0;
+        
+        // Simple JSON parsing - extract fields between quotes
+        const char *p;
+        
+        if ((p = strstr(jsonBuffer, "\"status\":\"")) != NULL) {
+            sscanf(p + 10, "%31[^\"]", status);
+        }
+        if ((p = strstr(jsonBuffer, "\"country\":\"")) != NULL) {
+            sscanf(p + 11, "%63[^\"]", country);
+        }
+        if ((p = strstr(jsonBuffer, "\"countryCode\":\"")) != NULL) {
+            sscanf(p + 15, "%7[^\"]", countryCode);
+        }
+        if ((p = strstr(jsonBuffer, "\"region\":\"")) != NULL) {
+            sscanf(p + 10, "%7[^\"]", region);
+        }
+        if ((p = strstr(jsonBuffer, "\"regionName\":\"")) != NULL) {
+            sscanf(p + 14, "%63[^\"]", regionName);
+        }
+        if ((p = strstr(jsonBuffer, "\"city\":\"")) != NULL) {
+            sscanf(p + 8, "%63[^\"]", city);
+        }
+        if ((p = strstr(jsonBuffer, "\"zip\":\"")) != NULL) {
+            sscanf(p + 7, "%31[^\"]", zip);
+        }
+        if ((p = strstr(jsonBuffer, "\"lat\":")) != NULL) {
+            sscanf(p + 6, "%lf", &lat);
+        }
+        if ((p = strstr(jsonBuffer, "\"lon\":")) != NULL) {
+            sscanf(p + 6, "%lf", &lon);
+        }
+        if ((p = strstr(jsonBuffer, "\"timezone\":\"")) != NULL) {
+            sscanf(p + 12, "%63[^\"]", timezone);
+        }
+        if ((p = strstr(jsonBuffer, "\"isp\":\"")) != NULL) {
+            sscanf(p + 7, "%127[^\"]", isp);
+        }
+        if ((p = strstr(jsonBuffer, "\"org\":\"")) != NULL) {
+            sscanf(p + 7, "%127[^\"]", org);
+        }
+        if ((p = strstr(jsonBuffer, "\"as\":\"")) != NULL) {
+            sscanf(p + 6, "%127[^\"]", as);
+        }
+        if ((p = strstr(jsonBuffer, "\"query\":\"")) != NULL) {
+            sscanf(p + 9, "%63[^\"]", query);
+        }
+        
+        // Display parsed data nicely
+        printf("─────────────────────────────────────────────────\n");
+        printf("IP GEOLOCATION RESULTS\n");
+        printf("─────────────────────────────────────────────────\n");
+        if (query[0]) {
+            printf("  IP Address:   %s\n", query);
+        }
+        if (status[0]) {
+            printf("  Status:       %s\n", status);
+        }
         printf("\n");
+        
+        if (country[0] || countryCode[0]) {
+            printf("LOCATION:\n");
+            if (country[0]) {
+                printf("  Country:      %s", country);
+                if (countryCode[0]) {
+                    printf(" (%s)", countryCode);
+                }
+                printf("\n");
+            }
+            if (regionName[0]) {
+                printf("  Region:       %s", regionName);
+                if (region[0]) {
+                    printf(" (%s)", region);
+                }
+                printf("\n");
+            }
+            if (city[0]) {
+                printf("  City:         %s\n", city);
+            }
+            if (zip[0]) {
+                printf("  Zip/Postal:   %s\n", zip);
+            }
+            printf("\n");
+        }
+        
+        if (lat != 0.0 || lon != 0.0) {
+            printf("COORDINATES:\n");
+            printf("  Latitude:     %.4f\n", lat);
+            printf("  Longitude:    %.4f\n", lon);
+            if (timezone[0]) {
+                printf("  Timezone:     %s\n", timezone);
+            }
+            printf("\n");
+            
+            // Update global position tracking (IP geolocation is low accuracy: ~10-50km)
+            updatePosition(lat, lon, 20000, "IP Geolocation");
+        }
+        
+        if (isp[0] || org[0] || as[0]) {
+            printf("NETWORK:\n");
+            if (isp[0]) {
+                printf("  ISP:          %s\n", isp);
+            }
+            if (org[0]) {
+                printf("  Organization: %s\n", org);
+            }
+            if (as[0]) {
+                printf("  AS:           %s\n", as);
+            }
+        }
+        printf("─────────────────────────────────────────────────\n");
+        
     } else if (totalBytes < 0) {
         printf("ERROR: Failed to read response body (error: %d)\n", totalBytes);
     }
     printf("\n");
     
-    printf("Expected JSON Response Fields:\n");
-    printf("  - status:      Success/fail indicator\n");
-    printf("  - country:     Country name\n");
-    printf("  - countryCode: Two-letter country code (e.g., US, SE, DE)\n");
-    printf("  - region:      Region/state code\n");
-    printf("  - regionName:  Region/state full name\n");
-    printf("  - city:        City name\n");
-    printf("  - zip:         Zip/postal code\n");
-    printf("  - lat:         Latitude coordinate\n");
-    printf("  - lon:         Longitude coordinate\n");
-    printf("  - timezone:    Timezone identifier (e.g., America/Los_Angeles)\n");
-    printf("  - isp:         Internet Service Provider\n");
-    printf("  - org:         Organization name\n");
-    printf("  - as:          Autonomous system info\n");
-    printf("  - query:       IP address used for lookup\n");
-    printf("\n");
     printf("API Documentation: https://ip-api.com/docs/api:json\n");
     printf("\n");
-    printf("Other available API formats:\n");
-    printf("  - JSON:    http://ip-api.com/json/\n");
-    printf("  - XML:     http://ip-api.com/xml/\n");
-    printf("  - CSV:     http://ip-api.com/csv/\n");
-    printf("  - Newline: http://ip-api.com/line/\n");
-    printf("  - PHP:     http://ip-api.com/php/\n");
-    printf("\n");
     printf("Note: Free tier is limited to 45 requests per minute\n");
+    
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -12607,27 +13001,19 @@ static void externalIpDetectionExample(void)
     
     printf("\n");
     printf("─────────────────────────────────────────────────\n");
-    printf("Your External IP Address: %s\n", externalIp);
+    printf("EXTERNAL IP ADDRESS\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("  IP: %s\n", externalIp);
     printf("─────────────────────────────────────────────────\n");
     printf("\n");
-    
-    printf("Expected JSON Response Format:\n");
-    printf("  {\"ip\":\"123.45.67.89\"}\n");
-    printf("\n");
-    printf("The 'ip' field contains your public/external IP address\n");
-    printf("  {\"ip\":\"123.45.67.89\"}\n");
-    printf("\n");
-    printf("The 'ip' field contains your public/external IP address\n");
-    printf("as seen from the internet.\n");
+    printf("This is your public IP address as seen from the internet.\n");
     printf("\n");
     printf("API Documentation: https://www.ipify.org/\n");
-    printf("\n");
-    printf("Available formats:\n");
-    printf("  - JSON (recommended): http://api.ipify.org?format=json\n");
-    printf("  - Plain text:         http://api.ipify.org\n");
-    printf("  - JSONP:              http://api.ipify.org?format=jsonp\n");
-    printf("\n");
-    printf("Note: Free API with no rate limits or authentication required\n");
+    printf("  - Simple, free API with no rate limits\n");
+    printf("  - No authentication required\n");
+    printf("  - Returns JSON: {\"ip\":\"123.45.67.89\"}\n");
+    
+    // Session already disconnected by getExternalIp()
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -13020,6 +13406,9 @@ static void wifiPositioningExample(void)
         gLocationAccuracy = accuracy;
         gLocationValid = true;
         
+        // Update global position tracking
+        updatePosition(lat, lng, accuracy > 0 ? accuracy : 1000, "Wi-Fi Positioning");
+        
         printf("✓ Location stored for GATT Location and Navigation Service\n");
         printf("\n");
         
@@ -13080,6 +13469,372 @@ static void wifiPositioningExample(void)
     printf("      Indoor positioning requires building data in Combain's database.\n");
     printf("      Once HTTP body reading is implemented, the QR code will be\n");
     printf("      automatically generated and displayed above.\n");
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+// ----------------------------------------------------------------
+// TimeAPI.io Example
+// ----------------------------------------------------------------
+
+static void timeApiIoExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("TIMEAPI.IO - COMPREHENSIVE TIME & TIMEZONE API\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("\n");
+    printf("Free API for time, timezone, and geolocation data\n");
+    printf("Documentation: https://timeapi.io/swagger/index.html\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
+    
+    printf("Select API endpoint:\n");
+    printf("\n");
+    printf("TIME:\n");
+    printf("  [1] Current time by timezone (e.g., Europe/Stockholm)\n");
+    printf("  [2] Current time by IP address (auto-detect)\n");
+    printf("  [3] Current time by coordinates (lat/lon)\n");
+    printf("\n");
+    printf("TIMEZONE INFO:\n");
+    printf("  [4] Timezone info by name (IANA timezone)\n");
+    printf("  [5] Timezone info by IP address\n");
+    printf("  [6] Timezone info by coordinates\n");
+    printf("\n");
+    printf("UTILITY:\n");
+    printf("  [7] Health check (API status)\n");
+    printf("\n");
+    printf("Choice: ");
+    
+    char choice[10];
+    if (!fgets(choice, sizeof(choice), stdin)) {
+        printf("ERROR: Failed to read choice\n");
+        return;
+    }
+    
+    char path[512];
+    char requestDescription[128];
+    
+    if (choice[0] == '1') {
+        printf("\nEnter timezone (e.g., Europe/Stockholm, America/New_York): ");
+        char timezone[128];
+        if (!fgets(timezone, sizeof(timezone), stdin)) {
+            printf("ERROR: Failed to read timezone\n");
+            return;
+        }
+        timezone[strcspn(timezone, "\r\n")] = 0;
+        snprintf(path, sizeof(path), "/api/time/current/zone?timeZone=%s", timezone);
+        snprintf(requestDescription, sizeof(requestDescription), "Current time for %s", timezone);
+        
+    } else if (choice[0] == '2') {
+        // First get external IP
+        char externalIp[64] = {0};
+        printf("\nDetecting external IP address...\n");
+        if (!getExternalIp(0, externalIp, sizeof(externalIp), false)) {
+            printf("ERROR: Failed to detect external IP address\n");
+            printf("You can manually enter an IP address instead.\n");
+            printf("Enter IP address (or press Enter to cancel): ");
+            if (!fgets(externalIp, sizeof(externalIp), stdin) || externalIp[0] == '\n') {
+                return;
+            }
+            externalIp[strcspn(externalIp, "\r\n")] = 0;
+            if (externalIp[0] == '\0') {
+                return;
+            }
+        } else {
+            printf("✓ Detected IP: %s\n", externalIp);
+        }
+        snprintf(path, sizeof(path), "/api/time/current/ip?ipAddress=%s", externalIp);
+        snprintf(requestDescription, sizeof(requestDescription), "Current time for IP %s", externalIp);
+        
+    } else if (choice[0] == '3') {
+        printf("\nEnter latitude: ");
+        char lat[32];
+        if (!fgets(lat, sizeof(lat), stdin)) {
+            printf("ERROR: Failed to read latitude\n");
+            return;
+        }
+        lat[strcspn(lat, "\r\n")] = 0;
+        
+        printf("Enter longitude: ");
+        char lon[32];
+        if (!fgets(lon, sizeof(lon), stdin)) {
+            printf("ERROR: Failed to read longitude\n");
+            return;
+        }
+        lon[strcspn(lon, "\r\n")] = 0;
+        
+        snprintf(path, sizeof(path), "/api/time/current/coordinate?latitude=%s&longitude=%s", lat, lon);
+        snprintf(requestDescription, sizeof(requestDescription), "Current time at %s, %s", lat, lon);
+        
+    } else if (choice[0] == '4') {
+        printf("\nEnter timezone (e.g., Europe/Stockholm): ");
+        char timezone[128];
+        if (!fgets(timezone, sizeof(timezone), stdin)) {
+            printf("ERROR: Failed to read timezone\n");
+            return;
+        }
+        timezone[strcspn(timezone, "\r\n")] = 0;
+        snprintf(path, sizeof(path), "/api/timezone/zone?timeZone=%s", timezone);
+        snprintf(requestDescription, sizeof(requestDescription), "Timezone info for %s", timezone);
+        
+    } else if (choice[0] == '5') {
+        // First get external IP
+        char externalIp[64] = {0};
+        printf("\nDetecting external IP address...\n");
+        if (!getExternalIp(0, externalIp, sizeof(externalIp), false)) {
+            printf("ERROR: Failed to detect external IP address\n");
+            printf("You can manually enter an IP address instead.\n");
+            printf("Enter IP address (or press Enter to cancel): ");
+            if (!fgets(externalIp, sizeof(externalIp), stdin) || externalIp[0] == '\n') {
+                return;
+            }
+            externalIp[strcspn(externalIp, "\r\n")] = 0;
+            if (externalIp[0] == '\0') {
+                return;
+            }
+        } else {
+            printf("✓ Detected IP: %s\n", externalIp);
+        }
+        snprintf(path, sizeof(path), "/api/timezone/ip?ipAddress=%s", externalIp);
+        snprintf(requestDescription, sizeof(requestDescription), "Timezone info for IP %s", externalIp);
+        
+    } else if (choice[0] == '6') {
+        printf("\nEnter latitude: ");
+        char lat[32];
+        if (!fgets(lat, sizeof(lat), stdin)) {
+            printf("ERROR: Failed to read latitude\n");
+            return;
+        }
+        lat[strcspn(lat, "\r\n")] = 0;
+        
+        printf("Enter longitude: ");
+        char lon[32];
+        if (!fgets(lon, sizeof(lon), stdin)) {
+            printf("ERROR: Failed to read longitude\n");
+            return;
+        }
+        lon[strcspn(lon, "\r\n")] = 0;
+        
+        snprintf(path, sizeof(path), "/api/timezone/coordinate?latitude=%s&longitude=%s", lat, lon);
+        snprintf(requestDescription, sizeof(requestDescription), "Timezone info at %s, %s", lat, lon);
+        
+    } else if (choice[0] == '7') {
+        strcpy(path, "/api/health/check");
+        strcpy(requestDescription, "API health check");
+        
+    } else {
+        printf("Invalid choice\n");
+        return;
+    }
+    
+    const char *host = "timeapi.io";
+    
+    printf("\n");
+    printf("Configuring HTTPS connection to %s...\n", host);
+    
+    // Configure HTTPS with TLS 1.2
+    err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    if (err < 0) {
+        printf("ERROR: Failed to configure TLS (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Set connection parameters
+    char hostWithProtocol[256];
+    snprintf(hostWithProtocol, sizeof(hostWithProtocol), "https://%s", host);
+    err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
+    if (err < 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Connection configured for %s\n", host);
+    
+    // Set request path
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err < 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ Request path set to %s\n", path);
+    
+    // Send GET request
+    printf("\n");
+    printf("Sending GET request: %s...\n", requestDescription);
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ GET request sent successfully\n");
+    
+    // Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (!readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
+        printf("ERROR: Failed to read response headers\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    int32_t contentLength = parseContentLength(headerBuffer, headerLen);
+    
+    // Read response body (JSON)
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    uint8_t bodyBuffer[4096];
+    char jsonBuffer[4096] = {0};
+    int32_t jsonLen = 0;
+    
+    printf("─────────────────────────────────────────────────\n");
+    int32_t totalBytes = getHttpBody(sessionId, bodyBuffer, sizeof(bodyBuffer), contentLength, NULL);
+    
+    if (totalBytes > 0 && totalBytes < sizeof(jsonBuffer)) {
+        memcpy(jsonBuffer, bodyBuffer, totalBytes);
+        jsonLen = totalBytes;
+        jsonBuffer[jsonLen] = '\0';
+    }
+    
+    printf("─────────────────────────────────────────────────\n");
+    
+    if (totalBytes > 0) {
+        printf("✓ Response received: %d bytes total\n\n", totalBytes);
+        
+        // Parse common JSON fields
+        char year[8] = {0}, month[8] = {0}, day[8] = {0};
+        char hour[8] = {0}, minute[8] = {0}, seconds[8] = {0};
+        char timeZone[64] = {0};
+        char dateTime[64] = {0};
+        char dstOffset[16] = {0};
+        
+        const char *p;
+        
+        // Parse time fields
+        if ((p = strstr(jsonBuffer, "\"year\":")) != NULL) {
+            sscanf(p + 7, "%7[0-9]", year);
+        }
+        if ((p = strstr(jsonBuffer, "\"month\":")) != NULL) {
+            sscanf(p + 8, "%7[0-9]", month);
+        }
+        if ((p = strstr(jsonBuffer, "\"day\":")) != NULL) {
+            sscanf(p + 6, "%7[0-9]", day);
+        }
+        if ((p = strstr(jsonBuffer, "\"hour\":")) != NULL) {
+            sscanf(p + 7, "%7[0-9]", hour);
+        }
+        if ((p = strstr(jsonBuffer, "\"minute\":")) != NULL) {
+            sscanf(p + 9, "%7[0-9]", minute);
+        }
+        if ((p = strstr(jsonBuffer, "\"seconds\":")) != NULL) {
+            sscanf(p + 10, "%7[0-9]", seconds);
+        }
+        if ((p = strstr(jsonBuffer, "\"timeZone\":\"")) != NULL) {
+            sscanf(p + 12, "%63[^\"]", timeZone);
+        }
+        if ((p = strstr(jsonBuffer, "\"dateTime\":\"")) != NULL) {
+            sscanf(p + 12, "%63[^\"]", dateTime);
+        }
+        if ((p = strstr(jsonBuffer, "\"dstOffsetToUtc\":")) != NULL) {
+            sscanf(p + 17, "%15[0-9+-]", dstOffset);
+        }
+        
+        // Display formatted data
+        printf("─────────────────────────────────────────────────\n");
+        printf("TIME DATA\n");
+        printf("─────────────────────────────────────────────────\n");
+        
+        if (year[0] && month[0] && day[0] && hour[0] && minute[0] && seconds[0]) {
+            printf("  Date/Time:    %s-%s-%s %s:%s:%s\n", year, month, day, hour, minute, seconds);
+            
+            // Convert to Unix timestamp for global time tracking
+            struct tm timeStruct = {0};
+            timeStruct.tm_year = atoi(year) - 1900;
+            timeStruct.tm_mon = atoi(month) - 1;
+            timeStruct.tm_mday = atoi(day);
+            timeStruct.tm_hour = atoi(hour);
+            timeStruct.tm_min = atoi(minute);
+            timeStruct.tm_sec = atoi(seconds);
+            
+            time_t unixTimestamp = _mkgmtime(&timeStruct);
+            if (unixTimestamp != -1) {
+                updateTime(unixTimestamp, "TimeAPI.io", 1);  // ±1 second accuracy
+                printf("  Unix Time:    %lld\n", (int64_t)unixTimestamp);
+                printf("  ✓ System time updated from API\n");
+            }
+        } else if (dateTime[0]) {
+            printf("  Date/Time:    %s\n", dateTime);
+        }
+        
+        if (timeZone[0]) {
+            printf("  Timezone:     %s\n", timeZone);
+            
+            // Try to estimate position from timezone
+            double tzLat, tzLon;
+            int tzAccuracy;
+            if (estimatePositionFromTimezone(timeZone, &tzLat, &tzLon, &tzAccuracy)) {
+                updatePosition(tzLat, tzLon, tzAccuracy, "Timezone");
+                printf("  ✓ Position estimated from timezone (±%d km accuracy)\n", tzAccuracy / 1000);
+            }
+        }
+        if (dstOffset[0]) {
+            printf("  DST Offset:   %s hours\n", dstOffset);
+        }
+        
+        printf("─────────────────────────────────────────────────\n");
+        
+        printf("\nRaw JSON Response:\n");
+        printf("%s\n", jsonBuffer);
+        
+    } else {
+        printf("ERROR: Failed to read response body\n");
+    }
+    
+    // Disconnect HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    
+    printf("\n");
+    printf("TimeAPI.io Features:\n");
+    printf("  - Free, no API key required\n");
+    printf("  - HTTPS support\n");
+    printf("  - Time by timezone, IP, or coordinates\n");
+    printf("  - Comprehensive timezone information\n");
+    printf("  - DST (Daylight Saving Time) support\n");
+    printf("  - IP-based geolocation\n");
+    printf("\n");
+    printf("API Documentation: https://timeapi.io/swagger/index.html\n");
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -13905,6 +14660,9 @@ static void ntpTimeExample(void)
                 printf("UTC Time:      %s\n", utcString);
                 printf("─────────────────────────────────────────────────\n");
             }
+            
+            // Update global time tracking with NTP source
+            updateTime(rawTime, "NTP", 1);
         } else {
             printf("WARNING: Unexpected time data length: %zu bytes\n", unixTimeData.length);
             printf("Raw data: ");
@@ -14876,6 +15634,204 @@ static void tlsDeleteCertificate(void)
 // Main Function
 // ----------------------------------------------------------------
 
+// ============================================================================
+// TIME AND POSITION HELPER FUNCTIONS
+// ============================================================================
+
+// Update current time from various sources
+static void updateTime(time_t unixTime, const char *source, int accuracySeconds)
+{
+    gCurrentTime.unixTime = unixTime;
+    strncpy(gCurrentTime.source, source, sizeof(gCurrentTime.source) - 1);
+    gCurrentTime.source[sizeof(gCurrentTime.source) - 1] = '\0';
+    gCurrentTime.accuracySeconds = accuracySeconds;
+    gCurrentTime.valid = true;
+}
+
+// Update current position from various sources
+static void updatePosition(double lat, double lon, int accuracyMeters, const char *source)
+{
+    gCurrentPosition.latitude = lat;
+    gCurrentPosition.longitude = lon;
+    gCurrentPosition.accuracyMeters = accuracyMeters;
+    strncpy(gCurrentPosition.source, source, sizeof(gCurrentPosition.source) - 1);
+    gCurrentPosition.source[sizeof(gCurrentPosition.source) - 1] = '\0';
+    gCurrentPosition.valid = true;
+}
+
+// Get formatted time string for display
+static void getTimeString(char *buffer, size_t bufferSize)
+{
+    if (!gCurrentTime.valid) {
+        // Initialize with PC time on first call
+        time_t now = time(NULL);
+        updateTime(now, "PC", 1);
+    }
+    
+    struct tm *tm_info = gmtime(&gCurrentTime.unixTime);
+    if (tm_info) {
+        char timeStr[64];
+        strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S UTC", tm_info);
+        snprintf(buffer, bufferSize, "%s (±%ds, %s)", 
+                 timeStr, gCurrentTime.accuracySeconds, gCurrentTime.source);
+    } else {
+        snprintf(buffer, bufferSize, "Not available");
+    }
+}
+
+// Estimate approximate position from IANA timezone name
+// Returns true if timezone was recognized, false otherwise
+// Accuracy is very rough (±500-2000km) since timezones cover large areas
+static bool estimatePositionFromTimezone(const char *timezone, double *lat, double *lon, int *accuracyMeters)
+{
+    // Mapping of common IANA timezones to approximate central coordinates
+    // Format: {timezone, latitude, longitude, accuracy_in_meters}
+    struct {
+        const char *tz;
+        double lat;
+        double lon;
+        int accuracy;
+    } tzMap[] = {
+        // Europe
+        {"Europe/Stockholm", 59.3293, 18.0686, 500000},      // Sweden
+        {"Europe/London", 51.5074, -0.1278, 700000},         // UK
+        {"Europe/Paris", 48.8566, 2.3522, 600000},           // France
+        {"Europe/Berlin", 52.5200, 13.4050, 500000},         // Germany
+        {"Europe/Rome", 41.9028, 12.4964, 600000},           // Italy
+        {"Europe/Madrid", 40.4168, -3.7038, 600000},         // Spain
+        {"Europe/Amsterdam", 52.3702, 4.8952, 400000},       // Netherlands
+        {"Europe/Brussels", 50.8503, 4.3517, 400000},        // Belgium
+        {"Europe/Vienna", 48.2082, 16.3738, 500000},         // Austria
+        {"Europe/Warsaw", 52.2297, 21.0122, 500000},         // Poland
+        {"Europe/Prague", 50.0755, 14.4378, 400000},         // Czech Republic
+        {"Europe/Budapest", 47.4979, 19.0402, 500000},       // Hungary
+        {"Europe/Athens", 37.9838, 23.7275, 500000},         // Greece
+        {"Europe/Helsinki", 60.1699, 24.9384, 500000},       // Finland
+        {"Europe/Oslo", 59.9139, 10.7522, 500000},           // Norway
+        {"Europe/Copenhagen", 55.6761, 12.5683, 400000},     // Denmark
+        {"Europe/Dublin", 53.3498, -6.2603, 500000},         // Ireland
+        {"Europe/Lisbon", 38.7223, -9.1393, 500000},         // Portugal
+        {"Europe/Zurich", 47.3769, 8.5417, 300000},          // Switzerland
+        {"Europe/Moscow", 55.7558, 37.6173, 1500000},        // Russia (Moscow)
+        
+        // North America
+        {"America/New_York", 40.7128, -74.0060, 1500000},    // US Eastern
+        {"America/Chicago", 41.8781, -87.6298, 1500000},     // US Central
+        {"America/Denver", 39.7392, -104.9903, 1500000},     // US Mountain
+        {"America/Los_Angeles", 34.0522, -118.2437, 1500000}, // US Pacific
+        {"America/Toronto", 43.6532, -79.3832, 800000},      // Canada Eastern
+        {"America/Vancouver", 49.2827, -123.1207, 700000},   // Canada Pacific
+        {"America/Mexico_City", 19.4326, -99.1332, 1000000}, // Mexico
+        
+        // South America
+        {"America/Sao_Paulo", -23.5505, -46.6333, 1500000},  // Brazil
+        {"America/Buenos_Aires", -34.6037, -58.3816, 1000000}, // Argentina
+        {"America/Santiago", -33.4489, -70.6693, 800000},    // Chile
+        {"America/Bogota", 4.7110, -74.0721, 800000},        // Colombia
+        
+        // Asia
+        {"Asia/Tokyo", 35.6762, 139.6503, 1000000},          // Japan
+        {"Asia/Seoul", 37.5665, 126.9780, 700000},           // South Korea
+        {"Asia/Shanghai", 31.2304, 121.4737, 2000000},       // China
+        {"Asia/Hong_Kong", 22.3193, 114.1694, 500000},       // Hong Kong
+        {"Asia/Singapore", 1.3521, 103.8198, 300000},        // Singapore
+        {"Asia/Dubai", 25.2048, 55.2708, 700000},            // UAE
+        {"Asia/Kolkata", 28.6139, 77.2090, 1500000},         // India
+        {"Asia/Bangkok", 13.7563, 100.5018, 800000},         // Thailand
+        {"Asia/Jakarta", -6.2088, 106.8456, 1000000},        // Indonesia
+        
+        // Oceania
+        {"Australia/Sydney", -33.8688, 151.2093, 1000000},   // Australia East
+        {"Australia/Melbourne", -37.8136, 144.9631, 800000}, // Australia South
+        {"Australia/Perth", -31.9505, 115.8605, 1000000},    // Australia West
+        {"Pacific/Auckland", -36.8485, 174.7633, 600000},    // New Zealand
+        
+        // Africa
+        {"Africa/Cairo", 30.0444, 31.2357, 800000},          // Egypt
+        {"Africa/Johannesburg", -26.2041, 28.0473, 800000},  // South Africa
+        {"Africa/Lagos", 6.5244, 3.3792, 1000000},           // Nigeria
+        {"Africa/Nairobi", -1.2864, 36.8172, 800000},        // Kenya
+    };
+    
+    int numTimezones = sizeof(tzMap) / sizeof(tzMap[0]);
+    
+    for (int i = 0; i < numTimezones; i++) {
+        if (strcmp(timezone, tzMap[i].tz) == 0) {
+            *lat = tzMap[i].lat;
+            *lon = tzMap[i].lon;
+            *accuracyMeters = tzMap[i].accuracy;
+            return true;
+        }
+    }
+    
+    return false;  // Timezone not found in our mapping
+}
+
+// Get formatted position string for display
+static void getPositionString(char *buffer, size_t bufferSize)
+{
+    if (!gCurrentPosition.valid) {
+        snprintf(buffer, bufferSize, "Not available");
+        return;
+    }
+    
+    snprintf(buffer, bufferSize, "%.4f, %.4f (±%dm, %s)",
+             gCurrentPosition.latitude, gCurrentPosition.longitude,
+             gCurrentPosition.accuracyMeters, gCurrentPosition.source);
+}
+
+// Parse Date header from HTTP response (RFC 7231 format)
+// Example: "Date: Wed, 19 Nov 2025 16:35:49 GMT"
+static bool parseHttpDateHeader(const char *headers, time_t *outTime)
+{
+    const char *dateHeader = strstr(headers, "Date: ");
+    if (!dateHeader) {
+        dateHeader = strstr(headers, "date: ");  // Try lowercase
+    }
+    if (!dateHeader) {
+        return false;
+    }
+    
+    // Move past "Date: "
+    dateHeader += 6;
+    
+    // Parse HTTP date format: "Day, DD Mon YYYY HH:MM:SS GMT"
+    // Example: "Wed, 19 Nov 2025 16:35:49 GMT"
+    struct tm tm_info = {0};
+    char dayName[4], monthName[4];
+    
+    int parsed = sscanf(dateHeader, "%3s, %d %3s %d %d:%d:%d GMT",
+                       dayName, &tm_info.tm_mday, monthName, &tm_info.tm_year,
+                       &tm_info.tm_hour, &tm_info.tm_min, &tm_info.tm_sec);
+    
+    if (parsed != 7) {
+        return false;
+    }
+    
+    // Convert month name to number (0-11)
+    const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    tm_info.tm_mon = -1;
+    for (int i = 0; i < 12; i++) {
+        if (strcmp(monthName, months[i]) == 0) {
+            tm_info.tm_mon = i;
+            break;
+        }
+    }
+    
+    if (tm_info.tm_mon == -1) {
+        return false;
+    }
+    
+    // Adjust year (struct tm expects years since 1900)
+    tm_info.tm_year -= 1900;
+    
+    // Convert to Unix timestamp (UTC)
+    *outTime = _mkgmtime(&tm_info);
+    
+    return (*outTime != -1);
+}
+
 // Helper function to get executable directory
 static void getExecutableDirectory(char *buffer, size_t bufferSize)
 {
@@ -15305,6 +16261,14 @@ static void printMenu(void)
                 printf("  Resources:   %d active socket%s  |  %d certificate%s\n",
                        gActiveSocketCount, gActiveSocketCount == 1 ? "" : "s",
                        gCertificateCount, gCertificateCount == 1 ? "" : "s");
+                
+                // Time and Position Status
+                char timeStr[128];
+                char posStr[128];
+                getTimeString(timeStr, sizeof(timeStr));
+                getPositionString(posStr, sizeof(posStr));
+                printf("  Clock:       %s\n", timeStr);
+                printf("  Position:    %s\n", posStr);
                 printf("─────────────────────────────────────────────────────────────────\n");
             } else {
                 printf("\n");
@@ -15382,7 +16346,7 @@ static void printMenu(void)
                     printf("Wi-Fi EXAMPLES\n");
                     printf("  [h]     HTTP Examples (GET, POST)\n");
                     printf("  [m]     MQTT Examples (Publish, Subscribe)\n");
-                    printf("  [y]     NTP Examples (Time Sync)\n");
+                    printf("  [y]     Time Sync Examples (NTP, World Time API)\n");
                     printf("  [k]     Location Examples (IP Geolocation, Wi-Fi Positioning)\n");
                     printf("\n");
                 }
@@ -15479,14 +16443,21 @@ static void printMenu(void)
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
+            printf("CLIENT OPERATIONS:\n");
             printf("  [1] Create TCP socket\n");
             printf("  [2] Create UDP socket\n");
             printf("  [3] Connect socket\n");
             printf("  [4] Send data\n");
             printf("  [5] Read data\n");
-            printf("  [6] Close socket (current session)\n");
-            printf("  [7] List sockets\n");
-            printf("  [8] Close socket by handle (any socket)\n");
+            printf("\n");
+            printf("SERVER OPERATIONS:\n");
+            printf("  [6] Bind socket to local port\n");
+            printf("  [7] Listen (TCP server)\n");
+            printf("\n");
+            printf("MANAGEMENT:\n");
+            printf("  [9] List sockets\n");
+            printf("  [c] Close socket (current session)\n");
+            printf("  [a] Close socket by handle (any socket)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -15544,11 +16515,23 @@ static void printMenu(void)
             printf("\n");
             printf("REST API WITH JSON:\n");
             printf("  [3] UUID Generator (httpbin.org)\n");
-            printf("  [4] World Time API (worldtimeapi.org)\n");
-            printf("  [5] HTTP Status Code Tester (httpbin.org)\n");
-            printf("  [6] JSON POST Example (httpbin.org/post)\n");
-            printf("  [7] JSONPlaceholder - Fake REST API (typicode.com)\n");
-            printf("  [8] Daily Inspirational Quote (zenquotes.io)\n");
+            printf("  [4] HTTP Status Code Tester (httpbin.org)\n");
+            printf("  [5] JSON POST Example (httpbin.org/post)\n");
+            printf("  [6] JSONPlaceholder - Fake REST API (typicode.com)\n");
+            printf("  [7] Daily Inspirational Quote (zenquotes.io)\n");
+            printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_TIME_SYNC:
+            printf("\n");
+            printf("              TIME SYNCHRONIZATION EXAMPLES\n");
+            printf("\n");
+            printf("\n");
+            printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("\n");
+            printf("  [1] NTP Time Sync (Network Time Protocol)\n");
+            printf("  [2] TimeAPI.io (comprehensive time & timezone API)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -15861,7 +16844,7 @@ static void handleUserInput(void)
             } else if (firstChar == 'm') {
                 choice = 20;  // MQTT Examples
             } else if (firstChar == 'y') {
-                choice = 17;  // NTP Examples (Time Sync)
+                choice = 17;  // Time Sync Examples
             } else if (firstChar == 'k') {
                 choice = 19;  // Location Examples
             } else if (firstChar == 'a') {
@@ -16026,11 +17009,11 @@ static void handleUserInput(void)
                         gMenuState = MENU_MQTT;
                     }
                     break;
-                case 17:  // NTP Examples (Time Sync)
+                case 17:  // Time Sync Examples
                     if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
-                        ntpTimeExample();
+                        gMenuState = MENU_TIME_SYNC;
                     }
                     break;
                 case 19:  // Location Examples
@@ -16274,12 +17257,20 @@ static void handleUserInput(void)
                     socketReadData();
                     break;
                 case 6:
-                    socketClose();
+                    socketBind();
                     break;
                 case 7:
+                    socketListen();
+                    break;
+                case 9:
                     socketListStatus();
                     break;
-                case 8:
+                case 'c':
+                case 'C':
+                    socketClose();
+                    break;
+                case 'a':
+                case 'A':
                     socketCloseByHandle();
                     break;
                 case 0:
@@ -16352,19 +17343,33 @@ static void handleUserInput(void)
                     httpQuoteApiExample();
                     break;
                 case 4:
-                    httpTimeApiExample();
-                    break;
-                case 5:
                     httpStatusCodeExample();
                     break;
-                case 6:
+                case 5:
                     httpJsonPostExample();
                     break;
-                case 7:
+                case 6:
                     httpJsonPlaceholderExample();
                     break;
-                case 8:
+                case 7:
                     httpZenQuotesExample();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_TIME_SYNC:
+            switch (choice) {
+                case 1:
+                    ntpTimeExample();
+                    break;
+                case 2:
+                    timeApiIoExample();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -17128,6 +18133,22 @@ static void moduleStartupInit(void)
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "-------------------");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    
+    // Set regulatory domain from saved settings
+    if (gRegDomain >= 0 && gRegDomain <= 10) {
+        const char *domainNames[] = {
+            "World", "ETSI (Europe)", "FCC (USA)", "IC/ISED (Canada)",
+            "NZ (New Zealand)", "MKK (Japan)", "NCC (Taiwan)", "ACMA (Australia)",
+            "KCC (South Korea)", "SA (South Africa)", "Brazil"
+        };
+        printf("Setting regulatory domain to [%d] %s...\n", gRegDomain, domainNames[gRegDomain]);
+        result = uCxWifiSetRegulatoryDomain(&gUcxHandle, (uWifiRegDomain_t)gRegDomain);
+        if (result == 0) {
+            printf("✓ Regulatory domain set successfully\n");
+        } else {
+            printf("Warning: Failed to set regulatory domain (error %d)\n", result);
+        }
+    }
 }
 
 static void queryDeviceStatus(void)
