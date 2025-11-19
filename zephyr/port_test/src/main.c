@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <inttypes.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/serial/uart_emul.h>
@@ -36,9 +37,9 @@
 #define TIMESTAMP_CREATE()		int64_t __timestamp = k_uptime_get();
 
 #define TIMESTAMP_CHECK_TIME(expectMs)			\
-	do { 										\
+	do { 											\
 		int64_t deltaMs =  k_uptime_delta(&__timestamp);	\
-		zassert_within(deltaMs, expectMs, 30, "took: %d ms", deltaMs);	\
+		zassert_within(deltaMs, expectMs, 30, "took: %" PRId64 " ms", deltaMs);	\
 	} while (0);
 
 /* ----------------------------------------------------------------
