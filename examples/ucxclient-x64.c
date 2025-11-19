@@ -19690,52 +19690,173 @@ static void bluetoothConnect(void)
         return;
     }
     
-    printf("\n--- Bluetooth Connect ---\n");
+    printf("\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("                        BLUETOOTH DEVICE CONNECTION\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("\n");
     
-    // Show last connected device if available
-    if (gRemoteAddress[0] != '\0') {
-        // Extract just the MAC address for display (before comma if present)
-        char displayAddr[32];
-        strncpy(displayAddr, gRemoteAddress, sizeof(displayAddr) - 1);
-        displayAddr[sizeof(displayAddr) - 1] = '\0';
-        char *comma = strchr(displayAddr, ',');
-        if (comma) *comma = '\0';
-        
-        printf("Last connected: %s\n", displayAddr);
-        printf("Enter Bluetooth address (or press Enter to use last): ");
-    } else {
-        printf("Enter Bluetooth address (format: XX:XX:XX:XX:XX:XX): ");
+    // Show saved profiles
+    if (gBtProfileCount > 0) {
+        printf("SAVED PROFILES:\n");
+        for (int i = 0; i < gBtProfileCount; i++) {
+            printf("  [%d] %s\n", i + 1, gBtProfiles[i].name);
+            printf("      %s\n", gBtProfiles[i].address);
+            printf("\n");
+        }
     }
     
-    char addrStr[64];
-    if (fgets(addrStr, sizeof(addrStr), stdin)) {
-        // Remove trailing newline
-        char *end = strchr(addrStr, '\n');
-        if (end) *end = '\0';
-        
-        // If user pressed Enter without input, use last address
-        if (strlen(addrStr) == 0 && gRemoteAddress[0] != '\0') {
-            strncpy(addrStr, gRemoteAddress, sizeof(addrStr) - 1);
-            addrStr[sizeof(addrStr) - 1] = '\0';
-        }
-        
-        // Parse the address
-        uBtLeAddress_t addr;
-        if (parseBluetoothAddress(addrStr, &addr)) {
-            printf("Connecting to device...\n");
+    // Show devices from last scan
+    int scanStartNum = gBtProfileCount + 1;  // Start numbering after profiles
+    if (gLastScanDeviceCount > 0) {
+        printf("DEVICES FROM LAST SCAN:\n");
+        for (int i = 0; i < gLastScanDeviceCount && i < 10; i++) {  // Limit to 10 for display
+            printf("  [%d] ", scanStartNum + i);  // Continue numbering from profiles
             
-            // uCxBluetoothConnect returns conn handle on success, negative on error
-            int32_t connHandle = uCxBluetoothConnect(&gUcxHandle, &addr);
-            if (connHandle >= 0) {
-                printf("Connected successfully! Connection handle: %d\n", connHandle);
-                printf("Wait for +UEBTC URC to confirm connection...\n");
+            // Show name if available
+            if (gLastScanDevices[i].name[0] != '\0') {
+                printf("%s", gLastScanDevices[i].name);
             } else {
-                printf("ERROR: Failed to connect to device (error: %d)\n", connHandle);
+                printf("(Unnamed device)");
             }
-        } else {
-            printf("ERROR: Invalid MAC address format\n");
-            printf("Expected format: XX:XX:XX:XX:XX:XX or XX:XX:XX:XX:XX:XX,type\n");
+            
+            printf("\n      %02X:%02X:%02X:%02X:%02X:%02X",
+                   gLastScanDevices[i].addr.address[0], gLastScanDevices[i].addr.address[1],
+                   gLastScanDevices[i].addr.address[2], gLastScanDevices[i].addr.address[3],
+                   gLastScanDevices[i].addr.address[4], gLastScanDevices[i].addr.address[5]);
+            
+            printf(" (RSSI: %d dBm)\n\n", gLastScanDevices[i].rssi);
         }
+        if (gLastScanDeviceCount > 10) {
+            printf("  ... and %d more devices\n\n", gLastScanDeviceCount - 10);
+        }
+    }
+    
+    printf("OPTIONS:\n");
+    if (gBtProfileCount > 0) {
+        printf("  [1-%d]  Connect to saved profile\n", gBtProfileCount);
+    }
+    if (gLastScanDeviceCount > 0) {
+        int maxNum = scanStartNum + ((gLastScanDeviceCount > 10) ? 10 : gLastScanDeviceCount) - 1;
+        printf("  [%d-%d]  Connect to scanned device\n", scanStartNum, maxNum);
+    }
+    printf("  [s]    Scan for new devices\n");
+    printf("  [m]    Manual address entry\n");
+    printf("  [0]    Cancel\n");
+    printf("\n");
+    printf("Choice: ");
+    
+    char input[128];
+    if (!fgets(input, sizeof(input), stdin)) {
+        return;
+    }
+    
+    // Remove trailing newline
+    char *end = strchr(input, '\n');
+    if (end) *end = '\0';
+    
+    // Handle cancel
+    if (strcmp(input, "0") == 0 || strlen(input) == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    // Handle scan
+    if (input[0] == 's' || input[0] == 'S') {
+        bluetoothScan();
+        return;
+    }
+    
+    uBtLeAddress_t addr;
+    char deviceName[64] = "";
+    bool validSelection = false;
+    
+    // Parse input as number
+    int selection = atoi(input);
+    
+    // Handle profile or scan result selection (numbers)
+    if (selection > 0) {
+        // Check if it's a profile (1 to gBtProfileCount)
+        if (selection >= 1 && selection <= gBtProfileCount) {
+            int profileIdx = selection - 1;
+            // Parse profile address
+            if (parseBluetoothAddress(gBtProfiles[profileIdx].address, &addr)) {
+                strncpy(deviceName, gBtProfiles[profileIdx].name, sizeof(deviceName) - 1);
+                validSelection = true;
+                printf("\nConnecting to profile: %s\n", gBtProfiles[profileIdx].name);
+            }
+        }
+        // Check if it's a scan result (gBtProfileCount+1 onwards)
+        else if (selection >= scanStartNum && selection < scanStartNum + gLastScanDeviceCount) {
+            int scanIdx = selection - scanStartNum;
+            if (scanIdx < gLastScanDeviceCount && scanIdx < 10) {  // Limit to first 10
+                addr = gLastScanDevices[scanIdx].addr;
+                strncpy(deviceName, gLastScanDevices[scanIdx].name, sizeof(deviceName) - 1);
+                validSelection = true;
+                printf("\nConnecting to: %s\n", deviceName[0] ? deviceName : "Unnamed device");
+            }
+        }
+    }
+    // Handle manual entry
+    else if (input[0] == 'm' || input[0] == 'M') {
+        printf("\nEnter Bluetooth address (XX:XX:XX:XX:XX:XX): ");
+        if (fgets(input, sizeof(input), stdin)) {
+            end = strchr(input, '\n');
+            if (end) *end = '\0';
+            
+            if (parseBluetoothAddress(input, &addr)) {
+                validSelection = true;
+                printf("Connecting to: %s\n", input);
+            } else {
+                printf("ERROR: Invalid address format\n");
+                return;
+            }
+        }
+    }
+    
+    if (!validSelection) {
+        printf("Invalid selection.\n");
+        return;
+    }
+    
+    // Attempt connection
+    printf("Connecting...\n");
+    int32_t connHandle = uCxBluetoothConnect(&gUcxHandle, &addr);
+    
+    if (connHandle >= 0) {
+        printf("\u2713 Connected successfully! Connection handle: %d\n", connHandle);
+        printf("  Wait for +UEBTC URC to confirm connection...\n\n");
+        
+        // Offer to save as profile if it's not already saved
+        if (deviceName[0] != '\0') {
+            // Check if this device is already in profiles
+            char addrStr[32];
+            snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                    addr.address[0], addr.address[1], addr.address[2],
+                    addr.address[3], addr.address[4], addr.address[5]);
+            
+            bool alreadySaved = false;
+            for (int i = 0; i < gBtProfileCount; i++) {
+                if (strstr(gBtProfiles[i].address, addrStr) != NULL) {
+                    alreadySaved = true;
+                    break;
+                }
+            }
+            
+            if (!alreadySaved && gBtProfileCount < MAX_BT_PROFILES) {
+                printf("Save this device as a profile? (y/n): ");
+                char save[10];
+                if (fgets(save, sizeof(save), stdin) && (save[0] == 'y' || save[0] == 'Y')) {
+                    // Add full address with type if needed
+                    char fullAddr[32];
+                    snprintf(fullAddr, sizeof(fullAddr), "%s,%d", addrStr, addr.type);
+                    btSaveProfile(deviceName, fullAddr);
+                    printf("\u2713 Profile saved\n");
+                }
+            }
+        }
+    } else {
+        printf("ERROR: Failed to connect (error: %d)\n", connHandle);
     }
 }
 
