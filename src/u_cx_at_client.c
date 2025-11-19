@@ -535,8 +535,8 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                     buf[0] = '['; // reserve first char for `[` and `,`
 
                     for (size_t i = 0; i < len; i++) {
-                        int32_t len = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
-                        writeAndLog(pClient, buf, (size_t)len);
+                        int32_t written = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
+                        writeAndLog(pClient, buf, (size_t)written);
                         buf[0] = ',';
                     }
                     writeAndLog(pClient, "]", 1);
@@ -600,11 +600,10 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 // Binary data transfer
                 uint8_t *pData = va_arg(args, uint8_t *);
                 int32_t len = va_arg(args, int32_t);
-                char binHeader[3] = {
-                    U_CX_SOH_CHAR,
-                    (char)(len >> 8),
-                    (char)(len & 0xFF),
-                };
+                char binHeader[3];
+                binHeader[0] = U_CX_SOH_CHAR;
+                binHeader[1] = (char)(len >> 8);
+                binHeader[2] = (char)(len & 0xFF);
                 U_CX_AT_PORT_ASSERT(len > 0);
                 writeNoLog(pClient, binHeader, sizeof(binHeader));
                 writeNoLog(pClient, pData, (size_t)len);
