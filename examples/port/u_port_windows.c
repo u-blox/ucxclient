@@ -480,8 +480,6 @@ void uPortAtClose(uCxAtClient_t *pClient)
 
 void uPortAtPauseRx(uCxAtClient_t *pClient)
 {
-    // STUBBED: Uncomment below to enable RX thread pausing for raw serial access
-    /*
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Pausing RX thread...");
@@ -494,14 +492,10 @@ void uPortAtPauseRx(uCxAtClient_t *pClient)
         pCtx->hRxThread = NULL;
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "RX thread paused");
     }
-    */
-    (void)pClient;
 }
 
 void uPortAtResumeRx(uCxAtClient_t *pClient)
 {
-    // STUBBED: Uncomment below to enable RX thread resuming after raw serial access
-    /*
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Resuming RX thread...");
@@ -516,14 +510,10 @@ void uPortAtResumeRx(uCxAtClient_t *pClient)
             U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "RX thread resumed");
         }
     }
-    */
-    (void)pClient;
 }
 
 void uPortAtFlush(uCxAtClient_t *pClient)
 {
-    // STUBBED: Uncomment below to enable buffer flushing
-    /*
     uPortContext_t *pCtx = pClient->pConfig->pStreamHandle;
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Flushing serial buffers...");
@@ -537,8 +527,6 @@ void uPortAtFlush(uCxAtClient_t *pClient)
         
         U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Serial buffers flushed");
     }
-    */
-    (void)pClient;
 }
 
 /* ----------------------------------------------------------------

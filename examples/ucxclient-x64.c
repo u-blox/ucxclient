@@ -1058,6 +1058,7 @@ static void httpGetExample(void);
 static void httpPostExample(void);
 static void httpQuoteApiExample(void);
 static void httpTimeApiExample(void);
+static void httpZenQuotesExample(void);
 static void httpStatusCodeExample(void);
 static void httpJsonPostExample(void);
 
@@ -9967,11 +9968,12 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
     // Step 2: If station not connected, check if Access Point is active
     if (!stationConnected) {
         // Try to list AP stations - this only works if AP is running
-        uCxWifiApListStationsBegin(&gUcxHandle);
-        // If we can call the list function, AP is active (even if no stations connected)
-        apActive = true;  // Assume AP is active if the command doesn't fail
-        // Don't need to actually iterate - just end the list
-        uCxEnd(&gUcxHandle);
+        // If the command succeeds, AP is active (even if no stations connected)
+        if (uCxWifiApListStationsBegin(&gUcxHandle) == 0) {
+            apActive = true;
+            // Don't need to actually iterate - just end the list
+            uCxEnd(&gUcxHandle);
+        }
     }
     
     // If neither station nor AP is active, try to connect
@@ -12005,6 +12007,175 @@ static void httpJsonPostExample(void)
     }
     printf("\n─────────────────────────────────────────────────\n");
     printf("✓ Response received: %d bytes\n", totalBytes);
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief Example: ZenQuotes - Daily inspirational quote
+ * Demonstrates fetching the quote of the day from zenquotes.io
+ */
+static void httpZenQuotesExample(void)
+{
+    int32_t sessionId = 0;
+    int32_t err;
+    
+    printf("\n");
+    printf("=== ZENQUOTES.IO - DAILY INSPIRATIONAL QUOTE ===\n");
+    printf("\n");
+    printf("NOTE: Requires firmware 3.2.0 or later for reliable HTTP client\n");
+    printf("      Firmware 3.0.0 has known HTTP client bugs\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity before proceeding
+    if (!checkWiFiConnectivity(false, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Disconnect any existing HTTP session
+    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    Sleep(100);
+    
+    printf("Configuring HTTPS connection to zenquotes.io...\n");
+    
+    // Use helper function to configure HTTPS
+    if (!configureHttpsConnection(sessionId, "zenquotes.io", "/api/today")) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("Sending GET request to https://zenquotes.io/api/today...\n");
+    
+    // Send GET request
+    err = uCxHttpGetRequest(&gUcxHandle, sessionId);
+    if (err < 0) {
+        printf("ERROR: GET request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("✓ Request sent successfully\n");
+    printf("\n");
+    
+    // Read response headers
+    printf("Reading response headers...\n");
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
+        printf("─────────────────────────────────────────────────\n");
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
+        printf("─────────────────────────────────────────────────\n");
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    printf("\n");
+    printf("Reading response body...\n");
+    
+    // Read response body into JSON buffer
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
+    char jsonResponse[4096] = {0};
+    int32_t totalBytes = 0;
+    int32_t moreToRead = 1;
+    
+    while (moreToRead && totalBytes < (int32_t)(sizeof(jsonResponse) - 1)) {
+        int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("ERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            if (totalBytes + bytesRead < (int32_t)sizeof(jsonResponse)) {
+                memcpy(jsonResponse + totalBytes, buffer, bytesRead);
+                totalBytes += bytesRead;
+            }
+            if (moreToRead) {
+                printf(".");
+                fflush(stdout);
+            }
+        }
+    }
+    printf("\n");
+    
+    jsonResponse[totalBytes] = '\0';
+    
+    if (totalBytes > 0) {
+        printf("✓ Received %d bytes\n", totalBytes);
+        printf("\n");
+        
+        // Parse JSON response from zenquotes.io/api/today
+        // Response format: [{"q":"quote text","a":"author","h":"html formatted quote"}]
+        // Note: The API returns an array with a single object
+        
+        char quote[512] = {0};
+        char author[128] = {0};
+        
+        printf("─────────────────────────────────────────────────\n");
+        printf("QUOTE OF THE DAY\n");
+        printf("─────────────────────────────────────────────────\n");
+        
+        // Find the quote text ("q":"...")
+        const char *qPos = strstr(jsonResponse, "\"q\":\"");
+        if (qPos) {
+            qPos += 5;  // Skip past \"q\":\"
+            const char *qEnd = strstr(qPos, "\"");
+            if (qEnd && (qEnd - qPos) < (int)sizeof(quote)) {
+                size_t len = qEnd - qPos;
+                strncpy(quote, qPos, len);
+                quote[len] = '\0';
+            }
+        }
+        
+        // Find the author ("a":"...")
+        const char *aPos = strstr(jsonResponse, "\"a\":\"");
+        if (aPos) {
+            aPos += 5;  // Skip past \"a\":\"
+            const char *aEnd = strstr(aPos, "\"");
+            if (aEnd && (aEnd - aPos) < (int)sizeof(author)) {
+                size_t len = aEnd - aPos;
+                strncpy(author, aPos, len);
+                author[len] = '\0';
+            }
+        }
+        
+        if (quote[0] != '\0') {
+            printf("\n  \"%s\"\n", quote);
+            if (author[0] != '\0') {
+                printf("\n  — %s\n", author);
+            }
+            printf("\n");
+        } else {
+            printf("\nFailed to parse quote from response\n");
+        }
+        
+        printf("─────────────────────────────────────────────────\n");
+        
+        // Show raw JSON for educational purposes
+        printf("\nRaw JSON Response:\n");
+        printf("%s\n", jsonResponse);
+    }
+    
+    printf("\n");
+    printf("About ZenQuotes API:\n");
+    printf("  - Free inspirational quotes API\n");
+    printf("  - No API key required\n");
+    printf("  - Updates daily with new quote\n");
+    printf("  - Documentation: https://zenquotes.io/\n");
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -15377,6 +15548,7 @@ static void printMenu(void)
             printf("  [5] HTTP Status Code Tester (httpbin.org)\n");
             printf("  [6] JSON POST Example (httpbin.org/post)\n");
             printf("  [7] JSONPlaceholder - Fake REST API (typicode.com)\n");
+            printf("  [8] Daily Inspirational Quote (zenquotes.io)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -16190,6 +16362,9 @@ static void handleUserInput(void)
                     break;
                 case 7:
                     httpJsonPlaceholderExample();
+                    break;
+                case 8:
+                    httpZenQuotesExample();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
