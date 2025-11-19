@@ -100,6 +100,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_gatt_server.h"
 #include "u_cx_sps.h"
 #include "u_cx_firmware_update.h"
+#include "u_cx_version.h"
 #include "qrcodegen/qrcodegen.h"
 
 // Port layer
@@ -414,6 +415,7 @@ static bool gWifiConnected = false;                // Wi-Fi connection status
 static char gWifiSsid[64] = "";                    // Connected network SSID
 static char gWifiIpAddress[16] = "";               // Device IP address
 static int gWifiChannel = 0;                       // Wi-Fi channel (1-13)
+static int gRegDomain = 0;                         // Regulatory domain (0 = World, cached value)
 
 // HTTP configuration
 #define HTTP_MAX_CHUNK_SIZE 1000                   // Maximum bytes per HTTP read/write operation
@@ -863,6 +865,8 @@ static bool ensureLegacyAdvertisementEnabled(void);
 static void showGattServerConnectionInfo(void);
 static void showBluetoothStatus(void);
 static void showWifiStatus(void);
+static void configureRegulatoryDomain(void);
+static void listWifiChannels(void);
 static void bluetoothMenu(void);
 static void bluetoothScan(void);
 static void bluetoothConnect(void);
@@ -1946,6 +1950,10 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
 
 static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSize)
 {
+    // Suppress unreferenced parameter warnings
+    (void)downloadedPath;
+    (void)pathSize;
+    
     printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("Download Firmware from GitHub (using UCX HTTP API)\n");
     printf("────────────────────────────────────────────────────────────────────────────────\n\n");
@@ -9882,10 +9890,9 @@ static void mqttPublish(void)
     printf("Message: %s\n", message);
     printf("QoS: %d, Retain: %d\n", qos, retain);
     
-    uCxMqttPublish_t publishRsp;
     int32_t result = uCxMqttPublish(&gUcxHandle, MQTT_CONFIG_ID, (uMqttQos_t)qos, 
                                      (uMqttRetain_t)retain, topic, 
-                                     (uint8_t*)message, (int32_t)strlen(message), &publishRsp);
+                                     (uint8_t*)message, (int32_t)strlen(message));
     
     if (result == 0) {
         printf("✓ Message published successfully\n");
@@ -9913,139 +9920,162 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
         printf("Checking Wi-Fi connectivity...\n");
     }
     
-    // Step 1: Check Wi-Fi connection status
+    // Step 1: Check Wi-Fi connection status (Station mode OR AP mode)
+    bool stationConnected = false;
+    bool apActive = false;
+    
     uCxWifiStationStatus_t wifiStatus;
     if (uCxWifiStationStatusBegin(&gUcxHandle, U_WIFI_STATUS_ID_CONNECTION, &wifiStatus)) {
         if (wifiStatus.type == U_CX_WIFI_STATION_STATUS_RSP_TYPE_STATUS_ID_INT) {
-            if (wifiStatus.rsp.StatusIdInt.int_val != 2) {  // 2 = Connected
-                printf("ERROR: Wi-Fi is not connected!\n");
-                uCxEnd(&gUcxHandle);
-                
-                // Show available profiles and offer to connect
-                if (gWifiProfileCount > 0) {
-                    // Try to suggest profile based on PC IP or use active profile
-                    int suggestedIdx = wifiSuggestProfile();
-                    bool suggestedByIP = (suggestedIdx >= 0);  // Track if IP matched
-                    int profileIndex = -1;
-                    bool verifyConnection = false;
-                    
-                    // If no IP-based suggestion, check for active profile
-                    if (suggestedIdx < 0 && gActiveProfileIndex >= 0 && gActiveProfileIndex < gWifiProfileCount) {
-                        suggestedIdx = gActiveProfileIndex;
-                    }
-                    
-                    if (suggestedIdx >= 0) {
-                        // Found a recommended profile (either IP match or active profile)
-                        if (suggestedByIP) {
-                            char currentIP[40];
-                            getCurrentPCIPAddress(currentIP, sizeof(currentIP));
-                            printf("\nRecommended: Profile '%s' matches your network (%s)\n", 
-                                   gWifiProfiles[suggestedIdx].name, currentIP);
-                        } else {
-                            printf("\nActive profile: '%s' (SSID: %s)\n",
-                                   gWifiProfiles[suggestedIdx].name,
-                                   gWifiProfiles[suggestedIdx].ssid);
-                        }
-                        
-                        printf("Use this profile? (Y/n/s=show all): ");
-                        
-                        char choice[10];
-                        if (!fgets(choice, sizeof(choice), stdin)) {
-                            printf("Invalid input. Returning to menu.\n");
-                            return false;
-                        }
-                        choice[strcspn(choice, "\r\n")] = 0;
-                        
-                        if (choice[0] == 'n' || choice[0] == 'N') {
-                            // Show all profiles - fall through to profile selection below
-                            suggestedIdx = -1;
-                        } else if (choice[0] == 's' || choice[0] == 'S') {
-                            // Show all profiles - fall through to profile selection below
-                            suggestedIdx = -1;
-                        } else {
-                            // Use suggested profile (default on Enter or 'y')
-                            profileIndex = suggestedIdx;
-                        }
-                    }
-                    
-                    // Show all profiles if not using suggested one
-                    if (profileIndex < 0) {
-                        printf("\nSelect Wi-Fi profile to connect:\n");
-                        for (int i = 0; i < gWifiProfileCount; i++) {
-                            printf("  [%d] %s (SSID: %s)\n", i + 1, gWifiProfiles[i].name, gWifiProfiles[i].ssid);
-                        }
-                        printf("  [0] Cancel\n");
-                        printf("\nEnter profile number (0-%d): ", gWifiProfileCount);
-                        
-                        int profileChoice = -1;
-                        if (scanf("%d", &profileChoice) != 1) {
-                            getchar(); // consume invalid input
-                            printf("Invalid input. Returning to menu.\n");
-                            return false;
-                        }
-                        getchar(); // consume newline
-                        
-                        if (profileChoice == 0) {
-                            printf("Connection cancelled. Returning to menu.\n");
-                            return false;
-                        }
-                        
-                        if (profileChoice < 1 || profileChoice > gWifiProfileCount) {
-                            printf("Invalid profile selection. Returning to menu.\n");
-                            return false;
-                        }
-                        
-                        profileIndex = profileChoice - 1;
-                        
-                        // Ask for connection mode
-                        printf("\nConnect to '%s' (SSID: %s)\n", 
-                               gWifiProfiles[profileIndex].name, 
-                               gWifiProfiles[profileIndex].ssid);
-                        printf("  [Enter] Quick connect (no verification)\n");
-                        printf("  [v]     Connect with verification\n");
-                        printf("Choice: ");
-                        
-                        char modeChoice[10];
-                        if (!fgets(modeChoice, sizeof(modeChoice), stdin)) {
-                            printf("Invalid input. Returning to menu.\n");
-                            return false;
-                        }
-                        modeChoice[strcspn(modeChoice, "\r\n")] = 0;
-                        
-                        verifyConnection = (modeChoice[0] == 'v' || modeChoice[0] == 'V');
-                    }
-                    
-                    // Connect to selected profile using shared function
-                    if (profileIndex >= 0) {
-                        bool quickConnect = !verifyConnection;
-                        if (!connectToWifiProfile(profileIndex, quickConnect, true)) {
-                            return false;
-                        }
-                        
-                        // If quick connect, we're done
-                        if (quickConnect) {
-                            return true;
-                        }
-                        
-                        // Otherwise continue with full connectivity checks below
-                    }
-                    
-                    // Continue to verify IP address and connectivity below
-                } else {
-                    printf("No saved Wi-Fi profiles found.\n");
-                    printf("Please configure Wi-Fi using the [w] Wi-Fi menu.\n");
-                    return false;
-                }
-            } else if (verbose) {
-                printf("✓ Wi-Fi is connected\n");
+            if (wifiStatus.rsp.StatusIdInt.int_val == 2) {  // 2 = Connected
+                stationConnected = true;
             }
-        } else {
-            printf("WARNING: Unexpected Wi-Fi status response type\n");
         }
         uCxEnd(&gUcxHandle);
-    } else {
-        printf("ERROR: Failed to check Wi-Fi connection status\n");
-        return false;
+    }
+    
+    // Step 2: If station not connected, check if Access Point is active
+    if (!stationConnected) {
+        // Try to list AP stations - this only works if AP is running
+        uCxWifiApListStationsBegin(&gUcxHandle);
+        // If we can call the list function, AP is active (even if no stations connected)
+        apActive = true;  // Assume AP is active if the command doesn't fail
+        // Don't need to actually iterate - just end the list
+        uCxEnd(&gUcxHandle);
+    }
+    
+    // If neither station nor AP is active, try to connect
+    if (!stationConnected && !apActive) {
+        printf("ERROR: Wi-Fi station is not connected and Access Point is not active!\n");
+        
+        // Show available profiles and offer to connect
+        if (gWifiProfileCount > 0) {
+            // Try to suggest profile based on PC IP or use active profile
+            int suggestedIdx = wifiSuggestProfile();
+            bool suggestedByIP = (suggestedIdx >= 0);  // Track if IP matched
+            int profileIndex = -1;
+            bool verifyConnection = false;
+            
+            // If no IP-based suggestion, check for active profile
+            if (suggestedIdx < 0 && gActiveProfileIndex >= 0 && gActiveProfileIndex < gWifiProfileCount) {
+                suggestedIdx = gActiveProfileIndex;
+            }
+            
+            if (suggestedIdx >= 0) {
+                // Found a recommended profile (either IP match or active profile)
+                if (suggestedByIP) {
+                    char currentIP[40];
+                    getCurrentPCIPAddress(currentIP, sizeof(currentIP));
+                    printf("\nRecommended: Profile '%s' matches your network (%s)\n", 
+                            gWifiProfiles[suggestedIdx].name, currentIP);
+                } else {
+                    printf("\nActive profile: '%s' (SSID: %s)\n",
+                            gWifiProfiles[suggestedIdx].name,
+                            gWifiProfiles[suggestedIdx].ssid);
+                }
+                
+                printf("Use this profile? (Y/n/s=show all): ");
+                
+                char choice[10];
+                if (!fgets(choice, sizeof(choice), stdin)) {
+                    printf("Invalid input. Returning to menu.\n");
+                    return false;
+                }
+                choice[strcspn(choice, "\r\n")] = 0;
+                
+                if (choice[0] == 'n' || choice[0] == 'N') {
+                    // Show all profiles - fall through to profile selection below
+                    suggestedIdx = -1;
+                } else if (choice[0] == 's' || choice[0] == 'S') {
+                    // Show all profiles - fall through to profile selection below
+                    suggestedIdx = -1;
+                } else {
+                    // Use suggested profile (default on Enter or 'y')
+                    profileIndex = suggestedIdx;
+                }
+            }
+            
+            // Show all profiles if not using suggested one
+            if (profileIndex < 0) {
+                printf("\nSelect Wi-Fi profile to connect:\n");
+                for (int i = 0; i < gWifiProfileCount; i++) {
+                    printf("  [%d] %s (SSID: %s)\n", i + 1, gWifiProfiles[i].name, gWifiProfiles[i].ssid);
+                }
+                printf("  [0] Cancel\n");
+                printf("\nEnter profile number (0-%d): ", gWifiProfileCount);
+                
+                int profileChoice = -1;
+                if (scanf("%d", &profileChoice) != 1) {
+                    getchar(); // consume invalid input
+                    printf("Invalid input. Returning to menu.\n");
+                    return false;
+                }
+                getchar(); // consume newline
+                
+                if (profileChoice == 0) {
+                    printf("Connection cancelled. Returning to menu.\n");
+                    return false;
+                }
+                
+                if (profileChoice < 1 || profileChoice > gWifiProfileCount) {
+                    printf("Invalid profile selection. Returning to menu.\n");
+                    return false;
+                }
+                
+                profileIndex = profileChoice - 1;
+                
+                // Ask for connection mode
+                printf("\nConnect to '%s' (SSID: %s)\n", 
+                        gWifiProfiles[profileIndex].name, 
+                        gWifiProfiles[profileIndex].ssid);
+                printf("  [Enter] Quick connect (no verification)\n");
+                printf("  [v]     Connect with verification\n");
+                printf("Choice: ");
+                
+                char modeChoice[10];
+                if (!fgets(modeChoice, sizeof(modeChoice), stdin)) {
+                    printf("Invalid input. Returning to menu.\n");
+                    return false;
+                }
+                modeChoice[strcspn(modeChoice, "\r\n")] = 0;
+                
+                verifyConnection = (modeChoice[0] == 'v' || modeChoice[0] == 'V');
+            }
+            
+            // Connect to selected profile using shared function
+            if (profileIndex >= 0) {
+                bool quickConnect = !verifyConnection;
+                if (!connectToWifiProfile(profileIndex, quickConnect, true)) {
+                    return false;
+                }
+                
+                // If quick connect, we're done
+                if (quickConnect) {
+                    return true;
+                }
+                
+                // Otherwise continue with full connectivity checks below
+            }
+            
+            // Continue to verify IP address and connectivity below
+        } else {
+            printf("No saved Wi-Fi profiles found.\n");
+            printf("Please configure Wi-Fi using the [w] Wi-Fi menu.\n");
+            return false;
+        }
+    }
+    
+    // If AP mode is active but station is not connected, skip station-specific checks
+    if (apActive && !stationConnected) {
+        if (verbose) {
+            printf("✓ Access Point mode is active\n");
+        }
+        return true;  // AP mode is sufficient for local network operations
+    }
+    
+    // Station is connected - continue with station-specific checks
+    if (verbose) {
+        printf("✓ Wi-Fi station is connected\n");
     }
     
     // Step 2: Check RSSI (signal strength)
@@ -13213,8 +13243,33 @@ static void iperfServerExample(void)
     printf("iPerf server is now listening on port %d\n", port);
     printf("Use option [4] to stop the server when done.\n");
     printf("\n");
-    printf("You can now run an iPerf client from another device:\n");
-    printf("  Example: iperf -c <module-ip> -p %d\n", port);
+    
+    // Show IP address to connect to
+    if (gWifiConnected && gWifiIpAddress[0] != '\0') {
+        printf("Module IP address (Station mode): %s\n", gWifiIpAddress);
+        printf("  Example: iperf -c %s -p %d\n", gWifiIpAddress, port);
+    } else {
+        // Check for AP mode IP
+        uCxWifiApListNetworkStatusBegin(&gUcxHandle);
+        uCxWifiApListNetworkStatus_t netStatus;
+        while (uCxWifiApListNetworkStatusGetNext(&gUcxHandle, &netStatus)) {
+            if (netStatus.net_status_id == 0 && netStatus.net_status_val.type == U_SOCK_ADDRESS_TYPE_V4) {
+                // Found AP IPv4 address
+                uSockIpAddress_t *ip = &netStatus.net_status_val;
+                uint32_t ipv4 = ip->address.ipv4;
+                char apIpStr[50];
+                sprintf(apIpStr, "%d.%d.%d.%d",
+                       (ipv4 >> 24) & 0xFF,
+                       (ipv4 >> 16) & 0xFF,
+                       (ipv4 >> 8) & 0xFF,
+                       ipv4 & 0xFF);
+                printf("Module IP address (Access Point mode): %s\n", apIpStr);
+                printf("  Example: iperf -c %s -p %d\n", apIpStr, port);
+                break;
+            }
+        }
+        uCxEnd(&gUcxHandle);
+    }
     printf("─────────────────────────────────────────────────\n");
     
     printf("\n");
@@ -14010,7 +14065,7 @@ static void tlsShowConfig(void)
     
     if (err == 0) {
         printf("Server Name Indication (SNI): %s\n", 
-               (sniEnabled == (uEnabled_t)U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
+               (sniEnabled == (uEnabled_t)U_ENABLED_YES) ? "Enabled" : "Disabled");
     } else {
         printf("Server Name Indication (SNI): ERROR (failed to query)\n");
     }
@@ -14021,7 +14076,7 @@ static void tlsShowConfig(void)
     
     if (err == 0) {
         printf("Handshake Fragmentation: %s\n",
-               (fragEnabled == (uEnabled_t)U_TLS_EXT_ENABLED) ? "Enabled" : "Disabled");
+               (fragEnabled == (uEnabled_t)U_ENABLED_YES) ? "Enabled" : "Disabled");
     } else {
         printf("Handshake Fragmentation: ERROR (failed to query)\n");
     }
@@ -14982,62 +15037,85 @@ static void printMenu(void)
             }
             
             printf("\n");
-            printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
-            printf("u-blox UCX Client - Main Menu\n");
-            printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
+            printf("═════════════════════════════════════════════════════════════════\n");
+            printf("               u-blox UCX Client - Main Menu\n");
+            printf("                      UCX API v%s\n", U_CX_VERSION_STR);
+            printf("═════════════════════════════════════════════════════════════════\n");
             
             // === STATUS DASHBOARD ===
             if (gUcxConnected) {
-                printf("\n✓ ucxclient CONNECTED");
+                printf("\n");
+                printf("  CONNECTION:  ✓ ACTIVE\n");
                 if (gDeviceModel[0] != '\0') {
-                    printf("  |  %s", gDeviceModel);
+                    printf("  DEVICE:      %s", gDeviceModel);
                     if (gDeviceFirmware[0] != '\0') {
-                        printf(" (FW: %s)", gDeviceFirmware);
+                        printf(" (Firmware %s)", gDeviceFirmware);
                     }
+                    printf("\n");
                 }
-                printf("  |  Port: %s\n", gComPort);
-                printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
+                printf("  PORT:        %s\n", gComPort);
+                printf("\n");
+                printf("─────────────────────────────────────────────────────────────────\n");
                 
-                // Line 1: WiFi status + Sockets + Certificates
-                printf("WiFi: ");
+                // Wi-Fi Status
+                printf("  Wi-Fi:       ");
                 if (gWifiConnected && gWifiSsid[0] != '\0') {
-                    printf("✓ %s", gWifiSsid);
+                    printf("✓ Connected to '%s'", gWifiSsid);
                     if (gWifiIpAddress[0] != '\0') {
                         printf(" (%s)", gWifiIpAddress);
                     }
                 } else {
-                    printf("○ Not connected");
+                    printf("○ Disconnected");
                 }
-                printf("  |  Sockets: %d", gActiveSocketCount);
-                printf("  |  Certs: %d", gCertificateCount);
+                
+                // Add regulatory domain info
+                if (gRegDomain >= 0 && gRegDomain <= 10) {
+                    const char *domainNames[] = {
+                        "World", "ETSI", "FCC", "IC", "NZ", "MKK", "NCC", "ACMA", "KCC", "SA", "Brazil"
+                    };
+                    printf("  |  Reg: %s", domainNames[gRegDomain]);
+                }
                 printf("\n");
                 
-                // Line 2: Bluetooth mode + connections + advertising + bonded
-                printf("BT: ");
-                const char* btModeStr = "Off";
+                // Bluetooth Status
+                printf("  Bluetooth:   ");
+                const char* btModeStr = "Disabled";
                 if (gBluetoothMode == 1) btModeStr = "Central";
                 else if (gBluetoothMode == 2) btModeStr = "Peripheral";
                 else if (gBluetoothMode == 3) btModeStr = "Central+Peripheral";
                 printf("%s", btModeStr);
                 
                 if (gBluetoothMode != 0) {
+                    printf("  |  ");
                     if (gBtConnectionCount > 0) {
-                        printf("  |  %d conn", gBtConnectionCount);
+                        printf("%d active connection%s", gBtConnectionCount, 
+                               gBtConnectionCount == 1 ? "" : "s");
+                    } else {
+                        printf("No connections");
                     }
-                    printf("  |  Adv:%s", gLegacyAdvertising ? "ON" : "OFF");
-                    printf("  |  %d bonded", gBondedDeviceCount);
+                    printf("  |  Advertising: %s", gLegacyAdvertising ? "ON" : "OFF");
+                    if (gBondedDeviceCount > 0) {
+                        printf("  |  %d bonded", gBondedDeviceCount);
+                    }
                 }
                 printf("\n");
-                printf("───────────────────────────────────────────────────────────────────────────────────────────────────\n");
+                
+                // Resources Status
+                printf("  Resources:   %d active socket%s  |  %d certificate%s\n",
+                       gActiveSocketCount, gActiveSocketCount == 1 ? "" : "s",
+                       gCertificateCount, gCertificateCount == 1 ? "" : "s");
+                printf("─────────────────────────────────────────────────────────────────\n");
             } else {
-                printf("\n○ NOT CONNECTED");
+                printf("\n");
+                printf("  CONNECTION:  ○ NOT CONNECTED\n");
                 if (gComPort[0] != '\0') {
-                    printf("  |  Last: %s", gComPort);
+                    printf("  LAST PORT:   %s", gComPort);
                     if (gLastDeviceModel[0] != '\0') {
                         printf(" (%s)", gLastDeviceModel);
                     }
+                    printf("\n");
                 }
-                printf("\n");
+                printf("─────────────────────────────────────────────────────────────────\n");
             }
             
             // === QUICK ACTIONS (always visible) ===
@@ -15166,7 +15244,11 @@ static void printMenu(void)
             }
             printf("\n");
             printf("  [1] Show Wi-Fi status\n");
-            printf("  [2] Regulatory domain (World)\n");
+            {
+                const char *domainNames[] = {"World", "ETSI", "FCC", "IC", "NZ", "MKK", "NCC", "ACMA", "KCC", "SA", "Brazil"};
+                const char *domainName = (gRegDomain >= 0 && gRegDomain < 11) ? domainNames[gRegDomain] : "Unknown";
+                printf("  [2] Regulatory domain (%s)\n", domainName);
+            }
             printf("  [3] Scan networks\n");
             printf("  [4] Connect to network\n");
             printf("  [5] Disconnect from network\n");
@@ -15923,11 +16005,7 @@ static void handleUserInput(void)
                     showWifiStatus();
                     break;
                 case 2:
-                    printf("\n--- Regulatory Domain Configuration ---\n");
-                    printf("This feature will be available in the next release.\n");
-                    printf("It will allow setting the country/region for compliance\n");
-                    printf("with local regulations (affects available channels).\n");
-                    printf("Current setting: World (all channels enabled)\n");
+                    configureRegulatoryDomain();
                     break;
                 case 3:
                     wifiScan();
@@ -19686,6 +19764,156 @@ static void bluetoothSyncConnections(void)
     uCxEnd(&gUcxHandle);
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Bluetooth sync complete: %d connection(s) tracked", gBtConnectionCount);
+}
+
+static void configureRegulatoryDomain(void)
+{
+    const char *domainNames[] = {
+        "World     (Ch 1-11, 36-165)",
+        "ETSI      (Ch 1-13, 36-140)",
+        "FCC       (Ch 1-11, 36-165)",
+        "IC        (Ch 1-11, 36-165)",
+        "NZ        (Ch 1-13, 36-165)",
+        "MKK       (Ch 1-14, 36-140)",
+        "NCC       (Ch 1-11, 56-165)",
+        "ACMA      (Ch 1-13, 36-165)",
+        "KCC       (Ch 1-13, 36-165)",
+        "SA        (Ch 1-13, 36-165)",
+        "Brazil    (Ch 1-13, 36-165)"
+    };
+    const int numDomains = sizeof(domainNames) / sizeof(domainNames[0]);
+
+    printf("\n=== Configure Regulatory Domain ===\n\n");
+
+    // Show current setting
+    printf("Current regulatory domain: ");
+    if (gRegDomain >= 0 && gRegDomain < numDomains) {
+        printf("%d - %s\n\n", gRegDomain, domainNames[gRegDomain]);
+    } else {
+        printf("Unknown (%d)\n\n", gRegDomain);
+    }
+
+    // List available domains
+    printf("Available regulatory domains:\n");
+    for (int i = 0; i < numDomains; i++) {
+        printf("  %d. %s\n", i, domainNames[i]);
+    }
+
+    printf("\nOptions:\n");
+    printf("  0-10: Set regulatory domain\n");
+    printf("  c:    View configured channel list\n");
+    printf("  Enter: Return to Wi-Fi menu\n");
+    printf("\nEnter choice: ");
+
+    char input[10];
+    if (fgets(input, sizeof(input), stdin) == NULL) {
+        return;
+    }
+
+    // Remove newline
+    input[strcspn(input, "\r\n")] = 0;
+
+    if (strlen(input) == 0) {
+        return; // Return to menu
+    }
+
+    if (strcmp(input, "c") == 0 || strcmp(input, "C") == 0) {
+        listWifiChannels();
+        return;
+    }
+
+    // Try to parse as domain number
+    char *endptr;
+    long domain = strtol(input, &endptr, 10);
+
+    if (*endptr != '\0' || domain < 0 || domain >= numDomains) {
+        printf("\nInvalid domain number. Please enter 0-%d.\n", numDomains - 1);
+        return;
+    }
+
+    printf("\nSetting regulatory domain to %ld...\n", domain);
+
+    if (uCxWifiSetRegulatoryDomain(&gUcxHandle, (uWifiRegDomain_t)domain) == 0) {
+        printf("Regulatory domain set successfully.\n");
+        gRegDomain = (int)domain;
+        saveSettings(); // Save to file
+        listWifiChannels(); // Show channels after setting
+    } else {
+        printf("Failed to set regulatory domain\n");
+    }
+}
+
+static void listWifiChannels(void)
+{
+    printf("\n=== Wi-Fi Channel List ===\n\n");
+
+    uIntList_t channelList;
+    uIntList_t activeChannels;
+
+    // Get configured channel list
+    int32_t result = uCxWifiGetChannelList(&gUcxHandle, &channelList);
+    if (result != 0) {
+        printf("Failed to get channel list (error: %ld)\n", (long)result);
+        return;
+    }
+
+    // Get active channels
+    result = uCxWifiGetActiveChannels(&gUcxHandle, &activeChannels);
+    bool hasActiveChannels = (result == 0);
+
+    // Display configured channels
+    printf("Configured channels (%zu total):\n", channelList.length);
+    printf("  2.4 GHz: ");
+    bool first24 = true;
+    for (size_t i = 0; i < channelList.length; i++) {
+        if (channelList.pIntValues[i] <= 14) {
+            if (!first24) printf(", ");
+            printf("%d", channelList.pIntValues[i]);
+            first24 = false;
+        }
+    }
+    if (first24) printf("None");
+    printf("\n");
+
+    printf("  5 GHz:   ");
+    bool first5 = true;
+    for (size_t i = 0; i < channelList.length; i++) {
+        if (channelList.pIntValues[i] > 14) {
+            if (!first5) printf(", ");
+            printf("%d", channelList.pIntValues[i]);
+            first5 = false;
+        }
+    }
+    if (first5) printf("None");
+    printf("\n");
+
+    // Display active channels if available
+    if (hasActiveChannels) {
+        printf("\nActive channels (%zu total):\n", activeChannels.length);
+        printf("  2.4 GHz: ");
+        first24 = true;
+        for (size_t i = 0; i < activeChannels.length; i++) {
+            if (activeChannels.pIntValues[i] <= 14) {
+                if (!first24) printf(", ");
+                printf("%d", activeChannels.pIntValues[i]);
+                first24 = false;
+            }
+        }
+        if (first24) printf("None");
+        printf("\n");
+
+        printf("  5 GHz:   ");
+        first5 = true;
+        for (size_t i = 0; i < activeChannels.length; i++) {
+            if (activeChannels.pIntValues[i] > 14) {
+                if (!first5) printf(", ");
+                printf("%d", activeChannels.pIntValues[i]);
+                first5 = false;
+            }
+        }
+        if (first5) printf("None");
+        printf("\n");
+    }
 }
 
 static void wifiScan(void)
