@@ -19280,6 +19280,23 @@ static void listAllApiCommands(void)
     
     printf("\n");
     printf("╔════════════════════════════════════════════════════════════╗\n");
+    printf("║  %-56s  ║\n", "HTTP API (u_cx_http.h)");
+    printf("╚════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    printf("  uCxHttpSetConnectionParams()                    - Set HTTP server and port\n");
+    printf("  uCxHttpSetTLS()                                 - Configure TLS for HTTPS\n");
+    printf("  uCxHttpSetRequestPath()                         - Set request path/URL\n");
+    printf("  uCxHttpAddHeaderField()                         - Add custom HTTP header\n");
+    printf("  uCxHttpGetRequest()                             - Send HTTP GET request\n");
+    printf("  uCxHttpPostRequest()                            - Send HTTP POST request\n");
+    printf("  uCxHttpPutRequest()                             - Send HTTP PUT request\n");
+    printf("  uCxHttpDeleteRequest()                          - Send HTTP DELETE request\n");
+    printf("  uCxHttpGetBody()                                - Read HTTP response body\n");
+    printf("  uCxHttpDisconnect()                             - Close HTTP session\n");
+    printf("\n");
+    
+    printf("\n");
+    printf("╔════════════════════════════════════════════════════════════╗\n");
     printf("║  %-56s  ║\n", "MQTT API (u_cx_mqtt.h)");
     printf("╚════════════════════════════════════════════════════════════╝\n");
     printf("\n");
@@ -19292,12 +19309,33 @@ static void listAllApiCommands(void)
     
     printf("\n");
     printf("╔════════════════════════════════════════════════════════════╗\n");
+    printf("║  %-56s  ║\n", "NETWORK TIME API (u_cx_network_time.h)");
+    printf("╚════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    printf("  uCxNetworkTimeSetClientEnabled()                - Enable/disable NTP client\n");
+    printf("  uCxNetworkTimeGetClientEnabled()                - Get NTP client status\n");
+    printf("  uCxNetworkTimeSetNtpServer()                    - Configure NTP server\n");
+    printf("\n");
+    
+    printf("\n");
+    printf("╔════════════════════════════════════════════════════════════╗\n");
     printf("║  %-56s  ║\n", "SECURITY API (u_cx_security.h)");
     printf("╚════════════════════════════════════════════════════════════╝\n");
     printf("\n");
     printf("  uCxSecurityTlsCertificateStoreBegin()           - Store TLS certificate\n");
     printf("  uCxSecurityTlsCertificateRemove()               - Remove certificate\n");
     printf("  uCxSecurityTlsCertificateListBegin()            - List stored certificates\n");
+    printf("\n");
+    
+    printf("\n");
+    printf("╔════════════════════════════════════════════════════════════╗\n");
+    printf("║  %-56s  ║\n", "POWER API (u_cx_power.h)");
+    printf("╚════════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    printf("  uCxPowerDeepSleep()                             - Enter deep sleep mode\n");
+    printf("  uCxPowerSetPowerSaveLevel()                     - Set power save level\n");
+    printf("  uCxPowerGetPowerSaveLevel()                     - Get power save level\n");
+    printf("  uCxPowerSetPowerSaveTimeout()                   - Set power save timeout\n");
     printf("\n");
     
     printf("\n");
