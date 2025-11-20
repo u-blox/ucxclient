@@ -13,7 +13,8 @@ set(U_EXAMPLE_WPA_PSK "" CACHE STRING "The Wi-Fi WPA PSK to use for the examples
 # HTTP Example
 add_executable(http_example
   examples/http_example.c
-  examples/port/u_port_posix.c
+  ports/os/u_port_posix.c
+  ports/uart/u_port_uart_linux.c
   ${UCXCLIENT_UCX_API_SRC}
   ${UCXCLIENT_AT_API_SRC}
 )
@@ -24,7 +25,8 @@ target_include_directories(http_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT
 # No OS Example
 add_executable(http_example_no_os
   examples/http_example_no_os.c
-  examples/port/u_port_no_os.c
+  ports/os/u_port_no_os.c
+  ports/uart/u_port_uart_linux.c
   ${UCXCLIENT_UCX_API_SRC}
   ${UCXCLIENT_AT_API_SRC}
 )

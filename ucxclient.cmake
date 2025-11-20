@@ -7,5 +7,6 @@ file(GLOB UCXCLIENT_AT_API_SRC ${REPO_DIR}/src/*.c)
 set(UCXCLIENT_INC ${REPO_DIR}/inc
     ${REPO_DIR}/ucx_api
     ${REPO_DIR}/ucx_api/generated
+    ${REPO_DIR}/ports
 )
-set(UCXCLIENT_PORT_DIR ${REPO_DIR}/examples/port)
+set(UCXCLIENT_PORT_DIR ${REPO_DIR}/ports)

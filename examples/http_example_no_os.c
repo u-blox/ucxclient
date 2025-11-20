@@ -30,7 +30,9 @@
 #include <stdlib.h>
 
 #include "u_port.h"
+#include "u_port_uart.h"
 #include "u_cx_at_client.h"
+#include "u_cx_at_config.h"
 #include "u_cx_at_util.h"
 #include "u_cx_log.h"
 #include "u_cx.h"
@@ -48,6 +50,9 @@
 #define URC_FLAG_NETWORK_UP         (1 << 0)
 #define URC_FLAG_HTTP_RESPONSE      (1 << 1)
 
+#define AT_RX_BUFFER_SIZE   1024
+#define AT_URC_BUFFER_SIZE  512
+
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
@@ -61,6 +66,10 @@
  * -------------------------------------------------------------- */
 
 static volatile uint32_t gUrcEventFlags = 0;
+
+// AT client buffers
+static char rxBuf[AT_RX_BUFFER_SIZE];
+static char urcBuf[AT_URC_BUFFER_SIZE];
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -116,8 +125,11 @@ static void sleepMs(int32_t timeMs)
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-int main(void)
+int main(int argc, char **argv)
 {
+    (void)argc;
+    (void)argv;
+
     uCxAtClient_t client;
     uCxHandle_t ucxHandle;
 
@@ -131,8 +143,22 @@ int main(void)
             "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.")
     }
 
-    uPortAtInit(&client);
-    if (!uPortAtOpen(&client, pDevice, 115200, true)) {
+    // Initialize port layer
+    uPortInit();
+
+    // Initialize AT client with buffers and UART device name
+    uCxAtClientConfig_t config = {
+        .pRxBuffer = rxBuf,
+        .rxBufferLen = sizeof(rxBuf),
+        .pUrcBuffer = urcBuf,
+        .urcBufferLen = sizeof(urcBuf),
+        .pUartDevName = pDevice
+    };
+
+    uCxAtClientInit(&config, &client);
+
+    // Open UART connection
+    if (uCxAtClientOpen(&client, 115200, true) != 0) {
         return 1;
     }
 
@@ -189,5 +215,10 @@ int main(void)
     // Disconnect HTTP session
     uCxHttpDisconnect(&ucxHandle, sessionId);
 
-    uPortAtClose(&client);
+    // Cleanup
+    uCxAtClientClose(&client);
+    uCxAtClientDeinit(&client);
+    uPortDeinit();
+
+    return 0;
 }

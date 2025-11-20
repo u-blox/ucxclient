@@ -20,13 +20,7 @@
 #ifndef U_CX_AT_CONFIG_H
 #define U_CX_AT_CONFIG_H
 
-#if defined(__ZEPHYR__) && defined(CONFIG_UCXCLIENT)
-# include "u_port_zephyr.h"
-#elif defined(U_PORT_NO_OS)
-# include "u_port_no_os.h"
-#elif defined(U_PORT_POSIX)
-# include "u_port_posix.h"
-#endif
+#include "u_port.h"
 
 /* To override the default settings you can define U_CX_AT_CONFIG_FILE
  * to include a custom configuration header file
@@ -34,43 +28,6 @@
 #ifdef U_CX_AT_CONFIG_FILE
 # include U_CX_AT_CONFIG_FILE
 #endif
-
-/* Porting layer for mutexes.*/
-#ifndef U_CX_MUTEX_HANDLE
-# error "U_CX_MUTEX_XXX defines must be defined or you must use any of the example ports using U_PORT_XXX"
-/* The following is needed for implementing mutexes (Posix example):
- * #define U_CX_MUTEX_HANDLE                     pthread_mutex_t
- * #define U_CX_MUTEX_CREATE(mutex)              pthread_mutex_init(&mutex, NULL)
- * #define U_CX_MUTEX_DELETE(mutex)              pthread_mutex_destroy(&mutex)
- * #define U_CX_MUTEX_LOCK(mutex)                pthread_mutex_lock(&mutex)
- * #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(&mutex, timeoutMs) // Return 0 on success, negative value on timeout
- * #define U_CX_MUTEX_UNLOCK(mutex)              pthread_mutex_unlock(&mutex)
- */
-#endif
-
-
-/* U_CX_AT_PORT_ASSERT is used for asserts. To disable asserts just define U_CX_AT_PORT_ASSERT
- * to nothing like this:
- * #define U_CX_AT_PORT_ASSERT(COND)
- */
-#ifndef U_CX_AT_PORT_ASSERT
-# include <assert.h>
-# define U_CX_AT_PORT_ASSERT(COND) assert(COND)
-#endif
-
-/* Porting layer for printf().*/
-#ifndef U_CX_PORT_PRINTF
-# include <stdio.h>
-# define U_CX_PORT_PRINTF   printf
-#endif
-
-
-/* Porting layer for getting time in millisec.*/
-#ifndef U_CX_PORT_GET_TIME_MS
-extern int32_t uPortGetTickTimeMs(void);
-# define U_CX_PORT_GET_TIME_MS()   uPortGetTickTimeMs()
-#endif
-
 
 /* Default AT command timeout in millisec.*/
 #ifndef U_CX_DEFAULT_CMD_TIMEOUT_MS
@@ -142,6 +99,16 @@ extern int32_t uPortGetTickTimeMs(void);
 #ifndef U_CX_ERROR_IO
 // Return value when IO (read) returns negative value
 # define U_CX_ERROR_IO              -0x10001
+#endif
+
+#ifndef U_CX_ERROR_ALREADY_EXISTS
+// Return value when trying to open an already opened AT client
+# define U_CX_ERROR_ALREADY_EXISTS  -0x10002
+#endif
+
+#ifndef U_CX_ERROR_INVALID_PARAMETER
+// Return value for invalid parameter
+# define U_CX_ERROR_INVALID_PARAMETER -0x10003
 #endif
 
 #endif // U_CX_AT_CONFIG_H

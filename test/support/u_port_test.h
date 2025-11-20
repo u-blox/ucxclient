@@ -20,21 +20,10 @@
 /** @file
  * @brief Configuration file used during test
  */
-#ifndef U_CX_AT_TEST_CONFIG_H
-#define U_CX_AT_TEST_CONFIG_H
+#ifndef U_PORT_TEST_H
+#define U_PORT_TEST_H
 
-#define U_CX_AT_PORT_ASSERT(COND) TEST_ASSERT(COND)
-
-#define U_CX_PORT_PRINTF(...)
-
-// Redefine mutexes so that we can check for deadlocks etc
-#undef U_CX_MUTEX_HANDLE
-#undef U_CX_MUTEX_CREATE
-#undef U_CX_MUTEX_DELETE
-#undef U_CX_MUTEX_UNLOCK
-#undef U_CX_MUTEX_LOCK
-#undef U_CX_MUTEX_TRY_LOCK
-
+// Define mutex macros for tests
 #define U_CX_MUTEX_HANDLE                       bool
 #define U_CX_MUTEX_CREATE(mutex)                mutex = false
 #define U_CX_MUTEX_DELETE(mutex)                ((void)mutex)
@@ -53,7 +42,7 @@
 
 #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs)   uCxMutexTryLock(&mutex, timeoutMs)
 
-inline int32_t uCxMutexTryLock(bool *pMutex, int32_t timeoutMs)
+inline int32_t uCxMutexTryLock(bool *pMutex, uint32_t timeoutMs)
 {
     (void)timeoutMs;
     int32_t ret = *pMutex ? -1 : 0;
@@ -61,4 +50,8 @@ inline int32_t uCxMutexTryLock(bool *pMutex, int32_t timeoutMs)
     return ret;
 }
 
-#endif // U_CX_AT_CONFIG_H
+#define U_CX_AT_PORT_ASSERT(COND) TEST_ASSERT(COND)
+
+#define U_CX_PORT_PRINTF(...)
+
+#endif // U_PORT_TEST_H

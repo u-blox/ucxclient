@@ -37,7 +37,7 @@
   :source:
     - src/**
     - inc/**
-    - examples/port/**
+    - ports/**
   :support:
     - test/support
   :libraries: []
@@ -48,7 +48,7 @@
   #  2) add entries to the :common: section (e.g. :test: has TEST defined)
   :common: &common_defines
     - TEST
-    - U_CX_AT_CONFIG_FILE=\"u_cx_at_test_config.h\"
+    - U_CX_PORT_HEADER_FILE=\"u_port_test.h\"
   :test:
     - *common_defines
   :test_preprocess:
@@ -73,8 +73,11 @@
     uint32:   UINT32
     int8:     INT8
     bool:     UINT8
+    uPortUartHandle_t: HEX32
   :includes:
   :treat_externs: :include
+  :strippables:
+    - '(?:uPortBgRxTaskCreate|uPortBgRxTaskDestroy)\s*\([^)]*\)'
 :module_generator:
     :project_root: ./
     :source_root: src/
