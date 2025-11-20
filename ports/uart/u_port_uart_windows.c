@@ -435,7 +435,8 @@ bool uPortUartIsPortAvailable(const char *pPortName)
 void uPortUartStartBgRxTask(uCxAtClient_t *pClient)
 {
     if (gActiveUart == NULL) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No UART opened");
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, 
+                        "uPortUartStartBgRxTask called before uPortUartOpen");
         return;
     }
     

@@ -121,110 +121,27 @@ echo Prerequisites check passed!
 echo.
 
 REM Determine configuration
-REM Auto-select priority: 1) Signed Release, 2) Release, 3) Debug, 4) Build Debug
-REM User can override with: release, debug, release_signed, -r, -d, -rs
-set CONFIG=Debug
+REM Default: Release (normal use)
+REM With "debug" argument: Debug (development/troubleshooting)
+set CONFIG=Release
 set USER_SPECIFIED_CONFIG=0
 
-REM Check if user specified a configuration
-if /i "%1"=="release" (
-    set CONFIG=Release
-    set USER_SPECIFIED_CONFIG=1
-)
-if /i "%1"=="Release" (
-    set CONFIG=Release
-    set USER_SPECIFIED_CONFIG=1
-)
-if /i "%1"=="-r" (
-    set CONFIG=Release
-    set USER_SPECIFIED_CONFIG=1
-)
+REM Check if user specified debug
 if /i "%1"=="debug" (
     set CONFIG=Debug
     set USER_SPECIFIED_CONFIG=1
-)
-if /i "%1"=="Debug" (
-    set CONFIG=Debug
-    set USER_SPECIFIED_CONFIG=1
-)
-if /i "%1"=="-d" (
-    set CONFIG=Debug
-    set USER_SPECIFIED_CONFIG=1
-)
-if /i "%1"=="release_signed" (
-    set CONFIG=Release_Signed
-    set USER_SPECIFIED_CONFIG=1
-)
-if /i "%1"=="Release_Signed" (
-    set CONFIG=Release_Signed
-    set USER_SPECIFIED_CONFIG=1
-)
-if /i "%1"=="-rs" (
-    set CONFIG=Release_Signed
-    set USER_SPECIFIED_CONFIG=1
-)
-
-REM If no config specified, use priority order:
-REM 1. Signed Release (production)
-REM 2. Signed Debug (testing with symbols)
-REM 3. Release (unsigned development)
-REM 4. Debug (unsigned development with symbols)
-REM 5. Build Debug if none exist
-if "%USER_SPECIFIED_CONFIG%"=="0" (
-    REM Check for Release_Signed first, but verify it's not outdated
-    if exist "build\Release_Signed\ucxclient-x64-signed.exe" (
-        set SIGNED_OUTDATED=0
-        
-        REM Check if Release build is newer
-        if exist "build\Release\ucxclient-x64.exe" (
-            for %%A in ("build\Release_Signed\ucxclient-x64-signed.exe") do set SIGNED_TIME=%%~tA
-            for %%B in ("build\Release\ucxclient-x64.exe") do set RELEASE_TIME=%%~tB
-            if "!RELEASE_TIME!" GTR "!SIGNED_TIME!" set SIGNED_OUTDATED=1
-        )
-        
-        REM Check if Debug build is newer
-        if exist "build\Debug\ucxclient-x64.exe" (
-            for %%A in ("build\Release_Signed\ucxclient-x64-signed.exe") do set SIGNED_TIME=%%~tA
-            for %%C in ("build\Debug\ucxclient-x64.exe") do set DEBUG_TIME=%%~tC
-            if "!DEBUG_TIME!" GTR "!SIGNED_TIME!" set SIGNED_OUTDATED=1
-        )
-        
-        if "!SIGNED_OUTDATED!"=="0" (
-            set CONFIG=Release_Signed
-            echo [Auto-select] Using signed Release build ^(priority 1 - up to date^)...
-            echo.
-        ) else (
-            echo [Auto-select] Signed build exists but is outdated, checking other builds...
-            echo.
-            if exist "build\Release\ucxclient-x64.exe" (
-                set CONFIG=Release
-                echo [Auto-select] Using newer unsigned Release build ^(priority 2^)...
-                echo.
-            ) else if exist "build\Debug\ucxclient-x64.exe" (
-                set CONFIG=Debug
-                echo [Auto-select] Using newer Debug build ^(priority 3^)...
-                echo.
-            ) else (
-                set CONFIG=Release_Signed
-                echo [Auto-select] Using signed Release build ^(only available^)...
-                echo.
-            )
-        )
-    ) else if exist "build\Release\ucxclient-x64.exe" (
-        set CONFIG=Release
-        echo [Auto-select] Using existing Release build ^(priority 2^)...
-        echo.
-    ) else if exist "build\Debug\ucxclient-x64.exe" (
-        set CONFIG=Debug
-        echo [Auto-select] Using existing Debug build ^(priority 4^)...
-        echo.
-    ) else (
-        set CONFIG=Debug
-        echo [Auto-select] No existing build found. Will build Debug configuration...
-        echo.
-    )
+    echo Using Debug configuration ^(user specified^)...
+    echo.
+) else if "%1"=="" (
+    REM No argument = Release (default)
+    set CONFIG=Release
+    echo Using Release configuration ^(default^)...
+    echo.
 ) else (
-    echo Using !CONFIG! configuration ^(user specified^)...
+    REM First argument is not "debug" - assume it's a COM port or other parameter
+    REM Use default Release configuration
+    set CONFIG=Release
+    echo Using Release configuration ^(default^)...
     echo.
 )
 
@@ -318,7 +235,15 @@ echo ===================================
 echo.
 
 cd "!BUILD_DIR!"
-ucxclient-x64.exe %2 %3 %4 %5 %6 %7 %8 %9
+
+REM Pass arguments correctly based on whether "debug" was first argument
+if /i "%1"=="debug" (
+    REM First arg was "debug", so pass %2 onwards
+    ucxclient-x64.exe %2 %3 %4 %5 %6 %7 %8 %9
+) else (
+    REM No "debug" arg, so pass %1 onwards
+    ucxclient-x64.exe %1 %2 %3 %4 %5 %6 %7 %8 %9
+)
 
 REM Store exit code
 set APP_EXIT_CODE=%ERRORLEVEL%
@@ -542,21 +467,19 @@ echo Code Signing ucxclient-x64.exe
 echo ===================================
 echo.
 
-REM Determine configuration
+REM Always sign Release configuration
 set SIGN_CONFIG=Release
-if /i "%2"=="debug" set SIGN_CONFIG=Debug
-if /i "%2"=="Debug" set SIGN_CONFIG=Debug
 
 set SIGN_EXE=build\!SIGN_CONFIG!\ucxclient-x64.exe
 set SIGN_EXE_SIGNED=build\Release_Signed\ucxclient-x64-signed.exe
-set CERT_THUMBPRINT=%3
+set CERT_THUMBPRINT=%2
 
 REM Check if executable exists
 if not exist "!SIGN_EXE!" (
     echo [ERROR] Executable not found: !SIGN_EXE!
     echo.
     echo Build the Release version first:
-    echo   launch_ucxclient-x64.cmd rebuild release
+    echo   launch_ucxclient-x64.cmd rebuild
     echo.
     exit /b 1
 )
@@ -566,11 +489,10 @@ if not defined CERT_THUMBPRINT (
     echo [ERROR] Certificate thumbprint required!
     echo.
     echo USAGE:
-    echo   launch_ucxclient-x64.cmd sign [config] [thumbprint]
+    echo   launch_ucxclient-x64.cmd sign [thumbprint]
     echo.
-    echo EXAMPLES:
-    echo   launch_ucxclient-x64.cmd sign release 1234567890ABCDEF...
-    echo   launch_ucxclient-x64.cmd sign debug 1234567890ABCDEF...
+    echo EXAMPLE:
+    echo   launch_ucxclient-x64.cmd sign 1234567890ABCDEF...
     echo.
     echo To find your certificate thumbprint:
     echo   1. Open Certificate Manager: certmgr.msc
@@ -681,7 +603,13 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   launch_ucxclient-x64.cmd [command^|config] [arguments]
+echo   launch_ucxclient-x64.cmd [debug] [arguments]
+echo.
+echo BASIC USAGE:
+echo   (no args)             Run Release build (builds if needed)
+echo   debug                 Run Debug build (builds if needed)
+echo.
+echo   All other arguments are passed to the application.
 echo.
 echo COMMANDS:
 echo   clean [config]        Deep clean build artifacts
@@ -691,44 +619,31 @@ echo                         - 'debug' or 'release' = clean specific config
 echo.
 echo   rebuild [config]      Deep clean and rebuild from scratch
 echo                         Forces recompilation of ALL source files
-echo                         - No config = rebuild Debug
+echo                         - No config = rebuild Release
+echo                         - 'debug' = rebuild Debug
 echo                         - 'release' = rebuild Release
 echo.
 echo   all                   Build both Debug and Release configurations
 echo                         Builds all configurations from current state
 echo                         (use 'clean' first for a fresh build)
 echo.
-echo   sign [config] [thumbprint]
-echo                         Code sign the executable with certificate
-echo                         - config: 'debug' or 'release' (default: release)
+echo   sign [thumbprint]     Code sign the Release executable
 echo                         - thumbprint: Certificate thumbprint (required)
-echo                         Example: sign release 1234567890ABCDEF...
+echo                         Example: sign 1234567890ABCDEF...
 echo.
 echo   help / --help / -h    Show this help message
 echo.
-echo CONFIGURATIONS:
-echo   (none)                Auto-select by priority:
-echo                           1. Release_Signed  (signed production)
-echo                           2. Release         (unsigned)
-echo                           3. Debug           (unsigned)
-echo                           4. Build Debug if none exist
-echo   debug / Debug / -d    Launch Debug build
-echo   release / Release / -r
-echo                         Launch Release build
-echo   release_signed / Release_Signed / -rs
-echo                         Launch signed Release build
-echo.
 echo EXAMPLES:
 echo   launch_ucxclient-x64.cmd
-echo       Auto-select best available build (signed release preferred)
+echo       Launch Release build (auto-builds if needed)
 echo.
 echo   launch_ucxclient-x64.cmd debug
 echo       Launch Debug build (auto-builds if needed)
 echo.
-echo   launch_ucxclient-x64.cmd release
-echo       Launch Release build (auto-builds if needed)
+echo   launch_ucxclient-x64.cmd COM4
+echo       Launch Release build and pass COM4 to the app
 echo.
-echo   launch_ucxclient-x64.cmd Debug COM4
+echo   launch_ucxclient-x64.cmd debug COM4
 echo       Launch Debug build and pass COM4 to the app
 echo.
 echo   launch_ucxclient-x64.cmd clean
@@ -738,20 +653,22 @@ echo   launch_ucxclient-x64.cmd clean debug
 echo       Clean only Debug configuration
 echo.
 echo   launch_ucxclient-x64.cmd rebuild
-echo       Clean and rebuild Debug configuration
-echo.
-echo   launch_ucxclient-x64.cmd rebuild release
 echo       Clean and rebuild Release configuration
+echo.
+echo   launch_ucxclient-x64.cmd rebuild debug
+echo       Clean and rebuild Debug configuration
 echo.
 echo   launch_ucxclient-x64.cmd all
 echo       Build both Debug and Release configurations
 echo.
-echo   launch_ucxclient-x64.cmd sign release 1234567890ABCDEF...
-echo       Sign Release build and rename to ucxclient-x64-signed.exe
+echo   launch_ucxclient-x64.cmd sign 1234567890ABCDEF...
+echo       Sign Release build and save to ucxclient-x64-signed.exe
 echo.
 echo NOTES:
+echo   - Release is the default (optimized, no debug symbols)
+echo   - Debug is for development/troubleshooting (symbols, no optimization)
 echo   - First launch auto-configures CMake if needed
-echo   - Auto-builds if executable is missing
+echo   - Auto-builds if executable is missing or outdated
 echo   - Auto-copies FTDI DLL when building
 echo   - Settings file stored in workspace root directory
 echo.

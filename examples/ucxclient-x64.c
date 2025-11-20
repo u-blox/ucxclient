@@ -15779,9 +15779,8 @@ static void updatePosition(double lat, double lon, int accuracyMeters, const cha
 static void getTimeString(char *buffer, size_t bufferSize)
 {
     if (!gCurrentTime.valid) {
-        // Initialize with PC time on first call
-        time_t now = time(NULL);
-        updateTime(now, "PC", 1);
+        snprintf(buffer, bufferSize, "Not available");
+        return;
     }
     
     struct tm *tm_info = gmtime(&gCurrentTime.unixTime);
@@ -16445,14 +16444,6 @@ static void printMenu(void)
                 printf("  Resources:   %d active socket%s  |  %d certificate%s\n",
                        gActiveSocketCount, gActiveSocketCount == 1 ? "" : "s",
                        gCertificateCount, gCertificateCount == 1 ? "" : "s");
-                
-                // Time and Position Status
-                char timeStr[128];
-                char posStr[128];
-                getTimeString(timeStr, sizeof(timeStr));
-                getPositionString(posStr, sizeof(posStr));
-                printf("  Clock:       %s\n", timeStr);
-                printf("  Position:    %s\n", posStr);
                 printf("─────────────────────────────────────────────────────────────────\n");
             } else {
                 printf("\n");
@@ -16502,7 +16493,6 @@ static void printMenu(void)
                            gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
                 }
                 printf("  [s]     u-blox Serial Port Service (SPS) - Wireless serial\n");
-                printf("  [u]     Bluetooth Functions (SPS, GATT Client, GATT Server)\n");
                 printf("\n");
                 
                 // === Wi-Fi FEATURES (only for W3x modules) ===
@@ -16716,6 +16706,12 @@ static void printMenu(void)
             printf("              TIME SYNCHRONIZATION EXAMPLES\n");
             printf("\n");
             printf("\n");
+            {
+                char timeStr[128];
+                getTimeString(timeStr, sizeof(timeStr));
+                printf("Current Clock: %s\n", timeStr);
+            }
+            printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
             printf("  [1] NTP Time Sync (Network Time Protocol)\n");
@@ -16728,6 +16724,12 @@ static void printMenu(void)
             printf("\n");
             printf("              LOCATION EXAMPLES (IP & Wi-Fi Based)\n");
             printf("\n");
+            printf("\n");
+            {
+                char posStr[128];
+                getPositionString(posStr, sizeof(posStr));
+                printf("Current Position: %s\n", posStr);
+            }
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
