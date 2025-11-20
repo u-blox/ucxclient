@@ -53,19 +53,6 @@
 
 #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs)   uCxMutexTryLock(&mutex, timeoutMs)
 
-
-#ifndef U_EXAMPLE_UART
-# define U_EXAMPLE_UART "/dev/ttyUSB0"
-#endif
-
-#ifndef U_EXAMPLE_SSID
-# define U_EXAMPLE_SSID "ubx"
-#endif
-
-#ifndef U_EXAMPLE_WPA_PSK
-# define U_EXAMPLE_WPA_PSK ""
-#endif
-
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */

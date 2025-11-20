@@ -52,19 +52,6 @@
 # define U_CX_AT_PORT_ASSERT(COND) zassert_true(COND)
 #endif
 
-#ifndef U_EXAMPLE_UART
-# define UART_DEVICE_NODE DT_CHOSEN(zephyr_shell_uart)
-# define U_EXAMPLE_UART DEVICE_DT_GET(UART_DEVICE_NODE)->name
-#endif
-
-#ifndef U_EXAMPLE_SSID
-# define U_EXAMPLE_SSID "ubx"
-#endif
-
-#ifndef U_EXAMPLE_WPA_PSK
-# define U_EXAMPLE_WPA_PSK ""
-#endif
-
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */

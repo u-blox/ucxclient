@@ -24,24 +24,9 @@
  */
 
 #include "example_utils.h"
-#include "u_port.h"
 #include "u_cx_log.h"
 #include "u_cx_at_client.h"
 #include <stdio.h>
-
-/* ----------------------------------------------------------------
- * COMPILE-TIME MACROS
- * -------------------------------------------------------------- */
-
-// Auto-detect no-OS mode
-#ifdef U_PORT_NO_OS
-#define EXAMPLE_NO_OS_MODE 1
-#else
-#define EXAMPLE_NO_OS_MODE 0
-#endif
-
-#define AT_RX_BUFFER_SIZE   1024
-#define AT_URC_BUFFER_SIZE  512
 
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
@@ -53,8 +38,8 @@ static bool gEventMutexInitialized = false;
 static uCxAtClient_t *gpClient = NULL;
 
 // AT client buffers and config (must be static!)
-static char gRxBuf[AT_RX_BUFFER_SIZE];
-static char gUrcBuf[AT_URC_BUFFER_SIZE];
+static char gRxBuf[U_EXAMPLE_AT_RX_BUFFER_SIZE];
+static char gUrcBuf[U_EXAMPLE_AT_RX_BUFFER_SIZE];
 static uCxAtClient_t gClient;
 static uCxAtClientConfig_t gConfig;
 

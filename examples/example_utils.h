@@ -35,6 +35,43 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "u_port.h"
+
+/* ----------------------------------------------------------------
+ * COMPILE-TIME MACROS
+ * -------------------------------------------------------------- */
+
+// Auto-detect no-OS mode
+#ifdef U_PORT_NO_OS
+# define EXAMPLE_NO_OS_MODE 1
+#else
+# define EXAMPLE_NO_OS_MODE 0
+#endif
+
+#ifndef U_EXAMPLE_UART
+# ifdef U_PORT_ZEPHYR
+#  define UART_DEVICE_NODE DT_CHOSEN(zephyr_shell_uart)
+#  define U_EXAMPLE_UART DEVICE_DT_GET(UART_DEVICE_NODE)->name
+# else
+#  define U_EXAMPLE_UART "/dev/ttyUSB0"
+# endif
+#endif
+
+#ifndef U_EXAMPLE_AT_RX_BUFFER_SIZE
+# define U_EXAMPLE_AT_RX_BUFFER_SIZE   1024
+#endif
+#ifndef U_EXAMPLE_AT_URC_BUFFER_SIZE
+# define U_EXAMPLE_AT_URC_BUFFER_SIZE  512
+#endif
+
+#ifndef U_EXAMPLE_SSID
+# define U_EXAMPLE_SSID "ubx"
+#endif
+
+#ifndef U_EXAMPLE_WPA_PSK
+# define U_EXAMPLE_WPA_PSK ""
+#endif
+
 // Forward declaration to avoid including u_cx_at_client.h
 typedef struct uCxAtClient uCxAtClient_t;
 
