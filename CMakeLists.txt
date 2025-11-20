@@ -49,3 +49,26 @@ target_compile_definitions(http_example_no_os PRIVATE
   U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
 )
 target_include_directories(http_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+
+# Firmware Upgrade Example (POSIX with OS support)
+add_executable(fw_upgrade_example
+  examples/fw_upgrade_example.c
+  ports/os/u_port_posix.c
+  ports/uart/u_port_uart_linux.c
+  src/u_cx_xmodem.c
+  ${EXAMPLE_COMMON_SRC}
+)
+target_link_libraries(fw_upgrade_example PRIVATE Threads::Threads)
+target_compile_options(fw_upgrade_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} -DU_PORT_POSIX -DU_CX_XMODEM_FILE_SUPPORT=1)
+target_include_directories(fw_upgrade_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+
+# Firmware Upgrade Example No-OS (same code as fw_upgrade_example, different port)
+add_executable(fw_upgrade_example_no_os
+  examples/fw_upgrade_example.c
+  ports/os/u_port_no_os.c
+  ports/uart/u_port_uart_linux.c
+  src/u_cx_xmodem.c
+  ${EXAMPLE_COMMON_SRC}
+)
+target_compile_options(fw_upgrade_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} -DU_PORT_NO_OS -DU_CX_XMODEM_FILE_SUPPORT=1)
+target_include_directories(fw_upgrade_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})

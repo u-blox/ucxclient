@@ -4,10 +4,11 @@ This directory contains application examples of how to use ucxclient. The exampl
 
 All examples are designed to work with both OS and no-OS configurations by using the shared utilities in `example_utils.c/h`. This demonstrates the portability of ucxclient across different execution environments.
 
-| Files            | Description |
-| ---------------- | ----------- |
-| http_example.c   | Example of doing a HTTP GET request using the uCx API. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
-| example_utils.c/h | Common utility functions that work with both OS and no-OS configurations, providing AT client initialization, event handling, and sleep functionality. |
+| Files               | Description |
+| ------------------- | ----------- |
+| http_example.c      | Example of doing a HTTP GET request using the uCx API. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
+| fw_upgrade_example.c | Example of performing firmware upgrade using AT+USYFWUS command and XMODEM protocol. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
+| example_utils.c/h   | Common utility functions that work with both OS and no-OS configurations, providing AT client initialization, event handling, and sleep functionality. |
 
 ## Building
 
@@ -66,3 +67,44 @@ Now you should be able to start the example using:
 ```
 
 Note: Both http_example and http_example_no_os are compiled from the same http_example.c source file, demonstrating how ucxclient examples can work seamlessly in both OS and no-OS environments.
+
+### fw_upgrade_example
+
+This example demonstrates upgrading module firmware using the AT+USYFWUS command followed by XMODEM protocol transfer.
+
+To run the firmware upgrade example:
+
+```sh
+> build/fw_upgrade_example <device> <firmware_file>
+```
+
+Example:
+
+```sh
+> build/fw_upgrade_example /dev/ttyUSB0 NORA-W36X-SW-1.0.0.bin
+```
+
+The example will:
+1. Check communication with the module
+2. Issue the AT+USYFWUS command to enter bootloader mode
+3. Transfer the firmware file using XMODEM protocol at 921600 baud
+4. Wait for the module to reboot
+5. Confirm the module is back online
+
+### fw_upgrade_example_no_os
+
+The no-OS variant of fw_upgrade_example is built from the same source code but uses a different port layer (u_port_no_os.c). The UART device and firmware file path are configured using CMake defines.
+
+To set these defines using CMake:
+
+```sh
+> cmake -S . -B build -D U_EXAMPLE_UART="/dev/ttyUSB0" -D U_EXAMPLE_FW_FILE="NORA-W36X-SW-1.0.0.bin"
+```
+
+Then run:
+
+```sh
+> build/fw_upgrade_example_no_os
+```
+
+Note: Both fw_upgrade_example and fw_upgrade_example_no_os are compiled from the same fw_upgrade_example.c source file.
