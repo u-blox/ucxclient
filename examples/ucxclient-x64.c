@@ -979,6 +979,7 @@ static void gattClientDiscoverServices(void);
 static void gattClientDiscoverCharacteristics(void);
 static void gattClientReadCharacteristic(void);
 static void gattClientWriteCharacteristic(void);
+static void gattClientSubscribeNotifications(void);
 static void gattServerMenu(void);
 static void gattServerAddService(void);
 static void gattServerAddCharacteristic(void);
@@ -4397,6 +4398,177 @@ static void gattClientWriteCharacteristic(void)
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Write successful.");
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to write characteristic (code %d)", result);
+    }
+}
+
+static void gattClientSubscribeNotifications(void)
+{
+    if (!gUcxConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- GATT Client: Subscribe to Notifications ---");
+    
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active GATT connection. Use Bluetooth menu to connect first.");
+        return;
+    }
+    
+    printf("Using connection handle: %d\n", connHandle);
+    
+    // Auto-discover characteristics if not already done
+    if (gGattCharacteristicCount == 0 || 
+        (gGattCharacteristicCount > 0 && gGattCharacteristics[0].connHandle != connHandle)) {
+        printf("\nNo characteristics discovered yet. Please discover characteristics first (option 2).\n");
+        return;
+    }
+    
+    // Show only characteristics with notify/indicate properties
+    printf("\nCharacteristics with notification support:\n");
+    int notifyCount = 0;
+    for (int i = 0; i < gGattCharacteristicCount; i++) {
+        GattCharacteristic_t *ch = &gGattCharacteristics[i];
+        if (ch->connHandle != connHandle) continue;
+        
+        uint8_t props = (uint8_t)ch->properties;
+        if (!(props & 0x10) && !(props & 0x20)) continue; // Skip if no Notify or Indicate
+        
+        printf("  [%d] Handle 0x%04X - ", i, ch->valueHandle);
+        
+        // Show UUID
+        if (ch->uuidLength == 2) {
+            uint16_t uuid16 = (ch->uuid[0] << 8) | ch->uuid[1];
+            printf("UUID 0x%04X", uuid16);
+            const char *name = btGetCharacteristicName(uuid16);
+            if (name) {
+                printf(" (%s)", name);
+            }
+        } else {
+            printf("UUID ");
+            for (int j = 0; j < ch->uuidLength; j++) {
+                printf("%02X", ch->uuid[j]);
+            }
+        }
+        
+        printf(" [");
+        if (props & 0x10) printf("Notify ");
+        if (props & 0x20) printf("Indicate");
+        printf("]\n");
+        
+        notifyCount++;
+    }
+    
+    if (notifyCount == 0) {
+        printf("No characteristics with notification support found.\n");
+        return;
+    }
+    
+    // Select characteristic
+    printf("\nEnter characteristic index: ");
+    char input[32];
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\n")] = '\0';
+    
+    int charIndex = atoi(input);
+    if (charIndex < 0 || charIndex >= gGattCharacteristicCount ||
+        gGattCharacteristics[charIndex].connHandle != connHandle) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Invalid characteristic index: %d", charIndex);
+        return;
+    }
+    
+    GattCharacteristic_t *ch = &gGattCharacteristics[charIndex];
+    int32_t valueHandle = ch->valueHandle;
+    
+    // Find the CCCD (Client Characteristic Configuration Descriptor)
+    // CCCD UUID = 0x2902, typically at valueHandle + 1 or need to discover descriptors
+    printf("\nDiscovering descriptors for characteristic at handle 0x%04X...\n", valueHandle);
+    
+    // We need the end handle of this characteristic - use next char's value handle - 1, or service end
+    int32_t charEndHandle = 0xFFFF;
+    for (int i = charIndex + 1; i < gGattCharacteristicCount; i++) {
+        if (gGattCharacteristics[i].connHandle == connHandle &&
+            gGattCharacteristics[i].serviceIndex == ch->serviceIndex) {
+            charEndHandle = gGattCharacteristics[i].valueHandle - 1;
+            break;
+        }
+    }
+    if (charEndHandle == 0xFFFF && ch->serviceIndex >= 0 && ch->serviceIndex < gGattServiceCount) {
+        charEndHandle = gGattServices[ch->serviceIndex].endHandle;
+    }
+    
+    // Discover descriptors
+    uCxGattClientDiscoverCharDescriptorsBegin(&gUcxHandle, connHandle, valueHandle, charEndHandle);
+    
+    int32_t cccdHandle = -1;
+    uCxGattClientDiscoverCharDescriptors_t descriptor;
+    while (uCxGattClientDiscoverCharDescriptorsGetNext(&gUcxHandle, &descriptor)) {
+        printf("  Found descriptor at handle 0x%04X, UUID: ", descriptor.desc_handle);
+        for (int i = 0; i < descriptor.uuid.length; i++) {
+            printf("%02X", descriptor.uuid.pData[i]);
+        }
+        printf("\n");
+        
+        // Check if this is CCCD (UUID 0x2902)
+        if (descriptor.uuid.length == 2 &&
+            descriptor.uuid.pData[0] == 0x29 && descriptor.uuid.pData[1] == 0x02) {
+            cccdHandle = descriptor.desc_handle;
+            printf("  ✓ Found CCCD at handle 0x%04X\n", cccdHandle);
+        }
+    }
+    uCxEnd(&gUcxHandle);
+    
+    if (cccdHandle < 0) {
+        printf("ERROR: CCCD not found for this characteristic. Cannot subscribe.\n");
+        return;
+    }
+    
+    // Ask if enable or disable
+    printf("\n[1] Enable notifications\n");
+    printf("[2] Disable notifications\n");
+    printf("Choice: ");
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\n")] = '\0';
+    
+    int choice = atoi(input);
+    uGattClientConfig_t config;
+    
+    switch (choice) {
+        case 1:
+            config = U_GATT_CLIENT_CONFIG_ENABLE_NOTIFICATIONS;
+            printf("\nEnabling notifications...\n");
+            break;
+        case 2:
+            config = U_GATT_CLIENT_CONFIG_NONE;
+            printf("\nDisabling notifications...\n");
+            break;
+        default:
+            printf("Invalid choice\n");
+            return;
+    }
+    
+    // Write to CCCD to enable/disable notifications
+    int32_t result = uCxGattClientConfigWrite(&gUcxHandle, connHandle, cccdHandle, config);
+    
+    if (result == 0) {
+        if (config == U_GATT_CLIENT_CONFIG_ENABLE_NOTIFICATIONS) {
+            printf("✓ Notifications enabled!\n");
+            printf("\nNOTE: Notifications will appear as URCs in the console.\n");
+            printf("      Look for +UUDPGN: events with handle 0x%04X\n", valueHandle);
+        } else {
+            printf("✓ Notifications disabled.\n");
+        }
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to configure notifications (code %d)", result);
     }
 }
 
@@ -17412,7 +17584,7 @@ static void handleUserInput(void)
                     gattClientWriteCharacteristic();
                     break;
                 case 5:
-                    printf("Subscribe to notifications - not yet implemented\n");
+                    gattClientSubscribeNotifications();
                     break;
                 case 0:
                     gMenuState = MENU_BLUETOOTH_FUNCTIONS;
