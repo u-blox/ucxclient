@@ -18009,10 +18009,9 @@ static void handleUserInput(void)
                     printf("Module entering firmware update mode...\n");
                     uPortDelayMs(1000);  // Give module time to switch modes
                     
-                    // Step 2: Close the current UART and AT client
+                    // Step 2: Close the AT client (this closes UART and stops RX task)
                     printf("Closing AT client connection...\n");
-                    uPortBgRxTaskDestroy(&gUcxAtClient);
-                    uPortUartClose(gUartHandle);
+                    uCxAtClientClose(&gUcxAtClient);
                     uPortDelayMs(500);
                     
                     // Step 3: Initialize XMODEM and open UART for binary transfer
@@ -18026,9 +18025,9 @@ static void handleUserInput(void)
                         printf("ERROR: Failed to open UART for XMODEM (error %d)\n", result);
                         // Try to recover AT client connection
                         printf("Attempting to reconnect...\n");
-                        gUartHandle = uPortUartOpen(gComPort, 115200, false);
-                        if (gUartHandle != NULL) {
-                            uPortBgRxTaskCreate(&gUcxAtClient);
+                        result = uCxAtClientOpen(&gUcxAtClient, 115200, false);
+                        if (result == 0) {
+                            gUartHandle = gUcxAtClient.uartHandle;
                         }
                         break;
                     }
@@ -18629,22 +18628,26 @@ static bool ucxclientConnect(const char *comPort)
     gAtConfig.rxBufferLen = sizeof(gRxBuffer);
     gAtConfig.pUrcBuffer = gUrcBuffer;
     gAtConfig.urcBufferLen = sizeof(gUrcBuffer);
+    gAtConfig.pUartDevName = comPort;  // Set UART device name for AT client
     
     // Initialize AT client
     uCxAtClientInit(&gAtConfig, &gUcxAtClient);
     
-    // Open UART
-    gUartHandle = uPortUartOpen(comPort, 115200, false);
-    if (gUartHandle == NULL) {
-        printf("ERROR: Failed to open %s\n", comPort);
+    // Open UART through AT client
+    int32_t result = uCxAtClientOpen(&gUcxAtClient, 115200, false);
+    if (result != 0) {
+        printf("ERROR: Failed to open %s (error code: %d)\n", comPort, result);
         uCxAtClientDeinit(&gUcxAtClient);
         return false;
     }
     
-    // Start background RX task
-    uPortBgRxTaskCreate(&gUcxAtClient);
+    // Store UART handle for later use (XMODEM, etc.)
+    gUartHandle = gUcxAtClient.uartHandle;
     
     printf("COM port opened successfully\n");
+    
+    // Start background RX task (CRITICAL: Must be called after uCxAtClientOpen)
+    uPortBgRxTaskCreate(&gUcxAtClient);
     
     
     // Initialize UCX handle
@@ -18739,17 +18742,14 @@ static void ucxclientDisconnect(void)
     // Delete mutex
     U_CX_MUTEX_DELETE(gUrcMutex);
 
-    // Stop background RX task
-    uPortBgRxTaskDestroy(&gUcxAtClient);
+    // Close AT client (this stops the RX task and closes the UART)
+    uCxAtClientClose(&gUcxAtClient);
     
-    // Deinitialize UCX handle
+    // Deinitialize AT client
     uCxAtClientDeinit(&gUcxAtClient);
     
-    // Close UART
-    if (gUartHandle != NULL) {
-        uPortUartClose(gUartHandle);
-        gUartHandle = NULL;
-    }
+    // Clear UART handle
+    gUartHandle = NULL;
     
     // Deinitialize port layer
     uPortDeinit();
