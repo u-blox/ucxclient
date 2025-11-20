@@ -9505,6 +9505,7 @@ static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddres
 }
 
 // URC handler for passkey request during pairing (KeyboardOnly)
+// IMPORTANT: URC handlers must NOT block! Set flag for main loop to handle.
 static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr)
 {
     (void)puCxHandle; 
@@ -9515,59 +9516,18 @@ static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddres
              bd_addr->address[3], bd_addr->address[4], bd_addr->address[5]);
 
     printf("\n─────────────────────────────────────────────────\n");
-    printf("BLUETOOTH PAIRING - PASSKEY ENTRY\n");
+    printf("BLUETOOTH PAIRING - PASSKEY ENTRY REQUESTED\n");
     printf("─────────────────────────────────────────────────\n");
     printf("Device: %s\n", addrStr);
-    printf("\nThe remote device (Windows) is displaying a 6-digit passkey.\n");
-    printf("You have 30 seconds to enter the passkey.\n");
-    printf("Passkey (6 digits): ");
-    fflush(stdout);
+    printf("\n*** PAIRING MODE ACTIVE ***\n");
+    printf("The menu is temporarily suspended.\n");
+    printf("You will be prompted for the 6-digit passkey.\n");
+    printf("─────────────────────────────────────────────────\n\n");
     
-    // Non-blocking input with 30 second timeout
-    char passkeyStr[16] = {0};
-    int idx = 0;
-    time_t startTime = time(NULL);
-    bool gotInput = false;
-    
-    while (difftime(time(NULL), startTime) < 30 && idx < 6) {
-        if (_kbhit()) {
-            int ch = _getch();
-            if (ch >= '0' && ch <= '9') {
-                passkeyStr[idx++] = (char)ch;
-                printf("*"); // Show asterisk for security
-                fflush(stdout);
-                if (idx == 6) {
-                    gotInput = true;
-                    break;
-                }
-            } else if (ch == '\r' || ch == '\n') {
-                if (idx > 0) {
-                    gotInput = true;
-                    break;
-                }
-            } else if (ch == 8 && idx > 0) { // Backspace
-                idx--;
-                printf("\b \b"); // Erase character
-                fflush(stdout);
-            }
-        }
-        Sleep(50); // Small delay to avoid busy-wait
-    }
-    
-    printf("\n");
-    
-    if (gotInput && idx >= 6) {
-        int32_t passkey = atoi(passkeyStr);
-        int32_t result = uCxBluetoothUserPasskeyEntry3(&gUcxHandle, bd_addr, U_BT_CONFIRM_YES, passkey);
-        if (result == 0) {
-            printf("✓ Passkey sent - waiting for pairing completion...\n");
-        } else {
-            printf("ERROR: Failed to send passkey (code %d)\n", result);
-        }
-    } else {
-        printf("ERROR: Passkey entry timeout or invalid\n");
-        uCxBluetoothUserPasskeyEntry2(&gUcxHandle, bd_addr, U_BT_CONFIRM_NO);
-    }
+    // Save address and set flag for main loop to handle
+    // Cannot block in URC context or other URCs won't be processed!
+    memcpy(&gPasskeyRequestAddress, bd_addr, sizeof(uBtLeAddress_t));
+    gPasskeyRequestPending = true;
 }
 
 // URC handler for PHY update events
@@ -15988,6 +15948,73 @@ int main(int argc, char *argv[])
         if (now - gCtsServerLastTick >= 1000) {
             gCtsServerLastTick = now;
             ctsNotifyIfEnabled();
+        }
+        
+        // Handle passkey entry request (from URC)
+        if (gPasskeyRequestPending) {
+            gPasskeyRequestPending = false;  // Clear flag first
+            
+            char addrStr[18];
+            snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+                     gPasskeyRequestAddress.address[0], gPasskeyRequestAddress.address[1],
+                     gPasskeyRequestAddress.address[2], gPasskeyRequestAddress.address[3],
+                     gPasskeyRequestAddress.address[4], gPasskeyRequestAddress.address[5]);
+            
+            printf("Device: %s\n", addrStr);
+            printf("\nThe remote device (Windows) is displaying a 6-digit passkey.\n");
+            printf("You have 30 seconds to enter the passkey.\n");
+            printf("Passkey (6 digits): ");
+            fflush(stdout);
+            
+            // Blocking input with 30 second timeout (OK here in main loop, not in URC)
+            char passkeyStr[16] = {0};
+            int idx = 0;
+            time_t startTime = time(NULL);
+            bool gotInput = false;
+            
+            while (difftime(time(NULL), startTime) < 30 && idx < 6) {
+                if (_kbhit()) {
+                    int ch = _getch();
+                    if (ch >= '0' && ch <= '9') {
+                        passkeyStr[idx++] = (char)ch;
+                        printf("*"); // Show asterisk for security
+                        fflush(stdout);
+                        if (idx == 6) {
+                            gotInput = true;
+                            break;
+                        }
+                    } else if (ch == '\r' || ch == '\n') {
+                        if (idx > 0) {
+                            gotInput = true;
+                            break;
+                        }
+                    } else if (ch == 8 && idx > 0) { // Backspace
+                        idx--;
+                        printf("\b \b"); // Erase character
+                        fflush(stdout);
+                    }
+                }
+                Sleep(50); // Small delay to avoid busy-wait
+            }
+            
+            printf("\n");
+            
+            if (gotInput && idx >= 6) {
+                int32_t passkey = atoi(passkeyStr);
+                int32_t result = uCxBluetoothUserPasskeyEntry3(&gUcxHandle, &gPasskeyRequestAddress,
+                                                                U_BT_CONFIRM_YES, passkey);
+                if (result == 0) {
+                    printf("✓ Passkey sent - waiting for pairing completion...\n");
+                } else {
+                    printf("ERROR: Failed to send passkey (code %d)\n", result);
+                }
+            } else {
+                printf("ERROR: Passkey entry timeout or invalid\n");
+                uCxBluetoothUserPasskeyEntry2(&gUcxHandle, &gPasskeyRequestAddress, U_BT_CONFIRM_NO);
+            }
+            
+            printf("\n");
+            menuNeedsRedraw = true;
         }
         
         // Print menu if needed
