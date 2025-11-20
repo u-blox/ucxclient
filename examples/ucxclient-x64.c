@@ -7608,6 +7608,39 @@ static void gattServerSetupHidKeyboard(void)
     uCxEnd(&gUcxHandle);
     printf("  ✓ Device Information Service ready\n\n");
     
+    // Step 0.5: Add PnP ID to Device Information Service (REQUIRED for HoG Profile 3.3.2)
+    printf("Step 0.5: Adding PnP ID to Device Information Service...\n");
+    // PnP ID structure (7 bytes):
+    //   [0] Vendor ID Source: 0x02 = USB IF (we'll use USB vendor ID)
+    //   [1-2] Vendor ID: 0x1546 (u-blox USB vendor ID, little-endian)
+    //   [3-4] Product ID: 0x1146 (example product ID, little-endian)
+    //   [5-6] Product Version: 0x0100 (version 1.0, little-endian)
+    uint8_t pnpIdUuid[] = {0x2A, 0x50};  // PnP ID UUID (little-endian)
+    uint8_t pnpIdValue[] = {
+        0x02,        // Vendor ID Source: USB IF
+        0x46, 0x15,  // Vendor ID: 0x1546 (u-blox, little-endian)
+        0x46, 0x11,  // Product ID: 0x1146 (example, little-endian)
+        0x00, 0x01   // Product Version: 0x0100 (v1.0, little-endian)
+    };
+    uint8_t propRead2[] = {0x02};  // Read only
+    
+    uCxGattServerCharDefine_t pnpIdResponse;
+    result = uCxGattServerCharDefine6(&gUcxHandle, pnpIdUuid, 2,
+                                      propRead2, 1,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                      pnpIdValue, sizeof(pnpIdValue),
+                                      sizeof(pnpIdValue),
+                                      &pnpIdResponse);
+    
+    if (result == 0) {
+        printf("  ✓ PnP ID added (handle: %d)\n", pnpIdResponse.value_handle);
+        printf("    Vendor: 0x1546 (u-blox), Product: 0x1146, Version: 1.0\n");
+    } else {
+        printf("  WARNING: Failed to add PnP ID (code %d)\n", result);
+        printf("    HID may not work correctly on some hosts\n");
+    }
+    printf("\n");
+    
     // Step 1: Define HID Service (0x1812)
     printf("Step 1: Creating HID Service (UUID: 0x1812)...\n");
     uint8_t hidServiceUuid[] = {0x18, 0x12};  // 16-bit UUID for HID Service (little-endian: LSB first)
