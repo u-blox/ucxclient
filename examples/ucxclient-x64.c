@@ -7503,6 +7503,51 @@ static void gattServerSetupHidKeyboard(void)
     printf("─────────────────────────────────────────────────\n");
     printf("Profile: Keyboard + Media Control\n\n");
     
+    // Check if we have an active Bluetooth connection
+    syncGattConnection();
+    
+    if (gCurrentGattConnHandle >= 0) {
+        // Wait for MTU negotiation to complete
+        printf("Active Bluetooth connection detected (handle %d)\n", gCurrentGattConnHandle);
+        printf("Waiting for MTU negotiation to complete...\n");
+        
+        int32_t mtuSize = 0;
+        int attempts = 0;
+        int maxAttempts = 20; // 20 attempts * 500ms = 10 seconds max
+        
+        while (attempts < maxAttempts) {
+            int32_t result = uCxBluetoothGetConnectionStatus(&gUcxHandle, gCurrentGattConnHandle, 
+                                                             U_BT_PROP_ID_MTU_SIZE, &mtuSize);
+            
+            if (result == 0 && mtuSize >= 23) {
+                printf("✓ MTU negotiated: %d bytes\n", mtuSize);
+                
+                // MTU of 244 is ideal for HID, but anything >= 23 works
+                if (mtuSize >= 244) {
+                    printf("✓ MTU size is optimal for HID (%d >= 244)\n", mtuSize);
+                } else {
+                    printf("! MTU size is suboptimal (%d < 244 recommended)\n", mtuSize);
+                    printf("  Continuing anyway - HID will work but with reduced efficiency\n");
+                }
+                break;
+            }
+            
+            attempts++;
+            if (attempts < maxAttempts) {
+                printf("  Waiting for MTU... (attempt %d/%d, current MTU: %d)\n", 
+                       attempts, maxAttempts, mtuSize);
+                Sleep(500); // Wait 500ms between checks
+            }
+        }
+        
+        if (attempts >= maxAttempts) {
+            printf("WARNING: MTU negotiation timeout after %d seconds\n", maxAttempts / 2);
+            printf("         Continuing anyway - may experience issues\n");
+        }
+        
+        printf("\n");
+    }
+    
     // Ensure legacy advertisements are enabled for incoming connections
     if (!ensureLegacyAdvertisementEnabled()) {
         printf("WARNING: Failed to enable advertisements - remote devices may not connect\n");
