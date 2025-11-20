@@ -7502,6 +7502,33 @@ static void gattServerSetupHidKeyboard(void)
         return;
     }
     
+    // Check if HID service is already set up
+    if (gHidServiceHandle > 0 && gHidKeyboardInputHandle > 0) {
+        printf("\n─────────────────────────────────────────────────\n");
+        printf("HID Keyboard Service Already Active\n");
+        printf("─────────────────────────────────────────────────\n\n");
+        printf("HID Service Handle:          %d\n", gHidServiceHandle);
+        printf("Keyboard Input Handle:       %d\n", gHidKeyboardInputHandle);
+        printf("Battery Service Handle:      %d\n", gBatteryServiceHandle);
+        printf("\n");
+        
+        // Check connection status
+        syncGattConnection();
+        if (gCurrentGattConnHandle >= 0) {
+            printf("✓ Bluetooth client connected (handle %d)\n", gCurrentGattConnHandle);
+            printf("\nYou can now use the HID menu options to:\n");
+            printf("  [4] Send keyboard key presses\n");
+            printf("  [5] Send 'Hello World' text\n");
+            printf("  [6] Send media control commands\n\n");
+        } else {
+            printf("○ No active connection\n");
+            printf("\nWaiting for client to connect...\n");
+            printf("Make sure the device is paired on your phone/PC\n");
+            printf("and advertising is enabled.\n\n");
+        }
+        return;
+    }
+    
     printf("\n─────────────────────────────────────────────────\n");
     printf("HID over GATT (HoG) Setup\n");
     printf("─────────────────────────────────────────────────\n");
