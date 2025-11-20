@@ -29,7 +29,7 @@
 #elif defined(U_PORT_FREERTOS)
 # include "u_port_freertos.h"
 #elif defined(U_PORT_WINDOWS)
-# include "u_port_windows.h"
+# include "os/u_port_windows.h"
 #endif
 
 /* To override the default settings you can define U_CX_AT_CONFIG_FILE
@@ -146,6 +146,16 @@ extern int32_t uPortGetTickTimeMs(void);
 #ifndef U_CX_ERROR_IO
 // Return value when IO (read) returns negative value
 # define U_CX_ERROR_IO              -0x10001
+#endif
+
+#ifndef U_CX_ERROR_ALREADY_EXISTS
+// Return value when trying to open an already opened AT client
+# define U_CX_ERROR_ALREADY_EXISTS  -0x10002
+#endif
+
+#ifndef U_CX_ERROR_INVALID_PARAMETER
+// Return value for invalid parameter
+# define U_CX_ERROR_INVALID_PARAMETER -0x10003
 #endif
 
 #endif // U_CX_AT_CONFIG_H

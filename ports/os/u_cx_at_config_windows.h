@@ -1,0 +1,36 @@
+/*
+ * Copyright 2024 u-blox
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+/** @file
+ * @brief Windows-specific configuration for ucxclient
+ */
+
+#ifndef U_CX_AT_CONFIG_WINDOWS_H
+#define U_CX_AT_CONFIG_WINDOWS_H
+
+#include "os/u_port_windows.h"
+
+/* Enable logging for Windows builds */
+#define U_CX_LOG_AT 1
+#define U_CX_LOG_ERROR 1
+#define U_CX_LOG_WARNING 1
+#define U_CX_LOG_DEBUG 1
+#define U_CX_LOG_USE_ANSI_COLOR 1
+
+/* Enable XMODEM file support for firmware updates */
+#define U_CX_XMODEM_FILE_SUPPORT 1
+
+#endif /* U_CX_AT_CONFIG_WINDOWS_H */

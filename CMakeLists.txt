@@ -73,14 +73,15 @@ if(WIN32)
   # HTTP Example for Windows
   add_executable(http_example_windows
     examples/http_example.c
-    examples/port/u_port_windows.c
+    ports/os/u_port_windows.c
+    ports/uart/u_port_uart_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
   target_compile_options(http_example_windows PRIVATE /W4 /wd4200)
   target_compile_definitions(http_example_windows PRIVATE
     U_PORT_WINDOWS
-    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    U_CX_AT_CONFIG_FILE="os/u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
     U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
@@ -92,14 +93,15 @@ if(WIN32)
   # Windows Basic WiFi Application
   add_executable(ucxclient_basic_wifi
     examples/ucxclient_basic_wifi.c
-    examples/port/u_port_windows.c
+    ports/os/u_port_windows.c
+    ports/uart/u_port_uart_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
   target_compile_options(ucxclient_basic_wifi PRIVATE /W4 /wd4200)
   target_compile_definitions(ucxclient_basic_wifi PRIVATE
     U_PORT_WINDOWS
-    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    U_CX_AT_CONFIG_FILE="os/u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
     U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
@@ -111,7 +113,8 @@ if(WIN32)
   # Windows Console Application - ucxclient-x64 (Monolithic)
   add_executable(ucxclient-x64
     examples/ucxclient-x64.c
-    examples/port/u_port_windows.c
+    ports/os/u_port_windows.c
+    ports/uart/u_port_uart_windows.c
     examples/ucxclient-x64.rc
     examples/qrcodegen/qrcodegen.c
     ${UCXCLIENT_UCX_API_SRC}
@@ -120,7 +123,8 @@ if(WIN32)
   target_compile_options(ucxclient-x64 PRIVATE /W4 /FS /wd4200)
   target_compile_definitions(ucxclient-x64 PRIVATE
     U_PORT_WINDOWS
-    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    U_CX_AT_CONFIG_FILE="os/u_cx_at_config_windows.h"
+    U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
@@ -131,14 +135,16 @@ if(WIN32)
   add_executable(fw_upgrade_example
     examples/fw_upgrade_example.c
     examples/example_utils.c
-    examples/port/u_port_windows.c
+    ports/os/u_port_windows.c
+    ports/uart/u_port_uart_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
   target_compile_options(fw_upgrade_example PRIVATE /W4 /FS /wd4200)
   target_compile_definitions(fw_upgrade_example PRIVATE
     U_PORT_WINDOWS
-    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    U_CX_AT_CONFIG_FILE="os/u_cx_at_config_windows.h"
+    U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
@@ -147,14 +153,16 @@ if(WIN32)
 
   # Windows shared library for Python integration
   add_library(ucxclient_dll SHARED
-    examples/port/u_port_windows.c
+    ports/os/u_port_windows.c
+    ports/uart/u_port_uart_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
   target_compile_options(ucxclient_dll PRIVATE /W4 /wd4200)
   target_compile_definitions(ucxclient_dll PRIVATE
     U_PORT_WINDOWS
-    U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
+    U_CX_AT_CONFIG_FILE="os/u_cx_at_config_windows.h"
+    U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
     _CRT_SECURE_NO_WARNINGS
   )
   target_include_directories(ucxclient_dll PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})

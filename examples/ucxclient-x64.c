@@ -88,6 +88,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx.h"
 #include "u_cx_general.h"
 #include "u_cx_system.h"
+#include "u_cx_xmodem.h"
 #include "u_cx_bluetooth.h"
 #include "u_cx_wifi.h"
 #include "u_cx_socket.h"
@@ -100,13 +101,13 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_gatt_client.h"
 #include "u_cx_gatt_server.h"
 #include "u_cx_sps.h"
-#include "u_cx_firmware_update.h"
+#include "u_cx_xmodem.h"
 #include "u_cx_version.h"
 #include "u_cx_error_codes.h"
 #include "qrcodegen/qrcodegen.h"
 
 // Port layer
-#include "port/u_port.h"
+#include "u_port.h"
 
 // Bluetooth SIG name databases
 #include "bluetooth-sig/bt_company_identifiers.h"
@@ -148,6 +149,10 @@ static PFN_FT_Close gpFT_Close = NULL;
 static uCxAtClient_t gUcxAtClient;
 static uCxHandle_t gUcxHandle;
 static bool gUcxConnected = false;  // UCX client connection status (COM port)
+static uPortUartHandle_t gUartHandle = NULL;
+static uCxAtClientConfig_t gAtConfig;
+static char gRxBuffer[8192];
+static char gUrcBuffer[4096];
 
 // Socket tracking
 static int32_t gCurrentSocket = -1;
@@ -891,8 +896,7 @@ static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortS
                                    char *recommendedDevice, size_t recommendedDeviceSize);
 static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
-static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, 
-                                   int32_t percentComplete, void *pUserData);
+static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, void *pUserData);
 
 static char* httpGetRequest(const wchar_t *server, const wchar_t *path);
 static char* httpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize);
@@ -16945,7 +16949,7 @@ static void printMenu(void)
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
-            
+        
         case MENU_FIRMWARE_UPDATE:
             printf("\n");
             printf("                  FIRMWARE UPDATE (XMODEM)\n");
@@ -17961,7 +17965,7 @@ static void handleUserInput(void)
                     break;
             }
             break;
-            
+        
         case MENU_FIRMWARE_UPDATE:
             switch (choice) {
                 case 1: {
@@ -17991,99 +17995,137 @@ static void handleUserInput(void)
                     
                     printf("\nStarting firmware update...\n");
                     printf("This will take several minutes. Please wait...\n\n");
-                    printf("NOTE: The connection will be closed and reopened for XMODEM transfer.\n");
+                    printf("NOTE: The UART will be closed and reopened for XMODEM transfer.\n");
                     printf("      The device will reboot after successful update.\n\n");
                     
-                    // Perform firmware update with progress callback
-                    int32_t result = uCxFirmwareUpdate(
-                        &gUcxHandle,
-                        firmwarePath,
-                        gComPort,
-                        115200,
-                        false,  // No flow control
-                        true,   // Use 1K blocks
-                        firmwareUpdateProgress,
-                        NULL
-                    );
-                    
-                    if (result == 0) {
-                        printf("\n\nFirmware update completed successfully!\n");
-                        printf("The module is rebooting...\n");
-                        printf("Waiting for +STARTUP URC");
-                        fflush(stdout);
-                        
-                        // Wait up to 10 seconds for the +STARTUP URC
-                        // The URC will be processed by the RX thread and signal the event
-                        bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
-                        
-                        if (startupReceived) {
-                            printf(" Received!\n");
-                        } else {
-                            printf(" Timeout! Continuing anyway...\n");
-                        }
-                        fflush(stdout);
-                        
-                        // Now the module has sent +STARTUP and is ready for commands
-                        // Disable echo again (module reboot resets this to default ON)
-                        printf("Disabling AT echo...\n");
-                        result = uCxSystemSetEchoOff(&gUcxHandle);
-                        if (result != 0) {
-                            printf("Warning: Failed to disable echo (error %d), continuing...\n", result);
-                        }
-                        
-                        // Re-query device information to get new firmware version
-                        printf("Querying new firmware version...\n");
-                        
-                        // Clear old device info
-                        gDeviceModel[0] = '\0';
-                        gDeviceFirmware[0] = '\0';
-                        
-                        // AT+GMM - Model identification
-                        const char *model = NULL;
-                        if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
-                            strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
-                            gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
-                            strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
-                            gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
-                            uCxEnd(&gUcxHandle);
-                        } else {
-                            uCxEnd(&gUcxHandle);
-                        }
-                        
-                        // AT+GMR - Firmware version
-                        const char *fwVersion = NULL;
-                        if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
-                            strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
-                            gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
-                            uCxEnd(&gUcxHandle);
-                        } else {
-                            uCxEnd(&gUcxHandle);
-                        }
-                        
-                        // Connection is still active
-                        gUcxConnected = true;
-                        
-                        printf("\nFirmware update complete!\n");
-                        if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
-                            printf("Device: %s\n", gDeviceModel);
-                            printf("New firmware version: %s\n", gDeviceFirmware);
-                            printf("\nThe device is ready to use!\n");
-                        } else {
-                            printf("Note: Could not read new firmware version. You may need to reconnect.\n");
-                        }
-                        
-                        saveSettings();
-                    } else {
-                        printf("\n\nERROR: Firmware update failed with code %d\n", result);
-                        printf("The connection may still be active. Try using the device or reconnect if needed.\n");
+                    // Step 1: Send AT command to start firmware update mode
+                    printf("Sending firmware update command to module...\n");
+                    int32_t result = uCxSystemStartSerialFirmwareUpdate2(&gUcxHandle, 115200, 0);
+                    if (result != 0) {
+                        printf("ERROR: Failed to start firmware update mode (error %d)\n", result);
+                        break;
                     }
                     
+                    printf("Module entering firmware update mode...\n");
+                    uPortDelayMs(1000);  // Give module time to switch modes
+                    
+                    // Step 2: Close the current UART and AT client
+                    printf("Closing AT client connection...\n");
+                    uPortBgRxTaskDestroy(&gUcxAtClient);
+                    uPortUartClose(gUartHandle);
+                    uPortDelayMs(500);
+                    
+                    // Step 3: Initialize XMODEM and open UART for binary transfer
+                    printf("Opening UART for XMODEM transfer...\n");
+                    uCxXmodemConfig_t xmodemConfig;
+                    uCxXmodemInit(gComPort, &xmodemConfig);
+                    xmodemConfig.use1K = true;  // Use 1K blocks for faster transfer
+                    
+                    result = uCxXmodemOpen(&xmodemConfig, 115200, false);
+                    if (result != 0) {
+                        printf("ERROR: Failed to open UART for XMODEM (error %d)\n", result);
+                        // Try to recover AT client connection
+                        printf("Attempting to reconnect...\n");
+                        gUartHandle = uPortUartOpen(gComPort, 115200, false);
+                        if (gUartHandle != NULL) {
+                            uPortBgRxTaskCreate(&gUcxAtClient);
+                        }
+                        break;
+                    }
+                    
+                    // Step 4: Send firmware file via XMODEM
+                    printf("Transferring firmware file via XMODEM...\n");
+                    result = uCxXmodemSendFile(&xmodemConfig, firmwarePath, firmwareUpdateProgress, NULL);
+                    
+                    // Step 5: Close XMODEM UART
+                    uCxXmodemClose(&xmodemConfig);
+                    
+                    if (result != 0) {
+                        printf("\n\nERROR: Firmware transfer failed (error %d)\n", result);
+                        printf("Attempting to reconnect to module...\n");
+                    } else {
+                        printf("\n\nFirmware transfer completed successfully!\n");
+                        printf("The module is rebooting...\n");
+                    }
+                    
+                    // Step 6: Wait for module to reboot
+                    printf("Waiting 5 seconds for module reboot...");
+                    fflush(stdout);
+                    uPortDelayMs(5000);
+                    printf(" Done\n");
+                    
+                    // Step 7: Reconnect AT client
+                    printf("Reopening AT client connection...\n");
+                    gUartHandle = uPortUartOpen(gComPort, 115200, false);
+                    if (gUartHandle == NULL) {
+                        printf("ERROR: Failed to reopen UART\n");
+                        gUcxConnected = false;
+                        break;
+                    }
+                    
+                    uPortBgRxTaskCreate(&gUcxAtClient);
+                    uPortDelayMs(500);
+                    
+                    // Step 8: Wait for +STARTUP URC
+                    printf("Waiting for +STARTUP URC");
+                    fflush(stdout);
+                    bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                    
+                    if (startupReceived) {
+                        printf(" Received!\n");
+                    } else {
+                        printf(" Timeout! Continuing anyway...\n");
+                    }
+                    
+                    // Step 9: Re-initialize module
+                    printf("Disabling AT echo...\n");
+                    result = uCxSystemSetEchoOff(&gUcxHandle);
+                    if (result != 0) {
+                        printf("Warning: Failed to disable echo (error %d)\n", result);
+                    }
+                    
+                    // Step 10: Query new firmware version
+                    printf("Querying new firmware version...\n");
+                    gDeviceModel[0] = '\0';
+                    gDeviceFirmware[0] = '\0';
+                    
+                    const char *model = NULL;
+                    if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+                        strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+                        gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+                        strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+                        gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                        uCxEnd(&gUcxHandle);
+                    } else {
+                        uCxEnd(&gUcxHandle);
+                    }
+                    
+                    const char *fwVersion = NULL;
+                    if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+                        strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+                        gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
+                        uCxEnd(&gUcxHandle);
+                    } else {
+                        uCxEnd(&gUcxHandle);
+                    }
+                    
+                    gUcxConnected = true;
+                    
+                    printf("\nFirmware update complete!\n");
+                    if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
+                        printf("Device: %s\n", gDeviceModel);
+                        printf("New firmware version: %s\n", gDeviceFirmware);
+                        printf("\nThe device is ready to use!\n");
+                    } else {
+                        printf("Note: Could not read new firmware version. You may need to reconnect.\n");
+                    }
+                    
+                    saveSettings();
                     break;
                 }
+                
                 case 2: {
-                    // Download firmware from GitHub and update
-                    
-                    // Check if device is connected
+                    // Download firmware from GitHub and update (WinHTTP)
                     if (!gUcxConnected) {
                         printf("ERROR: Device not connected. Please connect first.\n");
                         break;
@@ -18099,99 +18141,122 @@ static void handleUserInput(void)
                     printf("Path: %s\n", firmwarePath);
                     printf("\nStarting firmware update...\n");
                     printf("This will take several minutes. Please wait...\n\n");
-                    printf("NOTE: The connection will be closed and reopened for XMODEM transfer.\n");
-                    printf("      The device will reboot after successful update.\n\n");
                     
-                    // Perform firmware update with progress callback
-                    int32_t result = uCxFirmwareUpdate(
-                        &gUcxHandle,
-                        firmwarePath,
-                        gComPort,
-                        115200,
-                        false,  // No flow control
-                        true,   // Use 1K blocks
-                        firmwareUpdateProgress,
-                        NULL
-                    );
-                    
-                    if (result == 0) {
-                        printf("\n\nFirmware update completed successfully!\n");
-                        printf("The module is rebooting...\n");
-                        printf("Waiting for +STARTUP URC");
-                        fflush(stdout);
-                        
-                        // Wait up to 10 seconds for the +STARTUP URC
-                        bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
-                        
-                        if (startupReceived) {
-                            printf(" Received!\n");
-                        } else {
-                            printf(" Timeout! Continuing anyway...\n");
-                        }
-                        fflush(stdout);
-                        
-                        // Disable echo again
-                        printf("Disabling AT echo...\n");
-                        result = uCxSystemSetEchoOff(&gUcxHandle);
-                        if (result != 0) {
-                            printf("Warning: Failed to disable echo (error %d), continuing...\n", result);
-                        }
-                        
-                        // Re-query device information
-                        printf("Querying new firmware version...\n");
-                        
-                        gDeviceModel[0] = '\0';
-                        gDeviceFirmware[0] = '\0';
-                        
-                        const char *model = NULL;
-                        if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
-                            strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
-                            gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
-                            strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
-                            gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
-                            uCxEnd(&gUcxHandle);
-                        } else {
-                            uCxEnd(&gUcxHandle);
-                        }
-                        
-                        const char *fwVersion = NULL;
-                        if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
-                            strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
-                            gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
-                            uCxEnd(&gUcxHandle);
-                        } else {
-                            uCxEnd(&gUcxHandle);
-                        }
-                        
-                        gUcxConnected = true;
-                        
-                        printf("\nFirmware update complete!\n");
-                        if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
-                            printf("Device: %s\n", gDeviceModel);
-                            printf("New firmware version: %s\n", gDeviceFirmware);
-                            printf("\nThe device is ready to use!\n");
-                        } else {
-                            printf("Note: Could not read new firmware version.\n");
-                        }
-                        
-                        saveSettings();
-                    } else {
-                        printf("\n\nERROR: Firmware update failed with code %d\n", result);
-                        printf("The connection may still be active. Try using the device or reconnect if needed.\n");
+                    // Use same update procedure as case 1
+                    printf("Sending firmware update command to module...\n");
+                    int32_t result = uCxSystemStartSerialFirmwareUpdate2(&gUcxHandle, 115200, 0);
+                    if (result != 0) {
+                        printf("ERROR: Failed to start firmware update mode (error %d)\n", result);
+                        break;
                     }
                     
+                    printf("Module entering firmware update mode...\n");
+                    uPortDelayMs(1000);
+                    
+                    printf("Closing AT client connection...\n");
+                    uPortBgRxTaskDestroy(&gUcxAtClient);
+                    uPortUartClose(gUartHandle);
+                    uPortDelayMs(500);
+                    
+                    printf("Opening UART for XMODEM transfer...\n");
+                    uCxXmodemConfig_t xmodemConfig;
+                    uCxXmodemInit(gComPort, &xmodemConfig);
+                    xmodemConfig.use1K = true;
+                    
+                    result = uCxXmodemOpen(&xmodemConfig, 115200, false);
+                    if (result != 0) {
+                        printf("ERROR: Failed to open UART for XMODEM (error %d)\n", result);
+                        gUartHandle = uPortUartOpen(gComPort, 115200, false);
+                        if (gUartHandle != NULL) {
+                            uPortBgRxTaskCreate(&gUcxAtClient);
+                        }
+                        break;
+                    }
+                    
+                    printf("Transferring firmware file via XMODEM...\n");
+                    result = uCxXmodemSendFile(&xmodemConfig, firmwarePath, firmwareUpdateProgress, NULL);
+                    uCxXmodemClose(&xmodemConfig);
+                    
+                    if (result != 0) {
+                        printf("\n\nERROR: Firmware transfer failed (error %d)\n", result);
+                    } else {
+                        printf("\n\nFirmware transfer completed successfully!\n");
+                        printf("The module is rebooting...\n");
+                    }
+                    
+                    printf("Waiting 5 seconds for module reboot...");
+                    fflush(stdout);
+                    uPortDelayMs(5000);
+                    printf(" Done\n");
+                    
+                    printf("Reopening AT client connection...\n");
+                    gUartHandle = uPortUartOpen(gComPort, 115200, false);
+                    if (gUartHandle == NULL) {
+                        printf("ERROR: Failed to reopen UART\n");
+                        gUcxConnected = false;
+                        break;
+                    }
+                    
+                    uPortBgRxTaskCreate(&gUcxAtClient);
+                    uPortDelayMs(500);
+                    
+                    printf("Waiting for +STARTUP URC");
+                    fflush(stdout);
+                    bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                    printf(startupReceived ? " Received!\n" : " Timeout! Continuing anyway...\n");
+                    
+                    printf("Disabling AT echo...\n");
+                    result = uCxSystemSetEchoOff(&gUcxHandle);
+                    if (result != 0) {
+                        printf("Warning: Failed to disable echo (error %d)\n", result);
+                    }
+                    
+                    printf("Querying new firmware version...\n");
+                    gDeviceModel[0] = '\0';
+                    gDeviceFirmware[0] = '\0';
+                    
+                    const char *model = NULL;
+                    if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+                        strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+                        gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+                        strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+                        gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                        uCxEnd(&gUcxHandle);
+                    } else {
+                        uCxEnd(&gUcxHandle);
+                    }
+                    
+                    const char *fwVersion = NULL;
+                    if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+                        strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+                        gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
+                        uCxEnd(&gUcxHandle);
+                    } else {
+                        uCxEnd(&gUcxHandle);
+                    }
+                    
+                    gUcxConnected = true;
+                    
+                    printf("\nFirmware update complete!\n");
+                    if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
+                        printf("Device: %s\n", gDeviceModel);
+                        printf("New firmware version: %s\n", gDeviceFirmware);
+                        printf("\nThe device is ready to use!\n");
+                    } else {
+                        printf("Note: Could not read new firmware version.\n");
+                    }
+                    
+                    saveSettings();
                     break;
                 }
+                
                 case 3: {
                     // Download firmware from GitHub using UCX HTTP API
-                    
-                    // Check if device is connected
                     if (!gUcxConnected) {
                         printf("ERROR: Device not connected. Please connect first.\n");
                         break;
                     }
                     
-                    // Check if WiFi is connected
                     if (!gWifiConnected) {
                         printf("ERROR: WiFi not connected. Please connect to WiFi first.\n");
                         printf("Use WiFi menu (option 3 from main menu) to connect.\n");
@@ -18208,89 +18273,119 @@ static void handleUserInput(void)
                     printf("Path: %s\n", firmwarePath);
                     printf("\nStarting firmware update...\n");
                     printf("This will take several minutes. Please wait...\n\n");
-                    printf("NOTE: The connection will be closed and reopened for XMODEM transfer.\n");
-                    printf("      The device will reboot after successful update.\n\n");
                     
-                    // Perform firmware update with progress callback
-                    int32_t result = uCxFirmwareUpdate(
-                        &gUcxHandle,
-                        firmwarePath,
-                        gComPort,
-                        115200,
-                        false,  // No flow control
-                        true,   // Use 1K blocks
-                        firmwareUpdateProgress,
-                        NULL
-                    );
-                    
-                    if (result == 0) {
-                        printf("\n\nFirmware update completed successfully!\n");
-                        printf("The module is rebooting...\n");
-                        printf("Waiting for +STARTUP URC");
-                        fflush(stdout);
-                        
-                        bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
-                        
-                        if (startupReceived) {
-                            printf(" Received!\n");
-                        } else {
-                            printf(" Timeout! Continuing anyway...\n");
-                        }
-                        fflush(stdout);
-                        
-                        printf("Disabling AT echo...\n");
-                        result = uCxSystemSetEchoOff(&gUcxHandle);
-                        if (result != 0) {
-                            printf("Warning: Failed to disable echo (error %d), continuing...\n", result);
-                        }
-                        
-                        printf("Querying new firmware version...\n");
-                        
-                        gDeviceModel[0] = '\0';
-                        gDeviceFirmware[0] = '\0';
-                        
-                        const char *model = NULL;
-                        if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
-                            strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
-                            gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
-                            strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
-                            gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
-                            uCxEnd(&gUcxHandle);
-                        } else {
-                            uCxEnd(&gUcxHandle);
-                        }
-                        
-                        const char *fwVersion = NULL;
-                        if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
-                            strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
-                            gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
-                            uCxEnd(&gUcxHandle);
-                        } else {
-                            uCxEnd(&gUcxHandle);
-                        }
-                        
-                        gUcxConnected = true;
-                        
-                        printf("\nFirmware update complete!\n");
-                        if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
-                            printf("Device: %s\n", gDeviceModel);
-                            printf("New firmware version: %s\n", gDeviceFirmware);
-                            printf("\nThe device is ready to use!\n");
-                        } else {
-                            printf("Note: Could not read new firmware version.\n");
-                        }
-                        
-                        saveSettings();
-                    } else {
-                        printf("\n\nERROR: Firmware update failed with code %d\n", result);
-                        printf("The connection may still be active. Try using the device or reconnect if needed.\n");
+                    // Use same update procedure
+                    printf("Sending firmware update command to module...\n");
+                    int32_t result = uCxSystemStartSerialFirmwareUpdate2(&gUcxHandle, 115200, 0);
+                    if (result != 0) {
+                        printf("ERROR: Failed to start firmware update mode (error %d)\n", result);
+                        break;
                     }
                     
+                    printf("Module entering firmware update mode...\n");
+                    uPortDelayMs(1000);
+                    
+                    printf("Closing AT client connection...\n");
+                    uPortBgRxTaskDestroy(&gUcxAtClient);
+                    uPortUartClose(gUartHandle);
+                    uPortDelayMs(500);
+                    
+                    printf("Opening UART for XMODEM transfer...\n");
+                    uCxXmodemConfig_t xmodemConfig;
+                    uCxXmodemInit(gComPort, &xmodemConfig);
+                    xmodemConfig.use1K = true;
+                    
+                    result = uCxXmodemOpen(&xmodemConfig, 115200, false);
+                    if (result != 0) {
+                        printf("ERROR: Failed to open UART for XMODEM (error %d)\n", result);
+                        gUartHandle = uPortUartOpen(gComPort, 115200, false);
+                        if (gUartHandle != NULL) {
+                            uPortBgRxTaskCreate(&gUcxAtClient);
+                        }
+                        break;
+                    }
+                    
+                    printf("Transferring firmware file via XMODEM...\n");
+                    result = uCxXmodemSendFile(&xmodemConfig, firmwarePath, firmwareUpdateProgress, NULL);
+                    uCxXmodemClose(&xmodemConfig);
+                    
+                    if (result != 0) {
+                        printf("\n\nERROR: Firmware transfer failed (error %d)\n", result);
+                    } else {
+                        printf("\n\nFirmware transfer completed successfully!\n");
+                        printf("The module is rebooting...\n");
+                    }
+                    
+                    printf("Waiting 5 seconds for module reboot...");
+                    fflush(stdout);
+                    uPortDelayMs(5000);
+                    printf(" Done\n");
+                    
+                    printf("Reopening AT client connection...\n");
+                    gUartHandle = uPortUartOpen(gComPort, 115200, false);
+                    if (gUartHandle == NULL) {
+                        printf("ERROR: Failed to reopen UART\n");
+                        gUcxConnected = false;
+                        break;
+                    }
+                    
+                    uPortBgRxTaskCreate(&gUcxAtClient);
+                    uPortDelayMs(500);
+                    
+                    printf("Waiting for +STARTUP URC");
+                    fflush(stdout);
+                    bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                    printf(startupReceived ? " Received!\n" : " Timeout! Continuing anyway...\n");
+                    
+                    printf("Disabling AT echo...\n");
+                    result = uCxSystemSetEchoOff(&gUcxHandle);
+                    if (result != 0) {
+                        printf("Warning: Failed to disable echo (error %d)\n", result);
+                    }
+                    
+                    printf("Querying new firmware version...\n");
+                    gDeviceModel[0] = '\0';
+                    gDeviceFirmware[0] = '\0';
+                    
+                    const char *model = NULL;
+                    if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
+                        strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
+                        gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
+                        strncpy(gLastDeviceModel, model, sizeof(gLastDeviceModel) - 1);
+                        gLastDeviceModel[sizeof(gLastDeviceModel) - 1] = '\0';
+                        uCxEnd(&gUcxHandle);
+                    } else {
+                        uCxEnd(&gUcxHandle);
+                    }
+                    
+                    const char *fwVersion = NULL;
+                    if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
+                        strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
+                        gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
+                        uCxEnd(&gUcxHandle);
+                    } else {
+                        uCxEnd(&gUcxHandle);
+                    }
+                    
+                    gUcxConnected = true;
+                    
+                    printf("\nFirmware update complete!\n");
+                    if (gDeviceModel[0] != '\0' && gDeviceFirmware[0] != '\0') {
+                        printf("Device: %s\n", gDeviceModel);
+                        printf("New firmware version: %s\n", gDeviceFirmware);
+                        printf("\nThe device is ready to use!\n");
+                    } else {
+                        printf("Note: Could not read new firmware version.\n");
+                    }
+                    
+                    saveSettings();
                     break;
                 }
+                
                 case 0:
                     gMenuState = MENU_MAIN;
                     break;
+                    
                 default:
                     printf("Invalid choice!\n");
                     break;
@@ -18303,9 +18398,12 @@ static void handleUserInput(void)
 }
 
 static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, 
-                                   int32_t percentComplete, void *pUserData)
+                                   void *pUserData)
 {
     (void)pUserData;  // Unused
+    
+    // Calculate percent complete
+    int32_t percentComplete = (totalBytes > 0) ? (int32_t)((bytesTransferred * 100) / totalBytes) : 0;
     
     // Show progress bar
     printf("\rFirmware update: [");
@@ -18319,7 +18417,7 @@ static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred,
     printf("] %d%% (%zu/%zu bytes)", percentComplete, bytesTransferred, totalBytes);
     fflush(stdout);
     
-    if (percentComplete == 100) {
+    if (percentComplete >= 100) {
         printf("\n");
     }
 }
@@ -18522,14 +18620,29 @@ static bool ucxclientConnect(const char *comPort)
     
     printf("Connecting to %s...\n", comPort);
     
-    // Initialize AT client (like windows_basic.c)
-    uPortAtInit(&gUcxAtClient);
+    // Initialize port layer
+    uPortInit();
     
-    // Open COM port
-    if (!uPortAtOpen(&gUcxAtClient, comPort, 115200, false)) {
+    // Configure AT client
+    memset(&gAtConfig, 0, sizeof(gAtConfig));
+    gAtConfig.pRxBuffer = gRxBuffer;
+    gAtConfig.rxBufferLen = sizeof(gRxBuffer);
+    gAtConfig.pUrcBuffer = gUrcBuffer;
+    gAtConfig.urcBufferLen = sizeof(gUrcBuffer);
+    
+    // Initialize AT client
+    uCxAtClientInit(&gAtConfig, &gUcxAtClient);
+    
+    // Open UART
+    gUartHandle = uPortUartOpen(comPort, 115200, false);
+    if (gUartHandle == NULL) {
         printf("ERROR: Failed to open %s\n", comPort);
+        uCxAtClientDeinit(&gUcxAtClient);
         return false;
     }
+    
+    // Start background RX task
+    uPortBgRxTaskCreate(&gUcxAtClient);
     
     printf("COM port opened successfully\n");
     
@@ -18626,11 +18739,20 @@ static void ucxclientDisconnect(void)
     // Delete mutex
     U_CX_MUTEX_DELETE(gUrcMutex);
 
+    // Stop background RX task
+    uPortBgRxTaskDestroy(&gUcxAtClient);
+    
     // Deinitialize UCX handle
     uCxAtClientDeinit(&gUcxAtClient);
     
-    // Close COM port
-    uPortAtClose(&gUcxAtClient);
+    // Close UART
+    if (gUartHandle != NULL) {
+        uPortUartClose(gUartHandle);
+        gUartHandle = NULL;
+    }
+    
+    // Deinitialize port layer
+    uPortDeinit();
     
     // Clear device info
     gDeviceModel[0] = '\0';
