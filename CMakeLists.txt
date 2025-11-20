@@ -127,22 +127,23 @@ if(WIN32)
   target_include_directories(ucxclient-x64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} ${CMAKE_SOURCE_DIR}/examples)
   target_link_libraries(ucxclient-x64 PRIVATE setupapi ${FTDI_LIBRARY})
 
-  # Firmware Update Standalone Application
-  add_executable(firmware_update
-    examples/firmware_update.c
+  # Firmware Upgrade Standalone Application
+  add_executable(fw_upgrade_example
+    examples/fw_upgrade_example.c
+    examples/example_utils.c
     examples/port/u_port_windows.c
     ${UCXCLIENT_UCX_API_SRC}
     ${UCXCLIENT_AT_API_SRC}
   )
-  target_compile_options(firmware_update PRIVATE /W4 /FS /wd4200)
-  target_compile_definitions(firmware_update PRIVATE
+  target_compile_options(fw_upgrade_example PRIVATE /W4 /FS /wd4200)
+  target_compile_definitions(fw_upgrade_example PRIVATE
     U_PORT_WINDOWS
     U_CX_AT_CONFIG_FILE="u_cx_at_config_windows.h"
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
   )
-  target_include_directories(firmware_update PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
-  target_link_libraries(firmware_update PRIVATE setupapi ${FTDI_LIBRARY})
+  target_include_directories(fw_upgrade_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
+  target_link_libraries(fw_upgrade_example PRIVATE setupapi ${FTDI_LIBRARY})
 
   # Windows shared library for Python integration
   add_library(ucxclient_dll SHARED
