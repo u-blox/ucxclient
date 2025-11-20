@@ -142,6 +142,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_BT_CONNECTED       (1 << 13) // Bluetooth connected (+UEBTC)
 #define URC_FLAG_BT_DISCONNECTED    (1 << 14) // Bluetooth disconnected (+UEBTDC)
 #define URC_FLAG_HTTP_RESPONSE_READY (1 << 15) // HTTP response ready (+UEHTCRS)
+#define URC_FLAG_HTTP_DISCONNECTED  (1 << 16) // HTTP disconnected (+UEHTCDC)
 
 // Global handles
 static uCxAtClient_t gUcxAtClient;
@@ -500,6 +501,7 @@ static uBtLeAddress_t gPasskeyRequestAddress;
 // HTTP status tracking (set by URC, waited on by HTTP operations)
 static volatile int32_t gHttpLastStatusCode = 0;
 static volatile int32_t gHttpLastSessionId = -1;
+static volatile bool gHttpConnected = false;  // HTTP session connected
 
 // Ping test results
 static volatile int32_t gPingSuccess = 0;
@@ -1113,6 +1115,7 @@ static bool configureHttpsConnection(int32_t sessionId, const char *hostname, co
 static void httpJsonPlaceholderExample(void);
 
 // HTTP helper functions
+static void httpSafeDisconnect(int32_t sessionId);
 static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t bufferSize, int32_t *pHeaderLen);
 static int32_t getHttpBody(int32_t sessionId, uint8_t *buffer, int32_t bufferSize, 
                             int32_t expectedLength, void (*outputCallback)(const uint8_t *data, int32_t len));
@@ -2473,6 +2476,52 @@ static void startupUrc(struct uCxHandle *puCxHandle)
     gLastStartupConfigTime = currentTime;
     
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Module STARTUP detected ***");
+    
+    // Reset all GATT service handles - module rebooted and all services are lost
+    gHidServiceHandle = -1;
+    gHidKeyboardInputHandle = -1;
+    gHidKeyboardCccdHandle = -1;
+    gHidBootKbdInputHandle = -1;
+    gHidBootKbdCccdHandle = -1;
+    gHidBootKbdOutputHandle = -1;
+    gHidKeyboardOutputHandle = -1;
+    gHidMediaInputHandle = -1;
+    gHidMediaCccdHandle = -1;
+    gHidControlPointHandle = -1;
+    gHidReportMapHandle = -1;
+    gHidInfoHandle = -1;
+    gHidProtocolModeHandle = -1;
+    gBatteryServiceHandle = -1;
+    gBatteryLevelHandle = -1;
+    gBatteryCccdHandle = -1;
+    gHeartbeatServiceHandle = -1;
+    gHeartbeatCharHandle = -1;
+    gHeartbeatCccdHandle = -1;
+    gEnvServerTempCccdHandle = -1;
+    gEnvServerHumCccdHandle = -1;
+    gCtsServerServiceHandle = -1;
+    gCtsServerTimeValueHandle = -1;
+    gCtsServerTimeCccdHandle = -1;
+    gAioServerServiceHandle = -1;
+    gAioServerDigitalCharHandle = -1;
+    gAioServerDigitalCccdHandle = -1;
+    gAioServerAnalogCharHandle = -1;
+    gAioServerAnalogCccdHandle = -1;
+    gGattServiceChangedHandle = -1;
+    
+    // Reset notification flags
+    gHidBootKbdNotificationsEnabled = false;
+    gHidKeyboardNotificationsEnabled = false;
+    gHidMediaNotificationsEnabled = false;
+    gBatteryNotificationsEnabled = false;
+    gHeartbeatNotificationsEnabled = false;
+    gEssServerTempNotificationsEnabled = false;
+    gEssServerHumNotificationsEnabled = false;
+    gCtsServerNotificationsEnabled = false;
+    gAioServerDigitalNotificationsEnabled = false;
+    gAioServerAnalogNotificationsEnabled = false;
+    gUartServerTxNotificationsEnabled = false;
+    
     signalEvent(URC_FLAG_STARTUP);
 }
 
@@ -2542,6 +2591,7 @@ static void httpRequestStatusUrc(struct uCxHandle *puCxHandle, int32_t session_i
     // Track session and status code
     gHttpLastSessionId = session_id;
     gHttpLastStatusCode = status_code;
+    gHttpConnected = true;  // Connection is active if we got a response
     
     // Add newline before debug output to avoid mixing with AT TX lines
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
@@ -2559,6 +2609,13 @@ static void httpDisconnectUrc(struct uCxHandle *puCxHandle, int32_t session_id)
 {
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "HTTP disconnected: session %d", session_id);
+    
+    // Update connection state
+    gHttpConnected = false;
+    gHttpLastSessionId = -1;
+    
+    // Signal HTTP disconnect event
+    signalEvent(URC_FLAG_HTTP_DISCONNECTED);
 }
 
 static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id)
@@ -7519,7 +7576,9 @@ static void gattServerSetupHidKeyboard(void)
             printf("\nYou can now use the HID menu options to:\n");
             printf("  [4] Send keyboard key presses\n");
             printf("  [5] Send 'Hello World' text\n");
-            printf("  [6] Send media control commands\n\n");
+            // TODO: Add media control characteristic to HID service
+            // printf("  [6] Send media control commands\n");
+            printf("\n");
         } else {
             printf("○ No active connection\n");
             printf("\nWaiting for client to connect...\n");
@@ -7705,8 +7764,8 @@ static void gattServerSetupHidKeyboard(void)
     
     // Step 2a: Add Protocol Mode characteristic (0x2A4E) - Read + Write Without Response
     // CRITICAL: Read = NONE (no encryption) so Windows can read early before bonding
-    // Write = UNAUTHENTICATED (encrypted) forces Windows/iOS to pair on first write
-    // AT equivalent: AT+UBTGC=2A4E,06,1,2,01,1
+    // Write = AUTHENTICATED (encrypted + authenticated) for security
+    // AT equivalent: AT+UBTGC=2A4E,06,1,3,01,1
     printf("Step 2a: Adding Protocol Mode characteristic...\n");
     uint8_t protoModeUuid[] = {0x2A, 0x4E};  // Little-endian
     uint8_t propReadWriteNoResp[] = {0x06};  // Read (0x02) + Write Without Response (0x04) = 0x06
@@ -7715,7 +7774,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t protoResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, protoModeUuid, 2,
                                       propReadWriteNoResp, 1,
-                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED,
                                       protoModeValue, 1,
                                       1,
                                       &protoResponse);
@@ -7808,7 +7867,7 @@ static void gattServerSetupHidKeyboard(void)
     
     // Step 3b: Add Boot Keyboard Output Report (0x2A32) - Write Without Response (0x04)
     // Recommended for complete HID keyboard compliance
-    // Security set to UNAUTHENTICATED (Encrypted) as per HID spec
+    // Security set to AUTHENTICATED (Encrypted + Authenticated) for security
     printf("Step 3b: Adding Boot Keyboard Output Report...\n");
     uint8_t bootKbdOutputUuid[] = {0x2A, 0x32};  // Little-endian
     uint8_t propWriteWoResp[] = {0x04};  // Write Without Response
@@ -7817,7 +7876,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t bootKbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, bootKbdOutputUuid, 2,
                                       propWriteWoResp, 1,
-                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED,
                                       emptyBootKbdOutput, 1,
                                       1,
                                       &bootKbdOutResponse);
@@ -7902,7 +7961,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t kbdOutResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, kbdOutputUuid, 2,
                                       propReadWriteWWR, 1,
-                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED,
                                       ledOutputValue, 1,
                                       1,
                                       &kbdOutResponse);
@@ -7933,7 +7992,7 @@ static void gattServerSetupHidKeyboard(void)
     }
     
     // Step 5: Add HID Control Point characteristic (0x2A4C) - Write without response (0x04)
-    // AT equivalent: AT+UBTGC=4C2A,04,2,2,00,1
+    // AT equivalent: AT+UBTGC=4C2A,04,1,3,00,1
     printf("Step 5: Adding HID Control Point characteristic...\n");
     uint8_t controlPointUuid[] = {0x2A, 0x4C};  // Little-endian
     uint8_t propWriteNoResp[] = {0x04};  // Write without response
@@ -7942,7 +8001,7 @@ static void gattServerSetupHidKeyboard(void)
     uCxGattServerCharDefine_t cpResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, controlPointUuid, 2,
                                       propWriteNoResp, 1,
-                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED,
                                       cpValue, 1,
                                       1,
                                       &cpResponse);
@@ -8116,12 +8175,13 @@ static void gattServerSetupHidKeyboard(void)
     printf("  1. Scan for Bluetooth devices on your phone/PC\n");
     printf("  2. Look for 'u-blox ucxclient HID device'\n");
     printf("  3. Pair/Connect to the device\n");
-    printf("  4. Use menu options to send key presses or media controls\n\n");
+    printf("  4. Use menu options to send key presses\n\n");
     
     printf("Manual control:\n");
-    printf("  - Use [8] to send keyboard key presses\n");
-    printf("  - Use [9] to send media control commands\n");
-    printf("  - Use [a] to send 'Hello World' test\n\n");
+    printf("  - Use [4] to send keyboard key presses\n");
+    printf("  - Use [5] to send 'Hello World' test\n\n");
+    // TODO: Implement media control characteristic
+    // printf("  - Use [6] to send media control commands\n");
     
     gGattServerServiceHandle = gHidServiceHandle;
 }
@@ -10689,12 +10749,6 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
     
     *pHeaderLen = 0;
     
-    // Wait for HTTP response ready URC (timeout: 30 seconds)
-    //if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 30)) {
-    //    printf("ERROR: Timeout waiting for HTTP response ready\n");
-    //    return false;
-    //}
-    
     // Verify the URC was for our session
     //if (gHttpLastSessionId != sessionId) {
     //    printf("ERROR: HTTP response ready for wrong session (expected %d, got %d)\n", 
@@ -11088,10 +11142,6 @@ static void httpGetExample(void)
         return;
     }
     
-    // Disconnect any existing HTTP session
-    uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
-    
     printf("Host (e.g., httpbin.org): ");
     if (!fgets(host, sizeof(host), stdin)) {
         printf("ERROR: Failed to read host\n");
@@ -11169,7 +11219,19 @@ static void httpGetExample(void)
     }
     printf("✓ GET request sent successfully\n");
     
-    // Step 4: Read response headers
+    // Step 4: Wait for HTTP response ready URC (timeout: 30 seconds)
+    printf("\n");
+    printf("Waiting for HTTP response...\n");
+    if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 30)) {
+        printf("ERROR: Timeout waiting for HTTP response ready\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ HTTP response ready\n");
+    
+    // Step 5: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
     char headerBuffer[2048] = {0};
@@ -11240,7 +11302,7 @@ static void httpGetExample(void)
     }
     
     // Disconnect HTTP session
-    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    httpSafeDisconnect(sessionId);
     
     printf("\n");
     printf("Press Enter to continue...");
@@ -11270,10 +11332,6 @@ static void httpPostExample(void)
         getchar();
         return;
     }
-    
-    // Disconnect any existing HTTP session
-    uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
     
     printf("Enter hostname (e.g., httpbin.org): ");
     if (!fgets(host, sizeof(host), stdin)) {
@@ -11386,7 +11444,19 @@ static void httpPostExample(void)
     }
     printf("✓ POST request sent successfully\n");
     
-    // Step 4: Read response headers
+    // Step 4: Wait for HTTP response ready URC (timeout: 30 seconds)
+    printf("\n");
+    printf("Waiting for HTTP response...\n");
+    if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 30)) {
+        printf("ERROR: Timeout waiting for HTTP response ready\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ HTTP response ready\n");
+    
+    // Step 5: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
     char headerBuffer[2048] = {0};
@@ -11403,7 +11473,7 @@ static void httpPostExample(void)
         printf("WARNING: Failed to read response headers\n");
     }
     
-    // Step 5: Read response body
+    // Step 6: Read response body
     printf("\n");
     printf("Reading response body...\n");
     
@@ -11418,11 +11488,39 @@ static void httpPostExample(void)
     printf("✓ Response received: %d bytes total\n", totalBytes);
     
     // Disconnect HTTP session
-    uCxHttpDisconnect(&gUcxHandle, sessionId);
+    httpSafeDisconnect(sessionId);
     
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
+}
+
+// ============================================================================
+// HTTP HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Safely disconnect HTTP session
+ * 
+ * Checks if HTTP is connected before attempting disconnect to avoid
+ * ERROR:20 (U_ERROR_COMMON_NOT_CONFIGURED) when already disconnected.
+ * 
+ * @param sessionId HTTP session ID to disconnect
+ */
+static void httpSafeDisconnect(int32_t sessionId)
+{
+    // Only disconnect if we think we're connected
+    // The URC will update gHttpConnected to false when disconnect completes
+    if (gHttpConnected && gHttpLastSessionId == sessionId) {
+        int32_t err = uCxHttpDisconnect(&gUcxHandle, sessionId);
+        if (err == 0) {
+            // Wait briefly for disconnect URC
+            Sleep(100);
+        }
+    } else {
+        // Already disconnected or different session
+        gHttpConnected = false;
+    }
 }
 
 // ============================================================================
@@ -11725,6 +11823,11 @@ static void httpQuoteApiExample(void)
     
     printf("✓ Request sent successfully\n");
     printf("\n");
+
+    // Wait for HTTP response ready URC (timeout: 10 seconds)
+    if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 10)) {
+        printf("ERROR: Timeout waiting for HTTP response ready\n");
+    }
     
     // Read response headers
     printf("Reading response headers...\n");
@@ -12339,6 +12442,11 @@ static void httpZenQuotesExample(void)
     
     printf("✓ Request sent successfully\n");
     printf("\n");
+
+    // Wait for HTTP response ready URC (timeout: 10 seconds)
+    if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 10)) {
+        printf("ERROR: Timeout waiting for HTTP response ready\n");
+    }
     
     // Read response headers
     printf("Reading response headers...\n");
@@ -16719,7 +16827,7 @@ static void printMenu(void)
             printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
             printf("\n");
-            printf("  [k] HID Keyboard + Media + Battery - Full HID device\n");
+            printf("  [k] HID Keyboard + Battery - Full HID device\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -16795,7 +16903,7 @@ static void printMenu(void)
             printf("SERVICE-SPECIFIC SERVER EXAMPLES\n");
             printf("  See main menu option [9] for complete examples:\n");
             printf("  - Heart Rate Service (Heartbeat)\n");
-            printf("  - HID Keyboard + Media + Battery\n");
+            printf("  - HID Keyboard + Battery\n");
             printf("  - Environmental Sensing (Temp + Humidity)\n");
             printf("  - Nordic UART Service (NUS)\n");
             printf("  - u-blox Serial Port Service (SPS)\n");
@@ -16828,9 +16936,10 @@ static void printMenu(void)
             printf("  [4] Send keyboard key press\n");
             printf("  [5] Send 'Hello World' text\n");
             printf("\n");
-            printf("MEDIA CONTROL\n");
-            printf("  [6] Send media control command\n");
-            printf("\n");
+            // TODO: Implement media control characteristic (0x2A4D with Report ID 2)
+            // printf("MEDIA CONTROL\n");
+            // printf("  [6] Send media control command\n");
+            // printf("\n");
             printf("STATUS\n");
             printf("  [s] Show Bluetooth connection status\n");
             printf("\n");
