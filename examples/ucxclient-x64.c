@@ -13181,9 +13181,12 @@ static void wifiPositioningExample(void)
     }
     printf("✓ Connection configured for %s\n", host);
     
-    // Skip TLS for now - use plain HTTP
-    // TODO: Add certificate management for HTTPS support
-    // err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    // For HTTPS with certificate validation:
+    // 1. Upload CA root certificate via Security/TLS menu [x] option [5]
+    // 2. Enable TLS on this session
+    // Example:
+    //   err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+    //   if (err < 0) { printf("ERROR: Failed to enable TLS\n"); return; }
     
     // Set request path
     err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
@@ -16422,7 +16425,7 @@ static void printMenu(void)
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("\n");
             printf("  Broker: %s:%d (Plain TCP)\n", MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
-            printf("  TLS:    %s:8883 (Encrypted, requires certificates)\n", MQTT_DEFAULT_HOST);
+            printf("  TLS:    %s:8883 (Encrypted - use Security menu [x] for certs)\n", MQTT_DEFAULT_HOST);
             printf("\n");
             printf("MQTT OPERATIONS\n");
             printf("  [1] Connect to MQTT broker\n");
@@ -16431,9 +16434,7 @@ static void printMenu(void)
             printf("  [4] Unsubscribe from topic\n");
             printf("  [5] Publish message\n");
             printf("\n");
-            printf("TLS/SECURITY (Coming Soon)\n");
-            printf("  [ ] Enable TLS/SSL (port 8883)\n");
-            printf("  [ ] Configure certificates\n");
+            printf("TIP: For MQTTS (TLS), upload CA certificate via Security/TLS menu [x]\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -16444,12 +16445,13 @@ static void printMenu(void)
             printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("      For HTTPS, upload CA certificate via Security/TLS menu [x]\n");
             printf("\n");
             printf("BASIC HTTP:\n");
             printf("  [1] HTTP GET request (manual entry)\n");
             printf("  [2] HTTP POST request (text or file)\n");
             printf("\n");
-            printf("REST API WITH JSON:\n");
+            printf("REST API WITH JSON (HTTPS examples use built-in TLS):\n");
             printf("  [3] UUID Generator (httpbin.org)\n");
             printf("  [4] HTTP Status Code Tester (httpbin.org)\n");
             printf("  [5] JSON POST Example (httpbin.org/post)\n");
@@ -16512,6 +16514,12 @@ static void printMenu(void)
             printf("           SECURITY/TLS MENU (Certificates & Encryption)\n");
             printf("\n");
             printf("\n");
+            printf("NOTE: Certificates apply to all TLS-enabled protocols:\n");
+            printf("      - HTTPS (HTTP with TLS)\n");
+            printf("      - MQTTS (MQTT with TLS)\n");
+            printf("      - EAP-TLS (Wi-Fi Enterprise)\n");
+            printf("      - Other secure connections\n");
+            printf("\n");
             printf("TLS CONFIGURATION\n");
             printf("  [1] Set TLS version (1.2 / 1.3)\n");
             printf("  [2] Show TLS configuration\n");
@@ -16519,7 +16527,10 @@ static void printMenu(void)
             printf("CERTIFICATE MANAGEMENT\n");
             printf("  [3] List all certificates\n");
             printf("  [4] Show certificate details\n");
-            printf("  [5] Upload certificate (CA, Client, or Private Key)\n");
+            printf("  [5] Upload certificate\n");
+            printf("      • CA Root Certificate - Validate server identity (most common)\n");
+            printf("      • Client Certificate - Mutual TLS authentication\n");
+            printf("      • Private Key - For client certificate\n");
             printf("  [6] Delete certificate\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
