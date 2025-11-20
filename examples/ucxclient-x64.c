@@ -16692,7 +16692,7 @@ static void printMenu(void)
             printf("  [c] Current Time Service (CTS) - Broadcast PC time\n");
             printf("  [a] Automation IO Service - Digital + Analog I/O\n");
             printf("\n");
-            printf("  [k] HID Keyboard + Media + Battery - Full HID device [Not working yet]\n");
+            printf("  [k] HID Keyboard + Media + Battery - Full HID device\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -17624,6 +17624,7 @@ static void handleUserInput(void)
                         }
                         if (firstChar == 'k') {
                             gattServerSetupHidKeyboard();  // HID Keyboard + Media + Battery
+                            gMenuState = MENU_HID;  // Switch to HID submenu for key sending
                             break;
                         }
                         if (firstChar == 'a') {
