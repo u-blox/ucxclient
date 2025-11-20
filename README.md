@@ -20,34 +20,32 @@ This API contains an AT client implementation that handles transmission of AT co
 
 ```c
 #include "u_cx_at_client.h"
-
-static int32_t myReadFunction(uCxAtClient_t *pClient, void *pStreamHandle, void *pData, size_t length, int32_t timeoutMs)
-{
-    // TODO: Implement
-}
-
-static int32_t myWriteFunction(uCxAtClient_t *pClient, void *pStreamHandle, const void *pData, size_t length)
-{
-    // TODO: Implement
-}
+#include "u_port.h"
 
 void main(void)
 {
   int32_t status;
   static char rxBuf[1024];
   static char urcBuf[1024];
+
+  // Configure AT client with buffers and UART device name
   static uCxAtClientConfig_t config = {
       .pRxBuffer = &rxBuf[0],
       .rxBufferLen = sizeof(rxBuf),
       .pUrcBuffer = &urcBuf[0],
       .urcBufferLen = sizeof(urcBuf),
-      .pStreamHandle = NULL,
-      .write = myWriteFunction,
-      .read = myReadFunction
+      .pUartDevName = "UART0"
   };
 
+  // Initialize port layer
+  uPortInit();
+
   uCxAtClient_t client;
+  // Initialize AT client (this also starts background RX task if port implements it)
   uCxAtClientInit(&config, &client);
+
+  // Open UART connection
+  uCxAtClientOpen(&client, 115200, true);
 
   // Example of executing AT command without any AT response
 
@@ -98,10 +96,16 @@ void main(void)
   uCxAtClient_t client;
   uCxHandle_t ucxHandle;
 
-  // You need to initialize the AT client in same way as in the uAtClient API example (part of this
-  // has been left out here for simplicity)
+  // Initialize port layer
+  uPortInit();
+
+  // Configure and initialize AT client (see uAtClient API example for details)
   uCxAtClientInit(&config, &client);
 
+  // Open UART connection
+  uCxAtClientOpen(&client, 115200, true);
+
+  // Initialize upper u-connectXpress layer
   uCxInit(&client, &ucxHandle);
 
   // This will send the "AT+USYUS=" AT command
@@ -118,9 +122,13 @@ void main(void)
 
 ## Porting and Configuration
 
-All configuration and porting config is located in [inc/u_cx_at_config.h](inc/u_cx_at_config.h).
-Make a copy of this file and place it in your code base where you can modify each config to your likings.
-When compiling you can specify the name of this local file with `U_CX_AT_CONFIG_FILE` (for GCC you could pass `-DU_CX_AT_CONFIG_FILE=\"my_u_cx_at_config.h\"`).
+The porting layer is defined in [ports/u_port.h](ports/u_port.h) and the AT client configuration is in [inc/u_cx_at_config.h](inc/u_cx_at_config.h).
+
+When compiling you can specify:
+- `U_CX_PORT_HEADER_FILE` - for port-specific defines (mutexes, time, UART, etc.) included by [ports/u_port.h](ports/u_port.h)
+- `U_CX_AT_CONFIG_FILE` - for AT client configuration overrides (timeouts, logging, error codes, etc.) included by [inc/u_cx_at_config.h](inc/u_cx_at_config.h)
+
+For example with GCC: `-DU_CX_PORT_HEADER_FILE=\"my_u_port.h\"` and/or `-DU_CX_AT_CONFIG_FILE=\"my_u_cx_config.h\"`.
 
 ### Minimum Porting
 
@@ -129,10 +137,15 @@ Some things are not required for successfully running the AT client (such as U_C
 | Function | Description |
 | -------- | ----------- |
 | U_CX_PORT_GET_TIME_MS | Must return a 32 bit timestamp in milliseconds.|
-| read()                | Passed as argument to uCxAtClientInit(). Should read data from UART with a timeout in millisec. Must return the number of bytes received, 0 if there are no data available within the timeout or negative value on error. |
-| write()               | Passed as argument to uCxAtClientInit(). Should write data to the UART. Must return the number of actual bytes written or negative number on error. |
+| uPortUartOpen()       | Opens a UART device and returns a platform-specific handle. |
+| uPortUartRead()       | Reads data from UART with a timeout in millisec. Must return the number of bytes received, 0 if there are no data available within the timeout or negative value on error. |
+| uPortUartWrite()      | Writes data to the UART. Must return the number of actual bytes written or negative number on error. |
+| uPortUartClose()      | Closes the UART device. |
+| uPortBgRxTaskCreate() | **Optional**: Creates a background task/thread to automatically call uCxAtClientHandleRx(). If not implemented, user must call uCxAtClientHandleRx() manually (see no-OS port). |
 
-For systems running RTOS you will also need to port the mutex API below - for bare-metal systems you can use [examples/port/u_port_no_os.h](examples/port/u_port_no_os.h):
+**Note**: With the new API, you typically don't call `uPortUartOpen()` directly - instead use `uCxAtClientOpen()` which handles UART initialization internally.
+
+For systems running RTOS you will also need to port the mutex API below - for bare-metal systems you can use [ports/os/u_port_no_os.h](ports/os/u_port_no_os.h):
 
 | Define   | Example (Posix) | Description |
 | -------- | --------------- | ----------- |
@@ -143,11 +156,15 @@ For systems running RTOS you will also need to port the mutex API below - for ba
 | U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) | `uPortMutexTryLock(&mutex, timeoutMs)`<sup>1</sup> | Define this to a function that tries to lock/take the mutex but with a timeout `timeoutMs` in millisec. Must return 0 if the mutex is successfully taken/locked and can return any negative value on timeout. |
 | U_CX_MUTEX_UNLOCK(mutex)     | `pthread_mutex_unlock(&mutex)`     | Define this to corresponding "unlock"/"give" function of your system. No return value is expected (any return value will be ignored). |
 
-<sup>1</sup> See [examples/port/u_port_posix.c](examples/port/u_port_posix.c)
+<sup>1</sup> See [ports/os/u_port_posix.c](ports/os/u_port_posix.c)
 
 ### Example Ports
 
-You will find some example ports in [examples/port](examples/port). These ports are used by the [example code](examples/README.md) and you will find more information in [examples/port/README.md](examples/port/README.md)
+You will find example ports in [ports/](ports/). These ports are used by the [example code](examples/README.md) and you will find more information in [ports/README.md](ports/README.md).
+
+The port layer is split into:
+- **OS abstraction** (ports/os/): Mutex, time, and optional background RX task
+- **UART abstraction** (ports/uart/): Platform-specific UART I/O
 
 ## Disclaimer
 

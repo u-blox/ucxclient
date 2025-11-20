@@ -21,6 +21,7 @@
 #include "unity.h"
 #include "mock_u_cx_log.h"
 #include "mock_u_cx_at_config.h"
+#include "mock_u_port.h"
 #include "u_cx_at_util.h"
 #include "u_cx_at_params.h"
 #include "u_cx_at_urc_queue.h"
@@ -31,7 +32,7 @@
  * -------------------------------------------------------------- */
 
 #define CONTEXT_VALUE  ((void *)0x11223344)
-#define STREAM_HANDLER ((void *)0x44332211)
+#define UART_HANDLE    ((uPortUartHandle_t)0x44332211)
 
 #define BIN_HDR(DATA_LENGTH) \
     0x01,(DATA_LENGTH) >> 8,(DATA_LENGTH) & 0xFF
@@ -41,13 +42,6 @@
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
-
-static int32_t write(uCxAtClient_t *pClient, void *pStreamHandle,
-                     const void *pData, size_t length);
-
-static int32_t read(uCxAtClient_t *pClient, void *pStreamHandle,
-                    void *pData, size_t length, int32_t timeoutMs);
-
 
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
@@ -67,11 +61,10 @@ static uCxAtClientConfig_t gClientConfig = {
     .pContext = CONTEXT_VALUE,
     .pRxBuffer = gRxBuffer,
     .rxBufferLen = sizeof(gRxBuffer),
-    .pStreamHandle = STREAM_HANDLER,
     .pUrcBuffer = gUrcBuffer,
     .urcBufferLen = sizeof(gUrcBuffer),
-    .read = read,
-    .write = write,
+    .pUartDevName = "TEST_UART",
+    .timeoutMs = 10000
 };
 
 static uCxAtClient_t gClient;
@@ -96,24 +89,48 @@ int32_t uPortGetTickTimeMs_CALLBACK(int cmock_num_calls)
     return ret;
 }
 
-static int32_t write(uCxAtClient_t *pClient, void *pStreamHandle,
-                     const void *pData, size_t length)
+/* Mock UART open function */
+uPortUartHandle_t uPortUartOpen(const char *pDeviceName, int32_t baudRate, bool flowControl)
 {
-    TEST_ASSERT_EQUAL(&gClient, pClient);
-    TEST_ASSERT_EQUAL(STREAM_HANDLER, pStreamHandle);
+    (void)pDeviceName;
+    (void)baudRate;
+    (void)flowControl;
+    return UART_HANDLE;
+}
+
+/* Mock UART close function */
+void uPortUartClose(uPortUartHandle_t handle)
+{
+    TEST_ASSERT_EQUAL(UART_HANDLE, handle);
+}
+
+/* Mock BgRxTask functions (not used in tests, background task disabled) */
+void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
+{
+    (void)pClient;
+}
+
+void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
+{
+    (void)pClient;
+}
+
+/* Mock UART write function */
+int32_t uPortUartWrite(uPortUartHandle_t handle, const void *pData, size_t length)
+{
+    TEST_ASSERT_EQUAL(UART_HANDLE, handle);
     assert(length < sizeof(gTxBuffer) - gTxBufferPos);
     memcpy(&gTxBuffer[gTxBufferPos], pData, length);
     gTxBufferPos += length;
-    return length;
+    return (int32_t)length;
 }
 
-static int32_t read(uCxAtClient_t *pClient, void *pStreamHandle,
-                    void *pData, size_t length, int32_t timeoutMs)
+/* Mock UART read function */
+int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int32_t timeoutMs)
 {
     static int zeroCounter = 0;
     (void)timeoutMs;
-    TEST_ASSERT_EQUAL(&gClient, pClient);
-    TEST_ASSERT_EQUAL(STREAM_HANDLER, pStreamHandle);
+    TEST_ASSERT_EQUAL(UART_HANDLE, handle);
 
     if (gRxIoErrorCode != 0) {
         if (++zeroCounter > 10) {
@@ -156,6 +173,7 @@ void setUp(void)
     uCxLogPrintTime_Ignore();
     uCxLogIsEnabled_IgnoreAndReturn(false);
     uCxAtClientInit(&gClientConfig, &gClient);
+    uCxAtClientOpen(&gClient, 115200, true);
     memset(&gTxBuffer[0], 0xc0, sizeof(gTxBuffer));
     gTxBufferPos = 0;
     gPRxDataPtr = NULL;
@@ -168,6 +186,8 @@ void setUp(void)
 
 void tearDown(void)
 {
+    uCxAtClientClose(&gClient);
+    uCxAtClientDeinit(&gClient);
 }
 
 

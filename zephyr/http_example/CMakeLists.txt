@@ -8,4 +8,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 project(app LANGUAGES C)
 
-target_sources(app PRIVATE ${REPO_ROOT}/examples/http_example.c)
+target_sources(app PRIVATE
+  ${REPO_ROOT}/examples/http_example.c
+  ${REPO_ROOT}/examples/example_utils.c
+)
