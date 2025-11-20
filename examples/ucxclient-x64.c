@@ -5533,6 +5533,7 @@ static DWORD WINAPI gattNotificationThread(LPVOID lpParam)
     
     int consecutiveErrors = 0;
     const int MAX_CONSECUTIVE_ERRORS = 3;
+    int batteryUpdateCounter = 0;  // Counter for 60-second battery updates
     
     while (gGattNotificationThreadRunning) {
         // Only send if we have an active connection
@@ -5572,8 +5573,11 @@ static DWORD WINAPI gattNotificationThread(LPVOID lpParam)
                 }
             }
             
-            // 2. Send Battery notification (if enabled)
-            if (gBatteryNotificationsEnabled && gBatteryLevelHandle > 0) {
+            // 2. Send Battery notification (if enabled) - every 60 seconds
+            batteryUpdateCounter++;
+            if (gBatteryNotificationsEnabled && gBatteryLevelHandle > 0 && batteryUpdateCounter >= 60) {
+                batteryUpdateCounter = 0;  // Reset counter
+                
                 // Slowly decrease battery level (reset at 10%)
                 if (gBatteryLevel > 10) {
                     gBatteryLevel--;
