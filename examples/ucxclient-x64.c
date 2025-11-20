@@ -7821,14 +7821,16 @@ static void gattServerSetupHidKeyboard(void)
     printf("Step 4: Adding Keyboard Input Report characteristic...\n");
     uint8_t reportUuid[] = {0x2A, 0x4D};  // Little-endian
     uint8_t propReadNotify[] = {0x12};  // Read + Notify
-    uint8_t emptyKbdReport[9] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; // Report ID + 8 bytes
+    // HoG spec: Report ID is in descriptor (0x2908), NOT in GATT value
+    // Report structure: [Modifier][Reserved][Key1-6] = 8 bytes
+    uint8_t emptyKbdReport[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
     
     uCxGattServerCharDefine_t kbdResponse;
     result = uCxGattServerCharDefine6(&gUcxHandle, reportUuid, 2,
                                       propReadNotify, 1,
                                       U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
-                                      emptyKbdReport, 9,
-                                      9,
+                                      emptyKbdReport, 8,
+                                      8,
                                       &kbdResponse);
     
     if (result == 0) {
@@ -9056,7 +9058,7 @@ static int32_t hidSendKeyReport(uint8_t modifiers,
     }
 
     int32_t handle;
-    uint8_t report[9];
+    uint8_t report[8];
     size_t len;
 
     if (gUseBootKeyboard) {
@@ -9072,18 +9074,18 @@ static int32_t hidSendKeyReport(uint8_t modifiers,
         report[7] = key6;
         len = 8;
     } else {
-        // Report mode: 9-byte report (Report ID = 1)
+        // Report mode: 8-byte report (HoG spec: Report ID is in descriptor, not value)
+        // Host HOGP layer adds Report ID when passing to HID driver
         handle = gHidKeyboardInputHandle;
-        report[0] = 0x01;        // Report ID
-        report[1] = modifiers;
-        report[2] = 0x00;        // reserved
-        report[3] = key1;
-        report[4] = key2;
-        report[5] = key3;
-        report[6] = key4;
-        report[7] = key5;
-        report[8] = key6;
-        len = 9;
+        report[0] = modifiers;   // modifiers
+        report[1] = 0x00;        // reserved
+        report[2] = key1;
+        report[3] = key2;
+        report[4] = key3;
+        report[5] = key4;
+        report[6] = key5;
+        report[7] = key6;
+        len = 8;
     }
 
     int32_t result = uCxGattServerSendNotification(&gUcxHandle, gCurrentGattConnHandle,
