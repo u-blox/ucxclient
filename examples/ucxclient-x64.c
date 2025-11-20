@@ -16544,8 +16544,8 @@ static void printMenu(void)
             printf("POWER MANAGEMENT\n");
             printf("  [4] Get current power save level\n");
             printf("  [5] Set power save level (0=disabled, 1=deep sleep, 2=power save)\n");
-            printf("  [7] Set power save timeout (seconds)\n");
-            printf("  [8] Enter deep sleep with GPIO wakeup\n");
+            printf("  [6] Set power save timeout (seconds)\n");
+            printf("  [7] Enter deep sleep with GPIO wakeup\n");
             printf("\n");
             printf("SYSTEM COMMANDS\n");
             printf("  [1] Reboot module\n");
@@ -17462,13 +17462,9 @@ static void handleUserInput(void)
                     executeSetPowerSaveLevel();
                     break;
                 case 6:
-                    // Get power save timeout - will implement
-                    printf("\\nGet power save timeout not yet implemented\\n");
-                    break;
-                case 7:
                     executeSetPowerSaveTimeout();
                     break;
-                case 8:
+                case 7:
                     executeDeepSleep();
                     break;
                 case 0:
