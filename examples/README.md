@@ -2,10 +2,12 @@
 
 This directory contains application examples of how to use ucxclient. The examples make use of the [example ports](port/README.md).
 
-| Files                | Description |
-| -------------------- | ----------- |
-| http_example.c       | Example of doing a HTTP GET request using the uCx API. |
-| http_example_no_os.c | Same example as http_example.c but illustrating how it could be done on a bare-metal system with no OS. |
+All examples are designed to work with both OS and no-OS configurations by using the shared utilities in `example_utils.c/h`. This demonstrates the portability of ucxclient across different execution environments.
+
+| Files            | Description |
+| ---------------- | ----------- |
+| http_example.c   | Example of doing a HTTP GET request using the uCx API. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
+| example_utils.c/h | Common utility functions that work with both OS and no-OS configurations, providing AT client initialization, event handling, and sleep functionality. |
 
 ## Building
 
@@ -45,7 +47,8 @@ Example:
 
 ### http_example_no_os
 
-Just like http_example this example will also be compiled for Linux, but in this case the UART device, Wi-Fi SSID and PSK are configured using defines.
+The no-OS variant of http_example is built from the same source code but uses a different port layer (u_port_no_os.c). The UART device, Wi-Fi SSID and PSK are configured using CMake defines since command-line arguments are not available in typical bare-metal environments.
+
 To set these defines using CMake you can either use `cmake-gui`:
 
 ![cmake-gui](/images/cmake-gui.png)
@@ -61,3 +64,5 @@ Now you should be able to start the example using:
 ```sh
 > build/http_example_no_os
 ```
+
+Note: Both http_example and http_example_no_os are compiled from the same http_example.c source file, demonstrating how ucxclient examples can work seamlessly in both OS and no-OS environments.
