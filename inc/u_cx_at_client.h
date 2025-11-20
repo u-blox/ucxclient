@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 u-blox
+ * Copyright 2025 u-blox
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+#include "u_port.h"
 #include "u_cx_at_util.h"
 #include "u_cx_at_params.h"
 #include "u_cx_at_urc_queue.h"
@@ -66,9 +67,11 @@ typedef struct {
 
 typedef struct uCxAtClient {
     const struct uCxAtClientConfig *pConfig;
+    uPortUartHandle_t uartHandle;
     size_t rxBufferPos;
     size_t urcBufferPos;
     volatile bool executingCmd;
+    volatile bool opened;
     int32_t cmdStartTime;
     int32_t cmdTimeout;
     int32_t cmdTimeoutLastPerm;
@@ -96,20 +99,7 @@ typedef struct uCxAtClientConfig {
     void *pUrcBuffer;       /**< Pointer to a separate URC buffer */
     size_t urcBufferLen;    /**< Size of the URC buffer. */
 #endif
-    void *pStreamHandle;    /**< User pointer associated with the AT interface.
-                                 This pointer will be passed to write and read functions below
-                                 and can be used to talk to a certain COM port etc.*/
-
-    /* Callback for writing to the AT interface (typically a UART)
-     * The function should return the number of actual bytes written or negative number on error.
-     */
-    int32_t (*write)(uCxAtClient_t *pClient, void *pStreamHandle, const void *pData, size_t length);
-
-    /* Callback for reading from the AT interface (typically a UART)
-     * The function should return the number of actual bytes read or negative number on error.
-     */
-    int32_t (*read)(uCxAtClient_t *pClient, void *pStreamHandle, void *pData, size_t length,
-                    int32_t timeoutMs);
+    const char *pUartDevName;  /**< UART device name (e.g., "UART0", "/dev/ttyUSB0") */
     int32_t timeoutMs;
     void *pContext;
 } uCxAtClientConfig_t;
@@ -125,7 +115,8 @@ typedef struct uCxAtClientConfig {
 /**
   * @brief  AT client init
   *
-  * This function must be called before any other uCxAtClientXxx function is called.
+  * Initializes the AT client structure and creates background RX task (if implemented).
+  * This function must be called before uCxAtClientOpen().
   *
   * @param[in]  pConfig:  the AT client configuration (see \ref uCxAtClientConfig_t)
   * @param[out] pClient:  a pointer to an AT client struct that will be initialized.
@@ -141,6 +132,29 @@ void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
   *
   */
 void uCxAtClientDeinit(uCxAtClient_t *pClient);
+
+/**
+  * @brief  Open AT client UART connection
+  *
+  * Opens the UART device specified in the configuration and makes the AT client ready for use.
+  * Must be called after uCxAtClientInit() and before sending any AT commands.
+  *
+  * @param[in]  pClient:      the AT client from uCxAtClientInit().
+  * @param[in]  baudRate:     UART baud rate (e.g., 115200).
+  * @param[in]  flowControl:  Enable hardware flow control (true/false).
+  * @retval                   0 on success, negative value on error.
+  */
+int32_t uCxAtClientOpen(uCxAtClient_t *pClient, int32_t baudRate, bool flowControl);
+
+/**
+  * @brief  Close AT client UART connection
+  *
+  * Closes the UART connection. After this, no AT commands can be sent until
+  * uCxAtClientOpen() is called again.
+  *
+  * @param[in]  pClient:      the AT client from uCxAtClientInit().
+  */
+void uCxAtClientClose(uCxAtClient_t *pClient);
 
 /**
   * @brief  Set URC callback
@@ -299,12 +313,15 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient);
 /**
   * @brief  Handle AT RX data
   *
-  * Call this function when data has been received by the AT interface (UART) while no
-  * AT command is being executed.
+  * Call this function to process incoming UART data and handle URCs.
   *
-  * This is needed for handling URCs that can be sent by the AT server at any time.
-  * If this function is called when AT client is currently handling an AT command it
-  * will do nothing.
+  * **Note**: You only need to call this function manually if uPortBgRxTaskCreate()
+  * is not implemented (or implemented as a stub), such as in no-OS ports.
+  * If a background RX task is active, it will call this function automatically.
+  *
+  * This function should be called periodically when data may be available from the
+  * AT interface (UART). It is safe to call even while an AT command is executing
+  * or when the client is not opened (it will do nothing in those cases).
   *
   * @param[in]  pClient:   the AT client from uCxAtClientInit().
   */

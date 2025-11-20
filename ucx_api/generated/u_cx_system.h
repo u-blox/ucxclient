@@ -60,6 +60,78 @@ typedef struct
 int32_t uCxSystemReboot(uCxHandle_t * puCxHandle);
 
 /**
+ * Start firmware upgrade on the serial port with provided settings
+ * 
+ * Output AT command:
+ * > AT+USYFWUS=<baud_rate>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      baud_rate:  Baudrate
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxSystemStartSerialFirmwareUpdate1(uCxHandle_t * puCxHandle, int32_t baud_rate);
+
+/**
+ * Start firmware upgrade on the serial port with provided settings
+ * 
+ * Output AT command:
+ * > AT+USYFWUS=<baud_rate>,<flow_control>
+ *
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param      baud_rate:    Baudrate
+ * @param      flow_control: 
+ * @return                   0 on success, negative value on error.
+ */
+int32_t uCxSystemStartSerialFirmwareUpdate2(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control);
+
+/**
+ * Start firmware upgrade on the serial port with default settings, baudrate 115200 and no flow control
+ * 
+ * Output AT command:
+ * > AT+USYFWUS
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxSystemStartSerialFirmwareUpdateDefault(uCxHandle_t * puCxHandle);
+
+/**
+ * Force start of the boot loader.
+ * 
+ * Output AT command:
+ * > AT+USYBL=<baud_rate>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      baud_rate:  Baudrate
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxSystemStartBootLoader1(uCxHandle_t * puCxHandle, int32_t baud_rate);
+
+/**
+ * Force start of the boot loader.
+ * 
+ * Output AT command:
+ * > AT+USYBL=<baud_rate>,<flow_control>
+ *
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param      baud_rate:    Baudrate
+ * @param      flow_control: 
+ * @return                   0 on success, negative value on error.
+ */
+int32_t uCxSystemStartBootLoader2(uCxHandle_t * puCxHandle, int32_t baud_rate, int32_t flow_control);
+
+/**
+ * Force start of the boot loader with default settings. Baudrate 115200 and flow control off.
+ * 
+ * Output AT command:
+ * > AT+USYBL
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxSystemStartBootLoaderDefault(uCxHandle_t * puCxHandle);
+
+/**
  * Write the current configuration to flash. The configuration is stored immediately when AT&W is issued.
  * 
  * Output AT command:
