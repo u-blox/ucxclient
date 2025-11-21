@@ -42,7 +42,7 @@
 #define U_CX_LOG_LINE(logCh, format, ...) \
     _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__)
 #define U_CX_LOG_LINE_I(logCh, instance, format, ...) \
-    __U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__)
+    _U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__)
 
 /* Log API for splitting up line in several U_CX_LOG() calls */
 #define U_CX_LOG_BEGIN(logCh)              _U_CX_LOG_BEGIN_FMT(logCh, "")
@@ -71,24 +71,31 @@
 
 /* Internal defines - do not use! */
 #define __U_CX_LOG_BEGIN_FMT(enabled, chText, format, ...)  \
-    if (enabled && uCxLogIsEnabled()) {                     \
+    do { if (enabled && uCxLogIsEnabled()) {                \
         uCxLogPrintTime();                                  \
         U_CX_PORT_PRINTF(chText " " format, ##__VA_ARGS__); \
-    }
+    } } while(0)
 #define __U_CX_LOG_BEGIN_I_FMT(enabled, chText, instance, format, ...)  \
-    if (enabled && uCxLogIsEnabled()) {                     \
+    do { if (enabled && uCxLogIsEnabled()) {                \
         uCxLogPrintTime();                                  \
         U_CX_PORT_PRINTF(chText "[%d] " format, instance, ##__VA_ARGS__); \
-    }
+    } } while(0)
 #define __U_CX_LOG(enabled, chText, format, ...) \
-    if (enabled && uCxLogIsEnabled()) {          \
+    do { if (enabled && uCxLogIsEnabled()) {     \
         U_CX_PORT_PRINTF(format, ##__VA_ARGS__); \
-    }
-/* MSVC workaround */
-#define EXPAND(x) x
-#define _U_CX_LOG_BEGIN_FMT(...) EXPAND(__U_CX_LOG_BEGIN_FMT(__VA_ARGS__))
-#define _U_CX_LOG_BEGIN_I_FMT(...) EXPAND(__U_CX_LOG_BEGIN_I_FMT(__VA_ARGS__))
-#define _U_CX_LOG(...) EXPAND(__U_CX_LOG(__VA_ARGS__))
+    } } while(0)
+
+/* MSVC preprocessor workaround: force expansion of variadic arguments */
+#ifdef _MSC_VER
+# define _EXPAND(x) x
+# define _U_CX_LOG_BEGIN_FMT(...) _EXPAND(__U_CX_LOG_BEGIN_FMT(__VA_ARGS__))
+# define _U_CX_LOG_BEGIN_I_FMT(...) _EXPAND(__U_CX_LOG_BEGIN_I_FMT(__VA_ARGS__))
+# define _U_CX_LOG(...) _EXPAND(__U_CX_LOG(__VA_ARGS__))
+#else
+# define _U_CX_LOG_BEGIN_FMT __U_CX_LOG_BEGIN_FMT
+# define _U_CX_LOG_BEGIN_I_FMT __U_CX_LOG_BEGIN_I_FMT
+# define _U_CX_LOG __U_CX_LOG
+#endif
 
 /* ----------------------------------------------------------------
  * TYPES
