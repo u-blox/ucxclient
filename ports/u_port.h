@@ -109,6 +109,12 @@ extern int32_t uPortGetTickTimeMs(void);
 # define U_CX_PORT_GET_TIME_MS()   uPortGetTickTimeMs()
 #endif
 
+/* Porting layer for sleeping in milliseconds */
+#ifndef U_CX_PORT_SLEEP_MS
+extern int32_t uPortSleepMs(int32_t ms);
+# define U_CX_PORT_SLEEP_MS(ms)    uPortSleepMs(ms)
+#endif
+
 /* ----------------------------------------------------------------
  * PORT INITIALIZATION
  * -------------------------------------------------------------- */

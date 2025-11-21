@@ -48,6 +48,8 @@
 #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(mutex, timeoutMs)
 #define U_CX_MUTEX_UNLOCK(mutex)              ReleaseSemaphore(mutex, 1, NULL)
 
+#define U_CX_PORT_SLEEP_MS(ms)                Sleep(ms)
+
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */

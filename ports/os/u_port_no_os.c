@@ -65,6 +65,15 @@ int32_t uPortGetTickTimeMs(void)
     return getTickTimeMs() - gBootTime;
 }
 
+int32_t uPortSleepMs(int32_t ms)
+{
+    int32_t startTime = getTickTimeMs();
+    while (getTickTimeMs() - startTime < ms) {
+        // Busy wait
+    }
+    return 0;
+}
+
 int32_t uCxMutexTryLock(bool *pMutex, uint32_t timeoutMs)
 {
     (void)timeoutMs;

@@ -125,7 +125,7 @@ int main(int argc, char **argv)
     uCxHttpRegisterRequestStatus(&ucxHandle, httpRequestStatus);
 
     uCxSystemReboot(&ucxHandle);
-    exampleSleepMs(4000);
+    U_CX_PORT_SLEEP_MS(4000);
     uCxSystemSetEchoOff(&ucxHandle);
 
     uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WIFI_WPA_THRESHOLD_WPA2);
