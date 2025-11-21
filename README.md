@@ -120,6 +120,30 @@ void main(void)
 }
 ```
 
+## Building
+
+The project uses [PyInvoke](https://www.pyinvoke.org/) for build automation. Install it with:
+
+```sh
+pip install invoke
+```
+
+Then build examples:
+
+```sh
+# From project root
+invoke build.examples
+
+# Or from examples/ directory
+cd examples
+invoke all              # Build all examples
+invoke http             # Build http_example only
+invoke fw-upgrade       # Build fw_upgrade_example only
+invoke clean            # Clean build artifacts
+```
+
+See [examples/README.md](examples/README.md) for more details on running the examples.
+
 ## Porting and Configuration
 
 The porting layer is defined in [ports/u_port.h](ports/u_port.h) and the AT client configuration is in [inc/u_cx_at_config.h](inc/u_cx_at_config.h).
