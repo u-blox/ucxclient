@@ -14,15 +14,20 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: 2.7
     - name: Install Ceedling
       run: gem install ceedling -v 0.31.1
+    - name: Install PyInvoke
+      run: pip install invoke
     - name: Run Unit Tests
-      run: |
-        ceedling test:all
+      run: invoke test.ceedling
     - name: Process Test results
       uses: dorny/test-reporter@v1
       if: always() # always run even if the previous step fails

@@ -24,10 +24,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
+#include <unistd.h>
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
+
+#ifndef U_PORT_POSIX
+# define U_PORT_POSIX
+#endif
 
 #define U_CX_MUTEX_HANDLE                     pthread_mutex_t
 #define U_CX_MUTEX_CREATE(mutex)              pthread_mutex_init(&mutex, NULL)

@@ -49,6 +49,8 @@ extern "C" {
 # include "os/u_port_no_os.h"
 #elif defined(U_PORT_POSIX)
 # include "os/u_port_posix.h"
+#elif defined(U_PORT_WINDOWS)
+# include "os/u_port_windows.h"
 #endif
 
 /* If you want to inject your own port you can use U_CX_PORT_HEADER_FILE
@@ -105,6 +107,12 @@ extern "C" {
 #ifndef U_CX_PORT_GET_TIME_MS
 extern int32_t uPortGetTickTimeMs(void);
 # define U_CX_PORT_GET_TIME_MS()   uPortGetTickTimeMs()
+#endif
+
+/* Porting layer for sleeping in milliseconds */
+#ifndef U_CX_PORT_SLEEP_MS
+extern int32_t uPortSleepMs(int32_t ms);
+# define U_CX_PORT_SLEEP_MS(ms)    uPortSleepMs(ms)
 #endif
 
 /* ----------------------------------------------------------------

@@ -73,6 +73,11 @@
 # define U_CX_LOG_USE_ANSI_COLOR 1
 #endif
 
+/* Configuration for enabling printing of time in logs.*/
+#ifndef U_CX_LOG_PRINT_TIME
+# define U_CX_LOG_PRINT_TIME 1
+#endif
+
 /** Error code configuration.
  *
  *  This can be used for controlling the codes returned by
