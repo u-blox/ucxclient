@@ -49,6 +49,8 @@ extern "C" {
 # include "os/u_port_no_os.h"
 #elif defined(U_PORT_POSIX)
 # include "os/u_port_posix.h"
+#elif defined(U_PORT_WINDOWS)
+# include "os/u_port_windows.h"
 #endif
 
 /* If you want to inject your own port you can use U_CX_PORT_HEADER_FILE

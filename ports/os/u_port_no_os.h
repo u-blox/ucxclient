@@ -35,6 +35,10 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
+#ifndef U_PORT_NO_OS
+# define U_PORT_NO_OS
+#endif
+
 #define U_CX_MUTEX_HANDLE                       bool
 #define U_CX_MUTEX_CREATE(mutex)                mutex = false
 #define U_CX_MUTEX_DELETE(mutex)                ((void)mutex)
