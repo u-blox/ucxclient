@@ -87,7 +87,7 @@ static void httpRequestStatus(struct uCxHandle *puCxHandle, int32_t session_id, 
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-int main(int argc, char **argv)
+int U_EXAMPLE_MAIN(int argc, char **argv)
 {
     uCxHandle_t ucxHandle;
 

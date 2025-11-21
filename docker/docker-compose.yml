@@ -1,0 +1,27 @@
+services:
+  stm32f4-builder:
+    build:
+      context: .
+      dockerfile: stm32f4/Dockerfile
+      network: host # use host network during build to fix DNS resolution
+    image: ucxclient-stm32f4:latest
+    volumes:
+      - ../:/project
+    working_dir: /project
+    environment:
+      - WIFI_SSID=${WIFI_SSID:-ubx}
+      - WIFI_PSK=${WIFI_PSK:-}      - WIFI_PSK=${WIFI_PSK:-}
+
+  stm32f4-renode:
+    build:
+      context: .
+      dockerfile: stm32f4/Dockerfile.renode
+      network: host
+    image: ucxclient-stm32f4-renode:latest
+    network_mode: host  # use host network to fix DNS resolution
+    volumes:
+      - ../:/project
+    working_dir: /project/stm32
+    environment:
+      - WIFI_SSID=${WIFI_SSID:-ubx}
+      - WIFI_PSK=${WIFI_PSK:-}

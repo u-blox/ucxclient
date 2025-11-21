@@ -1,0 +1,23 @@
+# Renode script for STM32F407VG
+# This emulates the STM32F4-Discovery board
+#
+# Usage: renode -e "s @stm32f407vg.resc" --variable elf_file:/path/to/firmware.elf
+
+# Create a machine
+mach create "stm32f407"
+
+# Load the STM32F4 platform
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery-kit.repl
+
+# Create a terminal window for UART2 output
+showAnalyzer sysbus.usart2
+
+# Load the firmware (using variable if provided, otherwise default)
+$elf_file?="/project/examples/bin/http_example_stm32.elf"
+sysbus LoadELF $elf_file
+
+# Set up logging (0=NOISY, 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR)
+logLevel 2
+
+# Start the emulation
+start

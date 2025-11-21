@@ -120,7 +120,7 @@ static int32_t firmwareDataCallback(uint8_t *pBuffer, size_t offset, size_t maxL
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-int main(int argc, char **argv)
+int U_EXAMPLE_MAIN(int argc, char **argv)
 {
     int32_t result;
     uCxHandle_t ucxHandle;

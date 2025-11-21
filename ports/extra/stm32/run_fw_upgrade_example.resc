@@ -1,0 +1,29 @@
+# Renode script for STM32F407VG - FW Upgrade Example
+# This emulates the STM32F4-Discovery board running fw_upgrade_example
+
+# Create a machine
+mach create "stm32f407"
+
+# Load the STM32F4 platform
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery-kit.repl
+
+# Log UART2 output to console
+logLevel -1 sysbus.usart2
+
+# Load the firmware
+sysbus LoadELF @/project/examples/bin/fw_upgrade_example_stm32.elf
+
+# Set up logging (0=NOISY, 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR)
+logLevel 2
+
+echo ""
+echo "========================================"
+echo "  STM32F407VG FW Upgrade - Renode"
+echo "========================================"
+echo "Firmware loaded, starting emulation..."
+echo "UART2 output will appear below:"
+echo "----------------------------------------"
+echo ""
+
+# Start the emulation
+start

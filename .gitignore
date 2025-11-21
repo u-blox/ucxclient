@@ -1,2 +1,4 @@
 build/
+build_*/
+bin/
 west-workspace/

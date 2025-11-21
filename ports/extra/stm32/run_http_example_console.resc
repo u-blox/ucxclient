@@ -1,0 +1,31 @@
+# Renode script for STM32F407VG - HTTP Example (Console Mode)
+# This emulates the STM32F4-Discovery board running http_example
+
+# Create a machine
+mach create "stm32f407"
+
+# Load the STM32F4 platform
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery-kit.repl
+
+# Create a console logger for UART2 instead of GUI analyzer
+emulation CreateServerSocketTerminal 3456 "term" false
+connector Connect sysbus.usart2 term
+
+# Load the firmware
+sysbus LoadELF @/project/examples/bin/http_example_stm32.elf
+
+# Set up logging (0=NOISY, 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR)
+logLevel 2
+
+# Log UART2 output to console
+logLevel -1 sysbus.usart2
+
+# Start the emulation
+start
+
+# Connect to the terminal to see output
+# In another terminal: nc localhost 3456
+
+echo "Emulation started. UART2 is available on port 3456"
+echo "Connect with: nc localhost 3456"
+echo "Or use: telnet localhost 3456"
