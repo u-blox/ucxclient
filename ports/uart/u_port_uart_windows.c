@@ -18,8 +18,11 @@
  * @brief Windows UART port implementation
  */
 
-#include "u_port.h"
+#ifndef WIN32_LEAN_AND_MEAN
+# define WIN32_LEAN_AND_MEAN
+#endif
 
+#include <windows.h>
 #include <setupapi.h>
 #include <devguid.h>
 #include <regstr.h>
@@ -27,6 +30,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+
+#include "u_port.h"
 
 #include "u_cx_log.h"
 #include "u_cx_at_client.h"
