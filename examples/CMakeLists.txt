@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.10)
 project(ucxclient_examples)
 string(TOLOWER ${CMAKE_SYSTEM_NAME} OS_NAME)
 
