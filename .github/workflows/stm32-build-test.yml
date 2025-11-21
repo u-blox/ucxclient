@@ -1,0 +1,95 @@
+name: STM32F407VG Build and Test
+
+on:
+  push:
+    branches: [ main, anan_stm32 ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test-stm32:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: false
+        fetch-depth: 1
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Cache Docker layers
+      uses: actions/cache@v4
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-stm32f4-${{ hashFiles('docker/stm32f4/Dockerfile') }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-stm32f4-
+
+    - name: Build Docker image
+      working-directory: ./docker
+      run: docker compose build stm32f4-builder
+      env:
+        DOCKER_BUILDKIT: 1
+        COMPOSE_DOCKER_CLI_BUILD: 1
+        BUILDKIT_INLINE_CACHE: 1
+
+    - name: Set UID/GID for Docker
+      run: |
+        echo "HOST_UID=$(id -u)" >> $GITHUB_ENV
+        echo "HOST_GID=$(id -g)" >> $GITHUB_ENV
+
+    - name: Build STM32F407VG firmware
+      working-directory: ./docker
+      env:
+        WIFI_SSID: test_network
+        WIFI_PSK: test_password
+      run: docker compose run --rm stm32f4-builder bash -c "cd examples && inv stm32.http"
+
+    - name: Check build artifacts
+      run: |
+        ls -lh examples/bin/
+        test -f examples/bin/http_example_stm32.elf
+        test -f examples/bin/http_example_stm32.bin
+        test -f examples/bin/http_example_stm32.hex
+
+    - name: Display firmware size
+      run: |
+        docker compose -f docker/docker-compose.yml run --rm stm32f4-builder \
+          arm-none-eabi-size examples/bin/http_example_stm32.elf
+
+    - name: Run Renode emulation test
+      working-directory: ./docker
+      env:
+        WIFI_SSID: test_network
+        WIFI_PSK: test_password
+      run: |
+        set -o pipefail
+        mkdir -p ../examples/build_stm32
+        docker compose run --rm stm32f4-builder bash -c "cd examples && inv stm32.renode" | tee ../examples/build_stm32/renode_output.txt
+      timeout-minutes: 5
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: stm32f407vg-firmware
+        path: |
+          examples/bin/http_example_stm32.bin
+          examples/bin/http_example_stm32.hex
+          examples/bin/http_example_stm32.elf
+          examples/bin/http_example_stm32.map
+          examples/build_stm32/renode_output.txt
+        retention-days: 30
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: |
+          examples/build_stm32/renode_output.txt
+        retention-days: 7

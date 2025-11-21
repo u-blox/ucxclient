@@ -1,0 +1,9 @@
+[
+  {
+    "name": "ARM GCC (STM32F4)",
+    "toolchainFile": "${workspaceFolder}/cmake/arm-none-eabi-gcc.cmake",
+    "cmakeSettings": {
+      "BUILD_STM32_EXAMPLES": "ON"
+    }
+  }
+]

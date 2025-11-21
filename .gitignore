@@ -1,2 +1,6 @@
 build/
+build_*/
+bin/
 west-workspace/
+__pycache__
+filesystem.bin
