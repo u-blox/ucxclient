@@ -53,7 +53,7 @@ static bool gUCxLogEnabled = true;
 
 void uCxLogPrintTime(void)
 {
-#if U_CX_PORT_PRINTF
+#if defined(U_CX_PORT_PRINTF) && U_CX_LOG_PRINT_TIME
     int32_t timestamp_ms = U_CX_PORT_GET_TIME_MS();
     int32_t ms      = (int32_t) (timestamp_ms % 1000);
     int32_t seconds = (int32_t) (timestamp_ms / 1000) % 60 ;
