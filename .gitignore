@@ -11,6 +11,13 @@ examples/bin/*.ilk
 examples/bin/*.dll
 !examples/bin/.gitkeep
 
+# Release binaries (tracked in git for distribution)
+!releases/
+!releases/**/*.exe
+!releases/**/*.dll
+!releases/**/*.txt
+!releases/**/*.md
+
 # Python
 __pycache__/
 *.py[cod]

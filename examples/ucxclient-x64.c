@@ -538,6 +538,9 @@ static struct {
     int32_t number_bytes;
 } gPendingMqttRead = {-1, 0};
 
+// SPS connection tracking (auto-select handle for send/disconnect)
+static int32_t gActiveSpsConnectionHandle = -1;
+
 // HTTP status tracking (set by URC, waited on by HTTP operations)
 static volatile int32_t gHttpLastStatusCode = 0;
 static volatile int32_t gHttpLastSessionId = -1;
@@ -2545,6 +2548,7 @@ static void spsConnected(struct uCxHandle *puCxHandle, int32_t connection_handle
 {
     (void)puCxHandle;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** SPS Connection established! Connection handle: %d ***", connection_handle);
+    gActiveSpsConnectionHandle = connection_handle;
     signalEvent(URC_FLAG_SPS_CONNECTED);
 }
 
@@ -2552,6 +2556,9 @@ static void spsDisconnected(struct uCxHandle *puCxHandle, int32_t connection_han
 {
     (void)puCxHandle;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** SPS Disconnected! Connection handle: %d ***", connection_handle);
+    if (connection_handle == gActiveSpsConnectionHandle) {
+        gActiveSpsConnectionHandle = -1;
+    }
     signalEvent(URC_FLAG_SPS_DISCONNECTED);
 }
 
@@ -3386,13 +3393,15 @@ static void spsSendData(void)
         return;
     }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Send SPS Data ---");
-    printf("Enter connection handle: ");
+    if (gActiveSpsConnectionHandle < 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active SPS connection");
+        printf("ERROR: No active SPS connection\n");
+        printf("Use [2] Connect SPS first\n");
+        return;
+    }
     
-    int connHandle;
-    scanf("%d", &connHandle);
-    getchar(); // consume newline
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Send SPS Data (Connection %d) ---", gActiveSpsConnectionHandle);
     
     printf("Enter data to send: ");
     char data[MAX_DATA_BUFFER + 1];
@@ -3403,13 +3412,40 @@ static void spsSendData(void)
         size_t len = strlen(data);
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Sending %zu bytes...", len);
         
-        int32_t result = uCxSpsWrite(&gUcxHandle, connHandle, (uint8_t*)data, (int32_t)len);
+        int32_t result = uCxSpsWrite(&gUcxHandle, gActiveSpsConnectionHandle, (uint8_t*)data, (int32_t)len);
         
         if (result >= 0) {
             U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully sent %d bytes", result);
         } else {
             U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to send data (code %d)", result);
         }
+    }
+}
+
+static void spsDisconnect(void)
+{
+    if (!gUcxConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    if (gActiveSpsConnectionHandle < 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active SPS connection");
+        printf("No active SPS connection to disconnect\n");
+        return;
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Disconnect SPS (Connection %d) ---", gActiveSpsConnectionHandle);
+    
+    int32_t result = uCxSpsDisconnect(&gUcxHandle, gActiveSpsConnectionHandle);
+    
+    if (result == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "SPS disconnected successfully");
+        printf("SPS disconnected\n");
+        gActiveSpsConnectionHandle = -1;
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to disconnect SPS (code %d)", result);
     }
 }
 
@@ -16800,10 +16836,16 @@ static void printMenu(void)
             printf("\n");
             printf("NOTE: Requires active Bluetooth connection\n");
             printf("      Received data is automatically displayed\n");
+            if (gActiveSpsConnectionHandle >= 0) {
+                printf("      Status: Connected to handle %d\n", gActiveSpsConnectionHandle);
+            } else {
+                printf("      Status: Not connected\n");
+            }
             printf("\n");
             printf("  [1] Enable SPS service\n");
             printf("  [2] Connect SPS on BT connection\n");
             printf("  [3] Send data\n");
+            printf("  [4] Disconnect\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -17697,6 +17739,9 @@ static void handleUserInput(void)
                     break;
                 case 3:
                     spsSendData();
+                    break;
+                case 4:
+                    spsDisconnect();
                     break;
                 case 0:
                     gMenuState = MENU_BLUETOOTH_FUNCTIONS;

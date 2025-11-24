@@ -1,0 +1,68 @@
+Installation Instructions for ucxclient-x64 v1.0.0-beta.1
+===========================================================
+
+Quick Start:
+-----------
+1. Copy ucxclient-x64-signed.exe to any folder
+2. Connect your u-blox NORA-W36 device via USB
+3. Double-click ucxclient-x64-signed.exe (ftd2xx64.dll auto-extracts on first run)
+4. Select your COM port when prompted
+
+Detailed Setup:
+---------------
+
+Step 1: Install FTDI Drivers
+   - Download from: https://ftdichip.com/drivers/vcp-drivers/
+   - Install the VCP (Virtual COM Port) driver for Windows
+   - Restart your computer if prompted
+
+Step 2: Connect Hardware
+   - Connect NORA-W36 module via USB
+   - Check Device Manager for COM port number
+   - Note: Port will appear as "USB Serial Port (COMx)"
+
+Step 3: Run Application
+   - Place ucxclient-x64-signed.exe in a folder
+   - Run ucxclient-x64-signed.exe (will auto-extract ftd2xx64.dll on first run)
+   - Enter COM port number when prompted (e.g., COM3)
+
+Configuration:
+--------------
+Settings are stored in: ucxclient-x64_settings.ini (in the same folder as the executable)
+
+You can configure:
+- Default COM port
+- Baud rate (default: 115200)
+- Last connected Bluetooth device
+- WiFi credentials
+- Combain API key (for location services)
+- Other preferences
+
+The settings file is created automatically on first run.
+
+Troubleshooting:
+----------------
+
+Problem: "Cannot open COM port"
+Solution: 
+  - Check Device Manager for correct port number
+  - Ensure no other application is using the port
+  - Try running as Administrator
+
+Problem: "ftd2xx64.dll not found"
+Solution:
+  - The DLL is embedded and should auto-extract on first run
+  - Check if application has write permissions in its directory
+  - Manually extract from resources if needed
+  - Or download from FTDI and place in same folder as ucxclient-x64.exe
+
+Problem: No response from module
+Solution:
+  - Verify correct baud rate (115200)
+  - Check USB cable connection
+  - Try power cycling the module
+  - Check that module is in AT command mode
+
+Support:
+--------
+Report issues at: https://github.com/u-blox/ucxclient/issues
