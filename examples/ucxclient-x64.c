@@ -163,6 +163,7 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_BT_DISCONNECTED    (1 << 14) // Bluetooth disconnected (+UEBTDC)
 #define URC_FLAG_HTTP_RESPONSE_READY (1 << 15) // HTTP response ready (+UEHTCRS)
 #define URC_FLAG_HTTP_DISCONNECTED  (1 << 16) // HTTP disconnected (+UEHTCDC)
+#define URC_FLAG_BT_PASSKEY_REQUEST (1 << 17) // Bluetooth passkey entry requested
 
 // Global handles
 static uCxAtClient_t gUcxAtClient;
@@ -519,7 +520,6 @@ static U_CX_MUTEX_HANDLE gUrcMutex;
 static volatile uint32_t gUrcEventFlags = 0;
 
 // Passkey entry request tracking (set by URC, handled in main loop)
-static volatile bool gPasskeyRequestPending = false;
 static uBtLeAddress_t gPasskeyRequestAddress;
 
 // HTTP status tracking (set by URC, waited on by HTTP operations)
@@ -9653,10 +9653,10 @@ static void bluetoothPasskeyRequestUrc(struct uCxHandle *puCxHandle, uBtLeAddres
     printf("You will be prompted for the 6-digit passkey.\n");
     printf("─────────────────────────────────────────────────\n\n");
     
-    // Save address and set flag for main loop to handle
+    // Save address and signal event for main loop to handle
     // Cannot block in URC context or other URCs won't be processed!
     memcpy(&gPasskeyRequestAddress, bd_addr, sizeof(uBtLeAddress_t));
-    gPasskeyRequestPending = true;
+    signalEvent(URC_FLAG_BT_PASSKEY_REQUEST);
 }
 
 // URC handler for PHY update events
@@ -16120,8 +16120,14 @@ int main(int argc, char *argv[])
         }
         
         // Handle passkey entry request (from URC)
-        if (gPasskeyRequestPending) {
-            gPasskeyRequestPending = false;  // Clear flag first
+        U_CX_MUTEX_LOCK(gUrcMutex);
+        bool passkeyPending = (gUrcEventFlags & URC_FLAG_BT_PASSKEY_REQUEST) != 0;
+        if (passkeyPending) {
+            gUrcEventFlags &= ~URC_FLAG_BT_PASSKEY_REQUEST;  // Clear the flag
+        }
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        if (passkeyPending) {
             
             char addrStr[18];
             snprintf(addrStr, sizeof(addrStr), "%02X:%02X:%02X:%02X:%02X:%02X",
