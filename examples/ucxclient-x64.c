@@ -134,6 +134,16 @@ static PFN_FT_Close gpFT_Close = NULL;
 
 // Buffer size constants
 #define MAX_DATA_BUFFER 1000
+#define MAX_NAME_LENGTH 64
+#define MAX_TAG_LENGTH 64
+#define MAX_VERSION_LENGTH 64
+#define MAX_IPERF_BUFFER 1024
+
+// Signal strength and latency thresholds for WiFi connectivity assessment
+#define EXCELLENT_RSSI_THRESHOLD -70
+#define GOOD_RSSI_THRESHOLD -80
+#define EXCELLENT_LOCAL_PING_MS 50
+#define EXCELLENT_INTERNET_PING_MS 100
 
 // URC Event flags
 #define URC_FLAG_NETWORK_UP         (1 << 0)  // Wi-Fi Station Network UP (IP assigned)
@@ -2083,7 +2093,8 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     version[strcspn(version, "\r\n")] = '\0';
     
     if (strlen(version) == 0) {
-        strcpy(version, "latest");
+        strncpy(version, "latest", sizeof(version) - 1);
+        version[sizeof(version) - 1] = '\0';
     }
     
     // HTTP session ID (always 0 - only one session supported)
@@ -2631,9 +2642,14 @@ static void iperfOutputUrc(struct uCxHandle *puCxHandle, const char *iperf_outpu
         strstr(iperf_output, "ERROR") ||
         strstr(iperf_output, "failed")) {
         // Store in buffer for later reference if needed
-        strncat(gIperfOutputBuffer, iperf_output, 
-                sizeof(gIperfOutputBuffer) - strlen(gIperfOutputBuffer) - 2);
-        strcat(gIperfOutputBuffer, "\n");
+        size_t currentLen = strlen(gIperfOutputBuffer);
+        size_t available = sizeof(gIperfOutputBuffer) - currentLen;
+        if (available > 2) {
+            strncat(gIperfOutputBuffer, iperf_output, available - 2);
+            if (available > strlen(iperf_output) + 1) {
+                strncat(gIperfOutputBuffer, "\n", 1);
+            }
+        }
     }
     
     // Check for completion indicators
@@ -2745,99 +2761,15 @@ static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLe
     printf("****************************************\n\n");
     
     // Note: Service Changed indication not needed - client will discover automatically
+    // Note: Old discovery code removed - using optimized discovery in gattClientDiscoverAllServices()
     
-    // // Auto-discover GATT services and characteristics
-    // printf("Auto-discovering GATT services and characteristics...\n");
-    
-    // // Discover services
-    // uCxGattClientDiscoverPrimaryServicesBegin(puCxHandle, conn_handle);
     // gGattServiceCount = 0;
     
     // uCxGattClientDiscoverPrimaryServices_t service;
     // while (uCxGattClientDiscoverPrimaryServicesGetNext(puCxHandle, &service)) {
     //     if (gGattServiceCount < MAX_GATT_SERVICES) {
     //         GattService_t *stored = &gGattServices[gGattServiceCount];
-    //         stored->connHandle = conn_handle;
-    //         stored->startHandle = service.start_handle;
-    //         stored->endHandle = service.end_handle;
-    //         stored->uuidLength = (int32_t)service.uuid.length;
-    //         memcpy(stored->uuid, service.uuid.pData, service.uuid.length);
-    //         stored->name[0] = '\0';
-            
-    //         // Get friendly name for 16-bit UUIDs
-    //         if (stored->uuidLength == 2) {
-    //             uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
-    //             const char *name = btGetServiceName(uuid16);
-    //             if (name) {
-    //                 strncpy(stored->name, name, sizeof(stored->name) - 1);
-    //             }
-    //         }
-            
-    //         gGattServiceCount++;
-    //     }
-    // }
-    // uCxEnd(puCxHandle);
-    // printf("  Found %d services:\n", gGattServiceCount);
-    
-    // // Display discovered services
-    // for (int i = 0; i < gGattServiceCount; i++) {
-    //     GattService_t *svc = &gGattServices[i];
-    //     printf("    [%d] 0x%04X-0x%04X", i, svc->startHandle, svc->endHandle);
-        
-    //     if (svc->uuidLength == 2) {
-    //         uint16_t uuid16 = (svc->uuid[0] << 8) | svc->uuid[1];
-    //         printf(" UUID: 0x%04X", uuid16);
-    //         if (svc->name[0] != '\0') {
-    //             printf(" (%s)", svc->name);
-    //         }
-    //     } else {
-    //         printf(" UUID: ");
-    //         for (int j = 0; j < svc->uuidLength; j++) {
-    //             printf("%02X", svc->uuid[j]);
-    //         }
-    //         // Check for u-blox SPS service UUID
-    //         if (svc->uuidLength == 16) {
-    //             const uint8_t ubloxSpsUuid[] = {0x24, 0x56, 0xE1, 0xB9, 0x26, 0xE2, 0x8F, 0x83,
-    //                                              0xE7, 0x44, 0xF3, 0x4F, 0x01, 0xE9, 0xD7, 0x01};
-    //             if (memcmp(svc->uuid, ubloxSpsUuid, 16) == 0) {
-    //                 printf(" (u-blox SPS)");
-    //             }
-    //         }
-    //     }
-    //     printf("\n");
-    // }
-    
-    // // Discover characteristics for all services
-    // gGattCharacteristicCount = 0;
-    
-    // for (int svcIdx = 0; svcIdx < gGattServiceCount; svcIdx++) {
-    //     GattService_t *svc = &gGattServices[svcIdx];
-    //     uCxGattClientDiscoverServiceCharsBegin(puCxHandle, conn_handle, svc->startHandle, svc->endHandle);
-        
-    //     uCxGattClientDiscoverServiceChars_t characteristic;
-    //     while (uCxGattClientDiscoverServiceCharsGetNext(puCxHandle, &characteristic)) {
-    //         if (gGattCharacteristicCount < MAX_GATT_CHARACTERISTICS) {
-    //             GattCharacteristic_t *stored = &gGattCharacteristics[gGattCharacteristicCount];
-    //             stored->connHandle = conn_handle;
-    //             stored->serviceIndex = svcIdx;
-    //             stored->valueHandle = characteristic.value_handle;
-    //             stored->properties = (characteristic.properties.length > 0) ? characteristic.properties.pData[0] : 0;
-    //             stored->uuidLength = (int32_t)characteristic.uuid.length;
-    //             memcpy(stored->uuid, characteristic.uuid.pData, characteristic.uuid.length);
-    //             stored->name[0] = '\0';
-                
-    //             // Get friendly name for 16-bit UUIDs
-    //             if (stored->uuidLength == 2) {
-    //                 uint16_t uuid16 = (stored->uuid[0] << 8) | stored->uuid[1];
-    //                 const char *name = btGetCharacteristicName(uuid16);
-    //                 if (name) {
-    //                     strncpy(stored->name, name, sizeof(stored->name) - 1);
-    //                 }
-    //             }
-                
-    //             gGattCharacteristicCount++;
-    //         }
-    //     }
+    // Note: Old discovery code removed - using optimized discovery in gattClientDiscoverAllServices()
     //     uCxEnd(puCxHandle);
     // }
     // printf("  Found %d characteristics:\n", gGattCharacteristicCount);
@@ -5242,6 +5174,9 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                     gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
                     if (gGattNotificationThread) {
                         printf("[GATT] Unified notification thread started\n");
+                    } else {
+                        printf("[ERROR] Failed to create notification thread (error: %lu)\n", GetLastError());
+                        gGattNotificationThreadRunning = false;
                     }
                 }
             } else {
@@ -5303,6 +5238,9 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                     gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
                     if (gGattNotificationThread) {
                         printf("[GATT] Unified notification thread started\n");
+                    } else {
+                        printf("[ERROR] Failed to create notification thread (error: %lu)\n", GetLastError());
+                        gGattNotificationThreadRunning = false;
                     }
                 }
             } else {
@@ -5327,6 +5265,9 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                     gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
                     if (gGattNotificationThread) {
                         printf("[GATT] Unified notification thread started\n");
+                    } else {
+                        printf("[ERROR] Failed to create notification thread (error: %lu)\n", GetLastError());
+                        gGattNotificationThreadRunning = false;
                     }
                 }
             } else {
@@ -5377,6 +5318,9 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                     gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
                     if (gGattNotificationThread) {
                         printf("[GATT] Unified notification thread started\n");
+                    } else {
+                        printf("[ERROR] Failed to create notification thread (error: %lu)\n", GetLastError());
+                        gGattNotificationThreadRunning = false;
                     }
                 }
             } else {
@@ -5417,6 +5361,9 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                     gGattNotificationThread = CreateThread(NULL, 0, gattNotificationThread, NULL, 0, NULL);
                     if (gGattNotificationThread) {
                         printf("[GATT] Unified notification thread started\n");
+                    } else {
+                        printf("[ERROR] Failed to create notification thread (error: %lu)\n", GetLastError());
+                        gGattNotificationThreadRunning = false;
                     }
                 }
             } else {
@@ -5462,7 +5409,7 @@ static void gattServerCharWriteUrc(struct uCxHandle *puCxHandle, int32_t conn_ha
                     if (gGattNotificationThread) {
                         printf("[GATT] Unified notification thread started\n");
                     } else {
-                        printf("[GATT] ERROR: Failed to start notification thread\n");
+                        printf("[ERROR] Failed to create notification thread (error: %lu)\n", GetLastError());
                         gGattNotificationThreadRunning = false;
                     }
                 }
@@ -22737,10 +22684,17 @@ static void testConnectivity(const char *gateway, const char *ssid, int32_t rssi
     
     // Overall assessment
     printf("\n");
+    
+    // Define readable criteria for connectivity quality
+    bool strongSignal = (rssi >= EXCELLENT_RSSI_THRESHOLD);
+    bool goodSignal = (rssi >= GOOD_RSSI_THRESHOLD);
+    bool fastLocalNetwork = (localPingAvg < EXCELLENT_LOCAL_PING_MS);
+    bool fastInternetAccess = (internetPingAvg < EXCELLENT_INTERNET_PING_MS);
+    
     const char *overall;
-    if (localSuccess && internetSuccess && rssi >= -70 && localPingAvg < 50 && internetPingAvg < 100) {
+    if (localSuccess && internetSuccess && strongSignal && fastLocalNetwork && fastInternetAccess) {
         overall = "EXCELLENT - Ready for all applications";
-    } else if (localSuccess && internetSuccess && rssi >= -80) {
+    } else if (localSuccess && internetSuccess && goodSignal) {
         overall = "GOOD - Suitable for most applications";
     } else if (localSuccess && rssi >= -80) {
         overall = "FAIR - Local network OK, check internet";
