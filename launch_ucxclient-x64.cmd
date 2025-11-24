@@ -145,13 +145,20 @@ if /i "%1"=="debug" (
     echo.
 )
 
-REM Set build directory
-set BUILD_DIR=build\!CONFIG!
-set FTDI_DLL=examples\ftdi\ftd2xx64.dll
+REM Set build directory to examples/bin (where CMake outputs executables)
+set BUILD_DIR=examples\bin
+set FTDI_DLL=examples\third-party\ftdi\ftd2xx64.dll
+
+REM Determine executable name based on configuration
+if /i "!CONFIG!"=="Debug" (
+    set EXE_NAME=ucxclient-x64-debug.exe
+) else (
+    set EXE_NAME=ucxclient-x64.exe
+)
 
 REM Check if executable exists and if source files are newer
 set NEED_BUILD=0
-set EXE_PATH=!BUILD_DIR!\ucxclient-x64.exe
+set EXE_PATH=!BUILD_DIR!\!EXE_NAME!
 set SOURCE_FILE=examples\ucxclient-x64.c
 
 if not exist "!EXE_PATH!" (
@@ -189,9 +196,9 @@ if !NEED_BUILD! EQU 1 (
     echo.
     
     REM Configure if needed
-    if not exist "build\ucxclient-x64.vcxproj" (
+    if not exist "build\CMakeCache.txt" (
         echo Configuring CMake...
-        cmake -S . -B build
+        cmake -S examples -B build
         if errorlevel 1 (
             echo ERROR: CMake configuration failed!
             exit /b 1
@@ -199,7 +206,7 @@ if !NEED_BUILD! EQU 1 (
     )
     
     REM Build
-    echo Building ucxclient-x64.exe in !CONFIG! configuration...
+    echo Building !EXE_NAME! in !CONFIG! configuration...
     cmake --build build --config !CONFIG! --target ucxclient-x64
     if errorlevel 1 (
         echo ERROR: Build failed!
@@ -222,8 +229,8 @@ if not exist "!BUILD_DIR!\ftd2xx64.dll" (
 )
 
 REM Check if executable exists after build
-if not exist "!BUILD_DIR!\ucxclient-x64.exe" (
-    echo ERROR: ucxclient-x64.exe not found in !BUILD_DIR!
+if not exist "!EXE_PATH!" (
+    echo ERROR: !EXE_NAME! not found in !BUILD_DIR!
     exit /b 1
 )
 
@@ -231,12 +238,12 @@ REM Launch the application
 echo.
 echo ===================================
 if /i "%CONFIG%"=="Debug" (
-    echo Launching ucxclient-x64.exe ^(Debug build^)...
+    echo Launching !EXE_NAME! ^(Debug build^)...
 ) else (
     if exist "!BUILD_DIR!\ucxclient-x64.exe.signed" (
-        echo Launching ucxclient-x64.exe ^(Signed Release build^)...
+        echo Launching !EXE_NAME! ^(Signed Release build^)...
     ) else (
-        echo Launching ucxclient-x64.exe ^(Release build^)...
+        echo Launching !EXE_NAME! ^(Release build^)...
     )
 )
 echo ===================================
@@ -247,10 +254,10 @@ cd "!BUILD_DIR!"
 REM Pass arguments correctly based on whether "debug" was first argument
 if /i "%1"=="debug" (
     REM First arg was "debug", so pass %2 onwards
-    ucxclient-x64.exe %2 %3 %4 %5 %6 %7 %8 %9
+    !EXE_NAME! %2 %3 %4 %5 %6 %7 %8 %9
 ) else (
     REM No "debug" arg, so pass %1 onwards
-    ucxclient-x64.exe %1 %2 %3 %4 %5 %6 %7 %8 %9
+    !EXE_NAME! %1 %2 %3 %4 %5 %6 %7 %8 %9
 )
 
 REM Store exit code
@@ -363,7 +370,7 @@ cmake --build build --config %REBUILD_CONFIG% --target clean 2>nul
 REM Configure if needed
 if not exist "build\ucxclient-x64.vcxproj" (
     echo Step 2: Configuring CMake...
-    cmake -S . -B build
+    cmake -S examples -B build
     if errorlevel 1 (
         echo ERROR: CMake configuration failed!
         pause
@@ -381,7 +388,7 @@ if errorlevel 1 (
 
 REM Copy FTDI DLL
 set BUILD_DIR=build\!REBUILD_CONFIG!
-set FTDI_DLL=examples\ftdi\ftd2xx64.dll
+set FTDI_DLL=examples\third-party\ftdi\ftd2xx64.dll
 if exist "!FTDI_DLL!" (
     echo Step 4: Copying FTDI DLL...
     copy /Y "!FTDI_DLL!" "!BUILD_DIR!\" >nul
@@ -409,7 +416,7 @@ echo.
 REM Configure if needed
 if not exist "build\ucxclient-x64.vcxproj" (
     echo Configuring CMake...
-    cmake -S . -B build
+    cmake -S examples -B build
     if errorlevel 1 (
         echo ERROR: CMake configuration failed!
         exit /b 1
@@ -429,7 +436,7 @@ if errorlevel 1 (
 )
 
 REM Copy FTDI DLL for Debug
-set FTDI_DLL=examples\ftdi\ftd2xx64.dll
+set FTDI_DLL=examples\third-party\ftdi\ftd2xx64.dll
 if exist "%FTDI_DLL%" (
     echo Copying FTDI DLL to Debug...
     copy /Y "%FTDI_DLL%" "build\Debug\" >nul
@@ -448,10 +455,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Copy FTDI DLL for Release
+REM Copy FTDI DLL to bin
 if exist "%FTDI_DLL%" (
-    echo Copying FTDI DLL to Release...
-    copy /Y "%FTDI_DLL%" "build\Release\" >nul
+    echo Copying FTDI DLL to bin...
+    copy /Y "%FTDI_DLL%" "examples\bin\" >nul
 )
 echo Release build complete!
 echo.
@@ -461,8 +468,8 @@ echo All Configurations Built Successfully!
 echo ===================================
 echo.
 echo Output files:
-echo   build\Debug\ucxclient-x64.exe
-echo   build\Release\ucxclient-x64.exe
+echo   examples\bin\ucxclient-x64-debug.exe
+echo   examples\bin\ucxclient-x64.exe
 echo.
 exit /b 0
 
@@ -478,8 +485,8 @@ echo.
 REM Always sign Release configuration
 set SIGN_CONFIG=Release
 
-set SIGN_EXE=build\!SIGN_CONFIG!\ucxclient-x64.exe
-set SIGN_EXE_SIGNED=build\Release_Signed\ucxclient-x64-signed.exe
+set SIGN_EXE=examples\bin\ucxclient-x64.exe
+set SIGN_EXE_SIGNED=examples\bin\ucxclient-x64-signed.exe
 set CERT_THUMBPRINT=%2
 
 REM Check if executable exists

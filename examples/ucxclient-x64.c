@@ -112,10 +112,11 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_xmodem.h"
 #include "u_cx_version.h"
 #include "u_cx_error_codes.h"
-#include "third-party/qrcodegen/qrcodegen.h"
 
 // Port layer
 #include "u_port.h"
+
+#include "third-party/qrcodegen/qrcodegen.h"
 
 // Bluetooth SIG name databases
 #include "third-party/bluetooth-sig/bt_company_identifiers.h"

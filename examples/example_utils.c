@@ -114,26 +114,3 @@ void exampleSignalEvent(uint32_t evtFlag)
     gEventFlags |= evtFlag;
     U_CX_MUTEX_UNLOCK(gEventMutex);
 }
-
-void exampleSleepMs(uint32_t timeMs)
-{
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "sleepMs(%d)", timeMs);
-
-#if EXAMPLE_NO_OS_MODE
-    // In no-OS mode, busy-wait using the time function
-    int32_t startTime = U_CX_PORT_GET_TIME_MS();
-    while (U_CX_PORT_GET_TIME_MS() - startTime < (int32_t)timeMs) {
-        // Busy wait
-    }
-#else
-    // In OS mode, use mutex-based sleep
-    static bool sleepMutexInit = false;
-    static U_CX_MUTEX_HANDLE sleepMutex;
-    if (!sleepMutexInit) {
-        U_CX_MUTEX_CREATE(sleepMutex);
-        U_CX_MUTEX_LOCK(sleepMutex);
-        sleepMutexInit = true;
-    }
-    U_CX_MUTEX_TRY_LOCK(sleepMutex, timeMs);
-#endif
-}

@@ -108,9 +108,9 @@ int main(int argc, char **argv)
     const char *pWpaPsk = U_EXAMPLE_WPA_PSK;
 
     if (*pWpaPsk == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Wi-Fi not configured - connection will not work")
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Wi-Fi not configured - connection will not work");
         U_CX_LOG_LINE(U_CX_LOG_CH_WARN,
-            "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.")
+            "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.");
     }
 #endif
 
@@ -125,7 +125,7 @@ int main(int argc, char **argv)
     uCxHttpRegisterRequestStatus(&ucxHandle, httpRequestStatus);
 
     uCxSystemReboot(&ucxHandle);
-    exampleSleepMs(4000);
+    U_CX_PORT_SLEEP_MS(4000);
     uCxSystemSetEchoOff(&ucxHandle);
 
     uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WIFI_WPA_THRESHOLD_WPA2);

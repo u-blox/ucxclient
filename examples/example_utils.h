@@ -52,6 +52,8 @@
 # ifdef U_PORT_ZEPHYR
 #  define UART_DEVICE_NODE DT_CHOSEN(zephyr_shell_uart)
 #  define U_EXAMPLE_UART DEVICE_DT_GET(UART_DEVICE_NODE)->name
+# elif U_PORT_WINDOWS
+#  define U_EXAMPLE_UART "COM3"
 # else
 #  define U_EXAMPLE_UART "/dev/ttyUSB0"
 # endif

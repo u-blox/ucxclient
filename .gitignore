@@ -4,6 +4,13 @@ build/
 !build/Release_Signed/*.exe
 !build/Release_Signed/*.dll
 
+# Binaries and build outputs
+examples/bin/*.exe
+examples/bin/*.pdb
+examples/bin/*.ilk
+examples/bin/*.dll
+!examples/bin/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]

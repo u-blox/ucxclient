@@ -75,7 +75,7 @@
 
 /* Configuration for enabling printing of time in logs.*/
 #ifndef U_CX_LOG_PRINT_TIME
-# define U_CX_LOG_PRINT_TIME 0
+# define U_CX_LOG_PRINT_TIME 1
 #endif
 
 /** Error code configuration.
