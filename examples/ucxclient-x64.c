@@ -519,8 +519,24 @@ static bool gLegacyAdvertising = false;        // Legacy advertisement enabled s
 static U_CX_MUTEX_HANDLE gUrcMutex;
 static volatile uint32_t gUrcEventFlags = 0;
 
-// Passkey entry request tracking (set by URC, handled in main loop)
+// Bluetooth pairing - passkey entry address storage (URC_FLAG_BT_PASSKEY_REQUEST event)
 static uBtLeAddress_t gPasskeyRequestAddress;
+
+// Automatic data reading (URC event-driven)
+static struct {
+    int32_t socket_handle;
+    int32_t number_bytes;
+} gPendingSocketRead = {-1, 0};
+
+static struct {
+    int32_t connection_handle;
+    int32_t number_bytes;
+} gPendingSpsRead = {-1, 0};
+
+static struct {
+    int32_t mqtt_client_id;
+    int32_t number_bytes;
+} gPendingMqttRead = {-1, 0};
 
 // HTTP status tracking (set by URC, waited on by HTTP operations)
 static volatile int32_t gHttpLastStatusCode = 0;
@@ -2511,18 +2527,17 @@ static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
 
 static void socketDataAvailable(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes)
 {
-    (void)puCxHandle;
-    (void)socket_handle;
-    (void)number_bytes;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Socket data available: %d bytes on socket %d", number_bytes, socket_handle);
+    gPendingSocketRead.socket_handle = socket_handle;
+    gPendingSocketRead.number_bytes = number_bytes;
     signalEvent(URC_FLAG_SOCK_DATA);
 }
 
 static void spsDataAvailable(struct uCxHandle *puCxHandle, int32_t connection_handle, int32_t number_bytes)
 {
-    (void)connection_handle;
-    (void)number_bytes;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS data available: %d bytes on connection %d", number_bytes, connection_handle);
+    gPendingSpsRead.connection_handle = connection_handle;
+    gPendingSpsRead.number_bytes = number_bytes;
     signalEvent(URC_FLAG_SPS_DATA);
 }
 
@@ -2712,11 +2727,10 @@ static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_i
 
 static void mqttDataAvailableUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id, int32_t number_bytes)
 {
-    (void)puCxHandle;
-    (void)mqtt_client_id;
-    (void)number_bytes;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "MQTT data received: %d bytes on client %d", number_bytes, mqtt_client_id);
+    gPendingMqttRead.mqtt_client_id = mqtt_client_id;
+    gPendingMqttRead.number_bytes = number_bytes;
     signalEvent(URC_FLAG_MQTT_DATA);
 }
 
@@ -16192,6 +16206,106 @@ int main(int argc, char *argv[])
             menuNeedsRedraw = true;
         }
         
+        // Auto-read Socket data (URC_FLAG_SOCK_DATA event)
+        U_CX_MUTEX_LOCK(gUrcMutex);
+        bool socketDataPending = (gUrcEventFlags & URC_FLAG_SOCK_DATA) != 0;
+        if (socketDataPending) {
+            gUrcEventFlags &= ~URC_FLAG_SOCK_DATA;
+        }
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        if (socketDataPending && gUcxConnected && gPendingSocketRead.socket_handle >= 0) {
+            int32_t sockHandle = gPendingSocketRead.socket_handle;
+            int32_t numBytes = gPendingSocketRead.number_bytes;
+            gPendingSocketRead.socket_handle = -1;
+            
+            if (numBytes > 0 && numBytes <= MAX_DATA_BUFFER) {
+                uint8_t buffer[MAX_DATA_BUFFER + 1];
+                int32_t result = uCxSocketRead(&gUcxHandle, sockHandle, numBytes, buffer);
+                if (result > 0) {
+                    buffer[result] = '\0';
+                    printf("\n[SOCKET RX] socket=%d, %d bytes: ", sockHandle, result);
+                    for (int i = 0; i < result; i++) {
+                        uint8_t b = buffer[i];
+                        if (b >= 32 && b <= 126) {
+                            putchar(b);
+                        } else {
+                            printf("\\x%02X", b);
+                        }
+                    }
+                    printf("\n\n");
+                    menuNeedsRedraw = true;
+                }
+            }
+        }
+        
+        // Auto-read SPS data (URC_FLAG_SPS_DATA event)
+        U_CX_MUTEX_LOCK(gUrcMutex);
+        bool spsDataPending = (gUrcEventFlags & URC_FLAG_SPS_DATA) != 0;
+        if (spsDataPending) {
+            gUrcEventFlags &= ~URC_FLAG_SPS_DATA;
+        }
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        if (spsDataPending && gUcxConnected && gPendingSpsRead.connection_handle >= 0) {
+            int32_t connHandle = gPendingSpsRead.connection_handle;
+            int32_t numBytes = gPendingSpsRead.number_bytes;
+            gPendingSpsRead.connection_handle = -1;
+            
+            if (numBytes > 0 && numBytes <= MAX_DATA_BUFFER) {
+                uint8_t buffer[MAX_DATA_BUFFER + 1];
+                int32_t result = uCxSpsRead(&gUcxHandle, connHandle, numBytes, buffer);
+                if (result > 0) {
+                    buffer[result] = '\0';
+                    printf("\n[SPS RX] conn=%d, %d bytes: ", connHandle, result);
+                    for (int i = 0; i < result; i++) {
+                        uint8_t b = buffer[i];
+                        if (b >= 32 && b <= 126) {
+                            putchar(b);
+                        } else {
+                            printf("\\x%02X", b);
+                        }
+                    }
+                    printf("\n\n");
+                    menuNeedsRedraw = true;
+                }
+            }
+        }
+        
+        // Auto-read MQTT data (URC_FLAG_MQTT_DATA event)
+        U_CX_MUTEX_LOCK(gUrcMutex);
+        bool mqttDataPending = (gUrcEventFlags & URC_FLAG_MQTT_DATA) != 0;
+        if (mqttDataPending) {
+            gUrcEventFlags &= ~URC_FLAG_MQTT_DATA;
+        }
+        U_CX_MUTEX_UNLOCK(gUrcMutex);
+        
+        if (mqttDataPending && gUcxConnected && gPendingMqttRead.mqtt_client_id >= 0) {
+            int32_t clientId = gPendingMqttRead.mqtt_client_id;
+            int32_t numBytes = gPendingMqttRead.number_bytes;
+            gPendingMqttRead.mqtt_client_id = -1;
+            
+            if (numBytes > 0 && numBytes <= MAX_DATA_BUFFER) {
+                char topic[256];
+                uint8_t buffer[MAX_DATA_BUFFER + 1];
+                int32_t result = uCxMqttRead(&gUcxHandle, clientId, numBytes, topic, sizeof(topic), buffer);
+                if (result > 0) {
+                    buffer[result] = '\0';
+                    printf("\n[MQTT RX] topic=%s, %d bytes: ", topic, result);
+                    for (int i = 0; i < result; i++) {
+                        uint8_t b = buffer[i];
+                        if (b >= 32 && b <= 126) {
+                            putchar(b);
+                        } else {
+                            printf("\\x%02X", b);
+                        }
+                    }
+                    printf("\n\n");
+                    menuNeedsRedraw = true;
+                }
+            }
+        }
+        
         // Print menu if needed
         if (menuNeedsRedraw) {
             printMenu();
@@ -16657,20 +16771,20 @@ static void printMenu(void)
             printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("      Received data is automatically displayed\n");
             printf("\n");
             printf("CLIENT OPERATIONS:\n");
             printf("  [1] Create TCP socket\n");
             printf("  [2] Create UDP socket\n");
             printf("  [3] Connect socket\n");
             printf("  [4] Send data\n");
-            printf("  [5] Read data\n");
             printf("\n");
             printf("SERVER OPERATIONS:\n");
-            printf("  [6] Bind socket to local port\n");
-            printf("  [7] Listen (TCP server)\n");
+            printf("  [5] Bind socket to local port\n");
+            printf("  [6] Listen (TCP server)\n");
             printf("\n");
             printf("MANAGEMENT:\n");
-            printf("  [9] List sockets\n");
+            printf("  [7] List sockets\n");
             printf("  [c] Close socket (current session)\n");
             printf("  [a] Close socket by handle (any socket)\n");
             printf("\n");
@@ -16684,11 +16798,11 @@ static void printMenu(void)
             printf("\n");
             printf("\n");
             printf("NOTE: Requires active Bluetooth connection\n");
+            printf("      Received data is automatically displayed\n");
             printf("\n");
             printf("  [1] Enable SPS service\n");
             printf("  [2] Connect SPS on BT connection\n");
             printf("  [3] Send data\n");
-            printf("  [4] Read data\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -17547,15 +17661,12 @@ static void handleUserInput(void)
                     socketSendData();
                     break;
                 case 5:
-                    socketReadData();
-                    break;
-                case 6:
                     socketBind();
                     break;
-                case 7:
+                case 6:
                     socketListen();
                     break;
-                case 9:
+                case 7:
                     socketListStatus();
                     break;
                 case 'c':
@@ -17585,9 +17696,6 @@ static void handleUserInput(void)
                     break;
                 case 3:
                     spsSendData();
-                    break;
-                case 4:
-                    spsReadData();
                     break;
                 case 0:
                     gMenuState = MENU_BLUETOOTH_FUNCTIONS;
