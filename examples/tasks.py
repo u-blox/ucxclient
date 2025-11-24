@@ -78,6 +78,12 @@ def fw_upgrade(c, clean=False):
     _build_target(c, target='fw_upgrade_example', clean=clean)
 
 
+@task(help={'clean': 'Clean build directory before building'})
+def ucxclient_x64(c, clean=False):
+    """Build ucxclient-x64."""
+    _build_target(c, target='ucxclient-x64', clean=clean)
+
+
 @task
 def clean(c):
     """Clean all build artifacts."""
@@ -94,5 +100,6 @@ ns = Collection()
 ns.add_task(all)
 ns.add_task(http)
 ns.add_task(fw_upgrade, 'fw-upgrade')
+ns.add_task(ucxclient_x64, 'ucxclient-x64')
 ns.add_task(clean)
 

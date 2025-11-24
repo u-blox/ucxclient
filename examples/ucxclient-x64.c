@@ -4229,7 +4229,7 @@ static void gattClientReadCharacteristic(void)
         
         // Try to interpret as text if printable
         bool isPrintable = true;
-        for (int i = 0; i < data.length; i++) {
+        for (size_t i = 0; i < data.length; i++) {
             if (data.pData[i] < 32 || data.pData[i] > 126) {
                 isPrintable = false;
                 break;
@@ -4580,7 +4580,7 @@ static void gattClientSubscribeNotifications(void)
     uCxGattClientDiscoverCharDescriptors_t descriptor;
     while (uCxGattClientDiscoverCharDescriptorsGetNext(&gUcxHandle, &descriptor)) {
         printf("  Found descriptor at handle 0x%04X, UUID: ", descriptor.desc_handle);
-        for (int i = 0; i < descriptor.uuid.length; i++) {
+        for (size_t i = 0; i < descriptor.uuid.length; i++) {
             printf("%02X", descriptor.uuid.pData[i]);
         }
         printf("\n");
@@ -10802,7 +10802,7 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
             // Collect header data
             if (headerResp.byte_array_data.length > 0 && 
                 headerResp.byte_array_data.pData != NULL &&
-                *pHeaderLen + headerResp.byte_array_data.length < bufferSize) {
+                (size_t)*pHeaderLen + headerResp.byte_array_data.length < (size_t)bufferSize) {
                 memcpy(headerBuffer + *pHeaderLen, 
                        headerResp.byte_array_data.pData, 
                        headerResp.byte_array_data.length);
@@ -14814,7 +14814,7 @@ static void ntpTimeExample(void)
         } else {
             printf("WARNING: Unexpected time data length: %zu bytes\n", unixTimeData.length);
             printf("Raw data: ");
-            for (int i = 0; i < unixTimeData.length; i++) {
+            for (size_t i = 0; i < unixTimeData.length; i++) {
                 printf("%02X ", unixTimeData.pData[i]);
             }
             printf("\n");
@@ -20014,7 +20014,7 @@ static void printWrappedDescription(const char *functionName, const char *descri
     printf("  %-*s - ", FUNC_NAME_WIDTH, functionName);
     
     // If description fits on one line, print it directly
-    if (strlen(description) <= DESC_MAX_WIDTH) {
+    if (strlen(description) <= (size_t)DESC_MAX_WIDTH) {
         printf("%s\n", description);
         return;
     }
@@ -20975,12 +20975,12 @@ static void showLegacyAdvertisementStatus(void)
                     case 0x06: printf("Incomplete 128-bit UUIDs"); break;
                     case 0x07: printf("Complete 128-bit UUIDs"); break;
                     case 0x08: printf("Shortened Local Name: "); 
-                              for (size_t i = 0; i < len - 1; i++) {
+                              for (size_t i = 0; i < (size_t)(len - 1); i++) {
                                   printf("%c", advData.pData[pos + 2 + i]);
                               }
                               break;
                     case 0x09: printf("Complete Local Name: ");
-                              for (size_t i = 0; i < len - 1; i++) {
+                              for (size_t i = 0; i < (size_t)(len - 1); i++) {
                                   printf("%c", advData.pData[pos + 2 + i]);
                               }
                               break;
