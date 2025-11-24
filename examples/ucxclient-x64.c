@@ -16683,7 +16683,7 @@ static void printMenu(void)
                     printf("          └─ %d active connection%s\n", 
                            gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
                 }
-                printf("  [s]     u-blox Serial Port Service (SPS) - Wireless serial\n");
+                printf("  [s]     u-blox Serial Port Service (SPS)\n");
                 printf("  [j]     GATT Client - Generic operations on remote servers\n");
                 printf("  [u]     GATT Server - Generic server operations\n");
                 printf("\n");
@@ -17008,7 +17008,7 @@ static void printMenu(void)
             printf("\n");
             printf("POWER MANAGEMENT\n");
             printf("  [4] Get current power save level\n");
-            printf("  [5] Set power save level (0=disabled, 1=deep sleep, 2=power save)\n");
+            printf("  [5] Set power save level (0=disabled, 1=deep sleep)\n");
             printf("  [6] Set power save timeout (seconds)\n");
             printf("  [7] Enter deep sleep with GPIO wakeup\n");
             printf("\n");
@@ -20942,10 +20942,9 @@ static void executeGetPowerSaveLevel(void)
     
     if (result == 0) {
         printf("Current power save level: %d\n", level);
-        printf("\nPower save levels:\n");
+        printf("\nPower save levels (NORA-W36):\n");
         printf("  0 = Power save disabled (maximum performance)\n");
-        printf("  1 = Light sleep (moderate power savings)\n");
-        printf("  2 = Deep sleep (maximum power savings)\n");
+        printf("  1 = Deep sleep (maximum power savings)\n");
     } else {
         printf("ERROR: Failed to get power save level (error %d)\n", result);
     }
@@ -20959,11 +20958,10 @@ static void executeSetPowerSaveLevel(void)
     }
     
     printf("\n--- Set Power Save Level ---\n");
-    printf("\nPower save levels:\n");
+    printf("\nPower save levels (NORA-W36):\n");
     printf("  [0] Power save disabled (maximum performance)\n");
-    printf("  [1] Light sleep (moderate power savings)\n");
-    printf("  [2] Deep sleep (maximum power savings)\n");
-    printf("\nEnter level (0-2): ");
+    printf("  [1] Deep sleep (maximum power savings)\n");
+    printf("\nEnter level (0-1): ");
     
     char input[32];
     if (!fgets(input, sizeof(input), stdin)) {
@@ -20972,8 +20970,9 @@ static void executeSetPowerSaveLevel(void)
     
     int level = atoi(input);
     
-    if (level < 0 || level > 2) {
-        printf("ERROR: Invalid level. Must be 0, 1, or 2\n");
+    if (level < 0 || level > 1) {
+        printf("ERROR: Invalid level. Must be 0 or 1\n");
+        printf("NOTE: NORA-W36 only supports 0=disabled and 1=deep sleep\n");
         return;
     }
     
@@ -20983,8 +20982,6 @@ static void executeSetPowerSaveLevel(void)
         printf("✓ Power save level set to %d\n", level);
         if (level == 0) {
             printf("Power saving is now DISABLED (maximum performance)\n");
-        } else if (level == 1) {
-            printf("Light sleep mode enabled (moderate power savings)\n");
         } else {
             printf("Deep sleep mode enabled (maximum power savings)\n");
         }
@@ -21053,27 +21050,27 @@ static void executeDeepSleep(void)
     if (!fgets(confirm, sizeof(confirm), stdin)) {
         return;
     }
-    confirm[strcspn(confirm, "\\r\\n")] = 0;  // Remove newline
+    confirm[strcspn(confirm, "\r\n")] = 0;  // Remove newline
     
     if (strcmp(confirm, "SLEEP") != 0) {
-        printf("\\nDeep sleep cancelled.\\n");
+        printf("\nDeep sleep cancelled.\n");
         return;
     }
     
-    printf("\\n--- Entering Deep Sleep Mode ---\\n");
-    printf("Sending AT+UPDSLP (deep sleep with GPIO wakeup)...\\n");
+    printf("\n--- Entering Deep Sleep Mode ---\n");
+    printf("Sending AT+UPDSLP (deep sleep with GPIO wakeup)...\n");
     
     // Use GPIO wakeup mode (most common)
     int32_t result = uCxPowerDeepSleepWithGpioWakeup(&gUcxHandle);
     
     if (result == 0) {
-        printf("✓ Deep sleep command sent successfully\\n");
-        printf("Module is entering deep sleep mode...\\n");
-        printf("\\nTo wake up the module:\\n");
-        printf("  1. Configure GPIO wakeup pin\\n");
-        printf("  2. Or power cycle the device\\n");
+        printf("✓ Deep sleep command sent successfully\n");
+        printf("Module is entering deep sleep mode...\n");
+        printf("\nTo wake up the module:\n");
+        printf("  1. Configure GPIO wakeup pin\n");
+        printf("  2. Or power cycle the device\n");
     } else {
-        printf("✗ ERROR: Failed to enter deep sleep (error %d)\\n", result);
+        printf("✗ ERROR: Failed to enter deep sleep (error %d)\n", result);
     }
 }
 
