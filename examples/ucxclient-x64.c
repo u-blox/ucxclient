@@ -608,6 +608,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - moduleStartupInit()              Initialize module after startup
 //   - queryDeviceStatus()              Query device status (WiFi, BT, sockets, certs)
 //   - parseBluetoothAddress()          Parse BT address from string
+//   - printError()                     Format and display error messages
 //
 // UI & MENU SYSTEM
 //   - printHeader()                    Display welcome banner
@@ -615,17 +616,30 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - printHelp()                      Comprehensive help system
 //   - printMenu()                      Display menu for current state
 //   - handleUserInput()                Main input dispatcher
-//   - bluetoothMenu()                  Bluetooth operations menu
-//   - wifiMenu()                       WiFi operations menu
-//   - socketMenu()                     Socket operations menu
-//   - mqttMenu()                       MQTT operations menu
-//   - httpMenu()                       HTTP operations menu
-//   - diagnosticsMenu()                Diagnostics menu
-//   - securityTlsMenu()                Security/TLS menu
-//   - bluetoothFunctionsMenu()         BT functions submenu
-//   - wifiFunctionsMenu()              WiFi functions submenu
-//   - gattClientMenu()                 GATT client submenu
-//   - gattServerMenu()                 GATT server submenu
+//
+// MENUS (handled via printMenu/handleUserInput)
+//   - MENU_MAIN                        Main menu
+//   - MENU_BLUETOOTH                   Bluetooth operations menu
+//   - MENU_BLUETOOTH_FUNCTIONS         Bluetooth functions submenu
+//   - MENU_GATT_EXAMPLES               GATT server examples menu
+//   - MENU_WIFI                        WiFi operations menu
+//   - MENU_WIFI_AP                     WiFi Access Point menu
+//   - MENU_WIFI_FUNCTIONS              WiFi functions submenu
+//   - MENU_SOCKET                      Socket operations menu
+//   - MENU_SPS                         Serial Port Service menu
+//   - MENU_GATT_CLIENT                 GATT client operations menu
+//   - MENU_GATT_SERVER                 GATT server operations menu
+//   - MENU_HID                         HID over GATT menu (experimental)
+//   - MENU_MQTT                        MQTT operations menu
+//   - MENU_HTTP                        HTTP operations menu
+//   - MENU_TIME_SYNC                   Time synchronization menu
+//   - MENU_LOCATION                    Location services menu
+//   - MENU_DIAGNOSTICS                 Diagnostics menu
+//   - MENU_SECURITY_TLS                Security/TLS menu
+//   - MENU_POWER_SYSTEM                Power management menu
+//   - MENU_FIRMWARE_UPDATE             Firmware update menu
+//   - MENU_API_LIST                    API commands list
+//   - MENU_AT_TERMINAL                 AT command terminal
 //
 // DEVICE CONNECTION & MANAGEMENT
 //   - ucxclientConnect()               Connect to UCX device via COM port
@@ -640,6 +654,11 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - executeAti9()                    Query device information
 //   - executeModuleReboot()            Reboot module with timing
 //   - executeFactoryReset()            Factory reset module
+//   - executeCrashInfo()               Display crash information
+//   - executeGetPowerSaveLevel()       Get power save level
+//   - executeSetPowerSaveLevel()       Set power save level
+//   - executeSetPowerSaveTimeout()     Set power save timeout
+//   - executeDeepSleep()               Enter deep sleep mode
 //
 // BLUETOOTH OPERATIONS
 //   - bluetoothScan()                  Scan for BT devices
@@ -656,6 +675,10 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - ensureLegacyAdvertisementEnabled() Enable legacy advertising
 //   - syncGattConnectionOnly()         Sync GATT connections
 //   - decodeAdvertisingData()          Parse advertising data
+//   - btManageProfiles()               Manage Bluetooth device profiles
+//   - btSaveProfile()                  Save Bluetooth device profile
+//   - connectToBtProfile()             Connect using saved profile
+//   - btListProfiles()                 List Bluetooth profiles
 //
 // WIFI OPERATIONS
 //   - wifiScan()                       Scan WiFi networks with analysis
@@ -676,6 +699,9 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - testConnectivity()               Test gateway/internet connectivity
 //   - testConnectivityWrapper()        Connectivity test wrapper
 //   - getCurrentPCIPAddress()          Get PC IP address
+//   - configureRegulatoryDomain()      Configure WiFi regulatory domain
+//   - listWifiChannels()               List available WiFi channels
+//   - checkWiFiConnectivity()          Check WiFi and internet connectivity
 //
 // SOCKET OPERATIONS (TCP/UDP)
 //   - socketCreateTcp()                Create TCP socket
@@ -701,20 +727,27 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - httpPostExample()                HTTP POST example
 //   - httpQuoteApiExample()            Quote API example
 //   - httpTimeApiExample()             Time API example
+//   - httpZenQuotesExample()           Zen Quotes API example
 //   - httpStatusCodeExample()          HTTP status code example
 //   - httpJsonPostExample()            JSON POST example
 //   - httpJsonPlaceholderExample()     JSONPlaceholder API example
 //
 // HTTP HELPER FUNCTIONS
-//   - httpGetRequest()                 HTTP GET (text)
-//   - httpGetBinaryRequest()           HTTP GET (binary)
+//   - winHttpGetRequest()              HTTP GET (text) via WinHTTP
+//   - winHttpGetBinaryRequest()        HTTP GET (binary) via WinHTTP
+//   - httpSafeDisconnect()             Safe HTTP session disconnect
 //   - readHttpHeaders()                Read HTTP response headers
 //   - getHttpBody()                    Read HTTP response body
 //   - postHttpBody()                   Send HTTP POST data
 //   - configureHttpSession()           Configure HTTP session
 //   - configureHttpsConnection()       Configure HTTPS with TLS
 //   - extractContentLength()           Parse Content-Length header
+//   - isChunkedTransferEncoding()      Check for chunked encoding
 //   - httpRequestWithResponse()        Complete HTTP request/response
+//   - parseHttpDateHeader()            Parse HTTP Date header to time_t
+//   - calculateSHA256Fingerprint()     Calculate SHA256 hash
+//   - verifySHA256FromGitHubRelease()  Verify hash against GitHub release
+//   - extractFirmwareBinFromZip()      Extract firmware from ZIP
 //
 // JSON PARSING UTILITIES
 //   - extractJsonString()              Extract string from JSON
@@ -737,6 +770,10 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattClientWriteCharacteristic()  Write characteristic
 //
 // GATT CLIENT SERVICE EXAMPLES
+//   - gattClientHeartRateExample()     Heart Rate Service example
+//   - gattClientFindHeartRateHandles() Find HRS handles
+//   - gattClientReadHeartRate()        Read heart rate
+//   - gattClientSubscribeHeartRate()   Subscribe to heart rate
 //   - gattClientCtsExample()           Current Time Service example
 //   - gattClientFindCtsHandles()       Find CTS handles
 //   - gattClientReadCtsTime()          Read current time
@@ -778,6 +815,8 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - aioParseDigital()                Parse AIO digital
 //   - aioParseAnalog()                 Parse AIO analog
 //   - uartParseRxData()                Parse UART RX data
+//   - spsParseFifoData()               Parse SPS FIFO data
+//   - spsParseCredits()                Parse SPS credits  
 //   - basParseBatteryLevel()           Parse battery level
 //   - disReadAndPrint()                Read and print DIS characteristic
 //
@@ -800,8 +839,15 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //
 // GATT SERVER HID OPERATIONS
 //   - gattServerSendKeyPress()         Send HID key press
-//   - gattServerSendMediaControl()     Send HID media control
+//   - gattServerSendMediaControl()     Send HID media control (experimental)
 //   - gattServerSendHelloWorld()       Send "Hello World" via HID
+//
+// TIME & POSITION TRACKING
+//   - updateTime()                     Update current time from source
+//   - updatePosition()                 Update current position from source
+//   - getTimeString()                  Format current time as string
+//   - getPositionString()              Format current position as string
+//   - estimatePositionFromTimezone()   Estimate position from timezone
 //
 // GATT SERVER UTILITIES
 //   - heartbeatThread()                Background heartbeat thread
@@ -812,6 +858,9 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - handleUartRxNotification()       Handle UART RX notification
 //   - automationIoNotifyDigital()      Notify AIO digital change
 //   - automationIoNotifyAnalog()       Notify AIO analog change
+//   - gattServerCharWriteUrc()         Handle characteristic write URC
+//   - gattServerCharReadUrc()          Handle characteristic read URC
+//   - gattClientNotificationUrc()      Handle GATT client notification URC
 //
 // DIAGNOSTICS
 //   - pingExample()                    Ping test example
@@ -907,8 +956,8 @@ static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
 static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, void *pUserData);
 
-static char* httpGetRequest(const wchar_t *server, const wchar_t *path);
-static char* httpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize);
+static char* winHttpGetRequest(const wchar_t *server, const wchar_t *path);
+static char* winHttpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize);
 static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath, size_t pathSize);
 static const char* getProductFirmwarePath(const char *productName);
 static void setProductFirmwarePath(const char *productName, const char *firmwarePath);
@@ -1200,10 +1249,10 @@ static bool parseBluetoothAddress(const char *addrStr, uBtLeAddress_t *addr)
 }
 
 // ============================================================================
-// HTTP CLIENT HELPER FUNCTIONS
+// HTTP CLIENT HELPER FUNCTIONS (WinHTTP)
 // ============================================================================
 
-static char* httpGetRequest(const wchar_t *server, const wchar_t *path)
+static char* winHttpGetRequest(const wchar_t *server, const wchar_t *path)
 {
     HINTERNET hSession = NULL;
     HINTERNET hConnect = NULL;
@@ -1282,7 +1331,7 @@ cleanup:
     return result;
 }
 
-static char* httpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize)
+static char* winHttpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize)
 {
     HINTERNET hSession = NULL;
     HINTERNET hConnect = NULL;
@@ -1513,7 +1562,7 @@ static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath
     wchar_t apiPath[512];
     swprintf(apiPath, 512, L"/repos/u-blox/u-connectXpress/releases/latest");
     
-    char *releaseInfo = httpGetRequest(L"api.github.com", apiPath);
+    char *releaseInfo = winHttpGetRequest(L"api.github.com", apiPath);
     if (!releaseInfo) {
         printf("ERROR: Failed to fetch release information from GitHub\n");
         return false;
@@ -1588,7 +1637,7 @@ static bool downloadFirmwareFromGitHub(const char *product, char *downloadedPath
     
     // Download the firmware binary
     size_t firmwareSize = 0;
-    char *firmwareData = httpGetBinaryRequest(L"github.com", wPath, &firmwareSize);
+    char *firmwareData = winHttpGetBinaryRequest(L"github.com", wPath, &firmwareSize);
     if (!firmwareData || firmwareSize == 0) {
         printf("ERROR: Failed to download firmware file\n");
         if (firmwareData) free(firmwareData);
@@ -1644,7 +1693,7 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     wchar_t productApiPath[512];
     swprintf(productApiPath, 512, L"/repos/u-blox/u-connectXpress/contents");
     
-    char *repoContents = httpGetRequest(L"api.github.com", productApiPath);
+    char *repoContents = winHttpGetRequest(L"api.github.com", productApiPath);
     if (!repoContents) {
         printf("ERROR: Failed to fetch repository contents from GitHub\n");
         printf("Please check your internet connection and try again.\n");
@@ -1732,7 +1781,7 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     wchar_t apiPath[512];
     swprintf(apiPath, 512, L"/repos/u-blox/u-connectXpress/releases");
     
-    char *releaseList = httpGetRequest(L"api.github.com", apiPath);
+    char *releaseList = winHttpGetRequest(L"api.github.com", apiPath);
     if (!releaseList) {
         printf("ERROR: Failed to fetch release list from GitHub\n");
         printf("Please check your internet connection and try again.\n");
@@ -1832,7 +1881,7 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     wchar_t releaseApiPath[512];
     swprintf(releaseApiPath, 512, L"/repos/u-blox/u-connectXpress/releases/tags/%S", selectedTag);
     
-    char *releaseData = httpGetRequest(L"api.github.com", releaseApiPath);
+    char *releaseData = winHttpGetRequest(L"api.github.com", releaseApiPath);
     if (!releaseData) {
         printf("ERROR: Failed to fetch release information\n");
         return false;
@@ -1923,7 +1972,7 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     
     // Download ZIP file
     size_t zipSize = 0;
-    char *zipData = httpGetBinaryRequest(wServer, wPath, &zipSize);
+    char *zipData = winHttpGetBinaryRequest(wServer, wPath, &zipSize);
     if (!zipData || zipSize == 0) {
         printf("ERROR: Failed to download firmware ZIP file\n");
         printf("The file may not exist for this product/version combination.\n");
@@ -1954,7 +2003,7 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     wchar_t sha256Path[512];
     swprintf(sha256Path, 512, L"/repos/u-blox/u-connectXpress/releases/tags/%S", selectedTag);
     
-    char *releaseInfo = httpGetRequest(L"api.github.com", sha256Path);
+    char *releaseInfo = winHttpGetRequest(L"api.github.com", sha256Path);
     if (releaseInfo) {
         if (!verifySHA256FromGitHubRelease(releaseInfo, calculatedSHA256)) {
             free(releaseInfo);
@@ -7589,8 +7638,7 @@ static void gattServerSetupHidKeyboard(void)
             printf("\nYou can now use the HID menu options to:\n");
             printf("  [4] Send keyboard key presses\n");
             printf("  [5] Send 'Hello World' text\n");
-            // TODO: Add media control characteristic to HID service
-            // printf("  [6] Send media control commands\n");
+            printf("  [6] Send media control commands\n");
             printf("\n");
         } else {
             printf("○ No active connection\n");
@@ -8215,9 +8263,8 @@ static void gattServerSetupHidKeyboard(void)
     
     printf("Manual control:\n");
     printf("  - Use [4] to send keyboard key presses\n");
-    printf("  - Use [5] to send 'Hello World' test\n\n");
-    // TODO: Implement media control characteristic
-    // printf("  - Use [6] to send media control commands\n");
+    printf("  - Use [5] to send 'Hello World' test\n");
+    printf("  - Use [6] to send media control commands\n\n");
     
     gGattServerServiceHandle = gHidServiceHandle;
 }
@@ -10784,13 +10831,6 @@ static bool readHttpHeaders(int32_t sessionId, char *headerBuffer, int32_t buffe
     }
     
     *pHeaderLen = 0;
-    
-    // Verify the URC was for our session
-    //if (gHttpLastSessionId != sessionId) {
-    //    printf("ERROR: HTTP response ready for wrong session (expected %d, got %d)\n", 
-    //           sessionId, gHttpLastSessionId);
-    //    return false;
-    //}
     
     uCxHttpGetHeader_t headerResp;
     
@@ -16960,6 +17000,7 @@ static void printMenu(void)
             
             printf("\n");
             printf("                    HID OVER GATT (HOGP)\n");
+            printf("                    [EXPERIMENTAL - MAY NOT WORK]\n");
             printf("\n");
             printf("\n");
             if (gCurrentGattConnHandle != -1) {
@@ -16977,9 +17018,8 @@ static void printMenu(void)
             printf("  [4] Send keyboard key press\n");
             printf("  [5] Send 'Hello World' text\n");
             printf("\n");
-            // TODO: Implement media control characteristic (0x2A4D with Report ID 2)
-            // printf("MEDIA CONTROL\n");
-            // printf("  [6] Send media control command\n");
+            printf("MEDIA CONTROL\n");
+            printf("  [6] Send media control command\n");
             // printf("\n");
             printf("STATUS\n");
             printf("  [s] Show Bluetooth connection status\n");
