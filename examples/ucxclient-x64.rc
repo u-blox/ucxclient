@@ -2,6 +2,25 @@
 //
 #include <windows.h>
 
+// Version information from CMake
+#ifndef APP_VERSION_MAJOR
+#define APP_VERSION_MAJOR 3
+#endif
+#ifndef APP_VERSION_MINOR
+#define APP_VERSION_MINOR 2
+#endif
+#ifndef APP_VERSION_PATCH
+#define APP_VERSION_PATCH 0
+#endif
+#ifndef APP_VERSION_BUILD
+#define APP_VERSION_BUILD 0
+#endif
+
+// Helper macros for stringification
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define VERSION_STRING TOSTRING(APP_VERSION_MAJOR) "." TOSTRING(APP_VERSION_MINOR) "." TOSTRING(APP_VERSION_PATCH) "." TOSTRING(APP_VERSION_BUILD)
+
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDI_ICON1               ICON                    "../images/ShortRange.ico"
@@ -21,8 +40,8 @@ IDR_FTD2XX_DLL          RCDATA                  "third-party/ftdi/ftd2xx64.dll"
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,0
- PRODUCTVERSION 1,0,0,0
+ FILEVERSION APP_VERSION_MAJOR,APP_VERSION_MINOR,APP_VERSION_PATCH,APP_VERSION_BUILD
+ PRODUCTVERSION APP_VERSION_MAJOR,APP_VERSION_MINOR,APP_VERSION_PATCH,APP_VERSION_BUILD
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -39,12 +58,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "u-blox AG"
             VALUE "FileDescription", "ucxclient Windows Tool for NORA-W36/NORA-B26"
-            VALUE "FileVersion", "1.0.0.0"
+            VALUE "FileVersion", VERSION_STRING
             VALUE "InternalName", "ucxclient-x64.exe"
             VALUE "LegalCopyright", "Copyright (C) 2025"
             VALUE "OriginalFilename", "ucxclient-x64.exe"
             VALUE "ProductName", "ucxclient-x64"
-            VALUE "ProductVersion", "1.0.0.0"
+            VALUE "ProductVersion", VERSION_STRING
         END
     END
     BLOCK "VarFileInfo"

@@ -7,6 +7,41 @@ find_package(Threads REQUIRED)
 # Include ucxclient library definitions
 include(../ucxclient.cmake)
 
+# ============================================================================
+# Auto-versioning: Get build number from Git commit count
+# ============================================================================
+set(APP_VERSION_MAJOR 3)
+set(APP_VERSION_MINOR 2)
+set(APP_VERSION_PATCH 0)
+set(APP_VERSION_BUILD 0)
+
+# Try to get Git commit count for build number
+find_package(Git QUIET)
+if(GIT_FOUND)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-list --count HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT_COUNT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+  )
+  if(GIT_COMMIT_COUNT)
+    set(APP_VERSION_BUILD ${GIT_COMMIT_COUNT})
+    message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git commit count)")
+  else()
+    message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git not available)")
+  endif()
+else()
+  message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git not found)")
+endif()
+
+# Generate version header
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/version.h.in
+  ${CMAKE_CURRENT_BINARY_DIR}/version.h
+  @ONLY
+)
+
 # Set binary output directory to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -146,8 +181,12 @@ if(WIN32)
     U_CX_XMODEM_FILE_SUPPORT=1
     _CRT_SECURE_NO_WARNINGS
     U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+    APP_VERSION_MAJOR=${APP_VERSION_MAJOR}
+    APP_VERSION_MINOR=${APP_VERSION_MINOR}
+    APP_VERSION_PATCH=${APP_VERSION_PATCH}
+    APP_VERSION_BUILD=${APP_VERSION_BUILD}
   )
-  target_include_directories(ucxclient-x64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+  target_include_directories(ucxclient-x64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
   target_link_libraries(ucxclient-x64 PRIVATE setupapi ${FTDI_LIBRARY})
   
   # Set different output names for Debug and Release builds

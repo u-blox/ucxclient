@@ -3,9 +3,7 @@ REM Launch script for ucxclient-x64
 
 setlocal enabledelayedexpansion
 
-echo ===================================
 echo ucxclient-x64 Launcher
-echo ===================================
 echo.
 
 REM Change to project root directory
@@ -236,7 +234,6 @@ if not exist "!EXE_PATH!" (
 
 REM Launch the application
 echo.
-echo ===================================
 if /i "%CONFIG%"=="Debug" (
     echo Launching !EXE_NAME! ^(Debug build^)...
 ) else (
@@ -246,7 +243,6 @@ if /i "%CONFIG%"=="Debug" (
         echo Launching !EXE_NAME! ^(Release build^)...
     )
 )
-echo ===================================
 echo.
 
 cd "!BUILD_DIR!"
