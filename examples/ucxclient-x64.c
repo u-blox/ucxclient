@@ -541,6 +541,9 @@ static struct {
 // SPS connection tracking (auto-select handle for send/disconnect)
 static int32_t gActiveSpsConnectionHandle = -1;
 
+// MQTT connection tracking (auto-select client for operations)
+static int32_t gActiveMqttClientId = -1;  // -1 = not connected, 0 = connected
+
 // HTTP status tracking (set by URC, waited on by HTTP operations)
 static volatile int32_t gHttpLastStatusCode = 0;
 static volatile int32_t gHttpLastSessionId = -1;
@@ -2721,6 +2724,8 @@ static void mqttConnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_i
 {
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
                    "MQTT connected: client %d", mqtt_client_id);
+    
+    gActiveMqttClientId = mqtt_client_id;
     
     printf("\n─────────────────────────────────────────────────\n");
     printf("MQTT CONNECTION ESTABLISHED\n");
@@ -10094,6 +10099,7 @@ static void mqttDisconnect(void)
     
     if (result == 0) {
         printf("Disconnected successfully.\n");
+        gActiveMqttClientId = -1;
     } else {
         printf("ERROR: Failed to disconnect (code %d)\n", result);
     }
@@ -16677,6 +16683,8 @@ static void printMenu(void)
                            gBtConnectionCount, gBtConnectionCount > 1 ? "s" : "");
                 }
                 printf("  [s]     u-blox Serial Port Service (SPS) - Wireless serial\n");
+                printf("  [j]     GATT Client - Generic operations on remote servers\n");
+                printf("  [u]     GATT Server - Generic server operations\n");
                 printf("\n");
                 
                 // === Wi-Fi FEATURES (only for W3x modules) ===
@@ -16809,6 +16817,11 @@ static void printMenu(void)
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("      Received data is automatically displayed\n");
+            if (gCurrentSocket >= 0) {
+                printf("      Status: Socket handle %d active\n", gCurrentSocket);
+            } else {
+                printf("      Status: No active socket\n");
+            }
             printf("\n");
             printf("CLIENT OPERATIONS:\n");
             printf("  [1] Create TCP socket\n");
@@ -16856,6 +16869,12 @@ static void printMenu(void)
             printf("\n");
             printf("\n");
             printf("NOTE: Requires active Wi-Fi connection\n");
+            printf("      Received data is automatically displayed\n");
+            if (gActiveMqttClientId >= 0) {
+                printf("      Status: Connected to broker (client %d)\n", gActiveMqttClientId);
+            } else {
+                printf("      Status: Not connected\n");
+            }
             printf("\n");
             printf("  Broker: %s:%d (Plain TCP)\n", MQTT_DEFAULT_HOST, MQTT_DEFAULT_PORT);
             printf("  TLS:    %s:8883 (Encrypted - use Security menu [x] for certs)\n", MQTT_DEFAULT_HOST);
@@ -17109,7 +17128,7 @@ static void printMenu(void)
             printf("  - Location & Navigation Service (LNS)\n");
             printf("  - Current Time Service (CTS)\n");
             printf("\n");
-            printf("  [0] Back to Bluetooth Functions  [q] Quit\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
         case MENU_HID:
@@ -17253,8 +17272,10 @@ static void handleUserInput(void)
                 choice = 7;   // Bluetooth menu
             } else if (firstChar == 's') {
                 choice = 50;  // SPS (Serial Port Service)
+            } else if (firstChar == 'j') {
+                choice = 53;  // GATT Client (raw/generic operations)
             } else if (firstChar == 'u') {
-                choice = 8;   // Bluetooth Functions (GATT Client/Server)
+                choice = 54;  // GATT Server (raw/generic operations)
             } else if (firstChar == 'g') {
                 choice = 51;  // GATT Client Examples
             } else if (firstChar == 't') {
@@ -17522,6 +17543,23 @@ static void handleUserInput(void)
                         gMenuState = MENU_GATT_CLIENT;
                     }
                     break;
+                case 53:  // Also accept 'j' or 'J' - GATT Client (raw/generic operations)
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        bluetoothSyncConnections();  // Sync BT connections first
+                        syncGattConnection();        // Then sync GATT connection handle
+                        gMenuState = MENU_GATT_CLIENT;
+                    }
+                    break;
+                case 54:  // Also accept 'u' or 'U' - GATT Server (raw/generic operations)
+                    if (!gUcxConnected) {
+                        printf("ERROR: Not connected to device. Use [1] to connect first.\n");
+                    } else {
+                        bluetoothSyncConnections();  // Sync BT connections first
+                        gMenuState = MENU_GATT_SERVER;
+                    }
+                    break;
                 case 52:  // Also accept 't' or 'T' - AT Terminal
                     if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
@@ -17744,7 +17782,7 @@ static void handleUserInput(void)
                     spsDisconnect();
                     break;
                 case 0:
-                    gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                    gMenuState = MENU_MAIN;
                     break;
                 default:
                     printf("Invalid choice!\n");
@@ -18056,7 +18094,7 @@ static void handleUserInput(void)
                     gattClientSubscribeNotifications();
                     break;
                 case 0:
-                    gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                    gMenuState = MENU_MAIN;
                     break;
                 default:
                     // Handle letter commands
@@ -18121,7 +18159,7 @@ static void handleUserInput(void)
                     gattServerSendNotification();
                     break;
                 case 0:
-                    gMenuState = MENU_BLUETOOTH_FUNCTIONS;
+                    gMenuState = MENU_MAIN;
                     break;
                 default:
                     printf("Invalid choice!\n");
