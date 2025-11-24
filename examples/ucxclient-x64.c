@@ -16286,12 +16286,12 @@ int main(int argc, char *argv[])
             gPendingMqttRead.mqtt_client_id = -1;
             
             if (numBytes > 0 && numBytes <= MAX_DATA_BUFFER) {
-                char topic[256];
                 uint8_t buffer[MAX_DATA_BUFFER + 1];
-                int32_t result = uCxMqttRead(&gUcxHandle, clientId, numBytes, topic, sizeof(topic), buffer);
+                const char *topic = NULL;
+                int32_t result = uCxMqttReadBegin(&gUcxHandle, clientId, buffer, sizeof(buffer) - 1, &topic);
                 if (result > 0) {
                     buffer[result] = '\0';
-                    printf("\n[MQTT RX] topic=%s, %d bytes: ", topic, result);
+                    printf("\n[MQTT RX] topic=%s, %d bytes: ", topic ? topic : "(unknown)", result);
                     for (int i = 0; i < result; i++) {
                         uint8_t b = buffer[i];
                         if (b >= 32 && b <= 126) {
@@ -16303,6 +16303,7 @@ int main(int argc, char *argv[])
                     printf("\n\n");
                     menuNeedsRedraw = true;
                 }
+                uCxEnd(&gUcxHandle);
             }
         }
         
