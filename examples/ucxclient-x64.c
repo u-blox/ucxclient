@@ -17008,7 +17008,7 @@ static void printMenu(void)
             printf("\n");
             printf("POWER MANAGEMENT\n");
             printf("  [4] Get current power save level\n");
-            printf("  [5] Set power save level (0=disabled, 1=deep sleep)\n");
+            printf("  [5] Set power save level (0=disabled, 1=power save)\n");
             printf("  [6] Set power save timeout (seconds)\n");
             printf("  [7] Enter deep sleep with GPIO wakeup\n");
             printf("\n");
@@ -20944,7 +20944,7 @@ static void executeGetPowerSaveLevel(void)
         printf("Current power save level: %d\n", level);
         printf("\nPower save levels (NORA-W36):\n");
         printf("  0 = Power save disabled (maximum performance)\n");
-        printf("  1 = Deep sleep (maximum power savings)\n");
+        printf("  1 = Power save enabled\n");
     } else {
         printf("ERROR: Failed to get power save level (error %d)\n", result);
     }
@@ -20960,7 +20960,7 @@ static void executeSetPowerSaveLevel(void)
     printf("\n--- Set Power Save Level ---\n");
     printf("\nPower save levels (NORA-W36):\n");
     printf("  [0] Power save disabled (maximum performance)\n");
-    printf("  [1] Deep sleep (maximum power savings)\n");
+    printf("  [1] Power save enabled\n");
     printf("\nEnter level (0-1): ");
     
     char input[32];
@@ -20983,7 +20983,7 @@ static void executeSetPowerSaveLevel(void)
         if (level == 0) {
             printf("Power saving is now DISABLED (maximum performance)\n");
         } else {
-            printf("Deep sleep mode enabled (maximum power savings)\n");
+            printf("Power save mode ENABLED\n");
         }
     } else {
         printf("✗ ERROR: Failed to set power save level (error %d)\n", result);
