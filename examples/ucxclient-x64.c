@@ -3321,10 +3321,19 @@ static void spsEnableService(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Enable SPS Service ---");
     
+    // Ensure legacy advertisements are enabled for SPS connections
+    if (!ensureLegacyAdvertisementEnabled()) {
+        printf("WARNING: Failed to enable legacy advertisements\n");
+        printf("         Remote devices may not be able to connect to SPS service\n");
+    }
+    printf("\n");
+    
     int32_t result = uCxSpsSetServiceEnable(&gUcxHandle, U_SPS_SERVICE_OPTION_ENABLE);
     
     if (result == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully enabled SPS service");
+        printf("SPS service enabled and ready for connections\n");
+        printf("Remote devices can now discover and connect to the SPS service\n");
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to enable SPS (code %d)", result);
     }
