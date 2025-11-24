@@ -27,7 +27,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <io.h>
+#define F_OK 0
+#define access _access
+#else
 #include <unistd.h>
+#endif
 
 #include "u_cx.h"
 #include "u_cx_system.h"
@@ -126,26 +132,22 @@ int main(int argc, char **argv)
     int32_t result;
     uCxHandle_t ucxHandle;
 
-#ifdef U_PORT_POSIX
     if (argc != 3) {
         printf("Usage: %s <uart_device> <firmware_file>\n", argv[0]);
+#ifdef _WIN32
+        printf("Example: %s COM31 firmware.bin\n", argv[0]);
+#else
         printf("Example: %s /dev/ttyUSB0 firmware.bin\n", argv[0]);
+#endif
         return -1;
     }
 
     const char *pUartDev = argv[1];
     const char *pFirmwareFile = argv[2];
-#else
-    (void)argc;
-    (void)argv;
-    // In no-OS mode, use hardcoded values (would typically come from config)
-    const char *pUartDev = U_EXAMPLE_UART;
-    const char *pFirmwareFile = "firmware.bin";
 
-    printf("No-OS firmware upgrade mode\n");
+    printf("Firmware upgrade utility\n");
     printf("UART device: %s\n", pUartDev);
     printf("Firmware file: %s\n", pFirmwareFile);
-#endif
 
     // Get file size
     struct stat st;
@@ -188,6 +190,19 @@ int main(int argc, char **argv)
         return -1;
     }
     printf("Module communication OK\n");
+
+    uCxGeneralRegisterStartup(&ucxHandle, startupCallback);
+
+    uCxSystemReboot(&ucxHandle);
+
+    // Wait for module startup event (with timeout)
+    printf("Waiting for module startup event...\n");
+    if (exampleWaitEvent(URC_FLAG_MODULE_STARTED, 30)) {
+        printf("Module is back online and ready\n");
+    } else {
+        printf("WARNING: Timeout waiting for module startup\n");
+        printf("Module may still be booting or requires power cycle.\n");
+    }
 
     printf("Starting firmware upgrade...\n");
 

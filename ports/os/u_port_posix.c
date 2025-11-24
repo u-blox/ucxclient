@@ -80,8 +80,7 @@ static void *rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
-        struct timespec sleepTime = {0, 10000000};  // 10ms
-        nanosleep(&sleepTime, NULL);
+        U_CX_PORT_SLEEP_MS(10);
         uCxAtClientHandleRx(pCtx->pClient);
     }
 
@@ -108,6 +107,15 @@ void uPortDeinit(void)
 int32_t uPortGetTickTimeMs(void)
 {
     return getTickTimeMs() - gBootTime;
+}
+
+int32_t uPortSleepMs(int32_t ms)
+{
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+    return 0;
 }
 
 int32_t uPortMutexTryLock(pthread_mutex_t *pMutex, uint32_t timeoutMs)

@@ -497,11 +497,10 @@ int32_t uCxXmodemSendFile(uCxXmodemConfig_t *pConfig,
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: File size: %ld bytes", fileSize);
 
-    // Setup file context
-    uFileContext_t fileCtx = {
-        .pFile = pFile,
-        .fileSize = (size_t)fileSize
-    };
+    // Setup file context (avoid C99 designated initializers for MSVC compatibility)
+    uFileContext_t fileCtx;
+    fileCtx.pFile = pFile;
+    fileCtx.fileSize = (size_t)fileSize;
 
     // Send file using callback-based API
     int32_t result = uCxXmodemSend(pConfig, (size_t)fileSize,

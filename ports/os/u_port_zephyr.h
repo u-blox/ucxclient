@@ -40,6 +40,7 @@
 #define U_CX_MUTEX_UNLOCK(mutex)              k_mutex_unlock(&mutex)
 
 #define U_CX_PORT_GET_TIME_MS()               (int32_t)k_uptime_get_32()
+#define U_CX_PORT_SLEEP_MS(ms)                k_sleep(K_MSEC(ms))
 
 #ifdef CONFIG_UCXCLIENT_URC_QUEUE
 # define U_CX_USE_URC_QUEUE  1

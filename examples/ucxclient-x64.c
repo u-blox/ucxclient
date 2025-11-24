@@ -26,6 +26,14 @@
  * 
  */
 
+// Configuration for ucxclient
+#define U_CX_LOG_AT 1
+#define U_CX_LOG_ERROR 1
+#define U_CX_LOG_WARNING 1
+#define U_CX_LOG_DEBUG 1
+#define U_CX_LOG_USE_ANSI_COLOR 1
+#define U_CX_XMODEM_FILE_SUPPORT 1
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,7 +43,7 @@
 // Winsock2 must be included BEFORE windows.h to avoid conflicts
 #include <winsock2.h>  // For socket functions
 #include <ws2tcpip.h>  // For getaddrinfo and related functions
-#include <windows.h>  // For Sleep() and CreateFile()
+#include <windows.h>  // For Windows API
 #include <conio.h>  // For _kbhit() and _getch()
 #include <winhttp.h>  // For HTTP client to fetch from GitHub
 #include <setupapi.h>  // For device enumeration
@@ -104,18 +112,18 @@ static PFN_FT_Close gpFT_Close = NULL;
 #include "u_cx_xmodem.h"
 #include "u_cx_version.h"
 #include "u_cx_error_codes.h"
-#include "qrcodegen/qrcodegen.h"
+#include "third-party/qrcodegen/qrcodegen.h"
 
 // Port layer
 #include "u_port.h"
 
 // Bluetooth SIG name databases
-#include "bluetooth-sig/bt_company_identifiers.h"
-#include "bluetooth-sig/bt_service_uuids.h"
-#include "bluetooth-sig/bt_appearance_values.h"
-#include "bluetooth-sig/bt_characteristic_uuids.h"
-#include "bluetooth-sig/bt_descriptor_uuids.h"
-#include "bluetooth-sig/bt_units.h"
+#include "third-party/bluetooth-sig/bt_company_identifiers.h"
+#include "third-party/bluetooth-sig/bt_service_uuids.h"
+#include "third-party/bluetooth-sig/bt_appearance_values.h"
+#include "third-party/bluetooth-sig/bt_characteristic_uuids.h"
+#include "third-party/bluetooth-sig/bt_descriptor_uuids.h"
+#include "third-party/bluetooth-sig/bt_units.h"
 
 // Application version
 #define APP_VERSION "1.0.0"
@@ -2075,7 +2083,7 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     }
     
     // Wait for response
-    Sleep(3000);
+    U_CX_PORT_SLEEP_MS(3000);
     
     // Read response headers to get content length
     printf("Reading HTTP response headers...\n");
@@ -2194,7 +2202,7 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
             if (result == 0) {
                 result = uCxHttpGetRequest(&gUcxHandle, sessionId);
                 if (result == 0) {
-                    Sleep(2000);  // Wait for API response
+                    U_CX_PORT_SLEEP_MS(2000);  // Wait for API response
                     
                     // Read the response body
                     uint8_t *releaseData = (uint8_t*)malloc(16384);
@@ -2333,7 +2341,7 @@ static bool waitEvent(uint32_t evtFlag, uint32_t timeoutS)
         U_CX_MUTEX_UNLOCK(gUrcMutex);
         
         // Sleep to allow RX thread and AT client to process URCs
-        Sleep(50);  // Check every 50ms instead of spinning
+        U_CX_PORT_SLEEP_MS(50);  // Check every 50ms instead of spinning
     } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
 
     U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
@@ -5576,7 +5584,7 @@ static DWORD WINAPI heartbeatThread(LPVOID lpParam)
         }
         
         // Wait 1 second
-        Sleep(1000);
+        U_CX_PORT_SLEEP_MS(1000);
     }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Heartbeat thread stopped");
@@ -5794,7 +5802,7 @@ static DWORD WINAPI gattNotificationThread(LPVOID lpParam)
         }
         
         // Wait 1 second before next update
-        Sleep(1000);
+        U_CX_PORT_SLEEP_MS(1000);
     }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "GATT notification thread stopped");
@@ -7630,7 +7638,7 @@ static void gattServerSetupHidKeyboard(void)
             if (attempts < maxAttempts) {
                 printf("  Waiting for MTU... (attempt %d/%d, current MTU: %d)\n", 
                        attempts, maxAttempts, mtuSize);
-                Sleep(500); // Wait 500ms between checks
+                U_CX_PORT_SLEEP_MS(500); // Wait 500ms between checks
             }
         }
         
@@ -7702,38 +7710,61 @@ static void gattServerSetupHidKeyboard(void)
     uCxEnd(&gUcxHandle);
     printf("  ✓ Device Information Service ready\n\n");
     
-    // Step 0.5: Add PnP ID to Device Information Service (REQUIRED for HoG Profile 3.3.2)
-    printf("Step 0.5: Adding PnP ID to Device Information Service...\n");
-    // PnP ID structure (7 bytes):
-    //   [0] Vendor ID Source: 0x02 = USB IF (we'll use USB vendor ID)
-    //   [1-2] Vendor ID: 0x1546 (u-blox USB vendor ID, little-endian)
-    //   [3-4] Product ID: 0x1146 (example product ID, little-endian)
-    //   [5-6] Product Version: 0x0100 (version 1.0, little-endian)
-    uint8_t pnpIdUuid[] = {0x2A, 0x50};  // PnP ID UUID (little-endian)
-    uint8_t pnpIdValue[] = {
-        0x02,        // Vendor ID Source: USB IF
-        0x46, 0x15,  // Vendor ID: 0x1546 (u-blox, little-endian)
-        0x46, 0x11,  // Product ID: 0x1146 (example, little-endian)
-        0x00, 0x01   // Product Version: 0x0100 (v1.0, little-endian)
-    };
-    uint8_t propRead2[] = {0x02};  // Read only
+    // Step 0.5: Add complete Device Information Service (DIS) with PnP ID
+    // NOTE: NORA-W36 has built-in DIS (0x180A) with 4 characteristics (Manufacturer, Model, Firmware, Software)
+    // but does NOT support PnP ID through the built-in DIS API.
+    // We create a CUSTOM DIS service (0x180A) with PnP ID characteristic.
+    // This may work with some HID hosts, though it's non-standard.
+    printf("Step 0.5: Creating custom Device Information Service with PnP ID...\n");
     
-    uCxGattServerCharDefine_t pnpIdResponse;
-    result = uCxGattServerCharDefine6(&gUcxHandle, pnpIdUuid, 2,
-                                      propRead2, 1,
-                                      U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
-                                      pnpIdValue, sizeof(pnpIdValue),
-                                      sizeof(pnpIdValue),
-                                      &pnpIdResponse);
+    // Define custom DIS service (0x180A)
+    uint8_t disServiceUuid[] = {0x18, 0x0A};  // DIS UUID (little-endian)
+    int32_t customDisHandle;
+    result = uCxGattServerServiceDefine(&gUcxHandle, disServiceUuid, 2, &customDisHandle);
     
-    if (result == 0) {
-        printf("  ✓ PnP ID added (handle: %d)\n", pnpIdResponse.value_handle);
-        printf("    Vendor: 0x1546 (u-blox), Product: 0x1146, Version: 1.0\n");
+    if (result != 0) {
+        printf("  WARNING: Failed to create custom DIS (code %d)\n", result);
+        printf("    Using built-in DIS only (no PnP ID)\n");
+        printf("    HID may have limited compatibility with some hosts\n\n");
     } else {
-        printf("  WARNING: Failed to add PnP ID (code %d)\n", result);
-        printf("    HID may not work correctly on some hosts\n");
+        printf("  ✓ Custom DIS defined (handle: %d)\n", customDisHandle);
+        
+        // Add PnP ID characteristic to custom DIS
+        // PnP ID structure (7 bytes):
+        //   [0] Vendor ID Source: 0x02 = USB IF
+        //   [1-2] Vendor ID: 0x1546 (u-blox USB vendor ID, little-endian)
+        //   [3-4] Product ID: 0x1146 (example product ID, little-endian)
+        //   [5-6] Product Version: 0x0100 (version 1.0, little-endian)
+        uint8_t pnpIdUuid[] = {0x2A, 0x50};  // PnP ID UUID (little-endian)
+        uint8_t pnpIdValue[] = {
+            0x02,        // Vendor ID Source: USB IF
+            0x46, 0x15,  // Vendor ID: 0x1546 (u-blox, little-endian)
+            0x46, 0x11,  // Product ID: 0x1146 (example, little-endian)
+            0x00, 0x01   // Product Version: 0x0100 (v1.0, little-endian)
+        };
+        uint8_t propRead[] = {0x02};  // Read only
+        
+        uCxGattServerCharDefine_t pnpIdResponse;
+        result = uCxGattServerCharDefine6(&gUcxHandle, pnpIdUuid, 2,
+                                          propRead, 1,
+                                          U_GATT_SERVER_READ_SECURITY_NONE, U_GATT_SERVER_WRITE_SECURITY_NONE,
+                                          pnpIdValue, sizeof(pnpIdValue),
+                                          sizeof(pnpIdValue),
+                                          &pnpIdResponse);
+        
+        if (result == 0) {
+            printf("  ✓ PnP ID added to custom DIS (handle: %d)\n", pnpIdResponse.value_handle);
+            printf("    Vendor: 0x1546 (u-blox), Product: 0x1146, Version: 1.0\n");
+        } else {
+            printf("  WARNING: Failed to add PnP ID to custom DIS (code %d)\n", result);
+            printf("    HID may have limited compatibility with some hosts\n");
+        }
+        printf("\n");
     }
     printf("\n");
+    // Step 6: Activating DIS Service
+    printf("\nStep 6: Activating DIS Service...\n");
+    result = uCxGattServerServiceActivate(&gUcxHandle);
     
     // Step 1: Define HID Service (0x1812)
     printf("Step 1: Creating HID Service (UUID: 0x1812)...\n");
@@ -8767,7 +8798,7 @@ static void gattServerSetupSpsService(void)
     while (timeout > 0 && gCurrentGattConnHandle < 0) {
         printf(".");
         fflush(stdout);
-        Sleep(1000);
+        U_CX_PORT_SLEEP_MS(1000);
         timeout--;
     }
     printf("\n");
@@ -8784,7 +8815,7 @@ static void gattServerSetupSpsService(void)
     // Wait for CCCD enable (30 seconds)
     timeout = 30;
     while (timeout > 0 && !gSpsServerFifoNotifyEnabled) {
-        Sleep(100);
+        U_CX_PORT_SLEEP_MS(100);
         timeout--;
         if (timeout % 10 == 0) {
             printf(".");
@@ -8840,7 +8871,7 @@ static void gattServerSetupSpsService(void)
                 if (gSpsServerFlowControlActive && gSpsServerRemoteCredits <= 0) {
                     printf("[SPS] Waiting for credits from client...\n");
                     // Wait a bit for credits
-                    Sleep(500);
+                    U_CX_PORT_SLEEP_MS(500);
                     if (gSpsServerRemoteCredits <= 0) {
                         printf("[SPS] No credits available. Message not sent.\n");
                         printf("      Client needs to send credits or disable flow control (send -1).\n");
@@ -9302,7 +9333,7 @@ static void gattServerSendKeyPress(void)
         return;
     }
     
-    Sleep(50);  // Hold key for 50ms
+    U_CX_PORT_SLEEP_MS(50);  // Hold key for 50ms
     
     // Send key up (all zeros = no keys pressed)
     result = hidSendKeyReport(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
@@ -9387,7 +9418,7 @@ static void gattServerSendMediaControl(void)
         return;
     }
     
-    Sleep(100);  // Hold for 100ms
+    U_CX_PORT_SLEEP_MS(100);  // Hold for 100ms
     
     // Send button release (all zeros)
     uint8_t releaseReport[2] = {0x02, 0x00};
@@ -9473,12 +9504,12 @@ static void gattServerSendHelloWorld(void)
             return;
         }
         
-        Sleep(50);  // Hold key
+        U_CX_PORT_SLEEP_MS(50);  // Hold key
         
         // Send key up (all zeros)
         hidSendKeyReport(0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
         
-        Sleep(50);  // Delay between keys
+        U_CX_PORT_SLEEP_MS(50);  // Delay between keys
     }
     
     printf("✓ 'Hello World' sent successfully!\n");
@@ -11519,7 +11550,7 @@ static void httpSafeDisconnect(int32_t sessionId)
         int32_t err = uCxHttpDisconnect(&gUcxHandle, sessionId);
         if (err == 0) {
             // Wait briefly for disconnect URC
-            Sleep(100);
+            U_CX_PORT_SLEEP_MS(100);
         }
     } else {
         // Already disconnected or different session
@@ -11801,7 +11832,7 @@ static void httpQuoteApiExample(void)
     
     // Disconnect any existing HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     printf("Configuring HTTPS connection to httpbin.org...\n");
     
@@ -11937,7 +11968,7 @@ static void httpTimeApiExample(void)
     
     // Disconnect any existing HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     // Get timezone from user
     char timezone[128];
@@ -12097,7 +12128,7 @@ static void httpStatusCodeExample(void)
     
     // Disconnect any existing HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     // Get status code from user
     char statusInput[16];
@@ -12241,7 +12272,7 @@ static void httpJsonPostExample(void)
     
     // Disconnect any existing HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     // Get user input for JSON data
     char name[128];
@@ -12356,7 +12387,7 @@ static void httpJsonPostExample(void)
     }
     
     // Small delay to ensure response is ready
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     // Read response body
     printf("\n");
@@ -12419,7 +12450,7 @@ static void httpZenQuotesExample(void)
     if (err < 0 && err != -20) {  // -20 = U_ERROR_COMMON_NOT_CONFIGURED (no active session)
         printError("Failed to disconnect HTTP session", err);
     }
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     printf("Configuring HTTPS connection to zenquotes.io...\n");
     
@@ -12593,7 +12624,7 @@ static void httpJsonPlaceholderExample(void)
     
     // Disconnect any existing HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     // Menu for user to select endpoint
     printf("Select data to fetch:\n");
@@ -12819,7 +12850,7 @@ static void ipGeolocationExample(void)
     
     // Disconnect previous HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);  // Brief delay after disconnect
+    U_CX_PORT_SLEEP_MS(100);  // Brief delay after disconnect
     
     // API: https://ip-api.com/docs/api:json
     // Endpoint: http://ip-api.com/json/{ip}
@@ -13336,7 +13367,7 @@ static void wifiPositioningExample(void)
     
     // Disconnect any previous HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     printf("Configuring HTTPS connection to Combain...\n");
     
@@ -13619,7 +13650,7 @@ static void timeApiIoExample(void)
     
     // Disconnect any existing HTTP session
     uCxHttpDisconnect(&gUcxHandle, sessionId);
-    Sleep(100);
+    U_CX_PORT_SLEEP_MS(100);
     
     printf("Select API endpoint:\n");
     printf("\n");
@@ -14212,7 +14243,7 @@ static void iperfClientExample(void)
     printf("─────────────────────────────────────────────────\n");
     
     // Wait for test to complete (duration + 10 second buffer)
-    Sleep((duration + 10) * 1000);
+    U_CX_PORT_SLEEP_MS((duration + 10) * 1000);
     
     if (gIperfRunning) {
         printf("\n");
@@ -14668,7 +14699,7 @@ static void ntpTimeExample(void)
             for (int i = 0; i < waitInterval; i++) {
                 printf(".");
                 fflush(stdout);
-                Sleep(1000);
+                U_CX_PORT_SLEEP_MS(1000);
             }
             totalWaitTime += waitInterval;
         }
@@ -16136,7 +16167,7 @@ int main(int argc, char *argv[])
                         fflush(stdout);
                     }
                 }
-                Sleep(50); // Small delay to avoid busy-wait
+                U_CX_PORT_SLEEP_MS(50); // Small delay to avoid busy-wait
             }
             
             printf("\n");
@@ -16172,7 +16203,7 @@ int main(int argc, char *argv[])
         }
         
         // Small sleep to avoid busy waiting
-        Sleep(50);
+        U_CX_PORT_SLEEP_MS(50);
     }
     
     // Cleanup
@@ -16422,20 +16453,20 @@ static void printMenu(void)
                 const char* btModeStr = "Disabled";
                 if (gBluetoothMode == 1) btModeStr = "Central";
                 else if (gBluetoothMode == 2) btModeStr = "Peripheral";
-                else if (gBluetoothMode == 3) btModeStr = "Central+Peripheral";
+                else if (gBluetoothMode == 3) btModeStr = "Centr+Periph";
                 printf("%s", btModeStr);
                 
                 if (gBluetoothMode != 0) {
-                    printf("  |  ");
+                    printf(" | ");
                     if (gBtConnectionCount > 0) {
                         printf("%d active connection%s", gBtConnectionCount, 
                                gBtConnectionCount == 1 ? "" : "s");
                     } else {
                         printf("No connections");
                     }
-                    printf("  |  Advertising: %s", gLegacyAdvertising ? "ON" : "OFF");
+                    printf(" | Adv: %s", gLegacyAdvertising ? "ON" : "OFF");
                     if (gBondedDeviceCount > 0) {
-                        printf("  |  %d bonded", gBondedDeviceCount);
+                        printf(" | %d bonded", gBondedDeviceCount);
                     }
                 }
                 printf("\n");
@@ -16535,8 +16566,11 @@ static void printMenu(void)
             printf("TOOLS & SETTINGS\n");
             printf("  [l]     Toggle logging: %s\n", 
                    uCxLogIsEnabled() ? "ON (showing AT commands)" : "OFF (cleaner)");
-            printf("  [z]     Toggle timestamps: %s\n",
-                   uCxLogTimestampIsEnabled() ? "ON (shows timing)" : "OFF");
+#if U_CX_LOG_PRINT_TIME
+            printf("  [z]     Timestamps: ON (shows [HH:MM:SS.mmm] - set U_CX_LOG_PRINT_TIME=0 to disable)\n");
+#else
+            printf("  [z]     Timestamps: OFF (set U_CX_LOG_PRINT_TIME=1 to enable [HH:MM:SS.mmm])\n");
+#endif
             printf("  [v]     List all UCX API commands\n");
             printf("  [?]     Help & getting started\n");
             printf("\n");
@@ -16973,6 +17007,9 @@ static void printMenu(void)
             printf("  [2] Download firmware from GitHub (WinHTTP)\n");
             printf("  [3] Download firmware from GitHub (UCX HTTP API)\n");
             printf("\n");
+            printf("TIP: You can also drag-and-drop a .bin or .zip file path directly!\n");
+            printf("     (ZIP files will be extracted automatically)\n");
+            printf("\n");
             printf("  [0] Back to main menu\n");
             break;
             
@@ -17016,7 +17053,22 @@ static void handleUserInput(void)
     }
     
     // Parse choice
-    int choice = atoi(trimmedInput);
+    int choice = 0;
+    
+    // Special handling for firmware update menu - allow drag-and-drop file paths
+    if (gMenuState == MENU_FIRMWARE_UPDATE) {
+        // Check if input looks like a file path (contains backslash, forward slash, or file extensions)
+        if (strchr(trimmedInput, '\\') != NULL || strchr(trimmedInput, '/') != NULL ||
+            strstr(trimmedInput, ".bin") != NULL || strstr(trimmedInput, ".zip") != NULL) {
+            // This looks like a file path - treat as firmware file selection
+            choice = 1;  // Route to "Select firmware file" case
+            // We'll handle the file path in the case 1 handler
+        } else {
+            choice = atoi(trimmedInput);
+        }
+    } else {
+        choice = atoi(trimmedInput);
+    }
     
     // Handle letter inputs (convert to numbers)
     if (choice == 0 && strlen(trimmedInput) > 0) {
@@ -17157,14 +17209,14 @@ static void handleUserInput(void)
                         // Disconnect (though already disconnected)
                         ucxclientDisconnect();
                     } else {
-                        // When connected, '2' = Toggle timestamps (same as 'z')
-                        if (uCxLogTimestampIsEnabled()) {
-                            uCxLogTimestampDisable();
-                            printf("✓ Log timestamps DISABLED (cleaner output)\n");
-                        } else {
-                            uCxLogTimestampEnable();
-                            printf("✓ Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
-                        }
+                        // When connected, '2' = Timestamp info (same as 'z')
+#if U_CX_LOG_PRINT_TIME
+                        printf("ℹ Timestamps: ENABLED (shows [HH:MM:SS.mmm])\n");
+                        printf("  To disable: Set U_CX_LOG_PRINT_TIME=0 in configuration and rebuild\n");
+#else
+                        printf("ℹ Timestamps: DISABLED\n");
+                        printf("  To enable: Set U_CX_LOG_PRINT_TIME=1 in configuration and rebuild\n");
+#endif
                     }
                     break;
                 case 3:
@@ -17355,14 +17407,14 @@ static void handleUserInput(void)
                         printf("✓ UCX logging ENABLED (showing AT commands)\n");
                     }
                     break;
-                case 92:  // Toggle timestamps
-                    if (uCxLogTimestampIsEnabled()) {
-                        uCxLogTimestampDisable();
-                        printf("✓ Log timestamps DISABLED (cleaner output)\n");
-                    } else {
-                        uCxLogTimestampEnable();
-                        printf("✓ Log timestamps ENABLED (shows [HH:MM:SS.mmm] timing)\n");
-                    }
+                case 92:  // Timestamp info
+#if U_CX_LOG_PRINT_TIME
+                    printf("ℹ Timestamps: ENABLED (shows [HH:MM:SS.mmm])\n");
+                    printf("  To disable: Set U_CX_LOG_PRINT_TIME=0 in configuration and rebuild\n");
+#else
+                    printf("ℹ Timestamps: DISABLED\n");
+                    printf("  To enable: Set U_CX_LOG_PRINT_TIME=1 in configuration and rebuild\n");
+#endif
                     break;
                 case 93:  // List API commands
                     listAllApiCommands();
@@ -17972,14 +18024,90 @@ static void handleUserInput(void)
             switch (choice) {
                 case 1: {
                     // Select firmware file and update
-                    char firmwarePath[256];
-                    printf("Enter firmware file path: ");
-                    if (fgets(firmwarePath, sizeof(firmwarePath), stdin) == NULL) {
-                        printf("ERROR: Failed to read input\n");
-                        break;
+                    char firmwarePath[256] = "";
+                    
+                    // Check if user provided a file path directly (drag-and-drop or paste)
+                    if (strchr(trimmedInput, '\\') != NULL || strchr(trimmedInput, '/') != NULL ||
+                        strstr(trimmedInput, ".bin") != NULL || strstr(trimmedInput, ".zip") != NULL) {
+                        // Use the provided path directly
+                        strncpy(firmwarePath, trimmedInput, sizeof(firmwarePath) - 1);
+                        firmwarePath[sizeof(firmwarePath) - 1] = '\0';
+                        
+                        // Remove quotes if present (Windows adds quotes when dragging)
+                        if (firmwarePath[0] == '"') {
+                            size_t pathLen2 = strlen(firmwarePath);
+                            if (pathLen2 > 2 && firmwarePath[pathLen2-1] == '"') {
+                                memmove(firmwarePath, firmwarePath + 1, pathLen2 - 1);
+                                firmwarePath[pathLen2 - 2] = '\0';
+                            }
+                        }
+                        printf("Using file: %s\n", firmwarePath);
+                    } else {
+                        // Prompt for file path
+                        printf("Enter firmware file path (or drag-and-drop file): ");
+                        if (fgets(firmwarePath, sizeof(firmwarePath), stdin) == NULL) {
+                            printf("ERROR: Failed to read input\n");
+                            break;
+                        }
+                        // Remove newline and quotes
+                        firmwarePath[strcspn(firmwarePath, "\r\n")] = '\0';
+                        // Remove quotes if present
+                        if (firmwarePath[0] == '"') {
+                            size_t pathLen3 = strlen(firmwarePath);
+                            if (pathLen3 > 2 && firmwarePath[pathLen3-1] == '"') {
+                                memmove(firmwarePath, firmwarePath + 1, pathLen3 - 1);
+                                firmwarePath[pathLen3 - 2] = '\0';
+                            }
+                        }
                     }
-                    // Remove newline
-                    firmwarePath[strcspn(firmwarePath, "\r\n")] = '\0';
+                    
+                    // Check if it's a ZIP file - extract it first
+                    size_t pathLen = strlen(firmwarePath);
+                    if (pathLen > 4 && (_stricmp(firmwarePath + pathLen - 4, ".zip") == 0)) {
+                        printf("\nDetected ZIP file. Extracting...\n");
+                        
+                        // Create temp directory for extraction
+                        char tempDir[MAX_PATH];
+                        GetTempPathA(sizeof(tempDir), tempDir);
+                        strcat_s(tempDir, sizeof(tempDir), "ucxclient_fw_");
+                        
+                        // Add timestamp to make unique
+                        char timestamp[32];
+                        snprintf(timestamp, sizeof(timestamp), "%lld", (long long)time(NULL));
+                        strcat_s(tempDir, sizeof(tempDir), timestamp);
+                        
+                        // Extract ZIP using PowerShell
+                        char extractCmd[1024];
+                        snprintf(extractCmd, sizeof(extractCmd),
+                                "powershell -Command \"Expand-Archive -Path '%s' -DestinationPath '%s' -Force\"",
+                                firmwarePath, tempDir);
+                        
+                        printf("Extracting to: %s\n", tempDir);
+                        int extractResult = system(extractCmd);
+                        if (extractResult != 0) {
+                            printf("ERROR: Failed to extract ZIP file\n");
+                            break;
+                        }
+                        
+                        // Find NORA*.bin file in extracted directory
+                        char searchPattern[MAX_PATH];
+                        snprintf(searchPattern, sizeof(searchPattern), "%s\\NORA*.bin", tempDir);
+                        
+                        WIN32_FIND_DATAA findData;
+                        HANDLE hFind = FindFirstFileA(searchPattern, &findData);
+                        
+                        if (hFind == INVALID_HANDLE_VALUE) {
+                            printf("ERROR: No NORA*.bin file found in ZIP archive\n");
+                            FindClose(hFind);
+                            break;
+                        }
+                        
+                        // Build full path to found file
+                        snprintf(firmwarePath, sizeof(firmwarePath), "%s\\%s", tempDir, findData.cFileName);
+                        FindClose(hFind);
+                        
+                        printf("Found firmware file: %s\n", findData.cFileName);
+                    }
                     
                     // Check if file exists
                     FILE *testFile = fopen(firmwarePath, "rb");
@@ -18002,21 +18130,29 @@ static void handleUserInput(void)
                     
                     // Step 1: Send AT command to start firmware update mode
                     printf("Sending firmware update command to module...\n");
+                    printf("[DEBUG] Sending AT+USYFWUS command...\n");
+                    // Note: This command won't get a normal AT response - module immediately
+                    // switches to XMODEM mode and sends 'C' characters. Ignore timeout error.
                     int32_t result = uCxSystemStartSerialFirmwareUpdate2(&gUcxHandle, 115200, 0);
-                    if (result != 0) {
-                        printf("ERROR: Failed to start firmware update mode (error %d)\n", result);
-                        break;
-                    }
+                    (void)result;  // Ignore error - timeout is expected
                     
+                    printf("[DEBUG] AT command sent, module switching to XMODEM mode...\n");
                     printf("Module entering firmware update mode...\n");
-                    uPortDelayMs(1000);  // Give module time to switch modes
                     
-                    // Step 2: Close the AT client (this closes UART and stops RX task)
+                    // Step 2: Stop RX thread but keep UART open to drain any 'C' characters
+                    printf("[DEBUG] Stopping background RX thread...\n");
+                    uPortBgRxTaskDestroy(&gUcxAtClient);
+                    printf("[DEBUG] Waiting for module to fully switch modes (2 seconds)...\n");
+                    U_CX_PORT_SLEEP_MS(2000);  // Give module time to switch and start sending 'C'
+                    
+                    // Step 3: Now close the UART
+                    printf("[DEBUG] Closing UART...\n");
+                    uPortUartClose(gUartHandle);
                     printf("Closing AT client connection...\n");
-                    uCxAtClientClose(&gUcxAtClient);
-                    uPortDelayMs(500);
+                    U_CX_PORT_SLEEP_MS(500);
                     
-                    // Step 3: Initialize XMODEM and open UART for binary transfer
+                    // Step 4: Initialize XMODEM and open UART for binary transfer
+                    printf("[DEBUG] Opening UART for XMODEM...\n");
                     printf("Opening UART for XMODEM transfer...\n");
                     uCxXmodemConfig_t xmodemConfig;
                     uCxXmodemInit(gComPort, &xmodemConfig);
@@ -18052,7 +18188,7 @@ static void handleUserInput(void)
                     // Step 6: Wait for module to reboot
                     printf("Waiting 5 seconds for module reboot...");
                     fflush(stdout);
-                    uPortDelayMs(5000);
+                    U_CX_PORT_SLEEP_MS(5000);
                     printf(" Done\n");
                     
                     // Step 7: Reconnect AT client
@@ -18065,7 +18201,7 @@ static void handleUserInput(void)
                     }
                     
                     uPortBgRxTaskCreate(&gUcxAtClient);
-                    uPortDelayMs(500);
+                    U_CX_PORT_SLEEP_MS(500);
                     
                     // Step 8: Wait for +STARTUP URC
                     printf("Waiting for +STARTUP URC");
@@ -18145,19 +18281,23 @@ static void handleUserInput(void)
                     
                     // Use same update procedure as case 1
                     printf("Sending firmware update command to module...\n");
+                    printf("[DEBUG] Sending AT+USYFWUS command...\n");
+                    // Note: Module immediately switches to XMODEM mode, won't send AT response
                     int32_t result = uCxSystemStartSerialFirmwareUpdate2(&gUcxHandle, 115200, 0);
-                    if (result != 0) {
-                        printf("ERROR: Failed to start firmware update mode (error %d)\n", result);
-                        break;
-                    }
+                    (void)result;  // Ignore error - timeout is expected
                     
+                    printf("[DEBUG] AT command sent, module switching to XMODEM mode...\n");
                     printf("Module entering firmware update mode...\n");
-                    uPortDelayMs(1000);
                     
-                    printf("Closing AT client connection...\n");
+                    printf("[DEBUG] Stopping background RX thread...\n");
                     uPortBgRxTaskDestroy(&gUcxAtClient);
+                    printf("[DEBUG] Waiting for module to fully switch modes (2 seconds)...\n");
+                    U_CX_PORT_SLEEP_MS(2000);
+                    
+                    printf("[DEBUG] Closing UART...\n");
                     uPortUartClose(gUartHandle);
-                    uPortDelayMs(500);
+                    printf("Closing AT client connection...\n");
+                    U_CX_PORT_SLEEP_MS(500);
                     
                     printf("Opening UART for XMODEM transfer...\n");
                     uCxXmodemConfig_t xmodemConfig;
@@ -18187,7 +18327,7 @@ static void handleUserInput(void)
                     
                     printf("Waiting 5 seconds for module reboot...");
                     fflush(stdout);
-                    uPortDelayMs(5000);
+                    U_CX_PORT_SLEEP_MS(5000);
                     printf(" Done\n");
                     
                     printf("Reopening AT client connection...\n");
@@ -18199,7 +18339,7 @@ static void handleUserInput(void)
                     }
                     
                     uPortBgRxTaskCreate(&gUcxAtClient);
-                    uPortDelayMs(500);
+                    U_CX_PORT_SLEEP_MS(500);
                     
                     printf("Waiting for +STARTUP URC");
                     fflush(stdout);
@@ -18277,19 +18417,23 @@ static void handleUserInput(void)
                     
                     // Use same update procedure
                     printf("Sending firmware update command to module...\n");
+                    printf("[DEBUG] Sending AT+USYFWUS command...\n");
+                    // Note: Module immediately switches to XMODEM mode, won't send AT response
                     int32_t result = uCxSystemStartSerialFirmwareUpdate2(&gUcxHandle, 115200, 0);
-                    if (result != 0) {
-                        printf("ERROR: Failed to start firmware update mode (error %d)\n", result);
-                        break;
-                    }
+                    (void)result;  // Ignore error - timeout is expected
                     
+                    printf("[DEBUG] AT command sent, module switching to XMODEM mode...\n");
                     printf("Module entering firmware update mode...\n");
-                    uPortDelayMs(1000);
                     
-                    printf("Closing AT client connection...\n");
+                    printf("[DEBUG] Stopping background RX thread...\n");
                     uPortBgRxTaskDestroy(&gUcxAtClient);
+                    printf("[DEBUG] Waiting for module to fully switch modes (2 seconds)...\n");
+                    U_CX_PORT_SLEEP_MS(2000);
+                    
+                    printf("[DEBUG] Closing UART...\n");
                     uPortUartClose(gUartHandle);
-                    uPortDelayMs(500);
+                    printf("Closing AT client connection...\n");
+                    U_CX_PORT_SLEEP_MS(500);
                     
                     printf("Opening UART for XMODEM transfer...\n");
                     uCxXmodemConfig_t xmodemConfig;
@@ -18319,7 +18463,7 @@ static void handleUserInput(void)
                     
                     printf("Waiting 5 seconds for module reboot...");
                     fflush(stdout);
-                    uPortDelayMs(5000);
+                    U_CX_PORT_SLEEP_MS(5000);
                     printf(" Done\n");
                     
                     printf("Reopening AT client connection...\n");
@@ -18331,7 +18475,7 @@ static void handleUserInput(void)
                     }
                     
                     uPortBgRxTaskCreate(&gUcxAtClient);
-                    uPortDelayMs(500);
+                    U_CX_PORT_SLEEP_MS(500);
                     
                     printf("Waiting for +STARTUP URC");
                     fflush(stdout);
@@ -19839,175 +19983,358 @@ static char* selectComPortFromList(const char *recommendedPort)
 }
 
 // ============================================================================
-// API COMMANDS (GITHUB INTEGRATION)
+// API COMMANDS (DYNAMIC API DISCOVERY)
 // ============================================================================
+
+// Structure to hold API function information
+typedef struct {
+    char functionName[128];
+    char description[512];  // Increased size for longer descriptions
+} ApiFunctionInfo;
+
+// Structure to hold API module information
+typedef struct {
+    char moduleName[64];
+    char headerFile[64];
+    ApiFunctionInfo *functions;
+    int functionCount;
+    int functionCapacity;
+} ApiModuleInfo;
+
+// Helper function to print wrapped text with proper indentation
+static void printWrappedDescription(const char *functionName, const char *description)
+{
+    const int FUNC_NAME_WIDTH = 47;
+    const int DESC_START_COL = FUNC_NAME_WIDTH + 5;  // "  " + funcname + " - "
+    const int MAX_LINE_WIDTH = 80;
+    const int DESC_MAX_WIDTH = MAX_LINE_WIDTH - DESC_START_COL;
+    
+    // Print function name
+    printf("  %-*s - ", FUNC_NAME_WIDTH, functionName);
+    
+    // If description fits on one line, print it directly
+    if (strlen(description) <= DESC_MAX_WIDTH) {
+        printf("%s\n", description);
+        return;
+    }
+    
+    // Need to wrap the description
+    const char *remaining = description;
+    bool firstLine = true;
+    
+    while (*remaining) {
+        if (!firstLine) {
+            // Print indentation for continuation lines
+            printf("  %*s   ", FUNC_NAME_WIDTH, "");
+        }
+        
+        // Find a good break point (space) within the width limit
+        size_t breakPoint = DESC_MAX_WIDTH;
+        size_t remainingLen = strlen(remaining);
+        if (remainingLen > (size_t)DESC_MAX_WIDTH) {
+            // Find last space before the limit
+            for (int i = DESC_MAX_WIDTH; i > 0; i--) {
+                if (remaining[i] == ' ') {
+                    breakPoint = (size_t)i;
+                    break;
+                }
+            }
+            
+            // If no space found, just break at the limit
+            if (breakPoint == (size_t)DESC_MAX_WIDTH && remaining[DESC_MAX_WIDTH] != ' ') {
+                // Check if there's a space shortly after the limit
+                const char *nextSpace = strchr(remaining + DESC_MAX_WIDTH, ' ');
+                if (nextSpace && ((size_t)(nextSpace - remaining) < (size_t)(DESC_MAX_WIDTH + 10))) {
+                    breakPoint = (size_t)(nextSpace - remaining);
+                }
+            }
+        } else {
+            breakPoint = remainingLen;
+        }
+        
+        // Print this segment
+        printf("%.*s\n", (int)breakPoint, remaining);
+        
+        // Move to next segment
+        remaining += breakPoint;
+        while (*remaining == ' ') remaining++;  // Skip leading spaces
+        
+        firstLine = false;
+    }
+}
+
+// Extract function name and description from a function declaration comment
+// Returns true if a valid function was found
+static bool parseApiFunction(const char *line, const char *comment, ApiFunctionInfo *funcInfo)
+{
+    // Look for function declarations starting with "int32_t " or "bool "
+    const char *funcStart = NULL;
+    if (strncmp(line, "int32_t ", 8) == 0) {
+        funcStart = line + 8;
+    } else if (strncmp(line, "bool ", 5) == 0) {
+        funcStart = line + 5;
+    } else {
+        return false;
+    }
+    
+    // Extract function name (up to '(')
+    const char *funcEnd = strchr(funcStart, '(');
+    if (!funcEnd || (funcEnd - funcStart) >= 128) {
+        return false;
+    }
+    
+    strncpy(funcInfo->functionName, funcStart, funcEnd - funcStart);
+    funcInfo->functionName[funcEnd - funcStart] = '\0';
+    
+    // Extract description from comment (first line after "* ")
+    if (comment && strlen(comment) > 0) {
+        const char *descStart = strstr(comment, "* ");
+        if (descStart) {
+            descStart += 2; // Skip "* "
+            const char *descEnd = strchr(descStart, '\n');
+            if (descEnd) {
+                size_t descLen = descEnd - descStart;
+                if (descLen >= sizeof(funcInfo->description)) {
+                    descLen = sizeof(funcInfo->description) - 1;
+                }
+                strncpy(funcInfo->description, descStart, descLen);
+                funcInfo->description[descLen] = '\0';
+                
+                // Remove trailing dot if present
+                descLen = strlen(funcInfo->description);
+                if (descLen > 0 && funcInfo->description[descLen - 1] == '.') {
+                    funcInfo->description[descLen - 1] = '\0';
+                }
+            }
+        }
+    }
+    
+    // If no description, use empty string
+    if (funcInfo->description[0] == '\0') {
+        strcpy(funcInfo->description, "No description available");
+    }
+    
+    return true;
+}
+
+// Parse a header file and extract all API functions
+static int parseHeaderFile(const char *filePath, ApiModuleInfo *module)
+{
+    FILE *f = fopen(filePath, "r");
+    if (!f) {
+        return -1;
+    }
+    
+    char line[512];
+    char commentBlock[2048] = "";
+    bool inComment = false;
+    
+    module->functionCount = 0;
+    module->functionCapacity = 50;
+    module->functions = (ApiFunctionInfo*)malloc(sizeof(ApiFunctionInfo) * module->functionCapacity);
+    
+    while (fgets(line, sizeof(line), f)) {
+        // Track multi-line comments
+        if (strstr(line, "/**")) {
+            inComment = true;
+            commentBlock[0] = '\0';
+        }
+        
+        if (inComment) {
+            strncat(commentBlock, line, sizeof(commentBlock) - strlen(commentBlock) - 1);
+            if (strstr(line, "*/")) {
+                inComment = false;
+            }
+            continue;
+        }
+        
+        // Look for function declarations
+        if ((strncmp(line, "int32_t ", 8) == 0 || strncmp(line, "bool ", 5) == 0) &&
+            strstr(line, "uCx") != NULL) {
+            
+            ApiFunctionInfo funcInfo;
+            memset(&funcInfo, 0, sizeof(funcInfo));
+            
+            if (parseApiFunction(line, commentBlock, &funcInfo)) {
+                // Resize array if needed
+                if (module->functionCount >= module->functionCapacity) {
+                    module->functionCapacity *= 2;
+                    module->functions = (ApiFunctionInfo*)realloc(module->functions, 
+                                                                  sizeof(ApiFunctionInfo) * module->functionCapacity);
+                }
+                
+                module->functions[module->functionCount++] = funcInfo;
+            }
+            
+            commentBlock[0] = '\0';
+        }
+    }
+    
+    fclose(f);
+    return module->functionCount;
+}
+
+// Get friendly name for API module
+static void getModuleFriendlyName(const char *headerFile, char *friendlyName, size_t nameSize)
+{
+    if (strstr(headerFile, "general")) {
+        snprintf(friendlyName, nameSize, "GENERAL API (u_cx_general.h)");
+    } else if (strstr(headerFile, "system")) {
+        snprintf(friendlyName, nameSize, "SYSTEM API (u_cx_system.h)");
+    } else if (strstr(headerFile, "bluetooth")) {
+        snprintf(friendlyName, nameSize, "BLUETOOTH API (u_cx_bluetooth.h)");
+    } else if (strstr(headerFile, "wifi")) {
+        snprintf(friendlyName, nameSize, "WI-FI API (u_cx_wifi.h)");
+    } else if (strstr(headerFile, "socket")) {
+        snprintf(friendlyName, nameSize, "SOCKET API (u_cx_socket.h)");
+    } else if (strstr(headerFile, "http")) {
+        snprintf(friendlyName, nameSize, "HTTP API (u_cx_http.h)");
+    } else if (strstr(headerFile, "mqtt")) {
+        snprintf(friendlyName, nameSize, "MQTT API (u_cx_mqtt.h)");
+    } else if (strstr(headerFile, "network_time")) {
+        snprintf(friendlyName, nameSize, "NETWORK TIME API (u_cx_network_time.h)");
+    } else if (strstr(headerFile, "security")) {
+        snprintf(friendlyName, nameSize, "SECURITY API (u_cx_security.h)");
+    } else if (strstr(headerFile, "power")) {
+        snprintf(friendlyName, nameSize, "POWER API (u_cx_power.h)");
+    } else if (strstr(headerFile, "gatt_client")) {
+        snprintf(friendlyName, nameSize, "GATT CLIENT API (u_cx_gatt_client.h)");
+    } else if (strstr(headerFile, "gatt_server")) {
+        snprintf(friendlyName, nameSize, "GATT SERVER API (u_cx_gatt_server.h)");
+    } else if (strstr(headerFile, "sps")) {
+        snprintf(friendlyName, nameSize, "SPS API (u_cx_sps.h)");
+    } else if (strstr(headerFile, "diagnostics")) {
+        snprintf(friendlyName, nameSize, "DIAGNOSTICS API (u_cx_diagnostics.h)");
+    } else {
+        // Generic name
+        snprintf(friendlyName, nameSize, "API (%s)", headerFile);
+    }
+}
 
 static void listAllApiCommands(void)
 {
     printf("\n=============== UCX API Command Reference ===============\n\n");
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "GENERAL API (u_cx_general.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxGeneralGetManufacturerIdentificationBegin()  - Get manufacturer ID\n");
-    printf("  uCxGeneralGetDeviceModelIdentificationBegin()   - Get device model\n");
-    printf("  uCxGeneralGetSoftwareVersionBegin()             - Get software version\n");
-    printf("  uCxGeneralGetIdentInfoBegin()                   - Get identification info\n");
-    printf("  uCxGeneralGetSerialNumberBegin()                - Get device serial number\n");
-    printf("\n");
+    // Try to find ucx_api/generated directory
+    char apiPath[MAX_PATH];
+    char exeDir[MAX_PATH];
+    getExecutableDirectory(exeDir, sizeof(exeDir));
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "SYSTEM API (u_cx_system.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxSystemStoreConfiguration()                   - Store current config to flash\n");
-    printf("  uCxSystemDefaultSettings()                      - Reset to factory defaults\n");
-    printf("  uCxSystemReboot()                               - Reboot the module\n");
-    printf("  uCxSystemGetLocalAddressBegin()                 - Get local MAC addresses\n");
-    printf("\n");
+    // App runs from build\release folder, need to go up 2 levels to workspace root
+    // build\release -> build -> workspace_root
+    snprintf(apiPath, sizeof(apiPath), "%s\\..\\..\\ucx_api\\generated", exeDir);
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "BLUETOOTH API (u_cx_bluetooth.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxBluetoothSetMode()                           - Set BT mode (off/classic/LE)\n");
-    printf("  uCxBluetoothGetMode()                           - Get current BT mode\n");
-    printf("  uCxBluetoothListConnectionsBegin()              - List active BT connections\n");
-    printf("  uCxBluetoothDiscoverBegin()                     - Start device discovery\n");
-    printf("  uCxBluetoothDiscoverGetNext()                   - Get next discovered device\n");
-    printf("  uCxBluetoothConnect()                           - Connect to remote device\n");
-    printf("  uCxBluetoothDisconnect()                        - Disconnect from device\n");
-    printf("  uCxBluetoothGetBondingStatusBegin()             - Get bonded devices\n");
-    printf("  uCxBluetoothSetPin()                            - Set PIN code\n");
-    printf("\n");
+    // Check if directory exists
+    DWORD attribs = GetFileAttributesA(apiPath);
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "WI-FI API (u_cx_wifi.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxWifiStationSetConnectionParamsBegin()        - Set Wi-Fi connection params\n");
-    printf("  uCxWifiStationConnectBegin()                    - Connect to Wi-Fi network\n");
-    printf("  uCxWifiStationDisconnectBegin()                 - Disconnect from Wi-Fi\n");
-    printf("  uCxWifiStationStatusBegin()                     - Get Wi-Fi connection status\n");
-    printf("  uCxWifiStationScanDefaultBegin()                - Scan for Wi-Fi networks\n");
-    printf("  uCxWifiStationScanDefaultGetNext()              - Get next scan result\n");
-    printf("  uCxWifiApSetConnectionParamsBegin()             - Set AP mode params\n");
-    printf("  uCxWifiApStartBegin()                           - Start AP mode\n");
-    printf("  uCxWifiApStopBegin()                            - Stop AP mode\n");
-    printf("  uCxWifiApGetStationListBegin()                  - List connected stations\n");
-    printf("\n");
+    // If not found, try one level up (in case running from build folder directly)
+    if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
+        snprintf(apiPath, sizeof(apiPath), "%s\\..\\ucx_api\\generated", exeDir);
+        attribs = GetFileAttributesA(apiPath);
+    }
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "SOCKET API (u_cx_socket.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxSocketCreate()                               - Create TCP/UDP socket\n");
-    printf("  uCxSocketConnect()                              - Connect socket to remote\n");
-    printf("  uCxSocketListen()                               - Listen for connections\n");
-    printf("  uCxSocketAccept()                               - Accept incoming connection\n");
-    printf("  uCxSocketClose()                                - Close socket\n");
-    printf("  uCxSocketWrite()                                - Write data to socket\n");
-    printf("  uCxSocketRead()                                 - Read data from socket\n");
-    printf("\n");
+    // If still not found, try current directory
+    if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
+        strcpy(apiPath, "ucx_api\\generated");
+        attribs = GetFileAttributesA(apiPath);
+    }
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "HTTP API (u_cx_http.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxHttpSetConnectionParams()                    - Set HTTP server and port\n");
-    printf("  uCxHttpSetTLS()                                 - Configure TLS for HTTPS\n");
-    printf("  uCxHttpSetRequestPath()                         - Set request path/URL\n");
-    printf("  uCxHttpAddHeaderField()                         - Add custom HTTP header\n");
-    printf("  uCxHttpGetRequest()                             - Send HTTP GET request\n");
-    printf("  uCxHttpPostRequest()                            - Send HTTP POST request\n");
-    printf("  uCxHttpPutRequest()                             - Send HTTP PUT request\n");
-    printf("  uCxHttpDeleteRequest()                          - Send HTTP DELETE request\n");
-    printf("  uCxHttpGetBody()                                - Read HTTP response body\n");
-    printf("  uCxHttpDisconnect()                             - Close HTTP session\n");
-    printf("\n");
+    if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
+        printf("ERROR: Could not find ucx_api/generated directory\n");
+        printf("Tried paths:\n");
+        printf("  %s\\..\\..\\ucx_api\\generated\n", exeDir);
+        printf("  %s\\..\\ucx_api\\generated\n", exeDir);
+        printf("  ucx_api\\generated\n");
+        printf("\nPlease enter the full path to ucx_api/generated directory\n");
+        printf("(or press Enter to cancel): ");
+        fflush(stdout);
+        
+        char customPath[MAX_PATH];
+        if (!fgets(customPath, sizeof(customPath), stdin)) {
+            printf("\nCancelled.\n");
+            return;
+        }
+        
+        // Remove newline
+        customPath[strcspn(customPath, "\r\n")] = '\0';
+        
+        if (strlen(customPath) == 0) {
+            printf("Cancelled.\n");
+            return;
+        }
+        
+        strncpy(apiPath, customPath, sizeof(apiPath) - 1);
+        apiPath[sizeof(apiPath) - 1] = '\0';
+        
+        // Verify it exists
+        attribs = GetFileAttributesA(apiPath);
+        if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
+            printf("ERROR: Directory not found: %s\n", apiPath);
+            return;
+        }
+    }
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "MQTT API (u_cx_mqtt.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxMqttConnectBegin()                           - Connect to MQTT broker\n");
-    printf("  uCxMqttDisconnect()                             - Disconnect from broker\n");
-    printf("  uCxMqttPublishBegin()                           - Publish message to topic\n");
-    printf("  uCxMqttSubscribeBegin()                         - Subscribe to topic\n");
-    printf("  uCxMqttUnsubscribeBegin()                       - Unsubscribe from topic\n");
-    printf("\n");
+    printf("Scanning API headers in: %s\n\n", apiPath);
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "NETWORK TIME API (u_cx_network_time.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxNetworkTimeSetClientEnabled()                - Enable/disable NTP client\n");
-    printf("  uCxNetworkTimeGetClientEnabled()                - Get NTP client status\n");
-    printf("  uCxNetworkTimeSetNtpServer()                    - Configure NTP server\n");
-    printf("\n");
+    // Define module order for consistent display
+    const char *moduleOrder[] = {
+        "u_cx_general.h",
+        "u_cx_system.h",
+        "u_cx_bluetooth.h",
+        "u_cx_wifi.h",
+        "u_cx_socket.h",
+        "u_cx_http.h",
+        "u_cx_mqtt.h",
+        "u_cx_network_time.h",
+        "u_cx_security.h",
+        "u_cx_power.h",
+        "u_cx_gatt_client.h",
+        "u_cx_gatt_server.h",
+        "u_cx_sps.h",
+        "u_cx_diagnostics.h"
+    };
+    int moduleCount = sizeof(moduleOrder) / sizeof(moduleOrder[0]);
     
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "SECURITY API (u_cx_security.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxSecurityTlsCertificateStoreBegin()           - Store TLS certificate\n");
-    printf("  uCxSecurityTlsCertificateRemove()               - Remove certificate\n");
-    printf("  uCxSecurityTlsCertificateListBegin()            - List stored certificates\n");
-    printf("\n");
-    
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "POWER API (u_cx_power.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxPowerDeepSleep()                             - Enter deep sleep mode\n");
-    printf("  uCxPowerSetPowerSaveLevel()                     - Set power save level\n");
-    printf("  uCxPowerGetPowerSaveLevel()                     - Get power save level\n");
-    printf("  uCxPowerSetPowerSaveTimeout()                   - Set power save timeout\n");
-    printf("\n");
-    
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "GATT CLIENT API (u_cx_gatt_client.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxGattClientDiscoverAllPrimaryServicesBegin()  - Discover GATT services\n");
-    printf("  uCxGattClientDiscoverCharacteristicsBegin()     - Discover characteristics\n");
-    printf("  uCxGattClientWriteCharacteristicBegin()         - Write to characteristic\n");
-    printf("  uCxGattClientReadCharacteristicBegin()          - Read from characteristic\n");
-    printf("  uCxGattClientSubscribeBegin()                   - Subscribe to notifications\n");
-    printf("\n");
-    
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "GATT SERVER API (u_cx_gatt_server.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxGattServerAddServiceBegin()                  - Add GATT service\n");
-    printf("  uCxGattServerAddCharacteristicBegin()           - Add characteristic\n");
-    printf("  uCxGattServerSetCharacteristicValueBegin()      - Set characteristic value\n");
-    printf("\n");
-    
-    printf("\n");
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║  %-56s  ║\n", "SPS API (u_cx_sps.h)");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-    printf("\n");
-    printf("  uCxSpsConnect()                                 - Connect SPS channel\n");
-    printf("  uCxSpsDisconnect()                              - Disconnect SPS channel\n");
-    printf("  uCxSpsWrite()                                   - Write SPS data\n");
-    printf("  uCxSpsRead()                                    - Read SPS data\n");
-    printf("\n");
+    // Process each module
+    for (int i = 0; i < moduleCount; i++) {
+        ApiModuleInfo module;
+        memset(&module, 0, sizeof(module));
+        
+        strncpy(module.headerFile, moduleOrder[i], sizeof(module.headerFile) - 1);
+        
+        // Build full path
+        char fullPath[MAX_PATH];
+        snprintf(fullPath, sizeof(fullPath), "%s\\%s", apiPath, moduleOrder[i]);
+        
+        // Check if file exists
+        if (GetFileAttributesA(fullPath) == INVALID_FILE_ATTRIBUTES) {
+            continue;  // Skip if file doesn't exist
+        }
+        
+        // Parse the header file
+        if (parseHeaderFile(fullPath, &module) > 0) {
+            // Get friendly name
+            char friendlyName[128];
+            getModuleFriendlyName(module.headerFile, friendlyName, sizeof(friendlyName));
+            
+            // Print module header
+            printf("\n");
+            printf("╔════════════════════════════════════════════════════════════╗\n");
+            printf("║  %-56s  ║\n", friendlyName);
+            printf("╚════════════════════════════════════════════════════════════╝\n");
+            printf("\n");
+            
+            // Print functions
+            for (int j = 0; j < module.functionCount; j++) {
+                ApiFunctionInfo *func = &module.functions[j];
+                printWrappedDescription(func->functionName, func->description);
+            }
+            printf("\n");
+            
+            // Free function array
+            free(module.functions);
+        }
+    }
     
     printf("\n");
 }
@@ -20354,7 +20681,7 @@ static void executeFactoryReset(void)
         
         // Wait for +STARTUP URC with timeout
         for (int i = 0; i < 100; i++) {  // 10 seconds total (100 * 100ms)
-            Sleep(100);
+            U_CX_PORT_SLEEP_MS(100);
             printf(".");
             fflush(stdout);
             
@@ -21500,7 +21827,7 @@ static void bluetoothConnect(void)
         printf("Wait for +UEBTC URC to confirm connection...\n");
         
         // Give URC events time to arrive and display before prompting user
-        Sleep(500);
+        U_CX_PORT_SLEEP_MS(500);
         
         // Offer to save as profile if it's not already saved
         if (deviceName[0] != '\0') {
@@ -22465,7 +22792,7 @@ static bool connectToWifiProfile(int profileIndex, bool quickConnect, bool verbo
     
     bool connected = false;
     for (int i = 0; i < 40; i++) {
-        Sleep(500);
+        U_CX_PORT_SLEEP_MS(500);
         if (verbose) {
             printf(".");
             fflush(stdout);
@@ -22557,7 +22884,7 @@ static void wifiConnect(void)
             
             if (uCxWifiStationDisconnect(&gUcxHandle) == 0) {
                 printf("Disconnect command sent successfully.\n");
-                Sleep(1000);  // Give module time to disconnect
+                U_CX_PORT_SLEEP_MS(1000);  // Give module time to disconnect
             } else {
                 printf("Warning: Disconnect command failed, attempting to connect anyway...\n");
             }

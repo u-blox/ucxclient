@@ -13,7 +13,7 @@ IDI_ICON1               ICON                    "../images/ShortRange.ico"
 
 #define IDR_FTD2XX_DLL          101
 
-IDR_FTD2XX_DLL          RCDATA                  "ftdi/ftd2xx64.dll"
+IDR_FTD2XX_DLL          RCDATA                  "third-party/ftdi/ftd2xx64.dll"
 
 /////////////////////////////////////////////////////////////////////////////
 //

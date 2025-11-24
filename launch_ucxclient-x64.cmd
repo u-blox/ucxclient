@@ -230,7 +230,15 @@ if not exist "!BUILD_DIR!\ucxclient-x64.exe" (
 REM Launch the application
 echo.
 echo ===================================
-echo Launching ucxclient-x64.exe...
+if /i "%CONFIG%"=="Debug" (
+    echo Launching ucxclient-x64.exe ^(Debug build^)...
+) else (
+    if exist "!BUILD_DIR!\ucxclient-x64.exe.signed" (
+        echo Launching ucxclient-x64.exe ^(Signed Release build^)...
+    ) else (
+        echo Launching ucxclient-x64.exe ^(Release build^)...
+    )
+)
 echo ===================================
 echo.
 

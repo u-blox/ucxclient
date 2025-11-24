@@ -18,26 +18,27 @@
  * @brief Windows OS port implementation (mutex, time, logging)
  */
 
-#ifdef _WIN32
-
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <string.h>
+#include <stdbool.h>
 
 #include "u_cx_log.h"
+#include "u_cx_at_client.h"
 #include "u_port.h"
-#include "os/u_port_windows.h"
 
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
 
+typedef struct {
+    uCxAtClient_t *pClient;
+    HANDLE rxThread;
+    volatile bool terminateRxTask;
+} uPortRxContext_t;
+
 static int64_t gBootTime = 0;
-static uPortLogCallback_t gLogCallback = NULL;
-static void *gLogUserData = NULL;
+static uPortRxContext_t gRxContext;
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTION DECLARATIONS
@@ -53,16 +54,33 @@ static int64_t getTickTimeMs(void)
 {
     LARGE_INTEGER frequency;
     LARGE_INTEGER counter;
-    
+
     if (!QueryPerformanceFrequency(&frequency)) {
         return 0;
     }
-    
+
     if (!QueryPerformanceCounter(&counter)) {
         return 0;
     }
-    
+
     return (counter.QuadPart * 1000LL) / frequency.QuadPart;
+}
+
+static DWORD WINAPI rxThread(LPVOID lpParam)
+{
+    uPortRxContext_t *pCtx = (uPortRxContext_t *)lpParam;
+
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance,
+                    "RX thread started");
+
+    while (!pCtx->terminateRxTask) {
+        uCxAtClientHandleRx(pCtx->pClient);
+        // Sleep for polling interval (10ms)
+        Sleep(10);
+    }
+
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated");
+    return 0;
 }
 
 /* ----------------------------------------------------------------
@@ -74,13 +92,8 @@ int32_t uPortGetTickTimeMs(void)
     if (gBootTime == 0) {
         gBootTime = getTickTimeMs();
     }
-    
-    return (int32_t)(getTickTimeMs() - gBootTime);
-}
 
-void uPortDelayMs(int32_t delayMs)
-{
-    Sleep((DWORD)delayMs);
+    return (int32_t)(getTickTimeMs() - gBootTime);
 }
 
 /* ----------------------------------------------------------------
@@ -91,67 +104,15 @@ int32_t uPortMutexTryLock(HANDLE handle, int32_t timeoutMs)
 {
     DWORD dwTimeout = (timeoutMs < 0) ? INFINITE : (DWORD)timeoutMs;
     DWORD dwResult;
-    
+
     dwResult = WaitForSingleObject(handle, dwTimeout);
-    
+
     if (dwResult == WAIT_OBJECT_0) {
         return 0;
     } else if (dwResult == WAIT_TIMEOUT) {
         return -2;  // Timeout
     } else {
         return -1;  // Error
-    }
-}
-
-void uPortMutexUnlock(HANDLE handle)
-{
-    ReleaseMutex(handle);
-}
-
-int32_t uPortMutexCreate(HANDLE *pHandle)
-{
-    HANDLE hMutex;
-    
-    hMutex = CreateMutex(NULL, FALSE, NULL);
-    if (hMutex == NULL) {
-        return -1;
-    }
-    
-    *pHandle = hMutex;
-    return 0;
-}
-
-void uPortMutexDelete(HANDLE handle)
-{
-    if (handle != NULL) {
-        CloseHandle(handle);
-    }
-}
-
-/* ----------------------------------------------------------------
- * PUBLIC FUNCTIONS - LOGGING API
- * -------------------------------------------------------------- */
-
-void uPortRegisterLogCallback(uPortLogCallback_t callback, void *pUserData)
-{
-    gLogCallback = callback;
-    gLogUserData = pUserData;
-}
-
-void uPortLogPrintf(const char *pFormat, ...)
-{
-    char buffer[512];
-    va_list args;
-    
-    va_start(args, pFormat);
-    vsnprintf(buffer, sizeof(buffer), pFormat, args);
-    va_end(args);
-    
-    if (gLogCallback != NULL) {
-        gLogCallback(buffer, gLogUserData);
-    } else {
-        // Default: print to console
-        printf("%s", buffer);
     }
 }
 
@@ -172,18 +133,39 @@ void uPortDeinit(void)
     // Nothing to clean up for Windows minimal port
 }
 
+/* ----------------------------------------------------------------
+ * PUBLIC FUNCTIONS - BACKGROUND RX TASK
+ * -------------------------------------------------------------- */
+
 void uPortBgRxTaskCreate(uCxAtClient_t *pClient)
 {
-    // Forward declaration - implemented in u_port_uart_windows.c
-    extern void uPortUartStartBgRxTask(uCxAtClient_t *pClient);
-    uPortUartStartBgRxTask(pClient);
+    memset(&gRxContext, 0, sizeof(gRxContext));
+    gRxContext.pClient = pClient;
+    gRxContext.terminateRxTask = false;
+
+    // Create RX thread
+    gRxContext.rxThread = CreateThread(NULL, 0, rxThread, &gRxContext, 0, NULL);
+    if (gRxContext.rxThread == NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to create RX thread");
+        gRxContext.pClient = NULL;
+        return;
+    }
+
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Background RX thread started");
 }
 
 void uPortBgRxTaskDestroy(uCxAtClient_t *pClient)
 {
-    // Forward declaration - implemented in u_port_uart_windows.c
-    extern void uPortUartStopBgRxTask(uCxAtClient_t *pClient);
-    uPortUartStopBgRxTask(pClient);
-}
+    (void)pClient;
 
-#endif /* _WIN32 */
+    if (gRxContext.pClient == NULL || gRxContext.rxThread == NULL) {
+        return;
+    }
+
+    gRxContext.terminateRxTask = true;
+    WaitForSingleObject(gRxContext.rxThread, 5000);
+    CloseHandle(gRxContext.rxThread);
+    gRxContext.rxThread = NULL;
+    gRxContext.pClient = NULL;
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Background RX thread stopped");
+}
