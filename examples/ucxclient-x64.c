@@ -2080,33 +2080,64 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     }
     
     // Find ZIP assets in the release (should be firmware files)
+    // Also extract SHA256 from asset metadata (GitHub API provides it natively)
     char assetUrl[512] = {0};
     char assetName[128] = {0};
+    char assetSHA256[65] = {0};  // SHA256 from GitHub API
     bool foundAsset = false;
     
-    char *assetPtr = releaseData;
-    while ((assetPtr = strstr(assetPtr, "\"browser_download_url\":\"")) != NULL) {
-        assetPtr += 24; // skip "browser_download_url":"
+    // Parse assets array looking for .zip file
+    // GitHub API format: "assets": [{"name": "...", "browser_download_url": "...", "sha256": "..."}]
+    char *assetsStart = strstr(releaseData, "\"assets\":");
+    if (assetsStart) {
+        char *assetPtr = assetsStart;
         
-        char url[512];
-        int i = 0;
-        while (*assetPtr != '"' && i < 511) {
-            url[i++] = *assetPtr++;
-        }
-        url[i] = '\0';
-        
-        // Check if URL ends with .zip (firmware files are typically in ZIP format)
-        if (strstr(url, ".zip")) {
-            strncpy(assetUrl, url, sizeof(assetUrl) - 1);
+        // Look through each asset in the array
+        while ((assetPtr = strstr(assetPtr, "\"browser_download_url\":\"")) != NULL) {
+            assetPtr += 24; // skip "browser_download_url":"
             
-            // Extract filename
-            char *lastSlash = strrchr(url, '/');
-            if (lastSlash) {
-                strncpy(assetName, lastSlash + 1, sizeof(assetName) - 1);
+            char url[512];
+            int i = 0;
+            while (*assetPtr != '"' && i < 511) {
+                url[i++] = *assetPtr++;
             }
+            url[i] = '\0';
             
-            foundAsset = true;
-            break;
+            // Check if URL ends with .zip (firmware files are typically in ZIP format)
+            if (strstr(url, ".zip")) {
+                strncpy(assetUrl, url, sizeof(assetUrl) - 1);
+                
+                // Extract filename
+                char *lastSlash = strrchr(url, '/');
+                if (lastSlash) {
+                    strncpy(assetName, lastSlash + 1, sizeof(assetName) - 1);
+                }
+                
+                // Now look for SHA256 field in the same asset object
+                // The sha256 field should appear after browser_download_url in the same object
+                char *sha256Field = strstr(assetPtr, "\"sha256\":\"");
+                if (sha256Field) {
+                    // Make sure we're still in the same asset object (not past the closing })
+                    char *objectEnd = strstr(assetPtr, "}");
+                    if (!objectEnd || sha256Field < objectEnd) {
+                        sha256Field += 10; // skip "sha256":"
+                        
+                        // Extract 64 hex characters
+                        i = 0;
+                        while (i < 64 && *sha256Field != '"' && isxdigit((unsigned char)*sha256Field)) {
+                            assetSHA256[i++] = (char)tolower((unsigned char)*sha256Field++);
+                        }
+                        assetSHA256[i] = '\0';
+                        
+                        if (i == 64) {
+                            printf("Found SHA256 in asset metadata: %s\n", assetSHA256);
+                        }
+                    }
+                }
+                
+                foundAsset = true;
+                break;
+            }
         }
     }
     
@@ -2190,24 +2221,35 @@ static bool downloadFirmwareFromGitHubInteractive(char *downloadedPath, size_t p
     
     printf("Calculated SHA256: %s\n", calculatedSHA256);
     
-    // Fetch and verify SHA256 from GitHub release page
-    printf("Fetching SHA256 checksum from GitHub...\n");
-    wchar_t sha256Path[512];
-    swprintf(sha256Path, 512, L"/repos/u-blox/u-connectXpress/releases/tags/%S", selectedTag);
-    
-    char *releaseInfo = winHttpGetRequest(L"api.github.com", sha256Path);
-    if (releaseInfo) {
-        if (!verifySHA256FromGitHubRelease(releaseInfo, calculatedSHA256)) {
-            // User chose not to continue with mismatched SHA256
-            free(releaseInfo);
-            free(zipData);
-            printf("Firmware download aborted.\n");
-            return false;
+    // Verify SHA256 using hash from GitHub asset metadata (if available)
+    if (assetSHA256[0] != '\0') {
+        printf("Expected SHA256:   %s (from GitHub API)\n", assetSHA256);
+        
+        if (strcmp(calculatedSHA256, assetSHA256) == 0) {
+            printf("✓ SHA256 verification PASSED\n");
+        } else {
+            printf("✗ SHA256 verification FAILED!\n");
+            printf("  Calculated: %s\n", calculatedSHA256);
+            printf("  Expected:   %s\n", assetSHA256);
+            printf("  Downloaded file may be corrupted or tampered with.\n");
+            
+            printf("\nDo you want to continue anyway? (yes/no): ");
+            char response[10];
+            if (fgets(response, sizeof(response), stdin)) {
+                if (strncmp(response, "yes", 3) != 0) {
+                    free(zipData);
+                    printf("Firmware download aborted.\n");
+                    return false;
+                }
+                printf("WARNING: Proceeding with potentially corrupted firmware\n");
+            } else {
+                free(zipData);
+                return false;
+            }
         }
-        free(releaseInfo);
     } else {
-        printf("WARNING: Could not fetch release info for SHA256 verification\n");
-        printf("Continuing without verification...\n");
+        printf("WARNING: SHA256 not available from GitHub API\n");
+        printf("Firmware verification skipped.\n");
     }
     
     // Save ZIP file (zipPath already declared and set earlier)
@@ -2521,34 +2563,61 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
         return false;
     }
     
-    // Find ZIP assets in the release
+    // Find ZIP assets in the release and extract SHA256 from GitHub API
     char assetUrl[512] = {0};
     char assetName[128] = {0};
+    char assetSHA256[65] = {0};  // SHA256 from GitHub API
     bool foundAsset = false;
     
-    char *assetPtr = releaseData;
-    while ((assetPtr = strstr(assetPtr, "\"browser_download_url\":\"")) != NULL) {
-        assetPtr += 24; // skip "browser_download_url":"
+    // Parse assets array looking for .zip file
+    char *assetsStart = strstr(releaseData, "\"assets\":");
+    if (assetsStart) {
+        char *assetPtr = assetsStart;
         
-        char url[512];
-        int i = 0;
-        while (*assetPtr != '"' && i < 511) {
-            url[i++] = *assetPtr++;
-        }
-        url[i] = '\0';
-        
-        // Check if URL ends with .zip
-        if (strstr(url, ".zip")) {
-            strncpy(assetUrl, url, sizeof(assetUrl) - 1);
+        while ((assetPtr = strstr(assetPtr, "\"browser_download_url\":\"")) != NULL) {
+            assetPtr += 24; // skip "browser_download_url":"
             
-            // Extract filename
-            char *lastSlash = strrchr(url, '/');
-            if (lastSlash) {
-                strncpy(assetName, lastSlash + 1, sizeof(assetName) - 1);
+            char url[512];
+            int i = 0;
+            while (*assetPtr != '"' && i < 511) {
+                url[i++] = *assetPtr++;
             }
+            url[i] = '\0';
             
-            foundAsset = true;
-            break;
+            // Check if URL ends with .zip
+            if (strstr(url, ".zip")) {
+                strncpy(assetUrl, url, sizeof(assetUrl) - 1);
+                
+                // Extract filename
+                char *lastSlash = strrchr(url, '/');
+                if (lastSlash) {
+                    strncpy(assetName, lastSlash + 1, sizeof(assetName) - 1);
+                }
+                
+                // Look for SHA256 field in the same asset object
+                char *sha256Field = strstr(assetPtr, "\"sha256\":\"");
+                if (sha256Field) {
+                    // Make sure we're still in the same asset object
+                    char *objectEnd = strstr(assetPtr, "}");
+                    if (!objectEnd || sha256Field < objectEnd) {
+                        sha256Field += 10; // skip "sha256":"
+                        
+                        // Extract 64 hex characters
+                        i = 0;
+                        while (i < 64 && *sha256Field != '"' && isxdigit((unsigned char)*sha256Field)) {
+                            assetSHA256[i++] = (char)tolower((unsigned char)*sha256Field++);
+                        }
+                        assetSHA256[i] = '\0';
+                        
+                        if (i == 64) {
+                            printf("Found SHA256 in asset metadata: %s\n", assetSHA256);
+                        }
+                    }
+                }
+                
+                foundAsset = true;
+                break;
+            }
         }
     }
     
@@ -2793,65 +2862,36 @@ static bool downloadFirmwareFromGitHubUcxApi(char *downloadedPath, size_t pathSi
     
     printf("Calculated SHA256: %s\n", calculatedSHA256);
     
-    // Fetch and verify SHA256 from GitHub release page using UCX HTTP API
-    printf("Fetching SHA256 checksum from GitHub via module WiFi...\n");
-    
-    bool sha256Verified = false;
-    result = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, "api.github.com", 443);
-    if (result == 0) {
-        result = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
-        if (result == 0) {
-            char apiPath[512];
-            snprintf(apiPath, sizeof(apiPath), "/repos/u-blox/u-connectXpress/releases/tags/%s", selectedTag);
+    // Verify SHA256 using hash from GitHub asset metadata (if available)
+    if (assetSHA256[0] != '\0') {
+        printf("Expected SHA256:   %s (from GitHub API)\n", assetSHA256);
+        
+        if (strcmp(calculatedSHA256, assetSHA256) == 0) {
+            printf("✓ SHA256 verification PASSED\n");
+        } else {
+            printf("✗ SHA256 verification FAILED!\n");
+            printf("  Calculated: %s\n", calculatedSHA256);
+            printf("  Expected:   %s\n", assetSHA256);
+            printf("  Downloaded file may be corrupted or tampered with.\n");
             
-            result = uCxHttpSetRequestPath(&gUcxHandle, sessionId, apiPath);
-            if (result == 0) {
-                result = uCxHttpGetRequest(&gUcxHandle, sessionId);
-                if (result == 0) {
-                    U_CX_PORT_SLEEP_MS(2000);  // Wait for API response
-                    
-                    // Read the response body
-                    uint8_t *releaseBodyData = (uint8_t*)malloc(16384);
-                    if (releaseBodyData) {
-                        int32_t releaseSize = 0;
-                        int32_t apiMoreToRead = 1;
-                        
-                        while (apiMoreToRead && releaseSize < 15360) {
-                            int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, 1024,
-                                                              releaseBodyData + releaseSize, &apiMoreToRead);
-                            if (bytesRead > 0) {
-                                releaseSize += bytesRead;
-                            } else {
-                                break;
-                            }
-                        }
-                        
-                        if (releaseSize > 0) {
-                            releaseBodyData[releaseSize] = '\0';
-                            if (!verifySHA256FromGitHubRelease((char*)releaseBodyData, calculatedSHA256)) {
-                                // User chose not to continue with mismatched SHA256
-                                free(releaseBodyData);
-                                free(firmwareData);
-                                uCxHttpDisconnect(&gUcxHandle, sessionId);
-                                printf("Firmware download aborted.\n");
-                                return false;
-                            }
-                            sha256Verified = true;
-                        }
-                        free(releaseBodyData);
-                    }
+            printf("\nDo you want to continue anyway? (yes/no): ");
+            char response[10];
+            if (fgets(response, sizeof(response), stdin)) {
+                if (strncmp(response, "yes", 3) != 0) {
+                    free(firmwareData);
+                    printf("Firmware download aborted.\n");
+                    return false;
                 }
+                printf("WARNING: Proceeding with potentially corrupted firmware\n");
+            } else {
+                free(firmwareData);
+                return false;
             }
         }
+    } else {
+        printf("WARNING: SHA256 not available from GitHub API\n");
+        printf("Firmware verification skipped.\n");
     }
-    
-    if (!sha256Verified) {
-        printf("WARNING: Could not verify SHA256 via module WiFi\n");
-        printf("Continuing without verification...\n");
-    }
-    
-    // Disconnect from GitHub API
-    uCxHttpDisconnect(&gUcxHandle, sessionId);
     
     // Save ZIP file (use assetName which is already extracted)
     char zipPath[256];
@@ -8021,7 +8061,7 @@ static void gattClientDisExample(void)
 
 static void enableAllUrcs(void)
 {
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "*** enableAllUrcs() called ***");
+    printf("enableAllUrcs()\n");
     
     // Wi-Fi link and network events
     uCxWifiRegisterLinkUp(&gUcxHandle, linkUpUrc);
@@ -16631,8 +16671,7 @@ int main(int argc, char *argv[])
         // No argument provided - show available ports and let user choose
         char recommendedPort[32];
         char recommendedDevice[64];
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No COM port specified. Available ports:");
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+        printf("\nNo COM port specified. Available ports:\n\n");
         listAvailableComPorts(recommendedPort, sizeof(recommendedPort),
                              recommendedDevice, sizeof(recommendedDevice));
         
@@ -16643,9 +16682,8 @@ int main(int argc, char *argv[])
             gLastDeviceModel[0] != '\0' &&
             strcmp(gLastDeviceModel, recommendedDevice) == 0) {
             // Same port and same device - auto-connect without asking
-            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Auto-connecting to saved %s on %s...", 
-                         recommendedDevice, recommendedPort);
-            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+            printf("Auto-connecting to saved %s on %s...\n", 
+                   recommendedDevice, recommendedPort);
         } else {
             // Port changed, device changed, or no saved device - ask user
             char *selectedPort = selectComPortFromList(recommendedPort);
@@ -16654,7 +16692,7 @@ int main(int argc, char *argv[])
                 gComPort[sizeof(gComPort) - 1] = '\0';
                 free(selectedPort);
             } else {
-                U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "No port selected. Using last saved port: %s", gComPort);
+                printf("No port selected. Using last saved port: %s\n", gComPort);
             }
         }
     }
@@ -16663,11 +16701,11 @@ int main(int argc, char *argv[])
     uCxLogEnable();
     
     // Try to auto-connect
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Attempting to connect to %s...", gComPort);
+    printf("\nAttempting to connect to %s...\n", gComPort);
     if (ucxclientConnect(gComPort)) {
         saveSettings();  // Save successful port
     } else {
-        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Failed to connect. You can try again from the menu.");
+        printf("\nFailed to connect. You can try again from the menu.\n");
         
         // Show welcome guide for first-time users
         printWelcomeGuide();
@@ -19369,24 +19407,22 @@ static void moduleStartupInit(void)
     }
     
     // Read device information
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Device Information:");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "-------------------");
+    printf("\nDevice Information:\n");
     
     // AT+GMI - Manufacturer identification
     const char *manufacturer = NULL;
     if (uCxGeneralGetManufacturerIdentificationBegin(&gUcxHandle, &manufacturer) && manufacturer != NULL) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Manufacturer:     %s", manufacturer);
+        printf("  Manufacturer:     %s\n", manufacturer);
         uCxEnd(&gUcxHandle);
     } else {
         uCxEnd(&gUcxHandle);
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Manufacturer:     (not available)");
+        printf("  Manufacturer:     (not available)\n");
     }
     
     // AT+GMM - Model identification
     const char *model = NULL;
     if (uCxGeneralGetDeviceModelIdentificationBegin(&gUcxHandle, &model) && model != NULL) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            %s", model);
+        printf("  Model:            %s\n", model);
         // Save model for menu display and settings
         strncpy(gDeviceModel, model, sizeof(gDeviceModel) - 1);
         gDeviceModel[sizeof(gDeviceModel) - 1] = '\0';
@@ -19395,7 +19431,7 @@ static void moduleStartupInit(void)
         uCxEnd(&gUcxHandle);
     } else {
         uCxEnd(&gUcxHandle);
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Model:            (not available)");
+        printf("  Model:            (not available)\n");
         gDeviceModel[0] = '\0';
         gLastDeviceModel[0] = '\0';
     }
@@ -19403,20 +19439,18 @@ static void moduleStartupInit(void)
     // AT+GMR - Software version
     const char *fwVersion = NULL;
     if (uCxGeneralGetSoftwareVersionBegin(&gUcxHandle, &fwVersion) && fwVersion != NULL) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Firmware Version: %s", fwVersion);
+        printf("  Firmware Version: %s\n", fwVersion);
         // Save firmware version for menu display
         strncpy(gDeviceFirmware, fwVersion, sizeof(gDeviceFirmware) - 1);
         gDeviceFirmware[sizeof(gDeviceFirmware) - 1] = '\0';
         uCxEnd(&gUcxHandle);
     } else {
         uCxEnd(&gUcxHandle);
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Firmware Version: (not available)");
+        printf("  Firmware Version: (not available)\n");
         gDeviceFirmware[0] = '\0';
     }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "-------------------");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
-    
+   
     // Set regulatory domain from saved settings
     if (gRegDomain >= 0 && gRegDomain <= 10) {
         const char *domainNames[] = {
@@ -19563,13 +19597,7 @@ static bool ucxclientConnect(const char *comPort)
     
     // Store UART handle for later use (XMODEM, etc.)
     gUartHandle = gUcxAtClient.uartHandle;
-    
-    printf("COM port opened successfully\n");
-    
-    // Start background RX task (CRITICAL: Must be called after uCxAtClientOpen)
-    uPortBgRxTaskCreate(&gUcxAtClient);
-    
-    
+      
     // Initialize UCX handle
     uCxInit(&gUcxAtClient, &gUcxHandle);
     
@@ -19582,16 +19610,13 @@ static bool ucxclientConnect(const char *comPort)
     // Register all URC handlers
     enableAllUrcs();
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "UCX initialized successfully");
-    
     // Set connection flag BEFORE calling moduleStartupInit and queryDeviceStatus
     gUcxConnected = true;
 
     // Perform common module initialization (echo, extended errors, device info)
     moduleStartupInit();
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connected successfully!");
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
+    printf("\nConnected successfully!\n");
     
     return true;
 }
@@ -20111,7 +20136,7 @@ static bool initFtd2xxLibrary(void)
                     if (WriteFile(hFile, pResourceData, dwResourceSize, &dwBytesWritten, NULL)) {
                         if (dwBytesWritten == dwResourceSize) {
                             dllExtracted = true;
-                            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Extracted embedded FTDI DLL to: %s", dllPath);
+                            printf("Extracted embedded FTDI DLL to: %s\n", dllPath);
                         }
                     }
                     CloseHandle(hFile);
@@ -20124,7 +20149,7 @@ static bool initFtd2xxLibrary(void)
     if (dllExtracted) {
         gFtd2xxModule = LoadLibrary(dllPath);
         if (gFtd2xxModule != NULL) {
-            U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Loaded embedded FTDI DLL successfully");
+            printf("Loaded embedded FTDI DLL successfully\n");
         }
     }
     
