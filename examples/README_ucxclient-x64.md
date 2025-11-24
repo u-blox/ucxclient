@@ -2,15 +2,15 @@
 
 ## Overview
 
-A **comprehensive C application** with text-based menu interface for u-connectXpress devices (NORA-B26, NORA-W36).
+A comprehensive Windows application for testing and configuring u-connectXpress devices (NORA-W36, NORA-B26). Built with native C code for optimal performance, stability, and ease of debugging.
 
-This is a **clean alternative** to the Python GUI, avoiding complexity and reliability issues:
-- ✅ **No Python** - Direct C code
-- ✅ **No DLL complexity** - Standard linking
-- ✅ **No GC crashes** - No garbage collection
-- ✅ **Easy to debug** - Standard C debugging tools
-- ✅ **Simple and maintainable** - Clear, linear code flow
-- ✅ **Auto-build support** - Launch script handles everything
+**Key Features:**
+- ✅ **Native C Implementation** - Direct API calls without wrapper layers
+- ✅ **Professional Interface** - Dual menu modes (detailed/compact)
+- ✅ **Auto-versioning** - Git-based build numbers aligned with UCX API
+- ✅ **Secure Firmware Updates** - SHA256 verification with XMODEM protocol
+- ✅ **Easy Deployment** - Launch script handles building and dependencies
+- ✅ **Production Ready** - Code signing support for distribution
 
 ## Prerequisites for a Clean PC
 
@@ -106,66 +106,49 @@ If you get errors:
 
 ## Features
 
-### ✅ Current Implementation
+### Device Management
+- **Auto-detect** FTDI devices with smart COM port detection
+- **Quick connect** to last used device with saved settings
+- **Auto-reconnect** with Wi-Fi/Bluetooth credentials
+- **Device information** display (ATI9) with detailed module specs
+- **Firmware updates** via XMODEM with SHA256 verification
 
-#### 1. **Device Connection**
-   - Auto-detect and list available COM ports
-   - Smart FTDI device detection (shows NORA-W36, NORA-B26, etc.)
-   - Quick connect to last used device
-   - Auto-reconnect with Wi-Fi credentials
-   - Settings saved next to executable
+### Bluetooth Operations
+- Show Bluetooth status and mode
+- Scan for nearby devices with RSSI
+- Connect/disconnect to devices
+- Bond management (pair/unpair)
+- List active connections
+- SPS (Serial Port Service) - Bluetooth serial communication
+- GATT Client - Read/write characteristics, discover services
+- GATT Server - Host custom services and characteristics
 
-#### 2. **Basic Commands**
-   - Dynamic API command listing (fetch from GitHub)
-   - AT test (basic communication)
-   - ATI9 (device information)
-   - Module reboot/switch off
-   - Toggle UCX logging on/off
+### Wi-Fi Operations (NORA-W36)
+- Show Wi-Fi status with signal strength (RSSI)
+- Scan networks with channel and security info
+- Connect to networks (WPA2/WPA3/Open/Enterprise)
+- Station mode - Connect to access points
+- Access Point mode - Create hotspot
+- Network diagnostics (ping)
+- Credentials saved and auto-reconnect
 
-#### 3. **Bluetooth Operations**
-   - Show Bluetooth status
-   - Scan for nearby devices
-   - Connect to devices
-   - List active connections
-   - SPS (Serial Port Service) support
+### Network Services
+- **Socket Operations** - TCP/UDP client/server, send/receive data
+- **HTTP Client** - GET/POST/PUT/DELETE requests with headers
+- **MQTT Client** - Publish/subscribe messaging with QoS
+- **Security/TLS** - Certificate management and encrypted connections
+- **Time Sync** - NTP time synchronization
+- **Location Services** - Combain Wi-Fi/Cell positioning
 
-#### 4. **Wi-Fi Operations** (NORA-W36)
-   - Show Wi-Fi status with RSSI
-   - Scan Wi-Fi networks
-   - Connect to networks (WPA2/Open)
-   - Disconnect from networks
-   - Credentials saved and reused
-
-#### 5. **Socket Operations** (TCP/UDP)
-   - Create TCP/UDP sockets
-   - Connect to remote servers
-   - Send and receive data
-   - List socket status
-   - Close sockets
-
-#### 6. **SPS Operations** (Bluetooth Serial)
-   - Enable SPS service
-   - Connect SPS over Bluetooth
-   - Send and receive serial data
-
-#### 7. **Firmware Update**
-   - XMODEM protocol support
-   - Progress bar during update
-   - Auto-reconnect after update
-
-#### 8. **User Experience**
-   - Welcome guide for first-time users
-   - Comprehensive help system ([h] key)
-   - Universal quit ([q] key)
-   - Input validation
-   - Auto-save settings
-   - Status indicators (Wi-Fi/BT availability)
-   - Color-coded log messages
-
-### 🚧 In Progress Features
-- **[c] MQTT** - Publish/subscribe messaging
-- **[d] HTTP Client** - REST API operations (GET/POST/PUT/DELETE)
-- **[e] Security/TLS** - Certificate management
+### User Experience
+- **Dual Menu Modes** - Toggle between detailed and compact views
+- **Quick Access Keys** - Single letter shortcuts for common functions
+- **Context-sensitive Help** - Press [?] anytime for help
+- **Universal Quit** - Press [q] from any menu
+- **Smart Input Validation** - Error checking and user guidance
+- **Auto-save Settings** - Preferences persist across sessions
+- **Status Indicators** - Clear display of Wi-Fi/Bluetooth availability
+- **Logging Control** - Toggle AT command logging with timestamps
 
 ## Quick Start
 
@@ -233,11 +216,14 @@ The `build/Release_Signed/` folder contains the code-signed executable for distr
 - **Best practice**: Sign and commit the Release_Signed build for distribution, but keep developing with Debug/Release
 
 ### Settings File
-The `ucxclient-x64_settings.ini` file is automatically created **in the workspace root directory** and stores:
-- Last COM port used
-- Last device model
+The `ucxclient-x64_settings.ini` file is automatically created in the workspace root directory and stores:
+- Last COM port and device model
 - Wi-Fi SSID and password (obfuscated)
-- Last remote server address
+- Bluetooth bonded devices
+- Menu mode preference (detailed/compact)
+- Logging and timestamp settings
+- API keys (Combain location service)
+- Last remote server addresses
 
 ## Usage
 
@@ -256,200 +242,234 @@ ucxclient-x64.exe COM4
 
 ### Main Menu
 ```
---- Main Menu ---
-  Device:      COM31 (NORA-W36 3.2.0-046)
-  Wi-Fi:        Available (use [8] to connect)
-  Bluetooth:   Available (use [7] for operations)
-  UCX Logging: ENABLED
+==============================================================
+ ucxclient-x64 - u-blox u-connectXpress Test Application
+               UCX API v3.2.0  |  App v3.2.0.257
+==============================================================
 
-  [1] Connect to UCX device
-  [2] Disconnect from device
-  [3] List API commands
-  [4] AT test (basic communication)
-  [5] ATI9 (device info)
-  [6] Module reboot/switch off
-  [7] Bluetooth menu
-  [8] Wi-Fi menu
-  [9] Toggle UCX logging (AT traffic)
-  [a] Socket menu (TCP/UDP) (requires Wi-Fi)
-  [b] SPS menu (Bluetooth Serial) (requires BT)
-  [c] MQTT menu (publish/subscribe) [IN PROGRESS]
-  [d] HTTP Client menu (GET/POST/PUT) [IN PROGRESS]
-  [e] Security/TLS menu (certificates) [IN PROGRESS]
-  [f] Firmware update (XMODEM)
-  [h] Help - Getting started guide
-  [q] Quit application
+ Device: COM31 (NORA-W36 3.2.0) | Wi-Fi: Available | BT: Available
+ Logging: ON | Timestamps: OFF
+
+POWER & SYSTEM
+  [r] Reboot  [j] Factory reset  [p] Power Management
+
+BLUETOOTH
+  [b] Scan, connect, pair  [s] Serial Port Service (SPS)
+  [t] GATT Client  [u] GATT Server
+
+WI-FI (NORA-W36)
+  [w] Station - Scan, connect  [o] Access Point - Hotspot
+  [d] Network Diagnostics
+
+EXAMPLES
+  Bluetooth: [e] GATT Server (9)  [g] GATT Client (9)
+  Wi-Fi:     [h] HTTP  [m] MQTT  [y] Time Sync  [k] Location
+
+NETWORK SERVICES
+  [n] Network menu - Socket, HTTP, MQTT, TLS/Security
+
+TOOLS & SETTINGS
+  [l] Toggle logging  [z] Toggle timestamps  [c] Toggle menu mode
+  [v] List UCX API commands  [?] Help & Tips
+
+FIRMWARE
+  [f] Update module firmware (XMODEM)
+
+  [q] Quit
+  [1-94] Direct menu choice
+
+Enter choice:
 ```
 
-### Special Keys
-- **[h]** - Show comprehensive help anytime
-- **[q]** - Quit from any menu
-- **[0]** - Return to previous menu
+### Compact Menu Mode
+Press **[c]** to toggle between detailed and compact menu modes. The compact mode displays multiple items per line, reducing vertical space by 50% for easier viewing on smaller terminals.
 
 ## Architecture
 
-### Clean and Simple
+### Clean Design
 ```
-ucxclient-x64.c (3899 lines)
-├── main()                          // Entry point
-├── connectDevice()                 // Initialize and connect
-├── disconnectDevice()              // Clean shutdown
-├── executeAtTest()                 // AT command
-├── executeAti9()                   // Device info
-├── showBluetoothStatus()           // BT status
-├── showWifiStatus()                // Wi-Fi status
-├── wifiMenu()                      // Wi-Fi operations
-├── bluetoothMenu()                 // Bluetooth operations
-├── socketMenu()                    // TCP/UDP sockets
-├── spsMenu()                       // Bluetooth Serial Port
-├── firmwareUpdate()                // XMODEM update
-└── Menu handling functions
+ucxclient-x64.c (~21,000 lines)
+├── Main application loop
+├── Device management (connect/disconnect)
+├── Menu system (detailed/compact modes)
+├── Power & System (reboot, factory reset, power mgmt)
+├── Bluetooth operations (scan, connect, bond, SPS, GATT)
+├── Wi-Fi operations (scan, connect, AP mode, diagnostics)
+├── Network services (Socket, HTTP, MQTT, TLS)
+├── Example implementations (9 BT + 4 Wi-Fi examples)
+├── Firmware update (XMODEM with SHA256 verification)
+├── Settings management (load/save configuration)
+└── Utility functions (logging, input validation, help)
 ```
 
-### Direct API Calls
-No wrapper layers - just call ucxclient functions directly:
+### Direct API Integration
+Native C code directly calls ucxclient API functions:
 ```c
-// Initialize
+// Initialize device
 uPortAtInit(&gAtClient);
 uPortAtOpen(&gAtClient, "COM31", 115200, false);
 uCxInit(&gAtClient, &gUcxHandle);
 
 // Execute commands
-uCxGeneralGetIdentInfoBegin(&gUcxHandle, &info);
+uCxGeneralGetDeviceInfo(&gUcxHandle, &info);
 uCxBluetoothGetMode(&gUcxHandle, &btMode);
-uCxWifiStationStatusBegin(&gUcxHandle, statusId, &status);
+uCxWifiStationConnect(&gUcxHandle, ssid, passphrase);
+uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
 ```
 
-## Advantages Over Python GUI
-
-| Aspect | Python GUI | C Console App |
-|--------|-----------|---------------|
-| **Complexity** | Python→DLL→C chain | Direct C calls |
-| **Reliability** | GC crashes, threading issues | Stable, predictable |
-| **Debugging** | Multi-layer debugging | Standard C debugging |
-| **Performance** | Python/ctypes overhead | Native performance |
-| **Maintenance** | Complex state management | Simple linear flow |
-| **Portability** | Python dependency | Standard C compiler |
-
-## Next Steps
-
-1. **Test basic functionality**
-   - Connect to device
-   - Execute AT commands
-   - Check status commands
-
-2. **Add missing features**
-   - Bluetooth scan/connect
-   - Wi-Fi scan/connect
-   - Configuration commands
-
-3. **Enhance UX**
-   - Better error messages
-   - Input validation
-   - Progress indicators
-
-4. **Document patterns**
-   - API usage examples
-   - Error handling
-   - Best practices
+### Versioning System
+- **Format**: `3.2.0.BUILD` where BUILD = Git commit count
+- **Alignment**: Major.Minor.Patch follows UCX API version
+- **Auto-increment**: Build number increases with each commit
+- **Display**: Shown in menu header and Windows file properties
+- **Implementation**: CMake generates `version.h` from template at build time
 
 ## Example Session
 
 ```
 ==============================================================
- Windows UCX Client - NORA-W36/NORA-B26 AT Test Application
+ ucxclient-x64 - u-blox u-connectXpress Test Application
+               UCX API v3.2.0  |  App v3.2.0.257
 ==============================================================
+
 Auto-detecting COM ports with FTDI devices...
 Found FTDI device on COM31
 
-Settings loaded from: build\Debug\windows_app_settings.ini
+Settings loaded from: C:\u-blox\ucxclient\ucxclient-x64_settings.ini
 Attempting to auto-connect to COM31...
-Connected successfully!
 
-Device info: NORA-W36 (3.2.0-046)
+Connected to: NORA-W36 (u-connectXpress 3.2.0)
+Firmware: 3.2.0-046
 
-╔════════════════════════════════════════════════════════╗
-║                      Main Menu                         ║
-╚════════════════════════════════════════════════════════╝
-  Device:      COM31 (NORA-W36 3.2.0-046)
-  Wi-Fi:        Available
-  Bluetooth:   Available
-  UCX Logging: ENABLED
+ Device: COM31 (NORA-W36 3.2.0) | Wi-Fi: Available | BT: Available
 
-  [1] Connect to UCX device
-  [2] Disconnect from device
-  [3] List API commands (188 commands)
-  [4] AT test (basic communication)
-  [5] ATI9 (device info)
-  [6] Module reboot/switch off
-  [7] Bluetooth menu
-  [8] Wi-Fi menu
-  [9] Toggle UCX logging (AT traffic)
-  [a] Socket menu (TCP/UDP)
-  [b] SPS menu (Bluetooth Serial)
-  [c] MQTT menu [IN PROGRESS]
-  [d] HTTP Client menu [IN PROGRESS]
-  [e] Security/TLS menu [IN PROGRESS]
-  [f] Firmware update (XMODEM)
-  [h] Help - Getting started guide
-  [q] Quit application
+Enter choice: w
 
-Enter choice: 8
+╔══════════════════════════════════════════════════════╗
+║                  Wi-Fi Station Menu                  ║
+╚══════════════════════════════════════════════════════╝
 
-╔════════════════════════════════════════════════════════╗
-║                      Wi-Fi Menu                         ║
-╚════════════════════════════════════════════════════════╝
-  Current Status: Disconnected
-
-  [1] Wi-Fi scan
-  [2] Wi-Fi connect
-  [3] Wi-Fi disconnect
-  [4] Wi-Fi status
-  [0] Back to main menu
-  [q] Quit application
+  [1] Scan for networks
+  [2] Connect to network
+  [3] Disconnect
+  [4] Show status
+  [0] Return to main menu
 
 Enter choice: 1
 
 Scanning for Wi-Fi networks...
 
-Found 5 Wi-Fi networks:
-  1. MyHomeNetwork     (CH: 6, RSSI: -45 dBm) [WPA2-Personal]
-  2. GuestNetwork      (CH: 11, RSSI: -62 dBm) [WPA2-Personal]
-  3. CoffeeShop        (CH: 1, RSSI: -75 dBm) [Open]
-  4. Neighbor5G        (CH: 36, RSSI: -68 dBm) [WPA3-Personal]
-  5. IoT_Devices       (CH: 6, RSSI: -58 dBm) [WPA2-Personal]
+Found 4 networks:
+  1. HomeNetwork      (CH:  6, RSSI: -42 dBm) [WPA2-Personal]
+  2. Office_5G        (CH: 36, RSSI: -58 dBm) [WPA3-Personal]
+  3. Guest_Network    (CH: 11, RSSI: -65 dBm) [WPA2-Personal]
+  4. CoffeeShop       (CH:  1, RSSI: -72 dBm) [Open]
 
-Press any key to continue...
+Press Enter to continue...
 
 Enter choice: 2
 
-Enter Wi-Fi SSID: MyHomeNetwork
-Enter Wi-Fi password: ********
-Connecting to 'MyHomeNetwork'...
+Enter SSID: HomeNetwork
+Enter password: ********
+
+Connecting to 'HomeNetwork'...
 Wi-Fi connected successfully!
+IP Address: 192.168.1.45
 
-Enter choice: a
+Enter choice: 0
 
-╔════════════════════════════════════════════════════════╗
-║                     Socket Menu                        ║
-╚════════════════════════════════════════════════════════╝
-  Wi-Fi Status: Connected to MyHomeNetwork
+[Back to main menu]
 
-  [1] TCP connect
-  [2] TCP send data
-  [3] TCP close
-  [4] UDP send/receive
-  [0] Back to main menu
+Enter choice: h
+
+╔══════════════════════════════════════════════════════╗
+║                   HTTP Client Menu                   ║
+╚══════════════════════════════════════════════════════╝
+
+  [1] GET request
+  [2] POST request
+  [3] Show response
+  [4] Custom headers
+  [0] Return to main menu
+
+Enter choice: 1
+
+Enter URL: http://httpbin.org/get
+
+Sending GET request to http://httpbin.org/get...
+Response: 200 OK
+Content-Length: 312
+
+Press Enter to continue...
 ```
 
-## Philosophy
+## Advanced Features
 
-**Keep It Simple!**
-- Direct C calls
-- Clear error messages
-- Linear execution flow
-- Easy to understand and maintain
-- No over-engineering
+### Firmware Update with SHA256 Verification
+When updating firmware, the application:
+1. Downloads latest firmware release information from GitHub
+2. Verifies SHA256 checksum matches the release notes
+3. If SHA256 not found, prompts for manual verification
+4. Transfers firmware via XMODEM protocol with progress bar
+5. Auto-reconnects after successful update
 
-This is what we should have built from the start! 🎯
+### Certificate Management
+Upload and manage certificates for TLS/HTTPS connections:
+- Import PEM/DER format certificates
+- Configure TLS version (1.2, 1.3, or negotiate)
+- Client certificate authentication
+- CA certificate validation
+
+### MQTT Client Features
+- Connect to MQTT brokers with authentication
+- Publish messages with QoS 0/1/2
+- Subscribe to topics with wildcard support
+- Receive and display incoming messages
+- TLS/SSL encrypted connections
+
+### Location Services
+Get device location using Combain Wi-Fi/Cell positioning:
+- Automatic Wi-Fi AP scanning
+- Location query to Combain API
+- Latitude/longitude with accuracy radius
+- Optional API key configuration
+
+## Production Deployment
+
+### Building Release Version
+```powershell
+# Build Release configuration
+.\launch_ucxclient-x64.cmd release
+
+# Code sign the executable (requires certificate)
+.\launch_ucxclient-x64.cmd sign release YOUR_CERT_THUMBPRINT
+
+# Distribute the signed executable
+# Location: build\Release_Signed\ucxclient-x64-signed.exe
+```
+
+### Distribution Package
+Include these files when distributing:
+- `ucxclient-x64-signed.exe` (or `ucxclient-x64.exe`)
+- `ftd2xx64.dll` (FTDI driver)
+- Optional: Sample `ucxclient-x64_settings.ini`
+
+### System Requirements
+- Windows 10/11 (64-bit)
+- FTDI USB device (NORA-W36 or NORA-B26)
+- No additional runtime dependencies
+
+## Support
+
+For issues, feature requests, or contributions:
+- GitHub: https://github.com/u-blox/ucxclient
+- Documentation: See `examples/` directory
+- UCX API Reference: Latest version included in firmware releases
+
+---
+
+**Version**: 3.2.0.257 (aligned with UCX API 3.2.0)  
+**Build**: Auto-versioned using Git commit count  
+**Platform**: Windows 10/11 (64-bit)  
+**License**: See LICENSE.txt
 
