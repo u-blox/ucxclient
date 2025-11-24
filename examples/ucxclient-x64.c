@@ -493,6 +493,15 @@ typedef struct {
 static BtScanDevice_t gLastScanDevices[MAX_BT_SCAN_DEVICES];
 static int gLastScanDeviceCount = 0;
 
+// Deferred SPS read (cannot call AT commands from URC handler)
+typedef struct {
+    int32_t connection_handle;
+    int32_t number_bytes;
+    bool pending;
+} SpsDeferredRead_t;
+
+static SpsDeferredRead_t gSpsPendingRead = {0, 0, false};
+
 // Dynamic firmware path storage per product
 typedef struct {
     char productName[64];      // e.g., "NORA-W36", "NORA-B26"
@@ -2522,35 +2531,10 @@ static void spsDataAvailable(struct uCxHandle *puCxHandle, int32_t connection_ha
 {
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS data available: %d bytes on connection %d", number_bytes, connection_handle);
     
-    // Automatically read the data
-    if (number_bytes > 0 && number_bytes <= MAX_DATA_BUFFER) {
-        uint8_t buffer[MAX_DATA_BUFFER + 1];
-        int32_t result = uCxSpsRead(puCxHandle, connection_handle, number_bytes, buffer);
-        
-        if (result > 0) {
-            buffer[result] = '\0';  // Null terminate
-            
-            printf("\n[SPS RX] conn=%d, %d bytes: ", connection_handle, result);
-            
-            // Display data (printable characters as text, others as hex)
-            for (int i = 0; i < result; i++) {
-                uint8_t b = buffer[i];
-                if (b >= 32 && b <= 126) {
-                    putchar(b);
-                } else {
-                    printf("\\x%02X", b);
-                }
-            }
-            printf("\n");
-        } else if (result == 0) {
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "No data available to read");
-        } else {
-            U_CX_LOG_LINE_E(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, "Failed to read SPS data (code %d)", result);
-        }
-    } else if (number_bytes > MAX_DATA_BUFFER) {
-        printf("\n[SPS WARNING] Received %d bytes but buffer limit is %d - data may be lost\n", number_bytes, MAX_DATA_BUFFER);
-        printf("              Increase MAX_DATA_BUFFER or read in chunks\n");
-    }
+    // Store for deferred read (cannot call AT commands from URC handler)
+    gSpsPendingRead.connection_handle = connection_handle;
+    gSpsPendingRead.number_bytes = number_bytes;
+    gSpsPendingRead.pending = true;
     
     signalEvent(URC_FLAG_SPS_DATA);
 }
@@ -16146,6 +16130,45 @@ int main(int argc, char *argv[])
         if (now - gCtsServerLastTick >= 1000) {
             gCtsServerLastTick = now;
             ctsNotifyIfEnabled();
+        }
+        
+        // Handle deferred SPS reads (cannot be done in URC handler)
+        if (gSpsPendingRead.pending && gUcxConnected) {
+            gSpsPendingRead.pending = false;  // Clear flag first
+            
+            int32_t connHandle = gSpsPendingRead.connection_handle;
+            int32_t numBytes = gSpsPendingRead.number_bytes;
+            
+            if (numBytes > 0 && numBytes <= MAX_DATA_BUFFER) {
+                uint8_t buffer[MAX_DATA_BUFFER + 1];
+                int32_t result = uCxSpsRead(&gUcxHandle, connHandle, numBytes, buffer);
+                
+                if (result > 0) {
+                    buffer[result] = '\0';  // Null terminate
+                    
+                    printf("\n[SPS RX] conn=%d, %d bytes: ", connHandle, result);
+                    
+                    // Display data (printable characters as text, others as hex)
+                    for (int i = 0; i < result; i++) {
+                        uint8_t b = buffer[i];
+                        if (b >= 32 && b <= 126) {
+                            putchar(b);
+                        } else {
+                            printf("\\x%02X", b);
+                        }
+                    }
+                    printf("\n\n");
+                    menuNeedsRedraw = true;
+                } else if (result == 0) {
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, &gUcxHandle.pAtClient->instance, "No data available to read");
+                } else {
+                    U_CX_LOG_LINE_E(U_CX_LOG_CH_ERROR, &gUcxHandle.pAtClient->instance, "Failed to read SPS data (code %d)", result);
+                }
+            } else if (numBytes > MAX_DATA_BUFFER) {
+                printf("\n[SPS WARNING] Received %d bytes but buffer limit is %d - data may be lost\n", numBytes, MAX_DATA_BUFFER);
+                printf("              Increase MAX_DATA_BUFFER or read in chunks\n\n");
+                menuNeedsRedraw = true;
+            }
         }
         
         // Handle passkey entry request (from URC)
