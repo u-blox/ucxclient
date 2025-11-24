@@ -17740,7 +17740,7 @@ static void printMenu(void)
             printf("  [4] Send notification\n");
             printf("\n");
             printf("SERVICE-SPECIFIC SERVER EXAMPLES\n");
-            printf("  See main menu option [9] for complete examples:\n");
+            printf("  Press [9] or [e] for complete examples:\n");
             printf("  - Heart Rate Service (Heartbeat)\n");
             printf("  - HID Keyboard + Battery\n");
             printf("  - Environmental Sensing (Temp + Humidity)\n");
@@ -18767,7 +18767,15 @@ static void handleUserInput(void)
             break;
             
         case MENU_GATT_SERVER:
-            // No special character handling needed for basic GATT Server menu
+            // Handle special commands
+            if (strlen(input) > 0) {
+                char firstChar = (char)tolower(input[0]);
+                if (firstChar == 'e' || firstChar == 'g') {
+                    // Navigate to GATT Examples menu
+                    gMenuState = MENU_GATT_EXAMPLES;
+                    break;
+                }
+            }
             
             switch (choice) {
                 case 1:
@@ -18781,6 +18789,10 @@ static void handleUserInput(void)
                     break;
                 case 4:
                     gattServerSendNotification();
+                    break;
+                case 9:
+                    // Navigate to GATT Examples menu (as shown in the menu text)
+                    gMenuState = MENU_GATT_EXAMPLES;
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
