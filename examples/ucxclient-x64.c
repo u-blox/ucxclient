@@ -2520,10 +2520,38 @@ static void socketDataAvailable(struct uCxHandle *puCxHandle, int32_t socket_han
 
 static void spsDataAvailable(struct uCxHandle *puCxHandle, int32_t connection_handle, int32_t number_bytes)
 {
-    (void)puCxHandle;
-    (void)connection_handle;
-    (void)number_bytes;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "SPS data available: %d bytes on connection %d", number_bytes, connection_handle);
+    
+    // Automatically read the data
+    if (number_bytes > 0 && number_bytes <= MAX_DATA_BUFFER) {
+        uint8_t buffer[MAX_DATA_BUFFER + 1];
+        int32_t result = uCxSpsRead(puCxHandle, connection_handle, number_bytes, buffer);
+        
+        if (result > 0) {
+            buffer[result] = '\0';  // Null terminate
+            
+            printf("\n[SPS RX] conn=%d, %d bytes: ", connection_handle, result);
+            
+            // Display data (printable characters as text, others as hex)
+            for (int i = 0; i < result; i++) {
+                uint8_t b = buffer[i];
+                if (b >= 32 && b <= 126) {
+                    putchar(b);
+                } else {
+                    printf("\\x%02X", b);
+                }
+            }
+            printf("\n");
+        } else if (result == 0) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "No data available to read");
+        } else {
+            U_CX_LOG_LINE_E(U_CX_LOG_CH_ERROR, puCxHandle->pAtClient->instance, "Failed to read SPS data (code %d)", result);
+        }
+    } else if (number_bytes > MAX_DATA_BUFFER) {
+        printf("\n[SPS WARNING] Received %d bytes but buffer limit is %d - data may be lost\n", number_bytes, MAX_DATA_BUFFER);
+        printf("              Increase MAX_DATA_BUFFER or read in chunks\n");
+    }
+    
     signalEvent(URC_FLAG_SPS_DATA);
 }
 
