@@ -3443,14 +3443,15 @@ static void spsDisconnect(void)
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Disconnect SPS (Connection %d) ---", gActiveSpsConnectionHandle);
     
-    int32_t result = uCxSpsDisconnect(&gUcxHandle, gActiveSpsConnectionHandle);
+    // SPS disconnects with Bluetooth disconnect
+    int32_t result = uCxBluetoothDisconnect(&gUcxHandle, gActiveSpsConnectionHandle);
     
     if (result == 0) {
-        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "SPS disconnected successfully");
-        printf("SPS disconnected\n");
-        gActiveSpsConnectionHandle = -1;
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Bluetooth/SPS disconnected successfully");
+        printf("Bluetooth connection disconnected (SPS closed)\n");
+        // gActiveSpsConnectionHandle will be cleared by disconnected URC
     } else {
-        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to disconnect SPS (code %d)", result);
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to disconnect Bluetooth (code %d)", result);
     }
 }
 
@@ -17273,7 +17274,7 @@ static void handleUserInput(void)
             } else if (firstChar == 's') {
                 choice = 50;  // SPS (Serial Port Service)
             } else if (firstChar == 'j') {
-                choice = 53;  // GATT Client (raw/generic operations)
+                choice = 55;  // GATT Client (raw/generic operations)
             } else if (firstChar == 'u') {
                 choice = 54;  // GATT Server (raw/generic operations)
             } else if (firstChar == 'g') {
@@ -17543,7 +17544,7 @@ static void handleUserInput(void)
                         gMenuState = MENU_GATT_CLIENT;
                     }
                     break;
-                case 53:  // Also accept 'j' or 'J' - GATT Client (raw/generic operations)
+                case 55:  // Also accept 'j' or 'J' - GATT Client (raw/generic operations)
                     if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
