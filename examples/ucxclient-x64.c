@@ -17805,8 +17805,8 @@ static void printMenu(void)
             }
             printf("\n");
             printf("  [1] Select firmware file and start update\n");
-            printf("  [2] Download firmware from GitHub (WinHTTP)\n");
-            printf("  [3] Download firmware from GitHub (UCX HTTP API)\n");
+            printf("  [2] Download firmware from GitHub\n"); //(WinHTTP)\n");
+            //printf("  [3] Download firmware from GitHub (UCX HTTP API)\n");
             printf("\n");
             printf("TIP: You can also drag-and-drop a .bin or .zip file path directly!\n");
             printf("     (ZIP files will be extracted automatically)\n");
@@ -19172,7 +19172,7 @@ static void handleUserInput(void)
                     
                     printf("Waiting 5 seconds for module reboot...");
                     fflush(stdout);
-                    U_CX_PORT_SLEEP_MS(5000);
+                    U_CX_PORT_SLEEP_MS(3000);
                     printf(" Done\n");
                     
                     printf("Reopening AT client connection...\n");
@@ -19188,7 +19188,7 @@ static void handleUserInput(void)
                     
                     printf("Waiting for +STARTUP URC");
                     fflush(stdout);
-                    bool startupReceived = waitEvent(URC_FLAG_STARTUP, 10);
+                    bool startupReceived = waitEvent(URC_FLAG_STARTUP, 5);
                     printf(startupReceived ? " Received!\n" : " Timeout! Continuing anyway...\n");
                     
                     printf("Disabling AT echo...\n");
