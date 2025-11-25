@@ -613,6 +613,7 @@ typedef enum {
     MENU_SOCKET,
     MENU_SPS,
     MENU_GATT_CLIENT,
+    MENU_GATT_CLIENT_EXAMPLES,
     MENU_GATT_SERVER,
     MENU_HID,
     MENU_MQTT,
@@ -17668,6 +17669,7 @@ static void printMenu(void)
             printf("\n");
             printf("  [k] HID Keyboard + Battery - Full HID device\n");
             printf("\n");
+            printf("  [g] GATT Client menu\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -17683,6 +17685,25 @@ static void printMenu(void)
             printf("  [3] HTTP Client (GET/POST/PUT)\n");
             printf("  [4] Security/TLS (certificates)\n");
             printf("\n");
+            printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_GATT_CLIENT_EXAMPLES:
+            printf("\n");
+            printf("         GATT CLIENT (Connect to remote BLE servers)\n");
+            printf("\n");
+            printf("\n");
+            printf("  [h] Heart Rate Service (HRS) - BPM notifications\n");
+            printf("  [c] Current Time Service (CTS) - read + subscribe to time\n");
+            printf("  [e] Environmental Sensing (ESS) - temp + humidity\n");
+            printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
+            printf("  [u] Nordic UART Service (NUS) - bidirectional text data\n");
+            printf("  [s] u-blox Serial Port Service (SPS) - Like NUS + flow control\n");
+            printf("  [b] Battery Service (BAS) - battery percentage\n");
+            printf("  [d] Device Information Service (DIS) - device details\n");
+            printf("  [a] Automation IO (AIO) - digital + analog I/O\n");
+            printf("\n");
+            printf("  [j] GATT Client generic operations\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -17704,17 +17725,6 @@ static void printMenu(void)
             printf("  [3] Read characteristic\n");
             printf("  [4] Write characteristic\n");
             printf("  [5] Subscribe to notifications\n");
-            printf("\n");
-            printf("SERVICE-SPECIFIC CLIENT EXAMPLES\n");
-            printf("  [h] Heart Rate Service (HRS) - BPM notifications\n");
-            printf("  [c] Current Time Service (CTS) - read + subscribe to time\n");
-            printf("  [e] Environmental Sensing (ESS) - temp + humidity\n");
-            printf("  [l] Location & Navigation (LNS) - GPS coordinates\n");
-            printf("  [u] Nordic UART Service (NUS) - bidirectional text data\n");
-            printf("  [s] u-blox Serial Port Service (SPS) - Like NUS + flow control\n");
-            printf("  [b] Battery Service (BAS) - battery percentage\n");
-            printf("  [d] Device Information Service (DIS) - device details\n");
-            printf("  [a] Automation IO (AIO) - digital + analog I/O\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -17739,15 +17749,7 @@ static void printMenu(void)
             printf("  [3] Set characteristic value\n");
             printf("  [4] Send notification\n");
             printf("\n");
-            printf("SERVICE-SPECIFIC SERVER EXAMPLES\n");
-            printf("  Press [9] or [e] for complete examples:\n");
-            printf("  - Heart Rate Service (Heartbeat)\n");
-            printf("  - HID Keyboard + Battery\n");
-            printf("  - Environmental Sensing (Temp + Humidity)\n");
-            printf("  - Nordic UART Service (NUS)\n");
-            printf("  - u-blox Serial Port Service (SPS)\n");
-            printf("  - Location & Navigation Service (LNS)\n");
-            printf("  - Current Time Service (CTS)\n");
+            printf("  [9] or [e] Service-specific examples (Heart Rate, HID, NUS, etc.)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -18158,16 +18160,14 @@ static void handleUserInput(void)
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
                         bluetoothSyncConnections();  // Sync BT connections first
-                        syncGattConnection();        // Then sync GATT connection handle
-                        gMenuState = MENU_GATT_CLIENT;
+                        gMenuState = MENU_GATT_CLIENT_EXAMPLES;
                     }
                     break;
-                case 55:  // Also accept 'j' or 'J' - GATT Client (raw/generic operations)
+                case 55:  // Also accept 'j' or 'J' - GATT Client Generic Operations
                     if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
-                        bluetoothSyncConnections();  // Sync BT connections first
-                        syncGattConnection();        // Then sync GATT connection handle
+                        syncGattConnection();        // Sync BT connections and GATT handle
                         gMenuState = MENU_GATT_CLIENT;
                     }
                     break;
@@ -18667,8 +18667,12 @@ static void handleUserInput(void)
                             gattServerSetupCtsService();  // Current Time Service (Server)
                             break;
                         }
-                        if (firstChar == 't') {
-                            gattClientReadCurrentTime();  // Read Current Time (Client)
+                        // Navigation to other GATT menus
+                        if (firstChar == 'g') {
+                            // Navigate to GATT Client menu
+                            bluetoothSyncConnections();
+                            syncGattConnection();
+                            gMenuState = MENU_GATT_CLIENT;
                             break;
                         }
                     }
@@ -18700,28 +18704,13 @@ static void handleUserInput(void)
             }
             break;
             
-        case MENU_GATT_CLIENT:
+        case MENU_GATT_CLIENT_EXAMPLES:
             switch (choice) {
-                case 1:
-                    gattClientDiscoverServices();
-                    break;
-                case 2:
-                    gattClientDiscoverCharacteristics();
-                    break;
-                case 3:
-                    gattClientReadCharacteristic();
-                    break;
-                case 4:
-                    gattClientWriteCharacteristic();
-                    break;
-                case 5:
-                    gattClientSubscribeNotifications();
-                    break;
                 case 0:
                     gMenuState = MENU_MAIN;
                     break;
                 default:
-                    // Handle letter commands
+                    // Handle letter commands for examples
                     if (strlen(input) > 0) {
                         char firstChar = (char)tolower(input[0]);
                         if (firstChar == 'h') {
@@ -18760,7 +18749,39 @@ static void handleUserInput(void)
                             gattClientAioExample();
                             break;
                         }
+                        // Navigation to GATT Client generic operations
+                        if (firstChar == 'j') {
+                            syncGattConnection();
+                            gMenuState = MENU_GATT_CLIENT;
+                            break;
+                        }
                     }
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_GATT_CLIENT:
+            switch (choice) {
+                case 1:
+                    gattClientDiscoverServices();
+                    break;
+                case 2:
+                    gattClientDiscoverCharacteristics();
+                    break;
+                case 3:
+                    gattClientReadCharacteristic();
+                    break;
+                case 4:
+                    gattClientWriteCharacteristic();
+                    break;
+                case 5:
+                    gattClientSubscribeNotifications();
+                    break;
+                case 0:
+                    gMenuState = MENU_MAIN;
+                    break;
+                default:
                     printf("Invalid choice!\n");
                     break;
             }
