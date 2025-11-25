@@ -23,17 +23,33 @@ Version is generated at build time by CMake from `examples/version.h.in`.
 - [ ] All changes committed to Git
 
 ### 2. Build and Sign Release
+
+**Important:** Always clean build before release to ensure correct version number:
+
 ```powershell
+# Clean rebuild Release configuration (forces version regeneration)
+.\launch-ucxclient-x64.cmd rebuild
+
 # Build Release configuration and sign with certificate
-.\launch_ucxclient-x64.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+.\launch-ucxclient-x64.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
 
 # This will:
-# - Generate version.h with current Git commit count
-# - Build Release configuration (3.2.0.XXX)
+# - Count Git commits and generate version.h (3.2.0.XXX where XXX = commit count)
+# - Build Release configuration
 # - Sign with u-blox AG GlobalSign EV CodeSigning certificate
 # - Timestamp with DigiCert server (valid until Dec 2027)
 # - Verify signature and certificate chain
 # - Create ucxclient-x64-signed.exe in examples/bin/
+```
+
+**Verify Version Before Release:**
+```powershell
+# Check the version number displayed in CMake output
+# Should show: "Build version: 3.2.0.XXX (Git commit count)"
+
+# Or run the executable to verify
+.\examples\bin\ucxclient-x64-signed.exe
+# Menu header should show: "App v3.2.0.XXX"
 ```
 
 **Note:** The signed executable has ftd2xx64.dll embedded as a resource - no separate DLL needed.
@@ -42,7 +58,7 @@ Version is generated at build time by CMake from `examples/version.h.in`.
 ```bash
 # Tag format: v3.2.0.BUILD
 git tag -a v3.2.0.257 -m "Release ucxclient-x64 v3.2.0.257"
-git push origin cmag_win64_port
+git push origin master
 git push origin v3.2.0.257
 ```
 
@@ -86,10 +102,10 @@ git clone https://github.com/u-blox/ucxclient.git
 cd ucxclient
 
 # Build Debug (local development)
-.\launch_ucxclient-x64.cmd
+.\launch-ucxclient-x64.cmd
 
 # Build Release unsigned (testing)
-.\launch_ucxclient-x64.cmd release
+.\launch-ucxclient-x64.cmd release
 ```
 
 ## Directory Structure

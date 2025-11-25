@@ -350,11 +350,11 @@ REM Just continue to rebuild, prerequisites already checked
 echo Rebuild requested...
 echo.
 
-REM Determine configuration
-set REBUILD_CONFIG=Debug
-if /i "%2"=="release" set REBUILD_CONFIG=Release
-if /i "%2"=="Release" set REBUILD_CONFIG=Release
-if /i "%2"=="-r" set REBUILD_CONFIG=Release
+REM Determine configuration (default to Release)
+set REBUILD_CONFIG=Release
+if /i "%2"=="debug" set REBUILD_CONFIG=Debug
+if /i "%2"=="Debug" set REBUILD_CONFIG=Debug
+if /i "%2"=="-d" set REBUILD_CONFIG=Debug
 
 echo Rebuilding %REBUILD_CONFIG% configuration...
 echo.
