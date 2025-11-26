@@ -440,6 +440,7 @@ static const uint8_t kSpsCreditsCharUuid[16] = {
 // Bluetooth state tracking
 static bool gBluetoothAdvertising = false;         // Advertising/discoverable state
 static char gBluetoothLocalAddress[18] = "";       // Local BT address (XX:XX:XX:XX:XX:XX)
+static char gBluetoothLocalName[64] = "";          // Bluetooth local name
 static char gBluetoothPairedDevice[18] = "";       // Last paired device address
 
 // Wi-Fi status tracking
@@ -1103,6 +1104,7 @@ static void gattServerSendHelloWorld(void);
 static void bluetoothSetAdvertising(void);
 static void bluetoothShowStatus(void);
 static void bluetoothSetPairing(void);
+static void bluetoothUpdateLocalName(void);
 static void bluetoothListBondedDevices(void);
 static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBtBondStatus_t bond_status);
 static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
@@ -10505,6 +10507,64 @@ static void bluetoothSetPairing(void)
     printf("  Device is now ready for pairing\n");
 }
 
+// Update Bluetooth local name
+static void bluetoothUpdateLocalName(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("UPDATE BLUETOOTH LOCAL NAME\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
+    
+    // Show current name
+    if (gBluetoothLocalName[0] != '\0') {
+        printf("Current name: %s\n", gBluetoothLocalName);
+    } else {
+        printf("Current name: (not set)\n");
+    }
+    
+    printf("\nEnter new Bluetooth local name (max 63 characters, or Enter to cancel): ");
+    
+    char newName[64];
+    if (fgets(newName, sizeof(newName), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    // Remove trailing newline
+    newName[strcspn(newName, "\n")] = 0;
+    
+    // Check if empty (cancel)
+    if (strlen(newName) == 0) {
+        printf("Cancelled\n");
+        return;
+    }
+    
+    // Validate length
+    if (strlen(newName) > 63) {
+        printf("ERROR: Name too long (max 63 characters)\n");
+        return;
+    }
+    
+    // Apply the new name
+    printf("\nSetting Bluetooth local name to: %s\n", newName);
+    
+    int32_t result = uCxBluetoothSetLocalName(&gUcxHandle, newName);
+    if (result == 0) {
+        // Update cached name
+        strncpy(gBluetoothLocalName, newName, sizeof(gBluetoothLocalName) - 1);
+        gBluetoothLocalName[sizeof(gBluetoothLocalName) - 1] = '\0';
+        
+        printf("✓ Bluetooth local name updated successfully!\n");
+        printf("  New name: %s\n", gBluetoothLocalName);
+    } else {
+        printf("✗ Failed to update Bluetooth local name (error code: %d)\n", result);
+    }
+}
+
 // List all bonded (paired) devices
 static void bluetoothListBondedDevices(void)
 {
@@ -17179,6 +17239,12 @@ static void printMenu(void)
                 
                 // Bluetooth Status
                 printf("  Bluetooth:   ");
+                
+                // Show local name if available
+                if (gBluetoothLocalName[0] != '\0') {
+                    printf("%s | ", gBluetoothLocalName);
+                }
+                
                 const char* btModeStr = "Disabled";
                 if (gBluetoothMode == 1) btModeStr = "Central";
                 else if (gBluetoothMode == 2) btModeStr = "Peripheral";
@@ -17386,8 +17452,9 @@ static void printMenu(void)
             printf("  [4] Disconnect from device\n");
             printf("  [5] List active connections\n");
             printf("  [6] Enable/Disable advertising (discoverable)\n");
-            printf("  [7] Configure pairing settings\n");
-            printf("  [8] List bonded devices\n");
+            printf("  [7] Update local name\n");
+            printf("  [8] Configure pairing settings\n");
+            printf("  [9] List bonded devices\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -18282,9 +18349,12 @@ static void handleUserInput(void)
                     bluetoothSetAdvertising();
                     break;
                 case 7:
-                    bluetoothSetPairing();
+                    bluetoothUpdateLocalName();
                     break;
                 case 8:
+                    bluetoothSetPairing();
+                    break;
+                case 9:
                     bluetoothListBondedDevices();
                     break;
                 case 0:
@@ -19543,6 +19613,16 @@ static void queryDeviceStatus(void)
     int32_t btModeResult = uCxBluetoothGetMode(&gUcxHandle, &btMode);
     if (btModeResult == 0) {
         gBluetoothMode = (int)btMode;
+        
+        // Query Bluetooth local name
+        const char* localName = NULL;
+        if (uCxBluetoothGetLocalNameBegin(&gUcxHandle, &localName)) {
+            if (localName != NULL) {
+                strncpy(gBluetoothLocalName, localName, sizeof(gBluetoothLocalName) - 1);
+                gBluetoothLocalName[sizeof(gBluetoothLocalName) - 1] = '\0';
+            }
+            uCxEnd(&gUcxHandle);
+        }
         
         // Query legacy advertisement status if BT is enabled
         if (btMode != U_BT_MODE_DISABLED) {
