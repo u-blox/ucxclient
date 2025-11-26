@@ -194,7 +194,7 @@ For systems running RTOS you will also need to port the mutex API below - for ba
 | Define   | Example (Posix) | Description |
 | -------- | --------------- | ----------- |
 | U_CX_MUTEX_HANDLE            | `pthread_mutex_t`                  | Define this to the mutex type of your system. |
-| U_CX_MUTEX_CREATE(mutex)     | `pthread_mutex_init(&mutex, NULL)` | If your system need to call a function before the mutex can be used, then define it here. |
+| U_CX_MUTEX_CREATE(mutex)     | `pthread_mutex_init(&mutex, NULL)` | If your system need to call a function before the mutex can be used, then define it here. <br><br>**Note for examples**: <br>The provided examples use mutexes for event signaling between threads/tasks, which requires the mutex to support being unlocked by a different thread/task than the one that locked it. For such use cases, consider using binary semaphores instead of recursive mutexes, and ensure they are initialized to an available/unlocked state. |
 | U_CX_MUTEX_DELETE(mutex)     | `pthread_mutex_destroy(&mutex)`    | If your system has a function to de-allocate a mutex, then define it here. |
 | U_CX_MUTEX_LOCK(mutex)       | `pthread_mutex_lock(&mutex)`       | Define this to corresponding "lock"/"take" function of your system. No return value is expected (any return value will be ignored). |
 | U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) | `uPortMutexTryLock(&mutex, timeoutMs)`<sup>1</sup> | Define this to a function that tries to lock/take the mutex but with a timeout `timeoutMs` in millisec. Must return 0 if the mutex is successfully taken/locked and can return any negative value on timeout. |
