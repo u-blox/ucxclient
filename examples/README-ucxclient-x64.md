@@ -35,6 +35,7 @@ To build and run this application from a fresh clone, you need:
 2. **CMake 3.15 or later**
    - CMake generates the Visual Studio project files
    - Download: https://cmake.org/download/
+   - Use the Windows x64 Installer
    - ✅ During install, select "Add CMake to system PATH"
 
 3. **Git** (for cloning)
