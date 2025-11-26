@@ -95,7 +95,7 @@ if errorlevel 1 (
         exit /b 1
     )
     REM VS is installed but not in PATH - try to find it
-    for /f "usebackq tokens=*" %%i in (`"!VSWHERE!" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do (
+    for /f "usebackq tokens=*" %%i in (`"!VSWHERE!" -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath -products *`) do (
         set "VSINSTALLDIR=%%i"
     )
     if not defined VSINSTALLDIR (
