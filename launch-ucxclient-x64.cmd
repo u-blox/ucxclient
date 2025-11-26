@@ -232,29 +232,38 @@ if not exist "!EXE_PATH!" (
     exit /b 1
 )
 
-REM Launch the application
-echo.
+REM For Debug configuration, just build and exit (don't launch)
 if /i "%CONFIG%"=="Debug" (
-    echo Launching !EXE_NAME! ^(Debug build^)...
+    echo.
+    echo ===================================
+    echo Debug build complete!
+    echo ===================================
+    echo.
+    echo Debug executable ready: !EXE_PATH!
+    echo.
+    echo To debug in VS Code:
+    echo   1. Open workspace in VS Code
+    echo   2. Set breakpoints in ucxclient-x64.c
+    echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: ucxclient-x64^)
+    echo.
+    echo Or run directly: !EXE_PATH!
+    echo.
+    exit /b 0
+)
+
+REM Launch the application (Release only)
+echo.
+if exist "!BUILD_DIR!\ucxclient-x64.exe.signed" (
+    echo Launching !EXE_NAME! ^(Signed Release build^)...
 ) else (
-    if exist "!BUILD_DIR!\ucxclient-x64.exe.signed" (
-        echo Launching !EXE_NAME! ^(Signed Release build^)...
-    ) else (
-        echo Launching !EXE_NAME! ^(Release build^)...
-    )
+    echo Launching !EXE_NAME! ^(Release build^)...
 )
 echo.
 
 cd "!BUILD_DIR!"
 
-REM Pass arguments correctly based on whether "debug" was first argument
-if /i "%1"=="debug" (
-    REM First arg was "debug", so pass %2 onwards
-    !EXE_NAME! %2 %3 %4 %5 %6 %7 %8 %9
-) else (
-    REM No "debug" arg, so pass %1 onwards
-    !EXE_NAME! %1 %2 %3 %4 %5 %6 %7 %8 %9
-)
+REM Pass arguments to Release build
+!EXE_NAME! %1 %2 %3 %4 %5 %6 %7 %8 %9
 
 REM Store exit code
 set APP_EXIT_CODE=%ERRORLEVEL%
