@@ -3956,13 +3956,59 @@ static void spsConnect(void)
         return;
     }
     
+    // Sync existing Bluetooth connections first
+    bluetoothSyncConnections();
+    
+    if (gBtConnectionCount == 0) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "No active Bluetooth connections");
+        printf("ERROR: No active Bluetooth connections\n");
+        printf("Use Bluetooth menu to connect to a device first\n");
+        return;
+    }
+    
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "");
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "--- Connect SPS ---");
-    printf("Enter Bluetooth connection handle: ");
     
     int connHandle;
-    scanf("%d", &connHandle);
-    getchar(); // consume newline
+    
+    // If only one connection, use it automatically
+    if (gBtConnectionCount == 1) {
+        connHandle = gBtConnections[0].handle;
+        printf("Using Bluetooth connection handle: %d\n", connHandle);
+        printf("  Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+               gBtConnections[0].address.address[0],
+               gBtConnections[0].address.address[1],
+               gBtConnections[0].address.address[2],
+               gBtConnections[0].address.address[3],
+               gBtConnections[0].address.address[4],
+               gBtConnections[0].address.address[5]);
+    } else {
+        // Multiple connections - let user choose
+        printf("Active Bluetooth connections:\n");
+        for (int i = 0; i < gBtConnectionCount; i++) {
+            printf("  [%d] Handle: %d, Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                   i + 1,
+                   gBtConnections[i].handle,
+                   gBtConnections[i].address.address[0],
+                   gBtConnections[i].address.address[1],
+                   gBtConnections[i].address.address[2],
+                   gBtConnections[i].address.address[3],
+                   gBtConnections[i].address.address[4],
+                   gBtConnections[i].address.address[5]);
+        }
+        printf("\nSelect connection (1-%d): ", gBtConnectionCount);
+        
+        int choice;
+        scanf("%d", &choice);
+        getchar(); // consume newline
+        
+        if (choice < 1 || choice > gBtConnectionCount) {
+            printf("ERROR: Invalid selection\n");
+            return;
+        }
+        
+        connHandle = gBtConnections[choice - 1].handle;
+    }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connecting SPS on connection %d...", connHandle);
     
@@ -17074,7 +17120,7 @@ static void printHelp(void)
     printf("  [c] Toggle menu  - Switch between detailed and compact menu modes\n");
     printf("  [i] Device info  - Show model and firmware version\n");
     printf("  [r] Reboot       - Restart the module\n");
-    printf("  [j] Factory reset - Restore module to factory defaults\n");
+    printf("  [x] Factory reset - Restore module to factory defaults\n");
     printf("  [a] AT command test - Test basic communication\n");
     printf("  [t] AT terminal  - Send custom AT commands interactively\n");
     printf("\n");
@@ -17198,13 +17244,12 @@ static void printMenu(void)
             
             printf("\n");
             printf("═════════════════════════════════════════════════════════════════\n");
-            printf("               u-blox UCX Client - Main Menu\n");
-            printf("               UCX API v%s  |  App v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
+            printf("             u-blox ucxclient Windows Demo\n");
+            printf("             ucxclient API v%s  |  v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
             printf("═════════════════════════════════════════════════════════════════\n");
             
             // === STATUS DASHBOARD ===
             if (gUcxConnected) {
-                printf("\n");
                 printf("  CONNECTION:  ✓ ACTIVE\n");
                 if (gDeviceModel[0] != '\0') {
                     printf("  DEVICE:      %s", gDeviceModel);
@@ -17214,7 +17259,6 @@ static void printMenu(void)
                     printf("\n");
                 }
                 printf("  PORT:        %s\n", gComPort);
-                printf("\n");
                 printf("─────────────────────────────────────────────────────────────────\n");
                 
                 // Wi-Fi Status
@@ -17317,10 +17361,10 @@ static void printMenu(void)
                 // === POWER & SYSTEM ===
                 printf("POWER & SYSTEM\n");
                 if (gCompactMenu) {
-                    printf("  [r] Reboot  [j] Factory reset  [p] Power Management\n");
+                    printf("  [r] Reboot  [x] Factory reset  [p] Power Management\n");
                 } else {
                     printf("  [r]     Reboot module\n");
-                    printf("  [j]     Factory reset (restore defaults)\n");
+                    printf("  [x]     Factory reset (restore defaults)\n");
                     printf("  [p]     Power Management - Power save, deep sleep\n");
                 }
                 printf("\n");
@@ -17538,10 +17582,19 @@ static void printMenu(void)
             printf("\n");
             printf("NOTE: Requires active Bluetooth connection\n");
             printf("      Received data is automatically displayed\n");
-            if (gActiveSpsConnectionHandle >= 0) {
-                printf("      Status: Connected to handle %d\n", gActiveSpsConnectionHandle);
+            
+            // Show BT and SPS connection status
+            if (gBtConnectionCount > 0) {
+                printf("      BT Status: %d active connection%s\n", 
+                       gBtConnectionCount, gBtConnectionCount == 1 ? "" : "s");
+                if (gActiveSpsConnectionHandle >= 0) {
+                    printf("      SPS Status: Connected to handle %d\n", gActiveSpsConnectionHandle);
+                } else {
+                    printf("      SPS Status: Not connected (use [2] to connect)\n");
+                }
             } else {
-                printf("      Status: Not connected\n");
+                printf("      BT Status: No active connections\n");
+                printf("      SPS Status: Not available\n");
             }
             printf("\n");
             printf("  [1] Enable SPS service\n");
@@ -18001,7 +18054,7 @@ static void handleUserInput(void)
                 choice = 62;  // Power & System menu
             } else if (firstChar == 'r') {
                 choice = 5;   // Reboot module
-            } else if (firstChar == 'j') {
+            } else if (firstChar == 'x') {
                 choice = 53;  // Factory reset
             } else if (firstChar == 'a') {
                 choice = 3;   // AT command test
@@ -18112,7 +18165,7 @@ static void handleUserInput(void)
                         executeModuleReboot();
                     }
                     break;
-                case 53:  // Factory reset (j)
+                case 53:  // Factory reset (x)
                     if (!gUcxConnected) {
                         printf("ERROR: Not connected to device. Use [1] to connect first.\n");
                     } else {
@@ -19583,6 +19636,9 @@ static void queryDeviceStatus(void)
     gCertificateCount = 0;
     gBluetoothMode = 0;
     gLegacyAdvertising = false;
+    
+    // Sync Bluetooth connections
+    bluetoothSyncConnections();
     
     // Query active sockets using actual API
     uCxSocketListStatusBegin(&gUcxHandle);
@@ -22554,15 +22610,27 @@ static void bluetoothScan(void)
     
     uCxEnd(&gUcxHandle);
     
-    // Sort devices by RSSI (strongest first, i.e., highest/least negative value)
+    // Sort devices: 1) Named devices first, 2) Within each group, sort by RSSI (strongest first)
     for (int i = 0; i < deviceCount - 1; i++) {
         for (int j = i + 1; j < deviceCount; j++) {
-            // Sort by RSSI: higher is better (closer to 0 = stronger signal)
-            if (devices[j].rssi > devices[i].rssi) {
+            bool iHasName = (devices[i].name[0] != '\0');
+            bool jHasName = (devices[j].name[0] != '\0');
+            
+            // Prioritize devices with names
+            if (!iHasName && jHasName) {
+                // j has name, i doesn't - swap
                 BtDevice_t temp = devices[i];
                 devices[i] = devices[j];
                 devices[j] = temp;
+            } else if (iHasName == jHasName) {
+                // Both have names or both don't have names - sort by RSSI
+                if (devices[j].rssi > devices[i].rssi) {
+                    BtDevice_t temp = devices[i];
+                    devices[i] = devices[j];
+                    devices[j] = temp;
+                }
             }
+            // If i has name and j doesn't, keep current order
         }
     }
     
@@ -22571,7 +22639,18 @@ static void bluetoothScan(void)
         printf("No devices found.\n");
     } else {
         printf("Found %d unique device(s):\n\n", deviceCount);
+        
+        bool unnamedSectionPrinted = false;
+        
         for (int i = 0; i < deviceCount; i++) {
+            // Print separator when we reach the first unnamed device
+            if (!unnamedSectionPrinted && devices[i].name[0] == '\0') {
+                printf("─────────────────────────────────────────────────────────────\n");
+                printf("                    Devices without names\n");
+                printf("─────────────────────────────────────────────────────────────\n\n");
+                unnamedSectionPrinted = true;
+            }
+            
             printf("Device %d:\n", i + 1);
             printf("  Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
                    devices[i].addr.address[0], devices[i].addr.address[1],

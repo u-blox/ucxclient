@@ -1,9 +1,9 @@
 @echo off
-REM Launch script for ucxclient-x64
+REM Launch script for windows-demo
 
 setlocal enabledelayedexpansion
 
-echo ucxclient-x64 Launcher
+echo Windows Demo Launcher
 echo.
 
 REM Change to project root directory
@@ -143,21 +143,21 @@ if /i "%1"=="debug" (
     echo.
 )
 
-REM Set build directory to examples/bin (where CMake outputs executables)
-set BUILD_DIR=examples\bin
-set FTDI_DLL=examples\third-party\ftdi\ftd2xx64.dll
+REM Set build directory to windows-demo/bin (where CMake outputs executables)
+set BUILD_DIR=examples\windows-demo\bin
+set FTDI_DLL=examples\windows-demo\third-party\ftdi\ftd2xx64.dll
 
 REM Determine executable name based on configuration
 if /i "!CONFIG!"=="Debug" (
-    set EXE_NAME=ucxclient-x64-debug.exe
+    set EXE_NAME=windows-demo-debug.exe
 ) else (
-    set EXE_NAME=ucxclient-x64.exe
+    set EXE_NAME=windows-demo.exe
 )
 
 REM Check if executable exists and if source files are newer
 set NEED_BUILD=0
 set EXE_PATH=!BUILD_DIR!\!EXE_NAME!
-set SOURCE_FILE=examples\ucxclient-x64.c
+set SOURCE_FILE=examples\windows-demo\windows-demo.c
 
 if not exist "!EXE_PATH!" (
     echo Executable not found. Auto-building !CONFIG!...
@@ -176,7 +176,7 @@ if not exist "!EXE_PATH!" (
     
     REM Simple comparison: if source is newer, rebuild
     if "!SOURCE_FILE!" NEQ "" (
-        forfiles /P "examples" /M "ucxclient-x64.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
+        forfiles /P "examples\windows-demo" /M "windows-demo.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
         if exist "!SOURCE_FILE!" (
             powershell -Command "if ((Get-Item '!SOURCE_FILE!').LastWriteTime -gt (Get-Item '!EXE_PATH!').LastWriteTime) { exit 1 }" >nul 2>&1
             if errorlevel 1 (
@@ -196,7 +196,7 @@ if !NEED_BUILD! EQU 1 (
     REM Configure if needed
     if not exist "build\CMakeCache.txt" (
         echo Configuring CMake...
-        cmake -S examples -B build
+        cmake -S examples\windows-demo -B build
         if errorlevel 1 (
             echo ERROR: CMake configuration failed!
             exit /b 1
@@ -205,7 +205,7 @@ if !NEED_BUILD! EQU 1 (
     
     REM Build
     echo Building !EXE_NAME! in !CONFIG! configuration...
-    cmake --build build --config !CONFIG! --target ucxclient-x64
+    cmake --build build --config !CONFIG! --target windows-demo
     if errorlevel 1 (
         echo ERROR: Build failed!
         exit /b 1
@@ -243,8 +243,8 @@ if /i "%CONFIG%"=="Debug" (
     echo.
     echo To debug in VS Code:
     echo   1. Open workspace in VS Code
-    echo   2. Set breakpoints in ucxclient-x64.c
-    echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: ucxclient-x64^)
+    echo   2. Set breakpoints in windows-demo.c
+    echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: windows-demo^)
     echo.
     echo Or run directly: !EXE_PATH!
     echo.
@@ -253,7 +253,7 @@ if /i "%CONFIG%"=="Debug" (
 
 REM Launch the application (Release only)
 echo.
-if exist "!BUILD_DIR!\ucxclient-x64.exe.signed" (
+if exist "!BUILD_DIR!\windows-demo.exe.signed" (
     echo Launching !EXE_NAME! ^(Signed Release build^)...
 ) else (
     echo Launching !EXE_NAME! ^(Release build^)...
@@ -375,7 +375,7 @@ cmake --build build --config %REBUILD_CONFIG% --target clean 2>nul
 REM Force CMake reconfigure to pick up latest Git commit count
 echo Step 2: Reconfiguring CMake...
 del /Q build\CMakeCache.txt 2>nul
-cmake -S examples -B build
+cmake -S examples\windows-demo -B build
 if errorlevel 1 (
     echo ERROR: CMake configuration failed!
     pause
@@ -384,7 +384,7 @@ if errorlevel 1 (
 
 REM Build
 echo Step 3: Building...
-cmake --build build --config %REBUILD_CONFIG% --target ucxclient-x64
+cmake --build build --config %REBUILD_CONFIG% --target windows-demo
 if errorlevel 1 (
     echo ERROR: Build failed!
     exit /b 1
@@ -418,9 +418,9 @@ echo This will build both Debug and Release configurations.
 echo.
 
 REM Configure if needed
-if not exist "build\ucxclient-x64.vcxproj" (
+if not exist "build\windows-demo.vcxproj" (
     echo Configuring CMake...
-    cmake -S examples -B build
+    cmake -S examples\windows-demo -B build
     if errorlevel 1 (
         echo ERROR: CMake configuration failed!
         exit /b 1
@@ -433,7 +433,7 @@ echo ===================================
 echo [1/2] Building Debug Configuration
 echo ===================================
 echo.
-cmake --build build --config Debug --target ucxclient-x64
+cmake --build build --config Debug --target windows-demo
 if errorlevel 1 (
     echo ERROR: Debug build failed!
     exit /b 1
@@ -453,7 +453,7 @@ echo ===================================
 echo [2/2] Building Release Configuration
 echo ===================================
 echo.
-cmake --build build --config Release --target ucxclient-x64
+cmake --build build --config Release --target windows-demo
 if errorlevel 1 (
     echo ERROR: Release build failed!
     exit /b 1
@@ -462,7 +462,7 @@ if errorlevel 1 (
 REM Copy FTDI DLL to bin
 if exist "%FTDI_DLL%" (
     echo Copying FTDI DLL to bin...
-    copy /Y "%FTDI_DLL%" "examples\bin\" >nul
+    copy /Y "%FTDI_DLL%" "examples\windows-demo\bin\" >nul
 )
 echo Release build complete!
 echo.
@@ -472,8 +472,8 @@ echo All Configurations Built Successfully!
 echo ===================================
 echo.
 echo Output files:
-echo   examples\bin\ucxclient-x64-debug.exe
-echo   examples\bin\ucxclient-x64.exe
+echo   examples\windows-demo\bin\windows-demo-debug.exe
+echo   examples\windows-demo\bin\windows-demo.exe
 echo.
 exit /b 0
 
@@ -482,15 +482,15 @@ REM Sign command
 REM ===================================
 :sign
 echo ===================================
-echo Code Signing ucxclient-x64.exe
+echo Code Signing windows-demo.exe
 echo ===================================
 echo.
 
 REM Always sign Release configuration
 set SIGN_CONFIG=Release
 
-set SIGN_EXE=examples\bin\ucxclient-x64.exe
-set SIGN_EXE_SIGNED=examples\bin\ucxclient-x64-signed.exe
+set SIGN_EXE=examples\windows-demo\bin\windows-demo.exe
+set SIGN_EXE_SIGNED=examples\windows-demo\bin\windows-demo-signed.exe
 set CERT_THUMBPRINT=%2
 
 REM Check if executable exists
@@ -498,7 +498,7 @@ if not exist "!SIGN_EXE!" (
     echo [ERROR] Executable not found: !SIGN_EXE!
     echo.
     echo Build the Release version first:
-    echo   launch_ucxclient-x64.cmd rebuild
+    echo   launch-windows-demo.cmd rebuild
     echo.
     exit /b 1
 )
@@ -508,10 +508,10 @@ if not defined CERT_THUMBPRINT (
     echo [ERROR] Certificate thumbprint required!
     echo.
     echo USAGE:
-    echo   launch_ucxclient-x64.cmd sign [thumbprint]
+    echo   launch-windows-demo.cmd sign [thumbprint]
     echo.
     echo EXAMPLE:
-    echo   launch_ucxclient-x64.cmd sign 1234567890ABCDEF...
+    echo   launch-windows-demo.cmd sign 1234567890ABCDEF...
     echo.
     echo To find your certificate thumbprint:
     echo   1. Open Certificate Manager: certmgr.msc
@@ -622,7 +622,7 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   launch_ucxclient-x64.cmd [debug] [arguments]
+echo   launch-windows-demo.cmd [debug] [arguments]
 echo.
 echo BASIC USAGE:
 echo   (no args)             Run Release build (builds if needed)
@@ -653,35 +653,35 @@ echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo EXAMPLES:
-echo   launch_ucxclient-x64.cmd
+echo   launch-windows-demo.cmd
 echo       Launch Release build (auto-builds if needed)
 echo.
-echo   launch_ucxclient-x64.cmd debug
+echo   launch-windows-demo.cmd debug
 echo       Launch Debug build (auto-builds if needed)
 echo.
-echo   launch_ucxclient-x64.cmd COM4
+echo   launch-windows-demo.cmd COM4
 echo       Launch Release build and pass COM4 to the app
 echo.
-echo   launch_ucxclient-x64.cmd debug COM4
+echo   launch-windows-demo.cmd debug COM4
 echo       Launch Debug build and pass COM4 to the app
 echo.
-echo   launch_ucxclient-x64.cmd clean
+echo   launch-windows-demo.cmd clean
 echo       Clean all configurations (Debug and Release)
 echo.
-echo   launch_ucxclient-x64.cmd clean debug
+echo   launch-windows-demo.cmd clean debug
 echo       Clean only Debug configuration
 echo.
-echo   launch_ucxclient-x64.cmd rebuild
+echo   launch-windows-demo.cmd rebuild
 echo       Clean and rebuild Release configuration
 echo.
-echo   launch_ucxclient-x64.cmd rebuild debug
+echo   launch-windows-demo.cmd rebuild debug
 echo       Clean and rebuild Debug configuration
 echo.
-echo   launch_ucxclient-x64.cmd all
+echo   launch-windows-demo.cmd all
 echo       Build both Debug and Release configurations
 echo.
-echo   launch_ucxclient-x64.cmd sign 1234567890ABCDEF...
-echo       Sign Release build and save to ucxclient-x64-signed.exe
+echo   launch-windows-demo.cmd sign 1234567890ABCDEF...
+echo       Sign Release build and save to windows-demo-signed.exe
 echo.
 echo NOTES:
 echo   - Release is the default (optimized, no debug symbols)

@@ -7,41 +7,6 @@ find_package(Threads REQUIRED)
 # Include ucxclient library definitions
 include(../ucxclient.cmake)
 
-# ============================================================================
-# Auto-versioning: Get build number from Git commit count
-# ============================================================================
-set(APP_VERSION_MAJOR 3)
-set(APP_VERSION_MINOR 2)
-set(APP_VERSION_PATCH 0)
-set(APP_VERSION_BUILD 0)
-
-# Try to get Git commit count for build number
-find_package(Git QUIET)
-if(GIT_FOUND)
-  execute_process(
-    COMMAND ${GIT_EXECUTABLE} rev-list --count HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_COMMIT_COUNT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-  )
-  if(GIT_COMMIT_COUNT)
-    set(APP_VERSION_BUILD ${GIT_COMMIT_COUNT})
-    message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git commit count)")
-  else()
-    message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git not available)")
-  endif()
-else()
-  message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git not found)")
-endif()
-
-# Generate version header
-configure_file(
-  ${CMAKE_CURRENT_SOURCE_DIR}/version.h.in
-  ${CMAKE_CURRENT_BINARY_DIR}/version.h
-  @ONLY
-)
-
 # Set binary output directory to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -68,13 +33,13 @@ list(APPEND EXAMPLE_COMPILE_OPTIONS -DU_CX_LOG_DEBUG=1)
 
 set(U_EXAMPLE_SSID "ubx" CACHE STRING "The Wi-Fi SSID to use for the examples")
 set(U_EXAMPLE_WPA_PSK "" CACHE STRING "The Wi-Fi WPA PSK to use for the examples")
+set(U_EXAMPLE_BT_ADDR "" CACHE STRING "The Bluetooth address to connect to for the examples")
 
 # Common source files for examples
 set(EXAMPLE_COMMON_SRC
   example_utils.c
   ${UCXCLIENT_UCX_API_SRC}
   ${UCXCLIENT_AT_API_SRC}
-  ${UCXCLIENT_HEADERS}
 )
 
 # HTTP Example (OS-based)
@@ -130,68 +95,66 @@ add_executable(fw_upgrade_example_no_os
 target_compile_options(fw_upgrade_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS -DU_CX_XMODEM_FILE_SUPPORT=1)
 target_include_directories(fw_upgrade_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
 
-# Windows-specific examples
-if(WIN32)
-  # FTDI D2XX library support
-  set(FTDI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi")
-  set(FTDI_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi/ftd2xx.lib")
-
-  # Windows Basic WiFi Application
-  add_executable(ucxclient_basic_wifi
-    ucxclient_basic_wifi.c
-    ${PORT_OS_SRC}
-    ${PORT_UART_SRC}
-    ${UCXCLIENT_UCX_API_SRC}
-    ${UCXCLIENT_AT_API_SRC}
-    ${UCXCLIENT_HEADERS}
-  )
-  target_compile_options(ucxclient_basic_wifi PRIVATE /W4 /wd4200)
-  target_compile_definitions(ucxclient_basic_wifi PRIVATE
-    U_PORT_WINDOWS
-    U_CX_LOG_AT=1
-    U_CX_LOG_ERROR=1
-    U_CX_LOG_WARNING=1
-    U_CX_LOG_DEBUG=1
-    U_CX_LOG_USE_ANSI_COLOR=1
-    U_CX_XMODEM_FILE_SUPPORT=1
-    _CRT_SECURE_NO_WARNINGS
-    U_EXAMPLE_UART="${U_EXAMPLE_UART}"
-    U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
-    U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
-  )
-  target_include_directories(ucxclient_basic_wifi PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR})
-  target_link_libraries(ucxclient_basic_wifi PRIVATE setupapi ${FTDI_LIBRARY})
-
-  # Windows Console Application - ucxclient-x64 (Monolithic)
-  add_executable(ucxclient-x64
-    ucxclient-x64.c
-    ${PORT_OS_SRC}
-    ${PORT_UART_SRC}
-    ucxclient-x64.rc
-    third-party/qrcodegen/qrcodegen.c
-    ../src/u_cx_xmodem.c
-    ${UCXCLIENT_UCX_API_SRC}
-    ${UCXCLIENT_AT_API_SRC}
-    ${UCXCLIENT_HEADERS}
-  )
-  target_compile_options(ucxclient-x64 PRIVATE /W4 /FS /wd4200)
-  target_compile_definitions(ucxclient-x64 PRIVATE
-    U_PORT_WINDOWS
-    U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
-    U_CX_XMODEM_FILE_SUPPORT=1
-    _CRT_SECURE_NO_WARNINGS
-    U_EXAMPLE_UART="${U_EXAMPLE_UART}"
-    APP_VERSION_MAJOR=${APP_VERSION_MAJOR}
-    APP_VERSION_MINOR=${APP_VERSION_MINOR}
-    APP_VERSION_PATCH=${APP_VERSION_PATCH}
-    APP_VERSION_BUILD=${APP_VERSION_BUILD}
-  )
-  target_include_directories(ucxclient-x64 PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR} ${FTDI_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
-  target_link_libraries(ucxclient-x64 PRIVATE setupapi ${FTDI_LIBRARY})
-  
-  # Set different output names for Debug and Release builds
-  set_target_properties(ucxclient-x64 PROPERTIES
-    OUTPUT_NAME_DEBUG "ucxclient-x64-debug"
-    OUTPUT_NAME_RELEASE "ucxclient-x64"
-  )
+# WiFi Example (OS-based)
+add_executable(wifi_example
+  wifi_example.c
+  ${PORT_OS_SRC}
+  ${PORT_UART_SRC}
+  ${EXAMPLE_COMMON_SRC}
+)
+target_compile_options(wifi_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
+target_compile_definitions(wifi_example PRIVATE
+  U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+  U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
+  U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
+)
+target_include_directories(wifi_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+if(PORT_LIBS)
+  target_link_libraries(wifi_example PRIVATE ${PORT_LIBS})
 endif()
+
+# WiFi Example No-OS
+add_executable(wifi_example_no_os
+  wifi_example.c
+  ../ports/os/u_port_no_os.c
+  ${PORT_UART_SRC}
+  ${EXAMPLE_COMMON_SRC}
+)
+target_compile_options(wifi_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS)
+target_compile_definitions(wifi_example_no_os PRIVATE
+  U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+  U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
+  U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
+)
+target_include_directories(wifi_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+
+# Bluetooth Example (OS-based)
+add_executable(bluetooth_example
+  bluetooth_example.c
+  ${PORT_OS_SRC}
+  ${PORT_UART_SRC}
+  ${EXAMPLE_COMMON_SRC}
+)
+target_compile_options(bluetooth_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
+target_compile_definitions(bluetooth_example PRIVATE
+  U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+  U_EXAMPLE_BT_ADDR="${U_EXAMPLE_BT_ADDR}"
+)
+target_include_directories(bluetooth_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+if(PORT_LIBS)
+  target_link_libraries(bluetooth_example PRIVATE ${PORT_LIBS})
+endif()
+
+# Bluetooth Example No-OS
+add_executable(bluetooth_example_no_os
+  bluetooth_example.c
+  ../ports/os/u_port_no_os.c
+  ${PORT_UART_SRC}
+  ${EXAMPLE_COMMON_SRC}
+)
+target_compile_options(bluetooth_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS)
+target_compile_definitions(bluetooth_example_no_os PRIVATE
+  U_EXAMPLE_UART="${U_EXAMPLE_UART}"
+  U_EXAMPLE_BT_ADDR="${U_EXAMPLE_BT_ADDR}"
+)
+target_include_directories(bluetooth_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})

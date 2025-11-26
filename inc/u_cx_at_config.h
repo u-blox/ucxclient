@@ -65,7 +65,7 @@
 
 /* Configuration for enabling logging of debug messages.*/
 #ifndef U_CX_LOG_DEBUG
-# define U_CX_LOG_DEBUG 1
+# define U_CX_LOG_DEBUG 0
 #endif
 
 /* Configuration for enabling ANSI color for logs.*/

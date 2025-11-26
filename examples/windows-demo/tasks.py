@@ -1,5 +1,5 @@
 """
-PyInvoke tasks for ucxclient examples.
+PyInvoke tasks for windows-demo.
 
 """
 
@@ -24,7 +24,7 @@ def _configure_cmake(c, build_dir):
         with c.cd(build_dir):
             if _is_windows():
                 # Use default generator on Windows (auto-detects Visual Studio version)
-                c.run('cmake .. -A Win32')
+                c.run('cmake .. -A x64')
             else:
                 c.run('cmake ..')
 
@@ -37,7 +37,7 @@ def _build_target(c, target=None, clean=False):
         target: Target name to build, or None for all targets
         clean: Clean build directory before building
     """
-    build_dir = 'build'
+    build_dir = '../../build'
 
     if clean and os.path.exists(build_dir):
         print(f"Cleaning {build_dir}...")
@@ -50,44 +50,20 @@ def _build_target(c, target=None, clean=False):
 
     # Build
     target_name = f" --target {target}" if target else ""
-    print(f"Building {target or 'all examples'}...")
+    print(f"Building {target or 'windows-demo'}...")
     c.run(f'cmake --build {build_dir}{target_name}')
 
     print(f"\nBuild completed successfully!")
     if target:
-        print(f"Executable: bin/{target}")
+        print(f"Executable: bin/{target}.exe")
     else:
-        print(f"Executables are located in bin/")
+        print(f"Executable: bin/windows-demo.exe")
 
 
 @task(help={'clean': 'Clean build directory before building'})
-def all(c, clean=False):
-    """Build all examples."""
-    _build_target(c, clean=clean)
-
-
-@task(help={'clean': 'Clean build directory before building'})
-def http(c, clean=False):
-    """Build http_example."""
-    _build_target(c, target='http_example', clean=clean)
-
-
-@task(help={'clean': 'Clean build directory before building'})
-def fw_upgrade(c, clean=False):
-    """Build fw_upgrade_example."""
-    _build_target(c, target='fw_upgrade_example', clean=clean)
-
-
-@task(help={'clean': 'Clean build directory before building'})
-def wifi(c, clean=False):
-    """Build wifi_example."""
-    _build_target(c, target='wifi_example', clean=clean)
-
-
-@task(help={'clean': 'Clean build directory before building'})
-def bluetooth(c, clean=False):
-    """Build bluetooth_example."""
-    _build_target(c, target='bluetooth_example', clean=clean)
+def build(c, clean=False):
+    """Build windows-demo."""
+    _build_target(c, target='windows-demo', clean=clean)
 
 
 @task
@@ -95,18 +71,15 @@ def clean(c):
     """Clean all build artifacts."""
     print("Cleaning build artifacts...")
     if _is_windows():
-        c.run('rmdir /s /q build bin 2>nul', warn=True)
+        c.run('rmdir /s /q ..\\..\\build 2>nul', warn=True)
+        c.run('rmdir /s /q bin 2>nul', warn=True)
     else:
-        c.run('rm -rf build bin', warn=True)
+        c.run('rm -rf ../../build', warn=True)
+        c.run('rm -rf bin', warn=True)
     print("Clean complete!")
 
 
 # Create namespace
 ns = Collection()
-ns.add_task(all)
-ns.add_task(http)
-ns.add_task(fw_upgrade, 'fw-upgrade')
-ns.add_task(wifi)
-ns.add_task(bluetooth)
+ns.add_task(build)
 ns.add_task(clean)
-

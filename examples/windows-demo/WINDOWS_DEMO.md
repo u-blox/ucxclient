@@ -52,7 +52,7 @@ git clone https://github.com/u-blox/ucxclient.git
 cd ucxclient
 
 # 2. Launch (auto-builds on first run)
-.\launch_ucxclient-x64.cmd
+.\launch-ucxclient-x64.cmd
 
 # That's it! The script handles CMake configuration and building.
 ```
