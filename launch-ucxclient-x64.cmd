@@ -363,15 +363,14 @@ REM Clean first
 echo Step 1: Cleaning...
 cmake --build build --config %REBUILD_CONFIG% --target clean 2>nul
 
-REM Configure if needed
-if not exist "build\ucxclient-x64.vcxproj" (
-    echo Step 2: Configuring CMake...
-    cmake -S examples -B build
-    if errorlevel 1 (
-        echo ERROR: CMake configuration failed!
-        pause
-        exit /b 1
-    )
+REM Force CMake reconfigure to pick up latest Git commit count
+echo Step 2: Reconfiguring CMake...
+del /Q build\CMakeCache.txt 2>nul
+cmake -S examples -B build
+if errorlevel 1 (
+    echo ERROR: CMake configuration failed!
+    pause
+    exit /b 1
 )
 
 REM Build
