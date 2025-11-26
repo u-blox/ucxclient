@@ -34,6 +34,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "u_cx_log.h"
 #include "u_cx.h"
@@ -79,7 +80,7 @@ static void httpRequestStatus(struct uCxHandle *puCxHandle, int32_t session_id, 
     (void)puCxHandle;
     (void)session_id;
     (void)description;
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "HTTP response: %d", status_code);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "HTTP response: %" PRId32, status_code);
     exampleSignalEvent(URC_FLAG_HTTP_RESPONSE);
 }
 
@@ -138,15 +139,15 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
 
     // Configure HTTP connection
     ret = uCxHttpSetConnectionParams2(&ucxHandle, sessionId, EXAMPLE_URL);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %" PRId32, ret);
 
     // Set request path
     ret = uCxHttpSetRequestPath(&ucxHandle, sessionId, "/");
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetRequestPath() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetRequestPath() returned %" PRId32, ret);
 
     // Send GET request
     ret = uCxHttpGetRequest(&ucxHandle, sessionId);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpGetRequest() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpGetRequest() returned %" PRId32, ret);
 
     // Wait for response
     exampleWaitEvent(URC_FLAG_HTTP_RESPONSE, 10);

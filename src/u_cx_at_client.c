@@ -21,6 +21,7 @@
 #include <limits.h>  // For INT_MAX
 #include <stddef.h>  // NULL, size_t etc.
 #include <stdint.h>  // int32_t etc.
+#include <inttypes.h> // PRId32 etc.
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>  // memcpy(), strcmp(), strcspn(), strspm()
@@ -47,7 +48,7 @@
         CLIENT->lastIoError = READ_RET;     \
         CLIENT->status = U_CX_ERROR_IO;     \
         U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, CLIENT->instance, \
-                        "read() failed with return value: %d", READ_RET); \
+                        "read() failed with return value: %" PRId32, READ_RET); \
         return AT_PARSER_ERROR;             \
     }
 
@@ -204,7 +205,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
 {
     const struct uCxAtClientConfig *pConfig = pClient->pConfig;
 
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_RX, pClient->instance, "[%d bytes]", binLength);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_RX, pClient->instance, "[%u bytes]", binLength);
     switch (parserRet) {
         case AT_PARSER_GOT_RSP: {
             // We are receiving an AT response with binary data
@@ -646,7 +647,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 U_CX_AT_PORT_ASSERT(len > 0);
                 writeNoLog(pClient, binHeader, sizeof(binHeader));
                 writeNoLog(pClient, pData, (size_t)len);
-                U_CX_LOG(U_CX_LOG_CH_TX, "[%d bytes]", len);
+                U_CX_LOG(U_CX_LOG_CH_TX, "[%" PRId32 " bytes]", len);
 
                 // Binary transfer must always be last param
                 U_CX_AT_PORT_ASSERT(pCh[1] == 0);
