@@ -147,6 +147,17 @@ if /i "%1"=="debug" (
 REM Set build directory to windows-demo/bin (where CMake outputs executables)
 set BUILD_DIR=examples\windows-demo\bin
 set FTDI_DLL=examples\windows-demo\third-party\ftdi\ftd2xx64.dll
+set SETTINGS_FILE=windows-demo.ini
+
+REM Create settings file in project root if it doesn't exist
+REM This allows the application to find and use a shared settings file
+if not exist "%SETTINGS_FILE%" (
+    echo.
+    echo Creating settings file: %SETTINGS_FILE%
+    echo # Windows Demo Settings > "%SETTINGS_FILE%"
+    echo # This file stores COM port and connection preferences >> "%SETTINGS_FILE%"
+    echo. >> "%SETTINGS_FILE%"
+)
 
 REM Determine executable name based on configuration
 if /i "!CONFIG!"=="Debug" (
@@ -728,7 +739,7 @@ echo   - Release is the default (optimized, no debug symbols)
 echo   - Debug is for development/troubleshooting (symbols, no optimization)
 echo   - First launch auto-configures CMake if needed
 echo   - Auto-builds if executable is missing or outdated
-echo   - Auto-copies FTDI DLL when building
-echo   - Settings file stored in workspace root directory
+echo   - Settings file: windows-demo.ini in project root (launcher creates it)
+echo   - Exe-only usage: Creates windows-demo.ini next to executable
 echo.
 exit /b 0

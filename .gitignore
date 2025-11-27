@@ -45,7 +45,7 @@ examples/python_gui/temp_*.py
 
 # User settings (contains credentials)
 settings.json
-ucxclient-x64_settings.ini
+windows-demo.ini
 .ucxclient/
 
 # OS
