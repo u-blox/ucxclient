@@ -11,6 +11,14 @@ examples/bin/*.ilk
 examples/bin/*.dll
 !examples/bin/.gitkeep
 
+# Windows demo build outputs
+examples/windows-demo/bin/windows-demo.exe
+examples/windows-demo/bin/windows-demo-debug.exe
+
+# Windows demo release folder - track signed executables
+!examples/windows-demo/release/
+!examples/windows-demo/release/*.exe
+
 # Release binaries (tracked in git for distribution)
 !releases/
 !releases/**/*.exe

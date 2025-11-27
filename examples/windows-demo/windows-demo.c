@@ -164,6 +164,8 @@ static PFN_FT_Close gpFT_Close = NULL;
 #define URC_FLAG_HTTP_RESPONSE_READY (1 << 15) // HTTP response ready (+UEHTCRS)
 #define URC_FLAG_HTTP_DISCONNECTED  (1 << 16) // HTTP disconnected (+UEHTCDC)
 #define URC_FLAG_BT_PASSKEY_REQUEST (1 << 17) // Bluetooth passkey entry requested
+#define URC_FLAG_SOCK_CLOSED        (1 << 18) // Socket closed (+UESOCL)
+#define URC_FLAG_MQTT_DISCONNECTED  (1 << 19) // MQTT disconnected (+UEMQDC)
 
 // Global handles
 static uCxAtClient_t gUcxAtClient;
@@ -3116,6 +3118,15 @@ static void sockConnected(struct uCxHandle *puCxHandle, int32_t socket_handle)
     signalEvent(URC_FLAG_SOCK_CONNECTED);
 }
 
+static void socketClosed(struct uCxHandle *puCxHandle, int32_t socket_handle)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "*** Socket closed! Socket handle: %d ***", socket_handle);
+    if (socket_handle == gCurrentSocket) {
+        gCurrentSocket = -1;
+    }
+    signalEvent(URC_FLAG_SOCK_CLOSED);
+}
+
 static void socketDataAvailable(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes)
 {
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "Socket data available: %d bytes on socket %d", number_bytes, socket_handle);
@@ -3329,6 +3340,26 @@ static void mqttDataAvailableUrc(struct uCxHandle *puCxHandle, int32_t mqtt_clie
     gPendingMqttRead.mqtt_client_id = mqtt_client_id;
     gPendingMqttRead.number_bytes = number_bytes;
     signalEvent(URC_FLAG_MQTT_DATA);
+}
+
+static void mqttDisconnectedUrc(struct uCxHandle *puCxHandle, int32_t mqtt_client_id, int32_t disconnect_reason)
+{
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, 
+                   "*** MQTT Disconnected! Client ID: %d, Reason: %d ***", mqtt_client_id, disconnect_reason);
+    
+    if (mqtt_client_id == gActiveMqttClientId) {
+        gActiveMqttClientId = -1;
+    }
+    
+    printf("\n─────────────────────────────────────────────────\n");
+    printf("MQTT DISCONNECTED\n");
+    printf("─────────────────────────────────────────────────\n");
+    printf("Client ID: %d\n", mqtt_client_id);
+    printf("Reason:    %d\n", disconnect_reason);
+    printf("Status:    Disconnected from broker\n");
+    printf("─────────────────────────────────────────────────\n");
+    
+    signalEvent(URC_FLAG_MQTT_DISCONNECTED);
 }
 
 static void btConnected(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtLeAddress_t *bd_addr)
@@ -8128,6 +8159,7 @@ static void enableAllUrcs(void)
     
     // Socket events
     uCxSocketRegisterConnect(&gUcxHandle, sockConnected);
+    uCxSocketRegisterClosed(&gUcxHandle, socketClosed);
     uCxSocketRegisterDataAvailable(&gUcxHandle, socketDataAvailable);
     
     // SPS events
@@ -8148,6 +8180,7 @@ static void enableAllUrcs(void)
     
     // MQTT events
     uCxMqttRegisterConnect(&gUcxHandle, mqttConnectedUrc);
+    uCxMqttRegisterDisconnect(&gUcxHandle, mqttDisconnectedUrc);
     uCxMqttRegisterDataAvailable(&gUcxHandle, mqttDataAvailableUrc);
     
     // Bluetooth events
@@ -8184,8 +8217,12 @@ static void disableAllUrcs(void)
     uCxWifiRegisterApDown(&gUcxHandle, NULL);
     uCxWifiRegisterApStationAssociated(&gUcxHandle, NULL);
     uCxWifiRegisterApStationDisassociated(&gUcxHandle, NULL);
+    // Socket events
     uCxSocketRegisterConnect(&gUcxHandle, NULL);
+    uCxSocketRegisterClosed(&gUcxHandle, NULL);
     uCxSocketRegisterDataAvailable(&gUcxHandle, NULL);
+    
+    // SPS events
     uCxSpsRegisterConnect(&gUcxHandle, NULL);
     uCxSpsRegisterDisconnect(&gUcxHandle, NULL);
     uCxSpsRegisterDataAvailable(&gUcxHandle, NULL);
@@ -8193,8 +8230,14 @@ static void disableAllUrcs(void)
     uCxDiagnosticsRegisterPingResponse(&gUcxHandle, NULL);
     uCxDiagnosticsRegisterPingComplete(&gUcxHandle, NULL);
     uCxHttpRegisterRequestStatus(&gUcxHandle, NULL);
+    uCxHttpRegisterDisconnect(&gUcxHandle, NULL);
+    
+    // MQTT events
     uCxMqttRegisterConnect(&gUcxHandle, NULL);
+    uCxMqttRegisterDisconnect(&gUcxHandle, NULL);
     uCxMqttRegisterDataAvailable(&gUcxHandle, NULL);
+    
+    // Bluetooth events
     uCxBluetoothRegisterConnect(&gUcxHandle, NULL);
     uCxBluetoothRegisterDisconnect(&gUcxHandle, NULL);
     uCxBluetoothRegisterBondStatus(&gUcxHandle, NULL);

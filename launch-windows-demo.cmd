@@ -15,6 +15,7 @@ if /i "%1"=="--help" goto :help
 if /i "%1"=="-h" goto :help
 if /i "%1"=="/?" goto :help
 if /i "%1"=="sign" goto :sign
+if /i "%1"=="signed" goto :launch_signed
 
 REM Commands that need prerequisites
 if /i "%1"=="clean" goto :clean_with_checks
@@ -218,14 +219,6 @@ if !NEED_BUILD! EQU 1 (
     echo   Skipping build - executable is current
 )
 
-REM Copy FTDI DLL if needed
-if not exist "!BUILD_DIR!\ftd2xx64.dll" (
-    if exist "!FTDI_DLL!" (
-        echo Copying FTDI DLL...
-        copy /Y "!FTDI_DLL!" "!BUILD_DIR!\" >nul
-    )
-)
-
 REM Check if executable exists after build
 if not exist "!EXE_PATH!" (
     echo ERROR: !EXE_NAME! not found in !BUILD_DIR!
@@ -253,23 +246,82 @@ if /i "%CONFIG%"=="Debug" (
 
 REM Launch the application (Release only)
 echo.
-if exist "!BUILD_DIR!\windows-demo.exe.signed" (
-    echo Launching !EXE_NAME! ^(Signed Release build^)...
+
+REM Check for signed version in release folder
+set SIGNED_EXE=examples\windows-demo\release\windows-demo-signed.exe
+set USE_SIGNED=0
+
+if exist "!SIGNED_EXE!" (
+    REM Compare timestamps - use signed if it's newer than or equal to unsigned
+    powershell -Command "if ((Get-Item '!SIGNED_EXE!').LastWriteTime -ge (Get-Item '!EXE_PATH!').LastWriteTime) { exit 0 } else { exit 1 }" >nul 2>&1
+    if not errorlevel 1 (
+        set USE_SIGNED=1
+        set LAUNCH_EXE=!SIGNED_EXE!
+        set LAUNCH_DIR=examples\windows-demo\release
+        echo Launching windows-demo-signed.exe ^(Signed Release - newer or equal^)...
+    ) else (
+        set LAUNCH_EXE=!EXE_PATH!
+        set LAUNCH_DIR=!BUILD_DIR!
+        echo Launching !EXE_NAME! ^(Unsigned - newer than signed version^)...
+        echo [INFO] Signed version exists but is older. Use 'signed' to force signed version.
+    )
 ) else (
-    echo Launching !EXE_NAME! ^(Release build^)...
+    set LAUNCH_EXE=!EXE_PATH!
+    set LAUNCH_DIR=!BUILD_DIR!
+    echo Launching !EXE_NAME! ^(Unsigned Release^)...
 )
 echo.
 
-cd "!BUILD_DIR!"
+cd "!LAUNCH_DIR!"
+
+REM Get executable name from path
+for %%F in ("!LAUNCH_EXE!") do set LAUNCH_EXE_NAME=%%~nxF
 
 REM Pass arguments to Release build
-!EXE_NAME! %1 %2 %3 %4 %5 %6 %7 %8 %9
+!LAUNCH_EXE_NAME! %1 %2 %3 %4 %5 %6 %7 %8 %9
 
 REM Store exit code
 set APP_EXIT_CODE=%ERRORLEVEL%
 
 REM Return to root
-cd ..\..
+cd ..\..\..
+
+REM Exit with application's exit code
+exit /b %APP_EXIT_CODE%
+
+REM ===================================
+REM Launch Signed command
+REM ===================================
+:launch_signed
+echo ===================================
+echo Launching Signed Release
+echo ===================================
+echo.
+
+set SIGNED_EXE=examples\windows-demo\release\windows-demo-signed.exe
+
+if not exist "!SIGNED_EXE!" (
+    echo [ERROR] Signed executable not found: !SIGNED_EXE!
+    echo.
+    echo Please sign the executable first:
+    echo   launch-windows-demo.cmd sign [thumbprint]
+    echo.
+    exit /b 1
+)
+
+echo Launching windows-demo-signed.exe...
+echo.
+
+cd examples\windows-demo\release
+
+REM Pass arguments (skip first argument which is --signed)
+windows-demo-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
+
+REM Store exit code
+set APP_EXIT_CODE=%ERRORLEVEL%
+
+REM Return to root
+cd ..\..\..
 
 REM Exit with application's exit code
 exit /b %APP_EXIT_CODE%
@@ -390,14 +442,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Copy FTDI DLL
-set BUILD_DIR=build\!REBUILD_CONFIG!
-set FTDI_DLL=examples\third-party\ftdi\ftd2xx64.dll
-if exist "!FTDI_DLL!" (
-    echo Step 4: Copying FTDI DLL...
-    copy /Y "!FTDI_DLL!" "!BUILD_DIR!\" >nul
-)
-
 echo.
 echo ===================================
 echo Rebuild complete!
@@ -439,12 +483,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Copy FTDI DLL for Debug
-set FTDI_DLL=examples\third-party\ftdi\ftd2xx64.dll
-if exist "%FTDI_DLL%" (
-    echo Copying FTDI DLL to Debug...
-    copy /Y "%FTDI_DLL%" "build\Debug\" >nul
-)
 echo Debug build complete!
 echo.
 
@@ -459,11 +497,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Copy FTDI DLL to bin
-if exist "%FTDI_DLL%" (
-    echo Copying FTDI DLL to bin...
-    copy /Y "%FTDI_DLL%" "examples\windows-demo\bin\" >nul
-)
 echo Release build complete!
 echo.
 
@@ -490,7 +523,7 @@ REM Always sign Release configuration
 set SIGN_CONFIG=Release
 
 set SIGN_EXE=examples\windows-demo\bin\windows-demo.exe
-set SIGN_EXE_SIGNED=examples\windows-demo\bin\windows-demo-signed.exe
+set SIGN_EXE_SIGNED=examples\windows-demo\release\windows-demo-signed.exe
 set CERT_THUMBPRINT=%2
 
 REM Check if executable exists
@@ -582,25 +615,20 @@ if errorlevel 1 (
 
 echo.
 echo ===================================
-echo Copying to Release_Signed folder...
+echo Copying to release folder...
 echo ===================================
 echo.
 
-REM Create Release_Signed folder if it doesn't exist
-if not exist "build\Release_Signed" (
-    mkdir "build\Release_Signed"
+REM Create release folder if it doesn't exist
+if not exist "examples\windows-demo\release" (
+    mkdir "examples\windows-demo\release"
 )
 
-REM Copy the signed executable to Release_Signed folder
+REM Copy the signed executable to release folder
 copy /Y "!SIGN_EXE!" "!SIGN_EXE_SIGNED!"
 if errorlevel 1 (
     echo [ERROR] Failed to copy signed executable!
     exit /b 1
-)
-
-REM Also copy FTDI DLL to Release_Signed folder
-if exist "%FTDI_DLL%" (
-    copy /Y "%FTDI_DLL%" "build\Release_Signed\ftd2xx64.dll" >nul 2>&1
 )
 
 echo Copied: !SIGN_EXE!
@@ -613,6 +641,8 @@ echo ===================================
 echo Signed executable: !SIGN_EXE_SIGNED!
 echo Original unsigned: !SIGN_EXE!
 echo.
+echo The release folder contains the signed executable ready for distribution.
+echo.
 
 exit /b 0
 
@@ -622,11 +652,15 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   launch-windows-demo.cmd [debug] [arguments]
+echo   launch-windows-demo.cmd [options] [arguments]
 echo.
 echo BASIC USAGE:
-echo   (no args)             Run Release build (builds if needed)
+echo   (no args)             Run Release build (auto-selects signed if newer)
 echo   debug                 Run Debug build (builds if needed)
+echo   signed                Force run signed version from release folder
+echo.
+echo   By default, launcher checks both bin/ and release/ folders and runs
+echo   the newest version. Use --signed to force the signed version.
 echo.
 echo   All other arguments are passed to the application.
 echo.
@@ -654,13 +688,19 @@ echo   help / --help / -h    Show this help message
 echo.
 echo EXAMPLES:
 echo   launch-windows-demo.cmd
-echo       Launch Release build (auto-builds if needed)
+echo       Launch Release build (auto-selects signed if newer)
+echo.
+echo   launch-windows-demo.cmd signed
+echo       Force launch signed version from release folder
 echo.
 echo   launch-windows-demo.cmd debug
 echo       Launch Debug build (auto-builds if needed)
 echo.
 echo   launch-windows-demo.cmd COM4
 echo       Launch Release build and pass COM4 to the app
+echo.
+echo   launch-windows-demo.cmd signed COM4
+echo       Launch signed version and pass COM4 to the app
 echo.
 echo   launch-windows-demo.cmd debug COM4
 echo       Launch Debug build and pass COM4 to the app
