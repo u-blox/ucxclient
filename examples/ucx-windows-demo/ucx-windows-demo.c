@@ -16787,6 +16787,12 @@ static void getExecutableDirectory(char *buffer, size_t bufferSize)
 
 int main(int argc, char *argv[])
 {
+    // Check for version argument first (before any other processing)
+    if (argc > 1 && (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)) {
+        printf("%s\n", APP_VERSION_STRING);
+        return 0;
+    }
+    
     // Set console to UTF-8 to properly display Unicode box drawing characters
     SetConsoleOutputCP(CP_UTF8);
     
@@ -16853,8 +16859,8 @@ int main(int argc, char *argv[])
     // Load settings from file
     loadSettings();
     
-    // Check for COM port argument
-    if (argc > 1) {
+    // Check for COM port argument (skip if it's a flag like -v, --version, etc.)
+    if (argc > 1 && argv[1][0] != '-') {
         strncpy(gComPort, argv[1], sizeof(gComPort) - 1);
         gComPort[sizeof(gComPort) - 1] = '\0';
     } else {

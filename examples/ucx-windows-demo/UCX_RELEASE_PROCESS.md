@@ -31,7 +31,7 @@ Version is generated at build time by CMake from `examples/ucx-windows-demo/vers
 .\launch-ucx-windows-demo.cmd rebuild
 
 # Build Release configuration and sign with certificate
-.\launch-ucx-windows-demo.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+.\launch-ucx-windows-demo.cmd sign EF3FD135F1CD...
 
 # This will:
 # - Count Git commits and generate version.h (3.2.0.XXX where XXX = commit count)
@@ -58,7 +58,7 @@ Version is generated at build time by CMake from `examples/ucx-windows-demo/vers
 ```bash
 # Tag format: v3.2.0.BUILD
 git tag -a v3.2.0.257 -m "Release Windows Demo v3.2.0.257"
-git push origin cmag_ucxclient-x64
+git push origin master
 git push origin v3.2.0.257
 ```
 
