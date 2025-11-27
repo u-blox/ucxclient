@@ -11056,17 +11056,17 @@ static bool checkWiFiConnectivity(bool checkInternet, bool verbose)
             if (suggestedIdx >= 0) {
                 // Found a recommended profile (either IP match or active profile)
                 if (suggestedByIP) {
-                    char currentIP[40];
-                    getCurrentPCIPAddress(currentIP, sizeof(currentIP));
-                    printf("\nRecommended: Profile '%s' matches your network (%s)\n", 
-                            gWifiProfiles[suggestedIdx].name, currentIP);
+                    printf("\nAuto-detected: Profile '%s' matches your network\n", 
+                            gWifiProfiles[suggestedIdx].name);
+                    printf("Use profile '%s' (SSID: %s)? (Y/n): ", 
+                            gWifiProfiles[suggestedIdx].name,
+                            gWifiProfiles[suggestedIdx].ssid);
                 } else {
                     printf("\nActive profile: '%s' (SSID: %s)\n",
                             gWifiProfiles[suggestedIdx].name,
                             gWifiProfiles[suggestedIdx].ssid);
+                    printf("Use this profile? (Y/n/s=show all): ");
                 }
-                
-                printf("Use this profile? (Y/n/s=show all): ");
                 
                 char choice[10];
                 if (!fgets(choice, sizeof(choice), stdin)) {
@@ -16800,13 +16800,24 @@ int main(int argc, char *argv[])
     strncpy(rootSettingsPath, gSettingsFilePath, sizeof(rootSettingsPath) - 1);
     rootSettingsPath[sizeof(rootSettingsPath) - 1] = '\0';
     
-    // Navigate up from bin/release to project root (../../)
+    // Remove trailing slash if present
+    size_t pathLen = strlen(rootSettingsPath);
+    if (pathLen > 0 && rootSettingsPath[pathLen - 1] == '\\') {
+        rootSettingsPath[pathLen - 1] = '\0';
+    }
+    
+    // Navigate up 3 levels: bin → windows-demo → examples → root
+    // Level 1: Remove "bin" or "release"
     char *lastSlash = strrchr(rootSettingsPath, '\\');
     if (lastSlash && lastSlash > rootSettingsPath) {
-        *lastSlash = '\0';  // Remove exe dir (bin or release)
+        *lastSlash = '\0';  // Now at examples\windows-demo
+        
+        // Level 2: Remove "windows-demo"
         lastSlash = strrchr(rootSettingsPath, '\\');
         if (lastSlash && lastSlash > rootSettingsPath) {
-            *lastSlash = '\0';  // Remove windows-demo
+            *lastSlash = '\0';  // Now at examples
+            
+            // Level 3: Remove "examples"
             lastSlash = strrchr(rootSettingsPath, '\\');
             if (lastSlash && lastSlash > rootSettingsPath) {
                 *(lastSlash + 1) = '\0';  // Keep trailing slash, now at root
@@ -17317,7 +17328,7 @@ static void printMenu(void)
             printf("\n");
             printf("═════════════════════════════════════════════════════════════════\n");
             printf("             u-blox ucxclient Windows Demo\n");
-            printf("             ucxclient API v%s  |  v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
+            printf("     using ucxclient API v%s  |  Appication v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
             printf("═════════════════════════════════════════════════════════════════\n");
             
             // === STATUS DASHBOARD ===
@@ -23978,10 +23989,8 @@ static void wifiConnect(void)
         int suggestedIdx = wifiSuggestProfile();
         
         if (suggestedIdx >= 0) {
-            char currentIP[40];
-            getCurrentPCIPAddress(currentIP, sizeof(currentIP));
-            printf("Auto-detected: Profile '%s' matches your network (%s)\n", 
-                   gWifiProfiles[suggestedIdx].name, currentIP);
+            printf("\nAuto-detected: Profile '%s' matches your network\n", 
+                   gWifiProfiles[suggestedIdx].name);
             printf("Use profile '%s' (SSID: %s)? (Y/n): ", 
                    gWifiProfiles[suggestedIdx].name, gWifiProfiles[suggestedIdx].ssid);
             
@@ -24723,8 +24732,10 @@ static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize)
                 char ip[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), ip, INET_ADDRSTRLEN);
                 
-                // Skip loopback addresses
-                if (ip[0] != '\0' && strncmp(ip, "127.", 4) != 0) {
+                // Skip loopback (127.x.x.x) and APIPA/link-local (169.254.x.x) addresses
+                if (ip[0] != '\0' && 
+                    strncmp(ip, "127.", 4) != 0 && 
+                    strncmp(ip, "169.254.", 8) != 0) {
                     strncpy(ipBuffer, ip, bufferSize - 1);
                     ipBuffer[bufferSize - 1] = '\0';
                     break;
@@ -24746,6 +24757,9 @@ static int wifiSuggestProfile(void)
     if (currentIP[0] == '\0') {
         return -1;  // Couldn't get IP
     }
+    
+    // Always show PC IP address for user reference
+    printf("PC IP address: %s\n", currentIP);
     
     // Extract first 3 octets as subnet (e.g., "192.168.1.x" -> "192.168.1")
     char subnet[16] = "";
