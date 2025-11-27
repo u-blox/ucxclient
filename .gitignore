@@ -1,8 +1,4 @@
 build/
-# Exception: Allow signed release builds for distribution
-!build/Release_Signed/
-!build/Release_Signed/*.exe
-!build/Release_Signed/*.dll
 
 # Binaries and build outputs
 examples/bin/*.exe
@@ -14,10 +10,6 @@ examples/bin/*.dll
 # ucx-windows-demo build outputs
 examples/ucx-windows-demo/bin/ucx-windows-demo.exe
 examples/ucx-windows-demo/bin/ucx-windows-demo-debug.exe
-
-# ucx-windows-demo release folder - track signed executables
-!examples/ucx-windows-demo/release/
-!examples/ucx-windows-demo/release/*.exe
 
 # Release binaries (tracked in git for distribution)
 !releases/
@@ -34,14 +26,6 @@ __pycache__/
 
 # IDE
 .vscode/
-
-# Python GUI test and debug files
-examples/python_gui/test_*.py
-examples/python_gui/debug_*.py
-examples/python_gui/temp_*.py
-.idea/
-*.swp
-*.swo
 
 # User settings (contains credentials)
 settings.json
