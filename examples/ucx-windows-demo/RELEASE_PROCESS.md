@@ -1,4 +1,4 @@
-# Release Process for ucxclient-x64
+# Release Process for Windows Demo
 
 ## Overview
 
@@ -12,7 +12,7 @@ Releases are **GitHub-only** with signed executables. Users clone the repository
 - Major.Minor.Patch follows UCX API version (currently 3.2.0)
 - Build number auto-increments with each commit
 
-Version is generated at build time by CMake from `examples/version.h.in`.
+Version is generated at build time by CMake from `examples/ucx-windows-demo/version.h.in`.
 
 ## Creating a Release
 
@@ -28,10 +28,10 @@ Version is generated at build time by CMake from `examples/version.h.in`.
 
 ```powershell
 # Clean rebuild Release configuration (forces version regeneration)
-.\launch-ucxclient-x64.cmd rebuild
+.\launch-ucx-windows-demo.cmd rebuild
 
 # Build Release configuration and sign with certificate
-.\launch-ucxclient-x64.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+.\launch-ucx-windows-demo.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
 
 # This will:
 # - Count Git commits and generate version.h (3.2.0.XXX where XXX = commit count)
@@ -39,7 +39,7 @@ Version is generated at build time by CMake from `examples/version.h.in`.
 # - Sign with u-blox AG GlobalSign EV CodeSigning certificate
 # - Timestamp with DigiCert server (valid until Dec 2027)
 # - Verify signature and certificate chain
-# - Create ucxclient-x64-signed.exe in examples/bin/
+# - Create ucx-windows-demo-signed.exe in examples/ucx-windows-demo/release/
 ```
 
 **Verify Version Before Release:**
@@ -48,8 +48,8 @@ Version is generated at build time by CMake from `examples/version.h.in`.
 # Should show: "Build version: 3.2.0.XXX (Git commit count)"
 
 # Or run the executable to verify
-.\examples\bin\ucxclient-x64-signed.exe
-# Menu header should show: "App v3.2.0.XXX"
+.\examples\ucx-windows-demo\release\ucx-windows-demo-signed.exe
+# Menu header should show: "Application v3.2.0.XXX"
 ```
 
 **Note:** The signed executable has ftd2xx64.dll embedded as a resource - no separate DLL needed.
@@ -57,8 +57,8 @@ Version is generated at build time by CMake from `examples/version.h.in`.
 ### 3. Create Git Tag
 ```bash
 # Tag format: v3.2.0.BUILD
-git tag -a v3.2.0.257 -m "Release ucxclient-x64 v3.2.0.257"
-git push origin master
+git tag -a v3.2.0.257 -m "Release Windows Demo v3.2.0.257"
+git push origin cmag_ucxclient-x64
 git push origin v3.2.0.257
 ```
 
@@ -66,7 +66,7 @@ git push origin v3.2.0.257
 1. Go to: https://github.com/u-blox/ucxclient/releases
 2. Click "Draft a new release"
 3. **Tag:** v3.2.0.257 (must match Git tag)
-4. **Title:** ucxclient-x64 v3.2.0.257
+4. **Title:** Windows Demo v3.2.0.257
 5. **Description:** Write release notes including:
    ```markdown
    ## Features
@@ -83,13 +83,13 @@ git push origin v3.2.0.257
    sha256:PASTE_HASH_HERE_AFTER_CALCULATING
    
    ## Installation
-   Download ucxclient-x64-signed.exe and run - no installation required.
+   Download ucx-windows-demo-signed.exe and run - no installation required.
    FTDI drivers are embedded in the executable.
    ```
-6. **Attach file:** `ucxclient-x64-signed.exe` (from examples/bin/)
+6. **Attach file:** `ucx-windows-demo-signed.exe` (from examples/ucx-windows-demo/release/)
 7. **Calculate SHA256** and add to release notes:
    ```powershell
-   Get-FileHash examples\bin\ucxclient-x64-signed.exe -Algorithm SHA256
+   Get-FileHash examples\ucx-windows-demo\release\ucx-windows-demo-signed.exe -Algorithm SHA256
    ```
 8. Click "Publish release"
 
@@ -101,26 +101,37 @@ Users who need Debug builds or modifications:
 git clone https://github.com/u-blox/ucxclient.git
 cd ucxclient
 
-# Build Debug (local development)
-.\launch-ucxclient-x64.cmd
+# Build and run (auto-builds if needed)
+.\launch-ucx-windows-demo.cmd
 
-# Build Release unsigned (testing)
-.\launch-ucxclient-x64.cmd release
+# Build Debug configuration
+.\launch-ucx-windows-demo.cmd debug
+
+# Build all configurations
+.\launch-ucx-windows-demo.cmd all
 ```
 
 ## Directory Structure
 
 ```
 ucxclient/
+├── launch-ucx-windows-demo.cmd              (Launch script)
+├── ucx-windows-demo.ini                     (Settings, auto-created, gitignored)
 ├── examples/
-│   ├── bin/
-│   │   ├── ucxclient-x64.exe           (Release, unsigned - not in git)
-│   │   ├── ucxclient-x64-debug.exe     (Debug - not in git)
-│   │   └── ucxclient-x64-signed.exe    (Release, signed - for GitHub only)
-│   ├── version.h.in                    (Version template)
-│   └── CMakeLists.txt                  (Auto-versioning logic)
+│   └── ucx-windows-demo/
+│       ├── ucx-windows-demo.c               (Main application ~25,000 lines)
+│       ├── ucx-windows-demo.rc              (Resource file - icon, DLL, version)
+│       ├── version.h.in                 (Version template)
+│       ├── CMakeLists.txt               (Build configuration)
+│       ├── bin/
+│       │   ├── ucx-windows-demo.exe         (Release, unsigned, gitignored)
+│       │   └── ucx-windows-demo-debug.exe   (Debug, gitignored)
+│       └── release/
+│           └── ucx-windows-demo-signed.exe  (Release, signed, tracked in git)
 └── build/
-    └── version.h                        (Generated by CMake - not in git)
+    ├── ucx-windows-demo.sln                 (Visual Studio solution)
+    ├── ucx-windows-demo.vcxproj             (Visual Studio project)
+    └── version.h                        (Generated by CMake, gitignored)
 ```
 
 **Only signed releases** go to GitHub. Everything else is built from source.
@@ -134,3 +145,4 @@ ucxclient/
 - [ ] Git tag created and pushed
 - [ ] GitHub release created with signed executable
 - [ ] Release notes include SHA256 hash in format: `sha256:HASH`
+

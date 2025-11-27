@@ -1,4 +1,4 @@
-# Windows Demo - Windows Console Application for u-connectXpress
+# ucx-windows-demo - Windows Console Application for u-connectXpress
 
 ## Overview
 
@@ -52,43 +52,43 @@ git clone https://github.com/u-blox/ucxclient.git
 cd ucxclient
 
 # 2. Launch (auto-builds on first run)
-.\launch-windows-demo.cmd
+.\launch-ucx-windows-demo.cmd
 
 # That's it! The script handles CMake configuration and building.
 ```
 
 ### What the Launch Script Does
-- Detects if CMake is configured (runs `cmake -S examples/windows-demo -B build` if needed)
+- Detects if CMake is configured (runs `cmake -S examples/ucx-windows-demo -B build` if needed)
 - Builds the executable if missing or outdated (source newer than exe)
 - Embeds FTDI DLL into the executable as a resource (auto-extracted at runtime)
-- Creates settings file (`windows-demo.ini`) in project root if missing
+- Creates settings file (`ucx-windows-demo.ini`) in project root if missing
 - Smart version selection: Runs signed version if newer than unsigned
-- Launches the application (windows-demo.exe or windows-demo-signed.exe)
+- Launches the application (ucx-windows-demo.exe or ucx-windows-demo-signed.exe)
 - Can code-sign executables with certificate thumbprint for distribution
 - Can build all configurations at once with the `all` command
 
 ### Launch Script Commands
 ```powershell
 # Default: Auto-select signed if newer, else unsigned
-.\launch-windows-demo.cmd
+.\launch-ucx-windows-demo.cmd
 
 # Debug build
-.\launch-windows-demo.cmd debug
+.\launch-ucx-windows-demo.cmd debug
 
 # Force signed version
-.\launch-windows-demo.cmd signed
+.\launch-ucx-windows-demo.cmd signed
 
 # Build all configurations (Debug + Release)
-.\launch-windows-demo.cmd all
+.\launch-ucx-windows-demo.cmd all
 
 # Clean build artifacts
-.\launch-windows-demo.cmd clean [debug|release]
+.\launch-ucx-windows-demo.cmd clean [debug|release]
 
 # Rebuild from scratch
-.\launch-windows-demo.cmd rebuild [debug|release]
+.\launch-ucx-windows-demo.cmd rebuild [debug|release]
 
 # Code sign the Release build
-.\launch-windows-demo.cmd sign YOUR_CERT_THUMBPRINT
+.\launch-ucx-windows-demo.cmd sign YOUR_CERT_THUMBPRINT
 ```
 
 ### Code Signing (Optional)
@@ -100,16 +100,16 @@ For production releases, you can digitally sign the executable:
 # 2. Personal > Certificates > Your code signing cert > Details > Thumbprint
 # 3. Copy the thumbprint (remove spaces)
 
-# Sign Release build (creates windows-demo-signed.exe in release/ folder)
-.\launch-windows-demo.cmd sign YOUR_CERT_THUMBPRINT_HERE
+# Sign Release build (creates ucx-windows-demo-signed.exe in release/ folder)
+.\launch-ucx-windows-demo.cmd sign YOUR_CERT_THUMBPRINT_HERE
 
 # Example
-.\launch-windows-demo.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+.\launch-ucx-windows-demo.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
 ```
 
 **Output Location:**
-- Signed executable: `examples/windows-demo/release/windows-demo-signed.exe`
-- Unsigned build: `examples/windows-demo/bin/windows-demo.exe`
+- Signed executable: `examples/ucx-windows-demo/release/ucx-windows-demo-signed.exe`
+- Unsigned build: `examples/ucx-windows-demo/bin/ucx-windows-demo.exe`
 - The launcher auto-selects the signed version if it's newer
 
 **Requirements for signing:**
@@ -187,18 +187,19 @@ If you get errors:
 ### Easy Launch (Recommended)
 ```bash
 # From project root - builds automatically if needed
-launch_ucxclient-x64.cmd
+.\launch-ucx-windows-demo.cmd
 
-# For Release build
-launch_ucxclient-x64.cmd release
+# Debug build
+.\launch-ucx-windows-demo.cmd debug
 
 # Build all configurations (Debug + Release)
-launch_ucxclient-x64.cmd all
+.\launch-ucx-windows-demo.cmd all
 ```
 
 The launch script will:
-- ✅ Auto-build if executable doesn't exist
+- ✅ Auto-build if executable doesn't exist or source is newer
 - ✅ Embed FTDI DLL as resource in executable
+- ✅ Smart version selection (signed vs unsigned)
 - ✅ Launch the application
 - ✅ Handle all dependencies
 - ✅ Build both configurations with `all` command
@@ -207,40 +208,45 @@ The launch script will:
 
 #### Using CMake
 ```bash
-cd build
-cmake ..
-cmake --build . --config Debug --target ucxclient-x64
+# Configure
+cmake -S examples/ucx-windows-demo -B build
+
+# Build Release
+cmake --build build --config Release --target ucx-windows-demo
+
+# Build Debug
+cmake --build build --config Debug --target ucx-windows-demo
 ```
 
-The executable will be in `build/Debug/ucxclient-x64.exe`
+The executable will be in `examples/ucx-windows-demo/bin/ucx-windows-demo.exe`
 
 #### Using Visual Studio
-Open `build/ucxclient-x64.sln` and build the `ucxclient-x64` project.
+Open `build/ucx-windows-demo.sln` and build the `ucx-windows-demo` project.
 
 ## File Structure
 
 ```
 ucxclient/
-├── launch-windows-demo.cmd          # Launch script (auto-builds)
-├── windows-demo.ini                 # Settings (auto-created in project root)
+├── launch-ucx-windows-demo.cmd          # Launch script (auto-builds)
+├── ucx-windows-demo.ini                 # Settings (auto-created in project root)
 ├── examples/
-│   └── windows-demo/
-│       ├── windows-demo.c           # Main application (~25,000 lines)
-│       ├── windows-demo.rc          # Windows resource file (icon, version, FTDI DLL)
+│   └── ucx-windows-demo/
+│       ├── ucx-windows-demo.c           # Main application (~25,000 lines)
+│       ├── ucx-windows-demo.rc          # Windows resource file (icon, version, FTDI DLL)
 │       ├── version.h.in             # Version template (CMake)
 │       ├── bin/
-│       │   ├── windows-demo.exe         # Release build (unsigned, gitignored)
-│       │   └── windows-demo-debug.exe   # Debug build (gitignored)
+│       │   ├── ucx-windows-demo.exe         # Release build (unsigned, gitignored)
+│       │   └── ucx-windows-demo-debug.exe   # Debug build (gitignored)
 │       ├── release/
-│       │   └── windows-demo-signed.exe  # Code-signed release (tracked in git)
+│       │   └── ucx-windows-demo-signed.exe  # Code-signed release (tracked in git)
 │       ├── third-party/
 │       │   └── ftdi/
 │       │       └── ftd2xx64.dll     # FTDI driver (embedded as resource)
 │       └── images/
 │           └── ShortRange.ico       # Application icon
 └── build/
-    ├── windows-demo.sln             # Visual Studio solution
-    ├── windows-demo.vcxproj         # Visual Studio project
+    ├── ucx-windows-demo.sln             # Visual Studio solution
+    ├── ucx-windows-demo.vcxproj         # Visual Studio project
     ├── CMakeCache.txt               # CMake configuration
     └── [build artifacts]            # Intermediate files (.obj, .pdb, etc.)
 ```
@@ -251,17 +257,17 @@ ucxclient/
 - **`build/`** - CMake build directory (intermediate files, project files, gitignored)
 
 ### Settings File Location Strategy
-The `windows-demo.ini` file uses smart location detection:
+The `ucx-windows-demo.ini` file uses smart location detection:
 
 1. **Launcher usage** (recommended):
-   - Launcher creates/uses `windows-demo.ini` in project root
+   - Launcher creates/uses `ucx-windows-demo.ini` in project root
    - Shared settings across all executions
    - Easy to find and edit
 
 2. **Direct exe usage** (standalone):
-   - Application checks `../../windows-demo.ini` (navigate from bin/release to root)
+   - Application checks `../../ucx-windows-demo.ini` (navigate from bin/release to root)
    - If found: Uses root settings (same as launcher)
-   - If not found: Creates `windows-demo.ini` next to exe (standalone mode)
+   - If not found: Creates `ucx-windows-demo.ini` next to exe (standalone mode)
 
 **Settings include:**
 - Last COM port and device model
@@ -278,22 +284,22 @@ The `windows-demo.ini` file uses smart location detection:
 ### Launch Methods
 ```bash
 # Method 1: Use launch script (recommended)
-.\launch-windows-demo.cmd
+.\launch-ucx-windows-demo.cmd
 
 # Method 2: Force signed version
-.\launch-windows-demo.cmd signed
+.\launch-ucx-windows-demo.cmd signed
 
 # Method 3: Debug build
-.\launch-windows-demo.cmd debug
+.\launch-ucx-windows-demo.cmd debug
 
 # Method 4: Direct execution (from bin folder)
-cd examples\windows-demo\bin
-.\windows-demo.exe
+cd examples\ucx-windows-demo\bin
+.\ucx-windows-demo.exe
 
 # Method 5: Specify COM port (any method)
-.\launch-windows-demo.cmd COM4
+.\launch-ucx-windows-demo.cmd COM4
 # or
-.\windows-demo.exe COM4
+.\ucx-windows-demo.exe COM4
 ```
 
 ### Main Menu
@@ -353,7 +359,7 @@ Press **[c]** to toggle between detailed and compact menu modes. The compact mod
 
 ### Clean Design
 ```
-windows-demo.c (~25,000 lines)
+ucx-windows-demo.c (~25,000 lines)
 ├── Main application loop
 ├── Device management (connect/disconnect/auto-detect)
 ├── Menu system (detailed/compact modes, status dashboard)
@@ -411,12 +417,12 @@ uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
      using ucxclient API v3.2.0  |  Application v3.2.0.257
 ═════════════════════════════════════════════════════════════════
 
-Settings file: C:\u-blox\ucxclient\windows-demo.ini
+Settings file: C:\u-blox\ucxclient\ucx-windows-demo.ini
 
 Auto-detecting COM ports with FTDI devices...
 Found FTDI device on COM10
 
-Settings loaded from: C:\u-blox\ucxclient\windows-demo.ini
+Settings loaded from: C:\u-blox\ucxclient\ucx-windows-demo.ini
 Last device: NORA-W36 on COM10
 Attempting to auto-connect to COM10...
 
@@ -582,24 +588,24 @@ Get device location using Combain Wi-Fi/Cell positioning:
 ### Building Release Version
 ```powershell
 # Build Release configuration (auto-builds if needed)
-.\launch-windows-demo.cmd
+.\launch-ucx-windows-demo.cmd
 
 # Or force rebuild
-.\launch-windows-demo.cmd rebuild
+.\launch-ucx-windows-demo.cmd rebuild
 
-# Code sign the executable (creates windows-demo-signed.exe in release/)
-.\launch-windows-demo.cmd sign YOUR_CERT_THUMBPRINT
+# Code sign the executable (creates ucx-windows-demo-signed.exe in release/)
+.\launch-ucx-windows-demo.cmd sign YOUR_CERT_THUMBPRINT
 
 # Launch signed version
-.\launch-windows-demo.cmd signed
+.\launch-ucx-windows-demo.cmd signed
 ```
 
 ### Distribution Package
 For GitHub releases, distribute the signed executable:
-- **File**: `examples/windows-demo/release/windows-demo-signed.exe`
+- **File**: `examples/ucx-windows-demo/release/ucx-windows-demo-signed.exe`
 - **Size**: ~2.5 MB (FTDI DLL embedded, icon, version info)
 - **Dependencies**: None (self-contained)
-- **Settings**: Auto-created on first run (`windows-demo.ini`)
+- **Settings**: Auto-created on first run (`ucx-windows-demo.ini`)
 - **FTDI Driver**: Automatically extracted to temp folder at runtime
 
 ### System Requirements
@@ -620,4 +626,5 @@ For issues, feature requests, or contributions:
 **Build**: Auto-versioned using Git commit count  
 **Platform**: Windows 10/11 (64-bit)  
 **License**: See LICENSE.txt
+
 

@@ -1,9 +1,9 @@
 @echo off
-REM Launch script for windows-demo
+REM Launch script for ucx-windows-demo
 
 setlocal enabledelayedexpansion
 
-echo Windows Demo Launcher
+echo ucxclient Windows Demo Launcher
 echo.
 
 REM Change to project root directory
@@ -144,32 +144,32 @@ if /i "%1"=="debug" (
     echo.
 )
 
-REM Set build directory to windows-demo/bin (where CMake outputs executables)
-set BUILD_DIR=examples\windows-demo\bin
-set FTDI_DLL=examples\windows-demo\third-party\ftdi\ftd2xx64.dll
-set SETTINGS_FILE=windows-demo.ini
+REM Set build directory to ucx-windows-demo/bin (where CMake outputs executables)
+set BUILD_DIR=examples\ucx-windows-demo\bin
+set FTDI_DLL=examples\ucx-windows-demo\third-party\ftdi\ftd2xx64.dll
+set SETTINGS_FILE=ucx-windows-demo.ini
 
 REM Create settings file in project root if it doesn't exist
 REM This allows the application to find and use a shared settings file
 if not exist "%SETTINGS_FILE%" (
     echo.
     echo Creating settings file: %SETTINGS_FILE%
-    echo # Windows Demo Settings > "%SETTINGS_FILE%"
+    echo # ucxclient Windows Demo Settings > "%SETTINGS_FILE%"
     echo # This file stores COM port and connection preferences >> "%SETTINGS_FILE%"
     echo. >> "%SETTINGS_FILE%"
 )
 
 REM Determine executable name based on configuration
 if /i "!CONFIG!"=="Debug" (
-    set EXE_NAME=windows-demo-debug.exe
+    set EXE_NAME=ucx-windows-demo-debug.exe
 ) else (
-    set EXE_NAME=windows-demo.exe
+    set EXE_NAME=ucx-windows-demo.exe
 )
 
 REM Check if executable exists and if source files are newer
 set NEED_BUILD=0
 set EXE_PATH=!BUILD_DIR!\!EXE_NAME!
-set SOURCE_FILE=examples\windows-demo\windows-demo.c
+set SOURCE_FILE=examples\ucx-windows-demo\ucx-windows-demo.c
 
 if not exist "!EXE_PATH!" (
     echo Executable not found. Auto-building !CONFIG!...
@@ -188,7 +188,7 @@ if not exist "!EXE_PATH!" (
     
     REM Simple comparison: if source is newer, rebuild
     if "!SOURCE_FILE!" NEQ "" (
-        forfiles /P "examples\windows-demo" /M "windows-demo.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
+        forfiles /P "examples\ucx-windows-demo" /M "ucx-windows-demo.c" /D +0 /C "cmd /c if @fdate GTR !EXE_TIME! set NEED_BUILD=1" 2>nul
         if exist "!SOURCE_FILE!" (
             powershell -Command "if ((Get-Item '!SOURCE_FILE!').LastWriteTime -gt (Get-Item '!EXE_PATH!').LastWriteTime) { exit 1 }" >nul 2>&1
             if errorlevel 1 (
@@ -208,7 +208,7 @@ if !NEED_BUILD! EQU 1 (
     REM Configure if needed
     if not exist "build\CMakeCache.txt" (
         echo Configuring CMake...
-        cmake -S examples\windows-demo -B build
+        cmake -S examples\ucx-windows-demo -B build
         if errorlevel 1 (
             echo ERROR: CMake configuration failed!
             exit /b 1
@@ -217,7 +217,7 @@ if !NEED_BUILD! EQU 1 (
     
     REM Build
     echo Building !EXE_NAME! in !CONFIG! configuration...
-    cmake --build build --config !CONFIG! --target windows-demo
+    cmake --build build --config !CONFIG! --target ucx-windows-demo
     if errorlevel 1 (
         echo ERROR: Build failed!
         exit /b 1
@@ -247,8 +247,8 @@ if /i "%CONFIG%"=="Debug" (
     echo.
     echo To debug in VS Code:
     echo   1. Open workspace in VS Code
-    echo   2. Set breakpoints in windows-demo.c
-    echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: windows-demo^)
+    echo   2. Set breakpoints in ucx-windows-demo.c
+    echo   3. Press F5 to start debugging (or Run and Debug ^> C/C++: ucx-windows-demo^)
     echo.
     echo Or run directly: !EXE_PATH!
     echo.
@@ -259,7 +259,7 @@ REM Launch the application (Release only)
 echo.
 
 REM Check for signed version in release folder
-set SIGNED_EXE=examples\windows-demo\release\windows-demo-signed.exe
+set SIGNED_EXE=examples\ucx-windows-demo\release\ucx-windows-demo-signed.exe
 set USE_SIGNED=0
 
 if exist "!SIGNED_EXE!" (
@@ -268,8 +268,8 @@ if exist "!SIGNED_EXE!" (
     if not errorlevel 1 (
         set USE_SIGNED=1
         set LAUNCH_EXE=!SIGNED_EXE!
-        set LAUNCH_DIR=examples\windows-demo\release
-        echo Launching windows-demo-signed.exe ^(Signed Release - newer or equal^)...
+        set LAUNCH_DIR=examples\ucx-windows-demo\release
+        echo Launching ucx-windows-demo-signed.exe ^(Signed Release - newer or equal^)...
     ) else (
         set LAUNCH_EXE=!EXE_PATH!
         set LAUNCH_DIR=!BUILD_DIR!
@@ -309,24 +309,24 @@ echo Launching Signed Release
 echo ===================================
 echo.
 
-set SIGNED_EXE=examples\windows-demo\release\windows-demo-signed.exe
+set SIGNED_EXE=examples\ucx-windows-demo\release\ucx-windows-demo-signed.exe
 
 if not exist "!SIGNED_EXE!" (
     echo [ERROR] Signed executable not found: !SIGNED_EXE!
     echo.
     echo Please sign the executable first:
-    echo   launch-windows-demo.cmd sign [thumbprint]
+    echo   launch-ucx-windows-demo.cmd sign [thumbprint]
     echo.
     exit /b 1
 )
 
-echo Launching windows-demo-signed.exe...
+echo Launching ucx-windows-demo-signed.exe...
 echo.
 
-cd examples\windows-demo\release
+cd examples\ucx-windows-demo\release
 
 REM Pass arguments (skip first argument which is --signed)
-windows-demo-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
+ucx-windows-demo-signed.exe %2 %3 %4 %5 %6 %7 %8 %9
 
 REM Store exit code
 set APP_EXIT_CODE=%ERRORLEVEL%
@@ -438,7 +438,7 @@ cmake --build build --config %REBUILD_CONFIG% --target clean 2>nul
 REM Force CMake reconfigure to pick up latest Git commit count
 echo Step 2: Reconfiguring CMake...
 del /Q build\CMakeCache.txt 2>nul
-cmake -S examples\windows-demo -B build
+cmake -S examples\ucx-windows-demo -B build
 if errorlevel 1 (
     echo ERROR: CMake configuration failed!
     pause
@@ -447,7 +447,7 @@ if errorlevel 1 (
 
 REM Build
 echo Step 3: Building...
-cmake --build build --config %REBUILD_CONFIG% --target windows-demo
+cmake --build build --config %REBUILD_CONFIG% --target ucx-windows-demo
 if errorlevel 1 (
     echo ERROR: Build failed!
     exit /b 1
@@ -473,9 +473,9 @@ echo This will build both Debug and Release configurations.
 echo.
 
 REM Configure if needed
-if not exist "build\windows-demo.vcxproj" (
+if not exist "build\ucx-windows-demo.vcxproj" (
     echo Configuring CMake...
-    cmake -S examples\windows-demo -B build
+    cmake -S examples\ucx-windows-demo -B build
     if errorlevel 1 (
         echo ERROR: CMake configuration failed!
         exit /b 1
@@ -488,7 +488,7 @@ echo ===================================
 echo [1/2] Building Debug Configuration
 echo ===================================
 echo.
-cmake --build build --config Debug --target windows-demo
+cmake --build build --config Debug --target ucx-windows-demo
 if errorlevel 1 (
     echo ERROR: Debug build failed!
     exit /b 1
@@ -502,7 +502,7 @@ echo ===================================
 echo [2/2] Building Release Configuration
 echo ===================================
 echo.
-cmake --build build --config Release --target windows-demo
+cmake --build build --config Release --target ucx-windows-demo
 if errorlevel 1 (
     echo ERROR: Release build failed!
     exit /b 1
@@ -516,8 +516,8 @@ echo All Configurations Built Successfully!
 echo ===================================
 echo.
 echo Output files:
-echo   examples\windows-demo\bin\windows-demo-debug.exe
-echo   examples\windows-demo\bin\windows-demo.exe
+echo   examples\ucx-windows-demo\bin\ucx-windows-demo-debug.exe
+echo   examples\ucx-windows-demo\bin\ucx-windows-demo.exe
 echo.
 exit /b 0
 
@@ -526,15 +526,15 @@ REM Sign command
 REM ===================================
 :sign
 echo ===================================
-echo Code Signing windows-demo.exe
+echo Code Signing ucx-windows-demo.exe
 echo ===================================
 echo.
 
 REM Always sign Release configuration
 set SIGN_CONFIG=Release
 
-set SIGN_EXE=examples\windows-demo\bin\windows-demo.exe
-set SIGN_EXE_SIGNED=examples\windows-demo\release\windows-demo-signed.exe
+set SIGN_EXE=examples\ucx-windows-demo\bin\ucx-windows-demo.exe
+set SIGN_EXE_SIGNED=examples\ucx-windows-demo\release\ucx-windows-demo-signed.exe
 set CERT_THUMBPRINT=%2
 
 REM Check if executable exists
@@ -542,7 +542,7 @@ if not exist "!SIGN_EXE!" (
     echo [ERROR] Executable not found: !SIGN_EXE!
     echo.
     echo Build the Release version first:
-    echo   launch-windows-demo.cmd rebuild
+    echo   launch-ucx-windows-demo.cmd rebuild
     echo.
     exit /b 1
 )
@@ -552,10 +552,10 @@ if not defined CERT_THUMBPRINT (
     echo [ERROR] Certificate thumbprint required!
     echo.
     echo USAGE:
-    echo   launch-windows-demo.cmd sign [thumbprint]
+    echo   launch-ucx-windows-demo.cmd sign [thumbprint]
     echo.
     echo EXAMPLE:
-    echo   launch-windows-demo.cmd sign 1234567890ABCDEF...
+    echo   launch-ucx-windows-demo.cmd sign 1234567890ABCDEF...
     echo.
     echo To find your certificate thumbprint:
     echo   1. Open Certificate Manager: certmgr.msc
@@ -631,8 +631,8 @@ echo ===================================
 echo.
 
 REM Create release folder if it doesn't exist
-if not exist "examples\windows-demo\release" (
-    mkdir "examples\windows-demo\release"
+if not exist "examples\ucx-windows-demo\release" (
+    mkdir "examples\ucx-windows-demo\release"
 )
 
 REM Copy the signed executable to release folder
@@ -663,7 +663,7 @@ REM ===================================
 :help
 echo.
 echo USAGE:
-echo   launch-windows-demo.cmd [options] [arguments]
+echo   launch-ucx-windows-demo.cmd [options] [arguments]
 echo.
 echo BASIC USAGE:
 echo   (no args)             Run Release build (auto-selects signed if newer)
@@ -698,48 +698,49 @@ echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo EXAMPLES:
-echo   launch-windows-demo.cmd
+echo   launch-ucx-windows-demo.cmd
 echo       Launch Release build (auto-selects signed if newer)
 echo.
-echo   launch-windows-demo.cmd signed
+echo   launch-ucx-windows-demo.cmd signed
 echo       Force launch signed version from release folder
 echo.
-echo   launch-windows-demo.cmd debug
+echo   launch-ucx-windows-demo.cmd debug
 echo       Launch Debug build (auto-builds if needed)
 echo.
-echo   launch-windows-demo.cmd COM4
+echo   launch-ucx-windows-demo.cmd COM4
 echo       Launch Release build and pass COM4 to the app
 echo.
-echo   launch-windows-demo.cmd signed COM4
+echo   launch-ucx-windows-demo.cmd signed COM4
 echo       Launch signed version and pass COM4 to the app
 echo.
-echo   launch-windows-demo.cmd debug COM4
+echo   launch-ucx-windows-demo.cmd debug COM4
 echo       Launch Debug build and pass COM4 to the app
 echo.
-echo   launch-windows-demo.cmd clean
+echo   launch-ucx-windows-demo.cmd clean
 echo       Clean all configurations (Debug and Release)
 echo.
-echo   launch-windows-demo.cmd clean debug
+echo   launch-ucx-windows-demo.cmd clean debug
 echo       Clean only Debug configuration
 echo.
-echo   launch-windows-demo.cmd rebuild
+echo   launch-ucx-windows-demo.cmd rebuild
 echo       Clean and rebuild Release configuration
 echo.
-echo   launch-windows-demo.cmd rebuild debug
+echo   launch-ucx-windows-demo.cmd rebuild debug
 echo       Clean and rebuild Debug configuration
 echo.
-echo   launch-windows-demo.cmd all
+echo   launch-ucx-windows-demo.cmd all
 echo       Build both Debug and Release configurations
 echo.
-echo   launch-windows-demo.cmd sign 1234567890ABCDEF...
-echo       Sign Release build and save to windows-demo-signed.exe
+echo   launch-ucx-windows-demo.cmd sign 1234567890ABCDEF...
+echo       Sign Release build and save to ucx-windows-demo-signed.exe
 echo.
 echo NOTES:
 echo   - Release is the default (optimized, no debug symbols)
 echo   - Debug is for development/troubleshooting (symbols, no optimization)
 echo   - First launch auto-configures CMake if needed
 echo   - Auto-builds if executable is missing or outdated
-echo   - Settings file: windows-demo.ini in project root (launcher creates it)
-echo   - Exe-only usage: Creates windows-demo.ini next to executable
+echo   - Settings file: ucx-windows-demo.ini in project root (launcher creates it)
+echo   - Exe-only usage: Creates ucx-windows-demo.ini next to executable
 echo.
 exit /b 0
+

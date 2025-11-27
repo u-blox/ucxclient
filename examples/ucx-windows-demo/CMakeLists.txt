@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(windows-demo)
+project(ucx-windows-demo)
 
 # Include ucxclient library definitions
 include(../../ucxclient.cmake)
@@ -46,7 +46,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 
 # Windows-specific settings
 if(NOT WIN32)
-  message(FATAL_ERROR "windows-demo requires Windows")
+  message(FATAL_ERROR "ucx-windows-demo requires Windows")
 endif()
 
 set(U_EXAMPLE_UART "COM3" CACHE STRING "The UART device to use")
@@ -59,12 +59,12 @@ set(PORT_UART_SRC ../../ports/uart/u_port_uart_windows.c)
 set(FTDI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi")
 set(FTDI_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi/ftd2xx.lib")
 
-# Windows Demo Application (Monolithic)
-add_executable(windows-demo
-  windows-demo.c
+# ucx-windows-demo Application (Monolithic)
+add_executable(ucx-windows-demo
+  ucx-windows-demo.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
-  windows-demo.rc
+  ucx-windows-demo.rc
   third-party/qrcodegen/qrcodegen.c
   ../../src/u_cx_xmodem.c
   ${UCXCLIENT_UCX_API_SRC}
@@ -72,9 +72,9 @@ add_executable(windows-demo
   ${UCXCLIENT_HEADERS}
 )
 
-target_compile_options(windows-demo PRIVATE /W4 /FS /wd4200)
+target_compile_options(ucx-windows-demo PRIVATE /W4 /FS /wd4200)
 
-target_compile_definitions(windows-demo PRIVATE
+target_compile_definitions(ucx-windows-demo PRIVATE
   U_PORT_WINDOWS
   U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
   U_CX_XMODEM_FILE_SUPPORT=1
@@ -86,7 +86,7 @@ target_compile_definitions(windows-demo PRIVATE
   APP_VERSION_BUILD=${APP_VERSION_BUILD}
 )
 
-target_include_directories(windows-demo PUBLIC 
+target_include_directories(ucx-windows-demo PUBLIC 
   ${UCXCLIENT_INC} 
   ${UCXCLIENT_PORT_DIR} 
   ${FTDI_INCLUDE_DIR} 
@@ -94,10 +94,10 @@ target_include_directories(windows-demo PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(windows-demo PRIVATE setupapi ${FTDI_LIBRARY})
+target_link_libraries(ucx-windows-demo PRIVATE setupapi ${FTDI_LIBRARY})
 
 # Set different output names for Debug and Release builds
-set_target_properties(windows-demo PROPERTIES
-  OUTPUT_NAME_DEBUG "windows-demo-debug"
-  OUTPUT_NAME_RELEASE "windows-demo"
+set_target_properties(ucx-windows-demo PROPERTIES
+  OUTPUT_NAME_DEBUG "ucx-windows-demo-debug"
+  OUTPUT_NAME_RELEASE "ucx-windows-demo"
 )

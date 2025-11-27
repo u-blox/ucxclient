@@ -8,7 +8,6 @@ All examples are designed to work with both OS and no-OS configurations by using
 | ------------------- | ----------- |
 | http_example.c      | Example of doing a HTTP GET request using the uCx API. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
 | fw_upgrade_example.c | Example of performing firmware upgrade using AT+USYFWUS command and XMODEM protocol. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
-| ucxclient-x64.c     | Comprehensive Windows GUI application demonstrating all UCX features: Bluetooth (scan, connect, GATT, SPS), Wi-Fi (station, AP, QR codes), HTTP, MQTT, NTP, TLS, network diagnostics, and firmware updates. |
 | example_utils.c/h   | Common utility functions that work with both OS and no-OS configurations, providing AT client initialization, event handling, and sleep functionality. |
 
 ## Building

@@ -59,9 +59,9 @@ BEGIN
             VALUE "CompanyName", "u-blox AG"
             VALUE "FileDescription", "ucxclient Windows Demo for NORA-W36/NORA-B26"
             VALUE "FileVersion", VERSION_STRING
-            VALUE "InternalName", "windows-demo.exe"
+            VALUE "InternalName", "ucx-windows-demo.exe"
             VALUE "LegalCopyright", "Copyright (C) 2025"
-            VALUE "OriginalFilename", "windows-demo.exe"
+            VALUE "OriginalFilename", "ucx-windows-demo.exe"
             VALUE "ProductName", "ucxclient Windows Demo"
             VALUE "ProductVersion", VERSION_STRING
         END
