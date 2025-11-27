@@ -1,4 +1,4 @@
-# ucxclient-x64 - Windows Console Application
+# Windows Demo - Windows Console Application for u-connectXpress
 
 ## Overview
 
@@ -52,18 +52,44 @@ git clone https://github.com/u-blox/ucxclient.git
 cd ucxclient
 
 # 2. Launch (auto-builds on first run)
-.\launch-ucxclient-x64.cmd
+.\launch-windows-demo.cmd
 
 # That's it! The script handles CMake configuration and building.
 ```
 
 ### What the Launch Script Does
-- Detects if CMake is configured (runs `cmake -S . -B build` if needed)
-- Builds the executable if missing (runs `cmake --build build --config Debug`)
-- Embeds FTDI DLL into the executable as a resource
-- Launches the application (ucxclient-x64.exe)
-- Can code-sign executables with certificate thumbprint for GitHub releases
+- Detects if CMake is configured (runs `cmake -S examples/windows-demo -B build` if needed)
+- Builds the executable if missing or outdated (source newer than exe)
+- Embeds FTDI DLL into the executable as a resource (auto-extracted at runtime)
+- Creates settings file (`windows-demo.ini`) in project root if missing
+- Smart version selection: Runs signed version if newer than unsigned
+- Launches the application (windows-demo.exe or windows-demo-signed.exe)
+- Can code-sign executables with certificate thumbprint for distribution
 - Can build all configurations at once with the `all` command
+
+### Launch Script Commands
+```powershell
+# Default: Auto-select signed if newer, else unsigned
+.\launch-windows-demo.cmd
+
+# Debug build
+.\launch-windows-demo.cmd debug
+
+# Force signed version
+.\launch-windows-demo.cmd signed
+
+# Build all configurations (Debug + Release)
+.\launch-windows-demo.cmd all
+
+# Clean build artifacts
+.\launch-windows-demo.cmd clean [debug|release]
+
+# Rebuild from scratch
+.\launch-windows-demo.cmd rebuild [debug|release]
+
+# Code sign the Release build
+.\launch-windows-demo.cmd sign YOUR_CERT_THUMBPRINT
+```
 
 ### Code Signing (Optional)
 For production releases, you can digitally sign the executable:
@@ -74,12 +100,17 @@ For production releases, you can digitally sign the executable:
 # 2. Personal > Certificates > Your code signing cert > Details > Thumbprint
 # 3. Copy the thumbprint (remove spaces)
 
-# Sign Release build (creates ucxclient-x64-signed.exe)
-.\launch_ucxclient-x64.cmd sign release YOUR_CERT_THUMBPRINT_HERE
+# Sign Release build (creates windows-demo-signed.exe in release/ folder)
+.\launch-windows-demo.cmd sign YOUR_CERT_THUMBPRINT_HERE
 
-# Sign Debug build (for testing)
-.\launch_ucxclient-x64.cmd sign debug YOUR_CERT_THUMBPRINT_HERE
+# Example
+.\launch-windows-demo.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
 ```
+
+**Output Location:**
+- Signed executable: `examples/windows-demo/release/windows-demo-signed.exe`
+- Unsigned build: `examples/windows-demo/bin/windows-demo.exe`
+- The launcher auto-selects the signed version if it's newer
 
 **Requirements for signing:**
 - Windows SDK 10 (for signtool.exe)
@@ -190,93 +221,127 @@ Open `build/ucxclient-x64.sln` and build the `ucxclient-x64` project.
 
 ```
 ucxclient/
-├── launch_ucxclient-x64.cmd         # Launch script (auto-builds)
+├── launch-windows-demo.cmd          # Launch script (auto-builds)
+├── windows-demo.ini                 # Settings (auto-created in project root)
 ├── examples/
-│   ├── ucxclient-x64.c              # Main application (~21,000 lines)
-│   ├── ucxclient-x64.rc             # Windows resource file
-│   ├── version.h.in                 # Version template (CMake)
-│   └── ftdi/
-│       └── ftd2xx64.dll             # FTDI driver (embedded as resource)
-├── ucxclient-x64_settings.ini       # Settings (auto-created in workspace root)
-├── build/
-│   ├── Debug/
-│   │   └── ucxclient-x64.exe        # Debug executable (DLL embedded)
-│   └── Release/
-│       └── ucxclient-x64.exe        # Release executable (DLL embedded)
-└── bin/                             # Distribution folder (optional)
-    └── ucxclient-x64.exe            # Signed release for GitHub distribution
+│   └── windows-demo/
+│       ├── windows-demo.c           # Main application (~25,000 lines)
+│       ├── windows-demo.rc          # Windows resource file (icon, version, FTDI DLL)
+│       ├── version.h.in             # Version template (CMake)
+│       ├── bin/
+│       │   ├── windows-demo.exe         # Release build (unsigned, gitignored)
+│       │   └── windows-demo-debug.exe   # Debug build (gitignored)
+│       ├── release/
+│       │   └── windows-demo-signed.exe  # Code-signed release (tracked in git)
+│       ├── third-party/
+│       │   └── ftdi/
+│       │       └── ftd2xx64.dll     # FTDI driver (embedded as resource)
+│       └── images/
+│           └── ShortRange.ico       # Application icon
+└── build/
+    ├── windows-demo.sln             # Visual Studio solution
+    ├── windows-demo.vcxproj         # Visual Studio project
+    ├── CMakeCache.txt               # CMake configuration
+    └── [build artifacts]            # Intermediate files (.obj, .pdb, etc.)
 ```
 
-### Distribution Folder (bin/)
-The `bin/` folder is used for signed executables intended for GitHub releases:
-- **Created manually**: Code-signed executable placed here for distribution
-- **Not auto-built**: Created only when preparing official releases
-- **GitHub releases only**: Signed executables distributed via GitHub release assets
-- **Local development**: Use Debug or Release builds from `build/` folder
-- **FTDI DLL**: Embedded in executable, auto-extracted to temp folder on first run
+### Folder Organization
+- **`bin/`** - Temporary build outputs (unsigned executables, auto-built, gitignored)
+- **`release/`** - Production releases (code-signed executable, tracked in git for distribution)
+- **`build/`** - CMake build directory (intermediate files, project files, gitignored)
 
-### Settings File
-The `ucxclient-x64_settings.ini` file is automatically created in the workspace root directory and stores:
+### Settings File Location Strategy
+The `windows-demo.ini` file uses smart location detection:
+
+1. **Launcher usage** (recommended):
+   - Launcher creates/uses `windows-demo.ini` in project root
+   - Shared settings across all executions
+   - Easy to find and edit
+
+2. **Direct exe usage** (standalone):
+   - Application checks `../../windows-demo.ini` (navigate from bin/release to root)
+   - If found: Uses root settings (same as launcher)
+   - If not found: Creates `windows-demo.ini` next to exe (standalone mode)
+
+**Settings include:**
 - Last COM port and device model
-- Wi-Fi SSID and password (obfuscated)
-- Bluetooth bonded devices
+- Wi-Fi profiles (SSID, password, IP prefix for auto-detection)
+- Bluetooth device profiles (address, name)
+- Remote server addresses
 - Menu mode preference (detailed/compact)
 - Logging and timestamp settings
 - API keys (Combain location service)
-- Last remote server addresses
+- Regulatory domain preference
 
 ## Usage
 
 ### Launch Methods
 ```bash
 # Method 1: Use launch script (recommended)
-launch_ucxclient-x64.cmd
+.\launch-windows-demo.cmd
 
-# Method 2: Direct execution
-cd build\Debug
-ucxclient-x64.exe
+# Method 2: Force signed version
+.\launch-windows-demo.cmd signed
 
-# Method 3: Specify COM port
-ucxclient-x64.exe COM4
+# Method 3: Debug build
+.\launch-windows-demo.cmd debug
+
+# Method 4: Direct execution (from bin folder)
+cd examples\windows-demo\bin
+.\windows-demo.exe
+
+# Method 5: Specify COM port (any method)
+.\launch-windows-demo.cmd COM4
+# or
+.\windows-demo.exe COM4
 ```
 
 ### Main Menu
 ```
-==============================================================
- ucxclient-x64 - u-blox u-connectXpress Test Application
-               UCX API v3.2.0  |  App v3.2.0.257
-==============================================================
+═════════════════════════════════════════════════════════════════
+             u-blox ucxclient Windows Demo
+     using ucxclient API v3.2.0  |  Application v3.2.0.257
+═════════════════════════════════════════════════════════════════
 
- Device: COM31 (NORA-W36 3.2.0) | Wi-Fi: Available | BT: Available
- Logging: ON | Timestamps: OFF
+=== STATUS DASHBOARD ===
+┌─────────────────────────────────────────────────────────────────┐
+│ Device  │ COM10                                                  │
+│ Module  │ NORA-W36                                               │
+│ Version │ 3.2.0                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ Wi-Fi   │ ● Connected - ubx (Ch 1, -42 dBm)                     │
+│ IP      │ 10.12.71.133                                           │
+│ BT      │ ○ Not Advertising                                     │
+└─────────────────────────────────────────────────────────────────┘
 
+=== MAIN MENU ===
 POWER & SYSTEM
-  [r] Reboot  [j] Factory reset  [p] Power Management
+  [r] Reboot Module        [j] Factory Reset       [p] Power Management
 
 BLUETOOTH
-  [b] Scan, connect, pair  [s] Serial Port Service (SPS)
-  [t] GATT Client  [u] GATT Server
+  [b] Bluetooth Operations [s] SPS - BLE Serial    [t] GATT Client      
+  [u] GATT Server
 
 WI-FI (NORA-W36)
-  [w] Station - Scan, connect  [o] Access Point - Hotspot
-  [d] Network Diagnostics
+  [w] Wi-Fi Station        [o] Access Point        [d] Network Diagnostics
 
 EXAMPLES
   Bluetooth: [e] GATT Server (9)  [g] GATT Client (9)
   Wi-Fi:     [h] HTTP  [m] MQTT  [y] Time Sync  [k] Location
 
 NETWORK SERVICES
-  [n] Network menu - Socket, HTTP, MQTT, TLS/Security
+  [n] Network Menu - Socket, HTTP, MQTT, Security, Time
 
 TOOLS & SETTINGS
-  [l] Toggle logging  [z] Toggle timestamps  [c] Toggle menu mode
-  [v] List UCX API commands  [?] Help & Tips
+  [l] Logging: ON          [z] Timestamps: OFF     [c] Menu: Detailed
+  [i] Device Info (ATI9)   [v] List UCX API        [?] Help & Tips
 
 FIRMWARE
-  [f] Update module firmware (XMODEM)
+  [f] Update Module Firmware (XMODEM + SHA256)
 
   [q] Quit
-  [1-94] Direct menu choice
+
+═════════════════════════════════════════════════════════════════
 
 Enter choice:
 ```
@@ -288,19 +353,33 @@ Press **[c]** to toggle between detailed and compact menu modes. The compact mod
 
 ### Clean Design
 ```
-ucxclient-x64.c (~21,000 lines)
+windows-demo.c (~25,000 lines)
 ├── Main application loop
-├── Device management (connect/disconnect)
-├── Menu system (detailed/compact modes)
+├── Device management (connect/disconnect/auto-detect)
+├── Menu system (detailed/compact modes, status dashboard)
 ├── Power & System (reboot, factory reset, power mgmt)
 ├── Bluetooth operations (scan, connect, bond, SPS, GATT)
-├── Wi-Fi operations (scan, connect, AP mode, diagnostics)
+├── Wi-Fi operations (scan, connect, AP mode, diagnostics, profiles)
 ├── Network services (Socket, HTTP, MQTT, TLS)
 ├── Example implementations (9 BT + 4 Wi-Fi examples)
 ├── Firmware update (XMODEM with SHA256 verification)
-├── Settings management (load/save configuration)
-└── Utility functions (logging, input validation, help)
+├── Settings management (load/save, Wi-Fi/BT profiles, encryption)
+├── Connection tracking (symmetric for all types: BT, SPS, Socket, HTTP, MQTT)
+└── Utility functions (logging, input validation, help, IP detection)
 ```
+
+### Connection Tracking (Symmetric Design)
+All connection types have consistent tracking:
+- **Bluetooth**: Connect/disconnect URCs → `gBtConnections[]` array
+- **SPS**: Connect/disconnect URCs → `gActiveSpsConnectionHandle`
+- **Socket**: Connect/closed URCs → `gCurrentSocket`
+- **HTTP**: Request status/disconnect URCs → `gHttpConnected` + `gHttpLastSessionId`
+- **MQTT**: Connect/disconnect URCs → `gActiveMqttClientId`
+
+Each type has:
+- URC event flags for synchronization
+- Pending data structures for data-available events
+- Registration/unregistration in init/cleanup functions
 
 ### Direct API Integration
 Native C code directly calls ucxclient API functions:
@@ -327,59 +406,78 @@ uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
 ## Example Session
 
 ```
-==============================================================
- ucxclient-x64 - u-blox u-connectXpress Test Application
-               UCX API v3.2.0  |  App v3.2.0.257
-==============================================================
+═════════════════════════════════════════════════════════════════
+             u-blox ucxclient Windows Demo
+     using ucxclient API v3.2.0  |  Application v3.2.0.257
+═════════════════════════════════════════════════════════════════
+
+Settings file: C:\u-blox\ucxclient\windows-demo.ini
 
 Auto-detecting COM ports with FTDI devices...
-Found FTDI device on COM31
+Found FTDI device on COM10
 
-Settings loaded from: C:\u-blox\ucxclient\ucxclient-x64_settings.ini
-Attempting to auto-connect to COM31...
+Settings loaded from: C:\u-blox\ucxclient\windows-demo.ini
+Last device: NORA-W36 on COM10
+Attempting to auto-connect to COM10...
+
+[00:00:00.012][AT TX][0] AT
+[00:00:00.125][AT RX][0] OK
+[00:00:00.125][AT TX][0] ATI9
+[00:00:00.251][AT RX][0] 
+Manufacturer: u-blox
+Model: NORA-W36
+Serial Number: 358219090048631
+Firmware: 3.2.0
+OK
 
 Connected to: NORA-W36 (u-connectXpress 3.2.0)
-Firmware: 3.2.0-046
 
- Device: COM31 (NORA-W36 3.2.0) | Wi-Fi: Available | BT: Available
+=== STATUS DASHBOARD ===
+┌─────────────────────────────────────────────────────────────────┐
+│ Device  │ COM10                                                  │
+│ Module  │ NORA-W36                                               │
+│ Version │ 3.2.0                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│ Wi-Fi   │ ○ Not Connected                                       │
+│ BT      │ ○ Not Advertising                                     │
+└─────────────────────────────────────────────────────────────────┘
 
 Enter choice: w
 
---- Wi-Fi Station Menu ---
-  [1] Scan for networks
-  [2] Connect to network
-  [3] Disconnect
-  [4] Show status
-  [0] Return to main menu
+--- Wi-Fi Connect ---
+PC IP address: 10.12.71.133
 
-Enter choice: 1
+Auto-detected: Profile 'Office_Wi-Fi' matches your network
+Use profile 'Office_Wi-Fi' (SSID: ubx)? (Y/n): 
 
-Scanning for Wi-Fi networks...
+Using profile 'Office_Wi-Fi'
+Connecting to 'ubx'...
 
-SSID                          CH  RSSI  Security
-────────────────────────────────────────────────────────────
-HomeNetwork                    6  -42   WPA2-PSK
-Office_5G                     36  -58   WPA3-PSK
-Guest_Network                 11  -65   WPA2-PSK
-CoffeeShop                     1  -72   Open
+[00:00:05.012][AT TX][0] AT+UWSC=0,2,"ubx"
+[00:00:05.125][AT RX][0] OK
+[00:00:05.125][AT TX][0] AT+UWSC=0,8,4,"password"
+[00:00:05.251][AT RX][0] OK
+[00:00:05.251][AT TX][0] AT+UWSCA=0,3
+[00:00:06.512][AT RX][0] +UUWLE:0,2
+[00:00:06.512][AT RX][0] OK
 
-4 network(s) found
+✓ Connected to 'ubx'
+Getting network details...
 
-Press Enter to continue...
+[00:00:06.625][AT TX][0] AT+UWSSTAT
+[00:00:06.751][AT RX][0] +UWSSTAT:0,"ubx",1,-42,0
+[00:00:06.751][AT RX][0] OK
+[00:00:06.751][AT TX][0] AT+UNSTAT=0
+[00:00:06.875][AT RX][0] +UNSTAT:0,"10.12.71.133","255.255.255.0","10.12.71.1"
+[00:00:06.875][AT RX][0] OK
 
-Enter choice: 2
-
-Enter network number (1-4) or SSID: 1
-Enter password: ********
-
-Connecting to 'HomeNetwork'...
-+UUWLE:0,2
-Connected successfully!
-
-Getting IP address...
-IP: 192.168.1.45
-Subnet: 255.255.255.0
-Gateway: 192.168.1.1
+Wi-Fi Status:
+  SSID: ubx
+  Channel: 1
+  RSSI: -42 dBm (Excellent)
+  IP: 10.12.71.133
+  Subnet: 255.255.255.0
+  Gateway: 10.12.71.1
 
 Press Enter to continue...
 
@@ -387,20 +485,19 @@ Press Enter to continue...
 
 Enter choice: h
 
---- HTTP Client Menu ---
-  [1] GET request
-  [2] POST request  
-  [3] PUT request
-  [4] DELETE request
-  [5] View last response
-  [0] Return to main menu
+--- HTTP Client ---
+Enter URL (or press Enter for example.com): http://httpbin.org/get
 
-Enter choice: 1
+Sending GET request to http://httpbin.org/get...
 
-Enter URL (or press Enter for httpbin.org/get): http://httpbin.org/get
+[00:00:10.012][AT TX][0] AT+UHTTP=0
+[00:00:10.125][AT RX][0] OK
+[00:00:10.125][AT TX][0] AT+UHTTP=0,1,"httpbin.org"
+[00:00:10.251][AT RX][0] OK
+[00:00:10.251][AT TX][0] AT+UHTTPC=0,1,"/get","response.txt"
+[00:00:11.512][AT RX][0] +UEHTCRS:0,1,200
+[00:00:11.512][AT RX][0] OK
 
-Sending GET request...
-+UUHTTPCR:0,1,200
 HTTP/1.1 200 OK
 Content-Type: application/json
 Content-Length: 312
@@ -409,15 +506,47 @@ Response body:
 {
   "args": {}, 
   "headers": {
-    "Host": "httpbin.org"
+    "Host": "httpbin.org",
+    "User-Agent": "u-blox NORA-W36"
   }, 
   "url": "http://httpbin.org/get"
 }
 
+✓ Request completed successfully
 Press Enter to continue...
 ```
 
 ## Advanced Features
+
+### Wi-Fi Profile Management
+Automatic network selection based on PC IP address:
+- Saves up to 10 Wi-Fi profiles with SSID, password, and IP prefix
+- Auto-detects current PC IP address (skips loopback and APIPA addresses)
+- Matches IP prefix (first 3 octets) to suggest correct profile
+- Example: PC IP `10.12.71.133` → matches profile with `ip_prefix=10.12.71`
+- Always displays PC IP address when checking for matches
+- Falls back to active profile if no IP match found
+
+Profile structure:
+```ini
+wifi_profile_count=3
+wifi_active_profile=0
+wifi_profile_0_name=Office_Wi-Fi
+wifi_profile_0_ssid=ubx
+wifi_profile_0_password=32331c350e382840031e5c1c22573412  # Encrypted
+wifi_profile_0_ip_prefix=10.12.71
+wifi_profile_1_name=Home
+wifi_profile_1_ssid=home_network
+wifi_profile_1_password=012d1e0e16210c16  # Encrypted
+wifi_profile_1_ip_prefix=192.168.1
+```
+
+### Bluetooth Device Profiles
+Save frequently used Bluetooth devices:
+- Stores device name and address
+- Quick connect to saved devices
+- Supports both Classic and BLE addresses
+- Address format: `XX:XX:XX:XX:XX:XX` or `XX:XX:XX:XX:XX:XX,type`
 
 ### Firmware Update with SHA256 Verification
 When updating firmware, the application:
@@ -452,22 +581,26 @@ Get device location using Combain Wi-Fi/Cell positioning:
 
 ### Building Release Version
 ```powershell
-# Build Release configuration
-.\launch_ucxclient-x64.cmd release
+# Build Release configuration (auto-builds if needed)
+.\launch-windows-demo.cmd
 
-# Code sign the executable (requires certificate)
-.\launch_ucxclient-x64.cmd sign release YOUR_CERT_THUMBPRINT
+# Or force rebuild
+.\launch-windows-demo.cmd rebuild
 
-# Distribute the signed executable
-# Location: build\Release_Signed\ucxclient-x64-signed.exe
+# Code sign the executable (creates windows-demo-signed.exe in release/)
+.\launch-windows-demo.cmd sign YOUR_CERT_THUMBPRINT
+
+# Launch signed version
+.\launch-windows-demo.cmd signed
 ```
 
 ### Distribution Package
-For GitHub releases, only one file is needed:
-- `ucxclient-x64.exe` (code-signed, FTDI DLL embedded)
-- FTDI driver is automatically extracted to temp folder on first run
-- Settings file is auto-created on first use
-- No additional dependencies required
+For GitHub releases, distribute the signed executable:
+- **File**: `examples/windows-demo/release/windows-demo-signed.exe`
+- **Size**: ~2.5 MB (FTDI DLL embedded, icon, version info)
+- **Dependencies**: None (self-contained)
+- **Settings**: Auto-created on first run (`windows-demo.ini`)
+- **FTDI Driver**: Automatically extracted to temp folder at runtime
 
 ### System Requirements
 - Windows 10/11 (64-bit)
