@@ -38,6 +38,18 @@
 #include "u_port.h"
 
 /* ----------------------------------------------------------------
+ * LOCAL CONFIGURATION
+ * -------------------------------------------------------------- */
+
+// Include local config if it exists (gitignored)
+// Copy config.local.h.template to config.local.h and customize for your setup
+#ifdef __has_include
+# if __has_include("config.local.h")
+#  include "config.local.h"
+# endif
+#endif
+
+/* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
