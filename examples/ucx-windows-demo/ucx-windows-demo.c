@@ -12210,6 +12210,12 @@ static void httpGetExample(void)
     gHttpDownloadTotalBytes = (contentLength > 0) ? contentLength : 0;
     gHttpDownloadBytesReceived = 0;
     
+    // Temporarily disable AT logging during download for clean progress bar
+    bool loggingWasEnabled = uCxLogIsEnabled();
+    if (loggingWasEnabled) {
+        uCxLogDisable();
+    }
+    
     if (saveToFile) {
         // Read body to file with progress bar
         FILE *fp = fopen(filename, "wb");
@@ -12219,6 +12225,7 @@ static void httpGetExample(void)
                 int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
                 int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
                 if (bytesRead < 0) {
+                    if (loggingWasEnabled) uCxLogEnable();  // Re-enable logging on error
                     printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
                     break;
                 }
@@ -12233,6 +12240,7 @@ static void httpGetExample(void)
             printf("\n");  // New line after progress bar
             fclose(fp);
         } else {
+            if (loggingWasEnabled) uCxLogEnable();  // Re-enable logging on error
             printf("\nERROR: Failed to open file '%s'\n", filename);
         }
     } else {
@@ -12242,6 +12250,7 @@ static void httpGetExample(void)
             int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
             int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
             if (bytesRead < 0) {
+                if (loggingWasEnabled) uCxLogEnable();  // Re-enable logging on error
                 printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
                 break;
             }
@@ -12253,6 +12262,11 @@ static void httpGetExample(void)
             }
         }
         printf("\n");  // New line after progress bar
+    }
+    
+    // Re-enable logging after successful download
+    if (loggingWasEnabled) {
+        uCxLogEnable();
     }
     
     printf("\n");
