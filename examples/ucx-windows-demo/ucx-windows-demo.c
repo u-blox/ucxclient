@@ -463,6 +463,11 @@ static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
 static char gCombainApiKey[128] = "";         // Combain API key (obfuscated in settings)
+static char gHttpGetHost[256] = "";           // Last HTTP GET host
+static int gHttpGetPort = 443;                 // Last HTTP GET port (443 = HTTPS default)
+static char gHttpGetPath[512] = "/";          // Last HTTP GET path
+static int32_t gHttpDownloadTotalBytes = 0;   // Total bytes expected for current HTTP download
+static int32_t gHttpDownloadBytesReceived = 0; // Bytes downloaded so far
 
 // WiFi Profile Management (up to 10 saved networks)
 typedef struct {
@@ -997,6 +1002,7 @@ static void listAvailableComPorts(char *recommendedPort, size_t recommendedPortS
 static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
 static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, void *pUserData);
+static void httpDownloadProgress(const uint8_t *data, int32_t len);
 
 static char* winHttpGetRequest(const wchar_t *server, const wchar_t *path);
 static char* winHttpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize);
@@ -11950,12 +11956,15 @@ static int32_t readPostDataFromFile(const char *filename, char *buffer, int32_t 
 // HTTP GET Request Example
 static void httpGetExample(void)
 {
+    char input[512];
     char host[256];
     char path[512];
+    int port = 443;
     char filename[256];
     //char response[2048];
     int32_t sessionId = 0;
     int32_t err;
+    bool isHttps = true;  // Default to HTTPS
     
     printf("\n");
     printf("=== HTTP GET REQUEST ===\n");
@@ -11969,27 +11978,130 @@ static void httpGetExample(void)
         return;
     }
     
-    printf("Host (e.g., httpbin.org): ");
-    if (!fgets(host, sizeof(host), stdin)) {
-        printf("ERROR: Failed to read host\n");
-        return;
-    }
-    host[strcspn(host, "\r\n")] = 0;  // Remove newline
+    // Show instructions for URL format
+    printf("Enter full URL or host/path separately:\n");
+    printf("  Examples: https://ash-speed.hetzner.com/100MB.bin\n");
+    printf("            httpbin.org\n");
+    printf("\n");
     
-    printf("Path (e.g., /get): ");
-    if (!fgets(path, sizeof(path), stdin)) {
-        printf("ERROR: Failed to read path\n");
-        return;
+    // Show saved settings if available
+    if (strlen(gHttpGetHost) > 0) {
+        printf("Last used: %s://%s:%d%s\n", 
+               gHttpGetPort == 443 ? "https" : "http",
+               gHttpGetHost, gHttpGetPort, gHttpGetPath);
+        printf("\n");
     }
-    path[strcspn(path, "\r\n")] = 0;  // Remove newline
     
-    printf("Use HTTPS? (y/n): ");
-    char useHttps[10];
-    if (!fgets(useHttps, sizeof(useHttps), stdin)) {
-        printf("ERROR: Failed to read HTTPS option\n");
+    // Prompt for URL or host
+    if (strlen(gHttpGetHost) > 0) {
+        printf("URL or Host (press Enter to use last URL, or enter new): ");
+    } else {
+        printf("URL or Host (e.g., https://example.com/path or httpbin.org): ");
+    }
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
         return;
     }
-    bool isHttps = (useHttps[0] == 'y' || useHttps[0] == 'Y');
+    input[strcspn(input, "\r\n")] = 0;  // Remove newline
+    
+    // Use saved host if input is empty
+    if (strlen(input) == 0 && strlen(gHttpGetHost) > 0) {
+        strncpy(host, gHttpGetHost, sizeof(host) - 1);
+        strncpy(path, gHttpGetPath, sizeof(path) - 1);
+        port = gHttpGetPort;
+        isHttps = (port == 443);
+    }
+    // Parse full URL if provided
+    else if (strncmp(input, "http://", 7) == 0 || strncmp(input, "https://", 8) == 0) {
+        // Determine protocol
+        isHttps = (strncmp(input, "https://", 8) == 0);
+        const char *urlStart = isHttps ? input + 8 : input + 7;
+        
+        // Find end of host (either '/' for path or ':' for port)
+        const char *pathStart = strchr(urlStart, '/');
+        const char *portStart = strchr(urlStart, ':');
+        
+        // Extract host
+        const char *hostEnd = pathStart;
+        if (portStart && (!pathStart || portStart < pathStart)) {
+            hostEnd = portStart;
+        }
+        
+        if (hostEnd) {
+            size_t hostLen = hostEnd - urlStart;
+            if (hostLen >= sizeof(host)) hostLen = sizeof(host) - 1;
+            strncpy(host, urlStart, hostLen);
+            host[hostLen] = '\0';
+        } else {
+            strncpy(host, urlStart, sizeof(host) - 1);
+            host[sizeof(host) - 1] = '\0';
+        }
+        
+        // Extract port if specified
+        if (portStart && (!pathStart || portStart < pathStart)) {
+            port = atoi(portStart + 1);
+            if (port <= 0 || port > 65535) {
+                port = isHttps ? 443 : 80;
+            }
+        } else {
+            port = isHttps ? 443 : 80;
+        }
+        
+        // Extract path
+        if (pathStart) {
+            strncpy(path, pathStart, sizeof(path) - 1);
+            path[sizeof(path) - 1] = '\0';
+        } else {
+            strcpy(path, "/");
+        }
+    }
+    // Host only provided, prompt for path and port
+    else {
+        strncpy(host, input, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
+        
+        // Prompt for path
+        printf("Path (e.g., /get) [%s]: ", gHttpGetPath);
+        if (!fgets(input, sizeof(input), stdin)) {
+            printf("ERROR: Failed to read path\n");
+            return;
+        }
+        input[strcspn(input, "\r\n")] = 0;
+        
+        if (strlen(input) == 0) {
+            strncpy(path, gHttpGetPath, sizeof(path) - 1);
+        } else {
+            strncpy(path, input, sizeof(path) - 1);
+        }
+        path[sizeof(path) - 1] = '\0';
+        
+        // Prompt for port
+        printf("Port [%d]: ", gHttpGetPort);
+        if (!fgets(input, sizeof(input), stdin)) {
+            printf("ERROR: Failed to read port\n");
+            return;
+        }
+        input[strcspn(input, "\r\n")] = 0;
+        
+        if (strlen(input) == 0) {
+            port = gHttpGetPort;
+        } else {
+            port = atoi(input);
+            if (port <= 0 || port > 65535) {
+                port = 443;
+            }
+        }
+        
+        isHttps = (port == 443);
+    }
+    
+    // Save settings
+    strncpy(gHttpGetHost, host, sizeof(gHttpGetHost) - 1);
+    gHttpGetHost[sizeof(gHttpGetHost) - 1] = '\0';
+    strncpy(gHttpGetPath, path, sizeof(gHttpGetPath) - 1);
+    gHttpGetPath[sizeof(gHttpGetPath) - 1] = '\0';
+    gHttpGetPort = port;
+    saveSettings();
     
     printf("Save response to file (leave empty for display only): ");
     if (!fgets(filename, sizeof(filename), stdin)) {
@@ -12017,16 +12129,20 @@ static void httpGetExample(void)
     char hostWithProtocol[256];
     if (isHttps) {
         snprintf(hostWithProtocol, sizeof(hostWithProtocol), "https://%s", host);
-        err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, 443);
+        err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, port);
     } else {
         snprintf(hostWithProtocol, sizeof(hostWithProtocol), "http://%s", host);
-        err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
+        if (port != 80) {
+            err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, port);
+        } else {
+            err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
+        }
     }
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
         return;
     }
-    printf("✓ Connection configured for %s\n", host);
+    printf("✓ Connection configured for %s:%d\n", host, port);
     
     // Step 2: Set request path
     err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
@@ -12038,7 +12154,7 @@ static void httpGetExample(void)
     
     // Step 3: Send GET request
     printf("\n");
-    printf("Sending GET request to http://%s%s...\n", host, path);
+    printf("Sending GET request to %s://%s:%d%s...\n", isHttps ? "https" : "http", host, port, path);
     err = uCxHttpGetRequest(&gUcxHandle, sessionId);
     if (err < 0) {
         printf("ERROR: GET request failed (error: %d)\n", err);
@@ -12075,7 +12191,10 @@ static void httpGetExample(void)
         printf("WARNING: Failed to read response headers\n");
     }
     
-    // Step 5: Read response body
+    // Extract Content-Length for progress tracking
+    int32_t contentLength = extractContentLength(headerBuffer);
+    
+    // Step 6: Read response body
     printf("\n");
     printf("Reading response body...\n");
     
@@ -12087,8 +12206,12 @@ static void httpGetExample(void)
     uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
     int32_t totalBytes = 0;
     
+    // Initialize progress tracking
+    gHttpDownloadTotalBytes = (contentLength > 0) ? contentLength : 0;
+    gHttpDownloadBytesReceived = 0;
+    
     if (saveToFile) {
-        // Read body to file
+        // Read body to file with progress bar
         FILE *fp = fopen(filename, "wb");
         if (fp) {
             int32_t moreToRead = 1;
@@ -12102,23 +12225,34 @@ static void httpGetExample(void)
                 if (bytesRead > 0) {
                     fwrite(buffer, 1, bytesRead, fp);
                     totalBytes += bytesRead;
-                    if (moreToRead) {
-                        printf(".");
-                        fflush(stdout);
-                    }
+                    
+                    // Show progress
+                    httpDownloadProgress(buffer, bytesRead);
                 }
             }
+            printf("\n");  // New line after progress bar
             fclose(fp);
         } else {
             printf("\nERROR: Failed to open file '%s'\n", filename);
         }
     } else {
-        // Read body to console
-        totalBytes = getHttpBody(sessionId, buffer, sizeof(buffer), 0, httpBodyToStdout);
-        if (totalBytes < 0) {
-            printf("\nERROR: Failed to read response body (error: %d)\n", totalBytes);
-            totalBytes = 0;
+        // Read body with progress bar (suppress binary output to console)
+        int32_t moreToRead = 1;
+        while (moreToRead) {
+            int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+            int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+            if (bytesRead < 0) {
+                printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+                break;
+            }
+            if (bytesRead > 0) {
+                totalBytes += bytesRead;
+                
+                // Show progress (but don't output binary data)
+                httpDownloadProgress(buffer, bytesRead);
+            }
         }
+        printf("\n");  // New line after progress bar
     }
     
     printf("\n");
@@ -18050,6 +18184,16 @@ static void handleUserInput(void)
     while (*trimmedInput == ' ' || *trimmedInput == '\t') {
         trimmedInput++;
     }
+    
+    // Remove PowerShell execution prefix if present (drag-and-drop in PowerShell adds & ')
+    if (trimmedInput[0] == '&' && trimmedInput[1] == ' ') {
+        trimmedInput += 2;
+        // Skip any additional whitespace after &
+        while (*trimmedInput == ' ' || *trimmedInput == '\t') {
+            trimmedInput++;
+        }
+    }
+    
     // Trim trailing whitespace
     size_t len = strlen(trimmedInput);
     while (len > 0 && (trimmedInput[len-1] == ' ' || trimmedInput[len-1] == '\t')) {
@@ -19096,10 +19240,12 @@ static void handleUserInput(void)
                         strncpy(firmwarePath, trimmedInput, sizeof(firmwarePath) - 1);
                         firmwarePath[sizeof(firmwarePath) - 1] = '\0';
                         
-                        // Remove quotes if present (Windows adds quotes when dragging)
-                        if (firmwarePath[0] == '"') {
-                            size_t pathLen2 = strlen(firmwarePath);
-                            if (pathLen2 > 2 && firmwarePath[pathLen2-1] == '"') {
+                        // Remove quotes if present (Windows/PowerShell adds quotes when dragging)
+                        // Handle both double quotes (") and single quotes (')
+                        size_t pathLen2 = strlen(firmwarePath);
+                        if (pathLen2 > 2) {
+                            if ((firmwarePath[0] == '"' && firmwarePath[pathLen2-1] == '"') ||
+                                (firmwarePath[0] == '\'' && firmwarePath[pathLen2-1] == '\'')) {
                                 memmove(firmwarePath, firmwarePath + 1, pathLen2 - 1);
                                 firmwarePath[pathLen2 - 2] = '\0';
                             }
@@ -19114,10 +19260,11 @@ static void handleUserInput(void)
                         }
                         // Remove newline and quotes
                         firmwarePath[strcspn(firmwarePath, "\r\n")] = '\0';
-                        // Remove quotes if present
-                        if (firmwarePath[0] == '"') {
-                            size_t pathLen3 = strlen(firmwarePath);
-                            if (pathLen3 > 2 && firmwarePath[pathLen3-1] == '"') {
+                        // Remove quotes if present (both double and single quotes)
+                        size_t pathLen3 = strlen(firmwarePath);
+                        if (pathLen3 > 2) {
+                            if ((firmwarePath[0] == '"' && firmwarePath[pathLen3-1] == '"') ||
+                                (firmwarePath[0] == '\'' && firmwarePath[pathLen3-1] == '\'')) {
                                 memmove(firmwarePath, firmwarePath + 1, pathLen3 - 1);
                                 firmwarePath[pathLen3 - 2] = '\0';
                             }
@@ -19622,6 +19769,37 @@ static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred,
     if (percentComplete >= 100) {
         printf("\n");
     }
+}
+
+// HTTP download progress callback
+// Tracks bytes downloaded and shows progress bar
+static void httpDownloadProgress(const uint8_t *data, int32_t len)
+{
+    (void)data;  // Unused - just tracking progress, not outputting data
+    
+    gHttpDownloadBytesReceived += len;
+    
+    // Calculate percent complete
+    int32_t percentComplete = (gHttpDownloadTotalBytes > 0) 
+        ? (int32_t)((gHttpDownloadBytesReceived * 100) / gHttpDownloadTotalBytes) 
+        : 0;
+    
+    // Show progress bar
+    printf("\rDownloading: [");
+    int barWidth = 40;
+    int pos = (barWidth * percentComplete) / 100;
+    for (int i = 0; i < barWidth; i++) {
+        if (i < pos) printf("=");
+        else if (i == pos) printf(">");
+        else printf(" ");
+    }
+    
+    if (gHttpDownloadTotalBytes > 0) {
+        printf("] %d%% (%d/%d bytes)", percentComplete, gHttpDownloadBytesReceived, gHttpDownloadTotalBytes);
+    } else {
+        printf("] %d bytes", gHttpDownloadBytesReceived);
+    }
+    fflush(stdout);
 }
 
 // ============================================================================
@@ -20246,6 +20424,20 @@ static void loadSettings(void)
                 strncpy(gRemoteAddress, line + 15, sizeof(gRemoteAddress) - 1);
                 gRemoteAddress[sizeof(gRemoteAddress) - 1] = '\0';
             }
+            else if (strncmp(line, "http_get_host=", 14) == 0) {
+                strncpy(gHttpGetHost, line + 14, sizeof(gHttpGetHost) - 1);
+                gHttpGetHost[sizeof(gHttpGetHost) - 1] = '\0';
+            }
+            else if (strncmp(line, "http_get_port=", 14) == 0) {
+                gHttpGetPort = atoi(line + 14);
+                if (gHttpGetPort <= 0 || gHttpGetPort > 65535) {
+                    gHttpGetPort = 443;  // Default to HTTPS port
+                }
+            }
+            else if (strncmp(line, "http_get_path=", 14) == 0) {
+                strncpy(gHttpGetPath, line + 14, sizeof(gHttpGetPath) - 1);
+                gHttpGetPath[sizeof(gHttpGetPath) - 1] = '\0';
+            }
             else if (strncmp(line, "combain_api_key=", 16) == 0) {
                 // Deobfuscate Combain API key
                 deobfuscatePassword(line + 16, gCombainApiKey, sizeof(gCombainApiKey));
@@ -20309,6 +20501,9 @@ static void saveSettings(void)
         fprintf(f, "last_port=%s\n", gComPort);
         fprintf(f, "last_device=%s\n", gLastDeviceModel);
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
+        fprintf(f, "http_get_host=%s\n", gHttpGetHost);
+        fprintf(f, "http_get_port=%d\n", gHttpGetPort);
+        fprintf(f, "http_get_path=%s\n", gHttpGetPath);
         fprintf(f, "reg_domain=%d\n", gRegDomain);
         fprintf(f, "compact_menu=%d\n", gCompactMenu ? 1 : 0);
         

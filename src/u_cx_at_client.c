@@ -28,7 +28,7 @@
 #include <ctype.h>   // isprint()
 
 #include "u_cx_at_config.h"
-#include "u_cx_error_codes.h"  // For friendly error names
+#include "u_cx_error_codes.h"
 
 #include "u_cx_log.h"
 #include "u_cx_at_util.h"
@@ -132,7 +132,6 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 if (isdigit((int) * pCodeStr) && (*pEnd == 0)) {
                     pClient->status = U_CX_EXTENDED_ERROR_OFFSET - code;
                     
-                    // Get friendly error name if available
                     const char *errorName = uCxGetErrorName(-code);
                     const char *errorModule = uCxGetErrorModule(-code);
                     
