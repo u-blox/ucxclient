@@ -465,9 +465,11 @@ static char gRemoteAddress[128] = "";         // Last remote address/hostname
 static char gCombainApiKey[128] = "";         // Combain API key (obfuscated in settings)
 static char gHttpGetHost[256] = "";           // Last HTTP GET host
 static int gHttpGetPort = 443;                 // Last HTTP GET port (443 = HTTPS default)
+static bool gHttpGetIsHttps = true;            // Last HTTP GET protocol (true = HTTPS, false = HTTP)
 static char gHttpGetPath[512] = "/";          // Last HTTP GET path
 static char gHttpPostHost[256] = "";          // Last HTTP POST host
 static int gHttpPostPort = 443;                // Last HTTP POST port (443 = HTTPS default)
+static bool gHttpPostIsHttps = true;           // Last HTTP POST protocol (true = HTTPS, false = HTTP)
 static char gHttpPostPath[512] = "/post";     // Last HTTP POST path
 static int32_t gHttpDownloadTotalBytes = 0;   // Total bytes expected for current HTTP download
 static int32_t gHttpDownloadBytesReceived = 0; // Bytes downloaded so far
@@ -11993,7 +11995,7 @@ static void httpGetExample(void)
     // Show saved settings if available
     if (strlen(gHttpGetHost) > 0) {
         printf("Last used: %s://%s:%d%s\n", 
-               gHttpGetPort == 443 ? "https" : "http",
+               gHttpGetIsHttps ? "https" : "http",
                gHttpGetHost, gHttpGetPort, gHttpGetPath);
         printf("\n");
     }
@@ -12015,7 +12017,7 @@ static void httpGetExample(void)
         strncpy(host, gHttpGetHost, sizeof(host) - 1);
         strncpy(path, gHttpGetPath, sizeof(path) - 1);
         port = gHttpGetPort;
-        isHttps = (port == 443);
+        isHttps = gHttpGetIsHttps;
     }
     // Parse full URL if provided
     else if (strncmp(input, "http://", 7) == 0 || strncmp(input, "https://", 8) == 0) {
@@ -12107,6 +12109,7 @@ static void httpGetExample(void)
     strncpy(gHttpGetPath, path, sizeof(gHttpGetPath) - 1);
     gHttpGetPath[sizeof(gHttpGetPath) - 1] = '\0';
     gHttpGetPort = port;
+    gHttpGetIsHttps = isHttps;
     saveSettings();
     
     printf("Save response to file (leave empty for display only): ");
@@ -12325,7 +12328,7 @@ static void httpPostExample(void)
     // Show last used URL if available
     if (strlen(gHttpPostHost) > 0) {
         printf("Last used: %s://%s:%d%s\n", 
-               (gHttpPostPort == 443) ? "https" : "http",
+               gHttpPostIsHttps ? "https" : "http",
                gHttpPostHost, gHttpPostPort, gHttpPostPath);
         printf("\n");
     }
@@ -12348,7 +12351,7 @@ static void httpPostExample(void)
         strncpy(host, gHttpPostHost, sizeof(host) - 1);
         port = gHttpPostPort;
         strncpy(path, gHttpPostPath, sizeof(path) - 1);
-        isHttps = (port == 443);
+        isHttps = gHttpPostIsHttps;
     } else if (strlen(input) > 0) {
         // Parse URL if it contains http:// or https://
         if (strncmp(input, "http://", 7) == 0) {
@@ -12449,6 +12452,7 @@ static void httpPostExample(void)
         strncpy(gHttpPostHost, host, sizeof(gHttpPostHost) - 1);
         gHttpPostPort = port;
         strncpy(gHttpPostPath, path, sizeof(gHttpPostPath) - 1);
+        gHttpPostIsHttps = isHttps;
         saveSettings();
     } else {
         printf("ERROR: No URL entered and no previous URL saved\n");
@@ -20702,6 +20706,9 @@ static void loadSettings(void)
                     gHttpGetPort = 443;  // Default to HTTPS port
                 }
             }
+            else if (strncmp(line, "http_get_is_https=", 18) == 0) {
+                gHttpGetIsHttps = (atoi(line + 18) != 0);
+            }
             else if (strncmp(line, "http_get_path=", 14) == 0) {
                 strncpy(gHttpGetPath, line + 14, sizeof(gHttpGetPath) - 1);
                 gHttpGetPath[sizeof(gHttpGetPath) - 1] = '\0';
@@ -20715,6 +20722,9 @@ static void loadSettings(void)
                 if (gHttpPostPort <= 0 || gHttpPostPort > 65535) {
                     gHttpPostPort = 443;  // Default to HTTPS port
                 }
+            }
+            else if (strncmp(line, "http_post_is_https=", 19) == 0) {
+                gHttpPostIsHttps = (atoi(line + 19) != 0);
             }
             else if (strncmp(line, "http_post_path=", 15) == 0) {
                 strncpy(gHttpPostPath, line + 15, sizeof(gHttpPostPath) - 1);
@@ -20785,9 +20795,11 @@ static void saveSettings(void)
         fprintf(f, "remote_address=%s\n", gRemoteAddress);
         fprintf(f, "http_get_host=%s\n", gHttpGetHost);
         fprintf(f, "http_get_port=%d\n", gHttpGetPort);
+        fprintf(f, "http_get_is_https=%d\n", gHttpGetIsHttps ? 1 : 0);
         fprintf(f, "http_get_path=%s\n", gHttpGetPath);
         fprintf(f, "http_post_host=%s\n", gHttpPostHost);
         fprintf(f, "http_post_port=%d\n", gHttpPostPort);
+        fprintf(f, "http_post_is_https=%d\n", gHttpPostIsHttps ? 1 : 0);
         fprintf(f, "http_post_path=%s\n", gHttpPostPath);
         fprintf(f, "reg_domain=%d\n", gRegDomain);
         fprintf(f, "compact_menu=%d\n", gCompactMenu ? 1 : 0);
