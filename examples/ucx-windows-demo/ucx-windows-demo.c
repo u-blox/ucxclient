@@ -12484,13 +12484,41 @@ static void httpPostExample(void)
  */
 static void httpSafeDisconnect(int32_t sessionId)
 {
-    // Only disconnect if we think we're connected
-    // The URC will update gHttpConnected to false when disconnect completes
+    // Wait 5 seconds for server to disconnect first (common after file transfer)
+    // This avoids ERROR:20 (U_ERROR_COMMON_NOT_CONFIGURED) race condition
+    printf("Waiting for server disconnect...");
+    fflush(stdout);
+    
+    int waitCount = 0;
+    while (gHttpConnected && waitCount < 50) {  // 50 * 100ms = 5 seconds
+        U_CX_PORT_SLEEP_MS(100);
+        waitCount++;
+    }
+    
+    if (!gHttpConnected) {
+        printf(" ✓ Server disconnected\n");
+        return;
+    }
+    
+    // Server didn't disconnect, we need to do it
+    printf(" (timeout)\n");
+    printf("Disconnecting HTTP session...\n");
+    
+    // Only disconnect if we think we're connected and it's the right session
     if (gHttpConnected && gHttpLastSessionId == sessionId) {
         int32_t err = uCxHttpDisconnect(&gUcxHandle, sessionId);
         if (err == 0) {
+            printf("✓ HTTP session disconnected\n");
             // Wait briefly for disconnect URC
             U_CX_PORT_SLEEP_MS(100);
+        } else if (err == U_ERROR_COMMON_NOT_CONFIGURED) {
+            // ERROR:20 - Session already disconnected (race condition)
+            printf("✓ Session already disconnected by server\n");
+            gHttpConnected = false;
+            gHttpLastSessionId = -1;
+        } else {
+            const char *errName = uCxGetErrorName(err);
+            printf("ERROR: Failed to disconnect (code %d: %s)\n", err, errName ? errName : "Unknown");
         }
     } else {
         // Already disconnected or different session
