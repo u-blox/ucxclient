@@ -466,8 +466,13 @@ static char gCombainApiKey[128] = "";         // Combain API key (obfuscated in 
 static char gHttpGetHost[256] = "";           // Last HTTP GET host
 static int gHttpGetPort = 443;                 // Last HTTP GET port (443 = HTTPS default)
 static char gHttpGetPath[512] = "/";          // Last HTTP GET path
+static char gHttpPostHost[256] = "";          // Last HTTP POST host
+static int gHttpPostPort = 443;                // Last HTTP POST port (443 = HTTPS default)
+static char gHttpPostPath[512] = "/post";     // Last HTTP POST path
 static int32_t gHttpDownloadTotalBytes = 0;   // Total bytes expected for current HTTP download
 static int32_t gHttpDownloadBytesReceived = 0; // Bytes downloaded so far
+static int32_t gHttpUploadTotalBytes = 0;     // Total bytes to upload
+static int32_t gHttpUploadBytesSent = 0;      // Bytes uploaded so far
 
 // WiFi Profile Management (up to 10 saved networks)
 typedef struct {
@@ -1003,6 +1008,7 @@ static char* selectComPortFromList(const char *recommendedPort);
 static void listAllApiCommands(void);
 static void firmwareUpdateProgress(size_t totalBytes, size_t bytesTransferred, void *pUserData);
 static void httpDownloadProgress(const uint8_t *data, int32_t len);
+static void httpUploadProgress(int32_t bytesSent);
 
 static char* winHttpGetRequest(const wchar_t *server, const wchar_t *path);
 static char* winHttpGetBinaryRequest(const wchar_t *server, const wchar_t *path, size_t *outSize);
@@ -12285,15 +12291,17 @@ static void httpGetExample(void)
 }
 
 // HTTP POST Request Example
+// HTTP POST Request Example
 static void httpPostExample(void)
 {
+    char input[512];
     char host[256];
     char path[512];
-    char dataSource[256];
+    int port = 443;
     char postData[4096];
-    //char response[2048];
     int32_t sessionId = 0;
     int32_t err;
+    bool isHttps = true;  // Default to HTTPS
     int32_t dataLen = 0;
     
     printf("\n");
@@ -12308,33 +12316,152 @@ static void httpPostExample(void)
         return;
     }
     
-    printf("Enter hostname (e.g., httpbin.org): ");
-    if (!fgets(host, sizeof(host), stdin)) {
-        printf("ERROR: Failed to read hostname\n");
+    // Show instructions for URL format
+    printf("Enter full URL or host/path separately:\n");
+    printf("  Examples: https://httpbin.org/post\n");
+    printf("            http://192.168.1.100:8080/upload\n");
+    printf("\n");
+    
+    // Show last used URL if available
+    if (strlen(gHttpPostHost) > 0) {
+        printf("Last used: %s://%s:%d%s\n", 
+               (gHttpPostPort == 443) ? "https" : "http",
+               gHttpPostHost, gHttpPostPort, gHttpPostPath);
+        printf("\n");
+    }
+    
+    // Prompt for URL or host
+    if (strlen(gHttpPostHost) > 0) {
+        printf("URL or Host (press Enter to use last URL, or enter new): ");
+    } else {
+        printf("URL or Host (e.g., https://httpbin.org/post or httpbin.org): ");
+    }
+    
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
         return;
     }
-    host[strcspn(host, "\r\n")] = 0;  // Remove newline
+    input[strcspn(input, "\r\n")] = 0;  // Remove newline
     
-    printf("Enter path (e.g., /post): ");
-    if (!fgets(path, sizeof(path), stdin)) {
-        printf("ERROR: Failed to read path\n");
+    // If empty and we have last URL, use it
+    if (strlen(input) == 0 && strlen(gHttpPostHost) > 0) {
+        strncpy(host, gHttpPostHost, sizeof(host) - 1);
+        port = gHttpPostPort;
+        strncpy(path, gHttpPostPath, sizeof(path) - 1);
+        isHttps = (port == 443);
+    } else if (strlen(input) > 0) {
+        // Parse URL if it contains http:// or https://
+        if (strncmp(input, "http://", 7) == 0) {
+            isHttps = false;
+            char *hostStart = input + 7;
+            char *portStart = strchr(hostStart, ':');
+            char *pathStart = strchr(hostStart, '/');
+            
+            if (portStart && (!pathStart || portStart < pathStart)) {
+                // Has port
+                size_t hostLen = portStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                
+                port = atoi(portStart + 1);
+                if (port <= 0 || port > 65535) port = 80;
+                
+                if (pathStart) {
+                    strncpy(path, pathStart, sizeof(path) - 1);
+                } else {
+                    strcpy(path, "/post");
+                }
+            } else if (pathStart) {
+                // No port, has path
+                size_t hostLen = pathStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                strncpy(path, pathStart, sizeof(path) - 1);
+                port = 80;
+            } else {
+                // Just host
+                strncpy(host, hostStart, sizeof(host) - 1);
+                strcpy(path, "/post");
+                port = 80;
+            }
+        } else if (strncmp(input, "https://", 8) == 0) {
+            isHttps = true;
+            char *hostStart = input + 8;
+            char *portStart = strchr(hostStart, ':');
+            char *pathStart = strchr(hostStart, '/');
+            
+            if (portStart && (!pathStart || portStart < pathStart)) {
+                // Has port
+                size_t hostLen = portStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                
+                port = atoi(portStart + 1);
+                if (port <= 0 || port > 65535) port = 443;
+                
+                if (pathStart) {
+                    strncpy(path, pathStart, sizeof(path) - 1);
+                } else {
+                    strcpy(path, "/post");
+                }
+            } else if (pathStart) {
+                // No port, has path
+                size_t hostLen = pathStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                strncpy(path, pathStart, sizeof(path) - 1);
+                port = 443;
+            } else {
+                // Just host
+                strncpy(host, hostStart, sizeof(host) - 1);
+                strcpy(path, "/post");
+                port = 443;
+            }
+        } else {
+            // Just hostname, ask for path and port
+            strncpy(host, input, sizeof(host) - 1);
+            
+            printf("Enter path (e.g., /post): ");
+            if (!fgets(path, sizeof(path), stdin)) {
+                printf("ERROR: Failed to read path\n");
+                return;
+            }
+            path[strcspn(path, "\r\n")] = 0;
+            if (strlen(path) == 0) strcpy(path, "/post");
+            
+            printf("Enter port (443 for HTTPS, 80 for HTTP, or custom): ");
+            char portStr[10];
+            if (!fgets(portStr, sizeof(portStr), stdin)) {
+                printf("ERROR: Failed to read port\n");
+                return;
+            }
+            portStr[strcspn(portStr, "\r\n")] = 0;
+            if (strlen(portStr) > 0) {
+                port = atoi(portStr);
+                if (port <= 0 || port > 65535) port = 443;
+            } else {
+                port = 443;
+            }
+            isHttps = (port == 443);
+        }
+        
+        // Save settings
+        strncpy(gHttpPostHost, host, sizeof(gHttpPostHost) - 1);
+        gHttpPostPort = port;
+        strncpy(gHttpPostPath, path, sizeof(gHttpPostPath) - 1);
+        saveSettings();
+    } else {
+        printf("ERROR: No URL entered and no previous URL saved\n");
         return;
     }
-    path[strcspn(path, "\r\n")] = 0;  // Remove newline
     
-    printf("Use HTTPS? (y/n): ");
-    char useHttps[10];
-    if (!fgets(useHttps, sizeof(useHttps), stdin)) {
-        printf("ERROR: Failed to read HTTPS option\n");
-        return;
-    }
-    bool isHttps = (useHttps[0] == 'y' || useHttps[0] == 'Y');
-    
+    // Ask for POST data source
     printf("\n");
     printf("Data source:\n");
     printf("  [1] Enter text manually\n");
-    printf("  [2] Read from file\n");
+    printf("  [2] Upload from file\n");
     printf("Choice: ");
+    char dataSource[10];
     if (!fgets(dataSource, sizeof(dataSource), stdin)) {
         printf("ERROR: Failed to read choice\n");
         return;
@@ -12354,7 +12481,7 @@ static void httpPostExample(void)
         // Read from file
         char filename[256];
         printf("\n");
-        printf("Enter filename to read: ");
+        printf("Enter filename to upload: ");
         if (!fgets(filename, sizeof(filename), stdin)) {
             printf("ERROR: Failed to read filename\n");
             return;
@@ -12371,55 +12498,92 @@ static void httpPostExample(void)
         return;
     }
     
+    // Step 1: Configure HTTPS if needed
     printf("\n");
-    printf("Configuring HTTP%s connection...\n", isHttps ? "S" : "");
+    printf("Configuring %s connection...\n", isHttps ? "HTTPS" : "HTTP");
     
-    // Enable TLS if HTTPS
     if (isHttps) {
         err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
         if (err < 0) {
             printf("ERROR: Failed to enable TLS (error: %d)\n", err);
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
             return;
         }
         printf("✓ TLS 1.2 enabled\n");
     }
     
-    // Step 1: Set connection parameters (must include http:// or https:// prefix)
-    char hostWithProtocol[256];
-    if (isHttps) {
-        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "https://%s", host);
-        err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, 443);
-    } else {
-        snprintf(hostWithProtocol, sizeof(hostWithProtocol), "http://%s", host);
+    // Step 2: Set connection parameters
+    char hostWithProtocol[280];
+    snprintf(hostWithProtocol, sizeof(hostWithProtocol), "%s://%s", isHttps ? "https" : "http", host);
+    
+    if (port == 443 || port == 80) {
         err = uCxHttpSetConnectionParams2(&gUcxHandle, sessionId, hostWithProtocol);
+    } else {
+        err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, hostWithProtocol, port);
     }
+    
     if (err < 0) {
         printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
         return;
     }
-    printf("✓ Connection configured for %s\n", host);
+    printf("✓ Connection configured for %s:%d\n", host, port);
     
-    // Step 2: Set request path
+    // Step 3: Set request path
     err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
     if (err < 0) {
         printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
         return;
     }
     printf("✓ Request path set to %s\n", path);
     
-    // Step 3: Send POST request with data
+    // Step 4: Send POST request
     printf("\n");
-    printf("Sending POST request to http://%s%s...\n", host, path);
-    printf("POST data: %d bytes\n", dataLen);
+    printf("Sending POST request to %s://%s:%d%s...\n", isHttps ? "https" : "http", host, port, path);
+    
+    // Initialize upload progress tracking
+    gHttpUploadTotalBytes = dataLen;
+    gHttpUploadBytesSent = 0;
+    
+    // Temporarily disable AT logging during upload for clean progress bar
+    bool loggingWasEnabled = uCxLogIsEnabled();
+    if (loggingWasEnabled) {
+        uCxLogDisable();
+    }
+    
+    // Show initial progress
+    httpUploadProgress(0);
     
     err = uCxHttpPostRequest(&gUcxHandle, sessionId, (const uint8_t *)postData, dataLen);
+    
+    // Show final progress
+    if (err >= 0) {
+        httpUploadProgress(dataLen);
+        printf("\n");
+    }
+    
+    // Re-enable logging
+    if (loggingWasEnabled) {
+        uCxLogEnable();
+    }
+    
     if (err < 0) {
         printf("ERROR: POST request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
         return;
     }
     printf("✓ POST request sent successfully\n");
     
-    // Step 4: Wait for HTTP response ready URC (timeout: 30 seconds)
+    // Step 5: Wait for HTTP response ready URC (timeout: 30 seconds)
     printf("\n");
     printf("Waiting for HTTP response...\n");
     if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 30)) {
@@ -12431,7 +12595,7 @@ static void httpPostExample(void)
     }
     printf("✓ HTTP response ready\n");
     
-    // Step 5: Read response headers
+    // Step 6: Read response headers
     printf("\n");
     printf("Reading response headers...\n");
     char headerBuffer[2048] = {0};
@@ -12448,21 +12612,54 @@ static void httpPostExample(void)
         printf("WARNING: Failed to read response headers\n");
     }
     
-    // Step 6: Read response body
+    // Extract Content-Length for progress tracking
+    int32_t contentLength = extractContentLength(headerBuffer);
+    
+    // Step 7: Read response body
     printf("\n");
     printf("Reading response body...\n");
     
     uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
-    printf("─────────────────────────────────────────────────\n");
-    int32_t totalBytes = getHttpBody(sessionId, buffer, sizeof(buffer), 0, httpBodyToStdout);
-    if (totalBytes < 0) {
-        printf("\nERROR: Failed to read response body (error: %d)\n", totalBytes);
-        totalBytes = 0;
+    int32_t totalBytes = 0;
+    
+    // Initialize progress tracking
+    gHttpDownloadTotalBytes = (contentLength > 0) ? contentLength : 0;
+    gHttpDownloadBytesReceived = 0;
+    
+    // Temporarily disable AT logging during download for clean progress bar
+    loggingWasEnabled = uCxLogIsEnabled();
+    if (loggingWasEnabled) {
+        uCxLogDisable();
     }
-    printf("\n─────────────────────────────────────────────────\n");
+    
+    // Read body with progress bar (suppress binary output to console)
+    int32_t moreToRead = 1;
+    while (moreToRead) {
+        int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            if (loggingWasEnabled) uCxLogEnable();  // Re-enable logging on error
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            
+            // Show progress (but don't output binary data)
+            httpDownloadProgress(buffer, bytesRead);
+        }
+    }
+    printf("\n");  // New line after progress bar
+    
+    // Re-enable logging after successful download
+    if (loggingWasEnabled) {
+        uCxLogEnable();
+    }
+    
+    printf("\n");
     printf("✓ Response received: %d bytes total\n", totalBytes);
     
-    // Disconnect HTTP session
+    // Disconnect HTTP session (with 5-second delay for server disconnect)
     httpSafeDisconnect(sessionId);
     
     printf("\n");
@@ -19844,6 +20041,35 @@ static void httpDownloadProgress(const uint8_t *data, int32_t len)
     fflush(stdout);
 }
 
+// HTTP upload progress display
+// Shows progress bar during file uploads
+static void httpUploadProgress(int32_t bytesSent)
+{
+    gHttpUploadBytesSent = bytesSent;
+    
+    // Calculate percent complete
+    int32_t percentComplete = (gHttpUploadTotalBytes > 0) 
+        ? (int32_t)((gHttpUploadBytesSent * 100) / gHttpUploadTotalBytes) 
+        : 0;
+    
+    // Show progress bar
+    printf("\rUploading: [");
+    int barWidth = 40;
+    int pos = (barWidth * percentComplete) / 100;
+    for (int i = 0; i < barWidth; i++) {
+        if (i < pos) printf("=");
+        else if (i == pos) printf(">");
+        else printf(" ");
+    }
+    
+    if (gHttpUploadTotalBytes > 0) {
+        printf("] %d%% (%d/%d bytes)", percentComplete, gHttpUploadBytesSent, gHttpUploadTotalBytes);
+    } else {
+        printf("] %d bytes", gHttpUploadBytesSent);
+    }
+    fflush(stdout);
+}
+
 // ============================================================================
 // DEVICE CONNECTION & MANAGEMENT
 // ============================================================================
@@ -20480,6 +20706,20 @@ static void loadSettings(void)
                 strncpy(gHttpGetPath, line + 14, sizeof(gHttpGetPath) - 1);
                 gHttpGetPath[sizeof(gHttpGetPath) - 1] = '\0';
             }
+            else if (strncmp(line, "http_post_host=", 15) == 0) {
+                strncpy(gHttpPostHost, line + 15, sizeof(gHttpPostHost) - 1);
+                gHttpPostHost[sizeof(gHttpPostHost) - 1] = '\0';
+            }
+            else if (strncmp(line, "http_post_port=", 15) == 0) {
+                gHttpPostPort = atoi(line + 15);
+                if (gHttpPostPort <= 0 || gHttpPostPort > 65535) {
+                    gHttpPostPort = 443;  // Default to HTTPS port
+                }
+            }
+            else if (strncmp(line, "http_post_path=", 15) == 0) {
+                strncpy(gHttpPostPath, line + 15, sizeof(gHttpPostPath) - 1);
+                gHttpPostPath[sizeof(gHttpPostPath) - 1] = '\0';
+            }
             else if (strncmp(line, "combain_api_key=", 16) == 0) {
                 // Deobfuscate Combain API key
                 deobfuscatePassword(line + 16, gCombainApiKey, sizeof(gCombainApiKey));
@@ -20546,6 +20786,9 @@ static void saveSettings(void)
         fprintf(f, "http_get_host=%s\n", gHttpGetHost);
         fprintf(f, "http_get_port=%d\n", gHttpGetPort);
         fprintf(f, "http_get_path=%s\n", gHttpGetPath);
+        fprintf(f, "http_post_host=%s\n", gHttpPostHost);
+        fprintf(f, "http_post_port=%d\n", gHttpPostPort);
+        fprintf(f, "http_post_path=%s\n", gHttpPostPath);
         fprintf(f, "reg_domain=%d\n", gRegDomain);
         fprintf(f, "compact_menu=%d\n", gCompactMenu ? 1 : 0);
         
