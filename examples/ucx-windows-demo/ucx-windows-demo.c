@@ -1081,7 +1081,17 @@ static void tlsListCertificates(void);
 static void tlsShowCertificateDetails(void);
 static void tlsUploadCertificate(void);
 static void tlsDeleteCertificate(void);
-static bool checkAndPromptForCertificates(const char *protocol);
+// Structure to hold selected certificates
+typedef struct {
+    bool useTls;
+    char caName[64];
+    char clientCertName[64];
+    char clientKeyName[64];
+    bool hasCA;
+    bool hasClientCert;
+} CertificateConfig_t;
+
+static CertificateConfig_t checkAndPromptForCertificates(const char *protocol);
 static void socketCreateTcp(void);
 static void socketCreateUdp(void);
 static void socketConnect(void);
@@ -3639,10 +3649,12 @@ static void socketConnect(void)
     char tlsChoice[10];
     bool useTls = false;
     uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;  // Default to TLS 1.2
+    CertificateConfig_t certConfig = {0};
     
     if (fgets(tlsChoice, sizeof(tlsChoice), stdin)) {
         if (tolower(tlsChoice[0]) == 'y') {
-            if (checkAndPromptForCertificates("TCP/TLS")) {
+            certConfig = checkAndPromptForCertificates("TCP/TLS");
+            if (certConfig.useTls) {
                 useTls = true;
                 
                 // Ask for TLS version
@@ -3667,13 +3679,30 @@ static void socketConnect(void)
     
     // Enable TLS if requested (must be done before connect)
     if (useTls) {
-        int32_t result = uCxSocketSetTLS2(&gUcxHandle, gCurrentSocket, tlsVersion);
+        int32_t result;
+        
+        if (certConfig.hasClientCert && certConfig.hasCA) {
+            // Full mutual TLS
+            result = uCxSocketSetTLS5(&gUcxHandle, gCurrentSocket, tlsVersion, 
+                                     certConfig.caName, certConfig.clientCertName, certConfig.clientKeyName);
+            printf("✓ TLS %s enabled with CA + client certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else if (certConfig.hasCA) {
+            // CA only
+            result = uCxSocketSetTLS3(&gUcxHandle, gCurrentSocket, tlsVersion, certConfig.caName);
+            printf("✓ TLS %s enabled with CA certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else {
+            // No certificates
+            result = uCxSocketSetTLS2(&gUcxHandle, gCurrentSocket, tlsVersion);
+            printf("✓ TLS %s enabled (no certificates - insecure!)\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        }
+        
         if (result != 0) {
             printf("ERROR: Failed to enable TLS (code %d)\n", result);
             return;
         }
-        printf("✓ TLS %s enabled for socket\n", 
-               tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
     }
     
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connecting to %s:%d...%s", hostname, port, useTls ? " (TLS)" : "");
@@ -10841,10 +10870,13 @@ static void mqttConnect(void)
     // Ask if user wants to use MQTTS (TLS)
     printf("Use MQTTS (MQTT over TLS/SSL)? (y/N): ");
     char tlsChoice[10];
+    CertificateConfig_t certConfig = {0};
+    
     if (fgets(tlsChoice, sizeof(tlsChoice), stdin)) {
         if (tolower(tlsChoice[0]) == 'y') {
             // Check for certificates
-            if (checkAndPromptForCertificates("MQTTS")) {
+            certConfig = checkAndPromptForCertificates("MQTTS");
+            if (certConfig.useTls) {
                 useTls = true;
                 port = 8883;  // MQTTS port
             } else {
@@ -10887,12 +10919,28 @@ static void mqttConnect(void)
             }
         }
         
-        result = uCxMqttSetTLS2(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion);
+        if (certConfig.hasClientCert && certConfig.hasCA) {
+            // Full mutual TLS
+            result = uCxMqttSetTLS5(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion, 
+                                   certConfig.caName, certConfig.clientCertName, certConfig.clientKeyName);
+            printf("✓ TLS %s enabled with CA + client certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else if (certConfig.hasCA) {
+            // CA only
+            result = uCxMqttSetTLS3(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion, certConfig.caName);
+            printf("✓ TLS %s enabled with CA certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else {
+            // No certificates
+            result = uCxMqttSetTLS2(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion);
+            printf("✓ TLS %s enabled (no certificates - insecure!)\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        }
+        
         if (result != 0) {
             printf("ERROR: Failed to enable TLS (code %d)\n", result);
             return;
         }
-        printf("✓ TLS %s enabled\n", tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
     }
     
     // Set keepalive (60 seconds)
@@ -12218,8 +12266,11 @@ static void httpGetExample(void)
     
     // Check for certificates if HTTPS
     uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;
+    CertificateConfig_t certConfig = {0};
+    
     if (isHttps) {
-        if (!checkAndPromptForCertificates("HTTPS")) {
+        certConfig = checkAndPromptForCertificates("HTTPS");
+        if (!certConfig.useTls) {
             printf("Operation cancelled.\n");
             printf("\nPress Enter to continue...");
             getchar();
@@ -12227,7 +12278,7 @@ static void httpGetExample(void)
         }
         
         // Ask for TLS version
-        printf("Select TLS version:\n");
+        printf("\nSelect TLS version:\n");
         printf("  [1] TLS 1.2 (default, widely supported)\n");
         printf("  [2] TLS 1.3 (newer, more secure)\n");
         printf("Choice [1]: ");
@@ -12243,14 +12294,30 @@ static void httpGetExample(void)
     printf("\n");
     printf("Configuring HTTP%s connection...\n", isHttps ? "S" : "");
     
-    // Enable TLS if HTTPS
+    // Enable TLS if HTTPS with appropriate certificates
     if (isHttps) {
-        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, tlsVersion);
+        if (certConfig.hasClientCert && certConfig.hasCA) {
+            // Full mutual TLS with CA, client cert, and key
+            err = uCxHttpSetTLS5(&gUcxHandle, sessionId, tlsVersion, 
+                                certConfig.caName, certConfig.clientCertName, certConfig.clientKeyName);
+            printf("✓ TLS %s enabled with CA + client certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else if (certConfig.hasCA) {
+            // CA only for server validation
+            err = uCxHttpSetTLS3(&gUcxHandle, sessionId, tlsVersion, certConfig.caName);
+            printf("✓ TLS %s enabled with CA certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else {
+            // No certificates (insecure)
+            err = uCxHttpSetTLS2(&gUcxHandle, sessionId, tlsVersion);
+            printf("✓ TLS %s enabled (no certificates - insecure!)\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        }
+        
         if (err < 0) {
             printf("ERROR: Failed to enable TLS (error: %d)\n", err);
             return;
         }
-        printf("✓ TLS %s enabled\n", tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
     }
     
     // Step 1: Set connection parameters (must include http:// or https:// prefix)
@@ -12632,8 +12699,11 @@ static void httpPostExample(void)
     
     // Check for certificates if HTTPS
     uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;
+    CertificateConfig_t certConfig = {0};
+    
     if (isHttps) {
-        if (!checkAndPromptForCertificates("HTTPS")) {
+        certConfig = checkAndPromptForCertificates("HTTPS");
+        if (!certConfig.useTls) {
             printf("Operation cancelled.\n");
             printf("\nPress Enter to continue...");
             getchar();
@@ -12641,7 +12711,7 @@ static void httpPostExample(void)
         }
         
         // Ask for TLS version
-        printf("Select TLS version:\n");
+        printf("\nSelect TLS version:\n");
         printf("  [1] TLS 1.2 (default, widely supported)\n");
         printf("  [2] TLS 1.3 (newer, more secure)\n");
         printf("Choice [1]: ");
@@ -12659,7 +12729,24 @@ static void httpPostExample(void)
     printf("Configuring %s connection...\n", isHttps ? "HTTPS" : "HTTP");
     
     if (isHttps) {
-        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, tlsVersion);
+        if (certConfig.hasClientCert && certConfig.hasCA) {
+            // Full mutual TLS with CA, client cert, and key
+            err = uCxHttpSetTLS5(&gUcxHandle, sessionId, tlsVersion, 
+                                certConfig.caName, certConfig.clientCertName, certConfig.clientKeyName);
+            printf("✓ TLS %s enabled with CA + client certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else if (certConfig.hasCA) {
+            // CA only for server validation
+            err = uCxHttpSetTLS3(&gUcxHandle, sessionId, tlsVersion, certConfig.caName);
+            printf("✓ TLS %s enabled with CA certificate\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        } else {
+            // No certificates (insecure)
+            err = uCxHttpSetTLS2(&gUcxHandle, sessionId, tlsVersion);
+            printf("✓ TLS %s enabled (no certificates - insecure!)\n", 
+                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+        }
+        
         if (err < 0) {
             printf("ERROR: Failed to enable TLS (error: %d)\n", err);
             printf("\n");
@@ -12667,7 +12754,6 @@ static void httpPostExample(void)
             getchar();
             return;
         }
-        printf("✓ TLS %s enabled\n", tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
     }
     
     // Step 2: Set connection parameters
@@ -17101,33 +17187,45 @@ static void tlsDeleteCertificate(void)
 // ----------------------------------------------------------------
 
 // Check for installed certificates and prompt user if they want to use them
-// Returns: true if user wants to proceed with TLS, false if not
-static bool checkAndPromptForCertificates(const char *protocol)
+// Returns: CertificateConfig_t with useTls flag and certificate names
+static CertificateConfig_t checkAndPromptForCertificates(const char *protocol)
 {
+    CertificateConfig_t config = {0};
+    
     if (!gUcxConnected) {
-        return false;
+        return config;
     }
     
-    // Query installed certificates
+    // Query installed certificates and store them
     uCxSecurityListCertificatesBegin(&gUcxHandle);
     
     uCxSecListCertificates_t certInfo;
-    int certCount = 0;
+    char rootCerts[10][64] = {0};
+    char clientCerts[10][64] = {0};
+    char keyCerts[10][64] = {0};
     int rootCertCount = 0;
     int clientCertCount = 0;
     int keyCertCount = 0;
     
     while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
-        certCount++;
-        if (certInfo.cert_type == U_SEC_CERT_TYPE_ROOT) rootCertCount++;
-        else if (certInfo.cert_type == U_SEC_CERT_TYPE_CLIENT) clientCertCount++;
-        else if (certInfo.cert_type == U_SEC_CERT_TYPE_KEY) keyCertCount++;
+        if (certInfo.cert_type == U_SEC_CERT_TYPE_ROOT && rootCertCount < 10) {
+            strncpy(rootCerts[rootCertCount], certInfo.name, sizeof(rootCerts[0]) - 1);
+            rootCertCount++;
+        } else if (certInfo.cert_type == U_SEC_CERT_TYPE_CLIENT && clientCertCount < 10) {
+            strncpy(clientCerts[clientCertCount], certInfo.name, sizeof(clientCerts[0]) - 1);
+            clientCertCount++;
+        } else if (certInfo.cert_type == U_SEC_CERT_TYPE_KEY && keyCertCount < 10) {
+            strncpy(keyCerts[keyCertCount], certInfo.name, sizeof(keyCerts[0]) - 1);
+            keyCertCount++;
+        }
     }
     
     uCxEnd(&gUcxHandle);
     
+    int totalCerts = rootCertCount + clientCertCount + keyCertCount;
+    
     // No certificates installed
-    if (certCount == 0) {
+    if (totalCerts == 0) {
         printf("\n");
         printf("NOTE: No TLS certificates installed on module.\n");
         printf("      For secure %s connections, upload certificates via [x] Security/TLS menu.\n", protocol);
@@ -17138,14 +17236,14 @@ static bool checkAndPromptForCertificates(const char *protocol)
         
         char confirm[10];
         if (!fgets(confirm, sizeof(confirm), stdin)) {
-            return false;
+            return config;
         }
         
         // Default to yes if user just presses Enter
         if (confirm[0] == '\n' || tolower(confirm[0]) == 'y') {
-            return true;
+            config.useTls = true;
         }
-        return false;
+        return config;
     }
     
     // Certificates are installed - show summary
@@ -17154,29 +17252,77 @@ static bool checkAndPromptForCertificates(const char *protocol)
     if (rootCertCount > 0) {
         printf("  ✓ %d CA Root Certificate%s (validates server)\n", 
                rootCertCount, rootCertCount > 1 ? "s" : "");
+        for (int i = 0; i < rootCertCount; i++) {
+            printf("    [%d] %s\n", i + 1, rootCerts[i]);
+        }
     }
     if (clientCertCount > 0) {
         printf("  ✓ %d Client Certificate%s (for mutual TLS)\n", 
                clientCertCount, clientCertCount > 1 ? "s" : "");
+        for (int i = 0; i < clientCertCount; i++) {
+            printf("    [%d] %s\n", i + 1, clientCerts[i]);
+        }
     }
     if (keyCertCount > 0) {
         printf("  ✓ %d Private Key%s\n", 
                keyCertCount, keyCertCount > 1 ? "s" : "");
+        for (int i = 0; i < keyCertCount; i++) {
+            printf("    [%d] %s\n", i + 1, keyCerts[i]);
+        }
     }
     printf("\n");
     printf("Use TLS/SSL for this %s connection? (Y/n): ", protocol);
     
     char confirm[10];
     if (!fgets(confirm, sizeof(confirm), stdin)) {
-        return false;
+        return config;
     }
     
     // Default to yes if user just presses Enter
-    if (confirm[0] == '\n' || tolower(confirm[0]) == 'y') {
-        return true;
+    if (!(confirm[0] == '\n' || tolower(confirm[0]) == 'y')) {
+        return config;  // useTls = false
     }
     
-    return false;
+    config.useTls = true;
+    
+    // Prompt for CA certificate selection
+    if (rootCertCount > 0) {
+        printf("\nSelect CA Root Certificate (1-%d, or 0 to skip): ", rootCertCount);
+        char choice[10];
+        if (fgets(choice, sizeof(choice), stdin)) {
+            int idx = atoi(choice);
+            if (idx > 0 && idx <= rootCertCount) {
+                strncpy(config.caName, rootCerts[idx - 1], sizeof(config.caName) - 1);
+                config.hasCA = true;
+            }
+        }
+    }
+    
+    // Prompt for client certificate and key (only if both available)
+    if (clientCertCount > 0 && keyCertCount > 0) {
+        printf("\nUse client certificate for mutual TLS? (y/N): ");
+        char clientChoice[10];
+        if (fgets(clientChoice, sizeof(clientChoice), stdin) && tolower(clientChoice[0]) == 'y') {
+            printf("Select Client Certificate (1-%d): ", clientCertCount);
+            if (fgets(clientChoice, sizeof(clientChoice), stdin)) {
+                int idx = atoi(clientChoice);
+                if (idx > 0 && idx <= clientCertCount) {
+                    strncpy(config.clientCertName, clientCerts[idx - 1], sizeof(config.clientCertName) - 1);
+                    
+                    printf("Select Private Key (1-%d): ", keyCertCount);
+                    if (fgets(clientChoice, sizeof(clientChoice), stdin)) {
+                        idx = atoi(clientChoice);
+                        if (idx > 0 && idx <= keyCertCount) {
+                            strncpy(config.clientKeyName, keyCerts[idx - 1], sizeof(config.clientKeyName) - 1);
+                            config.hasClientCert = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return config;
 }
 
 // ----------------------------------------------------------------
