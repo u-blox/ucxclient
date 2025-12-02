@@ -1081,6 +1081,17 @@ static void tlsListCertificates(void);
 static void tlsShowCertificateDetails(void);
 static void tlsUploadCertificate(void);
 static void tlsDeleteCertificate(void);
+
+// Helper function to get TLS version string
+static const char* getTlsVersionString(uWifiTlsVersion_t version) {
+    switch (version) {
+        case U_WIFI_TLS_VERSION_TLS1_2: return "1.2";
+        case U_WIFI_TLS_VERSION_TLS1_3: return "1.3";
+        case U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3: return "1.2/1.3";
+        default: return "unknown";
+    }
+}
+
 // Structure to hold selected certificates
 typedef struct {
     bool useTls;
@@ -3661,12 +3672,15 @@ static void socketConnect(void)
                 printf("Select TLS version:\n");
                 printf("  [1] TLS 1.2 (default, widely supported)\n");
                 printf("  [2] TLS 1.3 (newer, more secure)\n");
+                printf("  [3] TLS 1.2 or 1.3 (auto-negotiate highest)\n");
                 printf("Choice [1]: ");
                 
                 char versionChoice[10];
                 if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
                     if (versionChoice[0] == '2') {
                         tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+                    } else if (versionChoice[0] == '3') {
+                        tlsVersion = U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3;
                     }
                     // else defaults to TLS 1.2
                 }
@@ -3685,18 +3699,15 @@ static void socketConnect(void)
             // Full mutual TLS
             result = uCxSocketSetTLS5(&gUcxHandle, gCurrentSocket, tlsVersion, 
                                      certConfig.caName, certConfig.clientCertName, certConfig.clientKeyName);
-            printf("✓ TLS %s enabled with CA + client certificate\n", 
-                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+            printf("✓ TLS %s enabled with CA + client certificate\n", getTlsVersionString(tlsVersion));
         } else if (certConfig.hasCA) {
             // CA only
             result = uCxSocketSetTLS3(&gUcxHandle, gCurrentSocket, tlsVersion, certConfig.caName);
-            printf("✓ TLS %s enabled with CA certificate\n", 
-                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+            printf("✓ TLS %s enabled with CA certificate\n", getTlsVersionString(tlsVersion));
         } else {
             // No certificates
             result = uCxSocketSetTLS2(&gUcxHandle, gCurrentSocket, tlsVersion);
-            printf("✓ TLS %s enabled (no certificates - insecure!)\n", 
-                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+            printf("✓ TLS %s enabled (no certificates - insecure!)\n", getTlsVersionString(tlsVersion));
         }
         
         if (result != 0) {
@@ -10909,6 +10920,7 @@ static void mqttConnect(void)
         printf("Select TLS version:\n");
         printf("  [1] TLS 1.2 (default, widely supported)\n");
         printf("  [2] TLS 1.3 (newer, more secure)\n");
+        printf("  [3] TLS 1.2 or 1.3 (auto-negotiate highest)\n");
         printf("Choice [1]: ");
         
         uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;
@@ -10916,6 +10928,8 @@ static void mqttConnect(void)
         if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
             if (versionChoice[0] == '2') {
                 tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+            } else if (versionChoice[0] == '3') {
+                tlsVersion = U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3;
             }
         }
         
@@ -10923,18 +10937,15 @@ static void mqttConnect(void)
             // Full mutual TLS
             result = uCxMqttSetTLS5(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion, 
                                    certConfig.caName, certConfig.clientCertName, certConfig.clientKeyName);
-            printf("✓ TLS %s enabled with CA + client certificate\n", 
-                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+            printf("✓ TLS %s enabled with CA + client certificate\n", getTlsVersionString(tlsVersion));
         } else if (certConfig.hasCA) {
             // CA only
             result = uCxMqttSetTLS3(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion, certConfig.caName);
-            printf("✓ TLS %s enabled with CA certificate\n", 
-                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+            printf("✓ TLS %s enabled with CA certificate\n", getTlsVersionString(tlsVersion));
         } else {
             // No certificates
             result = uCxMqttSetTLS2(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion);
-            printf("✓ TLS %s enabled (no certificates - insecure!)\n", 
-                   tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+            printf("✓ TLS %s enabled (no certificates - insecure!)\n", getTlsVersionString(tlsVersion));
         }
         
         if (result != 0) {
@@ -12281,12 +12292,15 @@ static void httpGetExample(void)
         printf("\nSelect TLS version:\n");
         printf("  [1] TLS 1.2 (default, widely supported)\n");
         printf("  [2] TLS 1.3 (newer, more secure)\n");
+        printf("  [3] TLS 1.2 or 1.3 (auto-negotiate highest)\n");
         printf("Choice [1]: ");
         
         char versionChoice[10];
         if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
             if (versionChoice[0] == '2') {
                 tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+            } else if (versionChoice[0] == '3') {
+                tlsVersion = U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3;
             }
         }
     }
@@ -12714,12 +12728,15 @@ static void httpPostExample(void)
         printf("\nSelect TLS version:\n");
         printf("  [1] TLS 1.2 (default, widely supported)\n");
         printf("  [2] TLS 1.3 (newer, more secure)\n");
+        printf("  [3] TLS 1.2 or 1.3 (auto-negotiate highest)\n");
         printf("Choice [1]: ");
         
         char versionChoice[10];
         if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
             if (versionChoice[0] == '2') {
                 tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+            } else if (versionChoice[0] == '3') {
+                tlsVersion = U_WIFI_TLS_VERSION_TLS1_2_OR_TLS1_3;
             }
         }
     }
