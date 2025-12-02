@@ -152,13 +152,18 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     // Wait for response
     exampleWaitEvent(URC_FLAG_HTTP_RESPONSE, 10);
 
-    // Read response headers
+    // Read response headers in chunks
     uCxHttpGetHeader_t headerRsp;
-    if (uCxHttpGetHeader1Begin(&ucxHandle, sessionId, &headerRsp)) {
-        printf("HTTP Headers:\n");
-        printf("%.*s\n", (int)headerRsp.byte_array_data.length, headerRsp.byte_array_data.pData);
-        uCxEnd(&ucxHandle);
-    }
+    printf("HTTP Headers:\n");
+    do {
+        if (uCxHttpGetHeader2Begin(&ucxHandle, sessionId, 512, &headerRsp)) {
+            printf("%.*s", (int)headerRsp.byte_array_data.length, headerRsp.byte_array_data.pData);
+            uCxEnd(&ucxHandle);
+        } else {
+            break;
+        }
+    } while (headerRsp.more_to_read);
+    printf("\n");
 
     // Read response body
     uint8_t rxData[512];
