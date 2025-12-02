@@ -5,3 +5,4 @@ west-workspace/
 __pycache__
 filesystem.bin
 examples/config.local.h
+settings.json
