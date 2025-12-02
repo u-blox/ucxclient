@@ -17282,11 +17282,13 @@ static CertificateConfig_t checkAndPromptForCertificates(const char *protocol)
     if (!(confirm[0] == '\n' || tolower(confirm[0]) == 'y')) {
         return config;  // useTls = false
     }
-    
     config.useTls = true;
     
-    // Prompt for CA certificate selection
-    if (rootCertCount > 0) {
+    // Auto-select CA certificate if only one, otherwise prompt
+    if (rootCertCount == 1) {
+        strncpy(config.caName, rootCerts[0], sizeof(config.caName) - 1);
+        config.hasCA = true;
+    } else if (rootCertCount > 1) {
         printf("\nSelect CA Root Certificate (1-%d, or 0 to skip): ", rootCertCount);
         char choice[10];
         if (fgets(choice, sizeof(choice), stdin)) {
@@ -17298,27 +17300,54 @@ static CertificateConfig_t checkAndPromptForCertificates(const char *protocol)
         }
     }
     
-    // Prompt for client certificate and key (only if both available)
-    if (clientCertCount > 0 && keyCertCount > 0) {
+    // Auto-select client cert+key if only one of each
+    if (clientCertCount == 1 && keyCertCount == 1) {
+        // Auto-select the single client cert and key
+        strncpy(config.clientCertName, clientCerts[0], sizeof(config.clientCertName) - 1);
+        strncpy(config.clientKeyName, keyCerts[0], sizeof(config.clientKeyName) - 1);
+        config.hasClientCert = true;
+    } else if (clientCertCount > 0 && keyCertCount > 0) {
+        // Multiple certs/keys - prompt user
         printf("\nUse client certificate for mutual TLS? (y/N): ");
         char clientChoice[10];
         if (fgets(clientChoice, sizeof(clientChoice), stdin) && tolower(clientChoice[0]) == 'y') {
-            printf("Select Client Certificate (1-%d): ", clientCertCount);
-            if (fgets(clientChoice, sizeof(clientChoice), stdin)) {
-                int idx = atoi(clientChoice);
-                if (idx > 0 && idx <= clientCertCount) {
-                    strncpy(config.clientCertName, clientCerts[idx - 1], sizeof(config.clientCertName) - 1);
-                    
-                    printf("Select Private Key (1-%d): ", keyCertCount);
-                    if (fgets(clientChoice, sizeof(clientChoice), stdin)) {
-                        idx = atoi(clientChoice);
-                        if (idx > 0 && idx <= keyCertCount) {
-                            strncpy(config.clientKeyName, keyCerts[idx - 1], sizeof(config.clientKeyName) - 1);
-                            config.hasClientCert = true;
-                        }
+            if (clientCertCount == 1) {
+                strncpy(config.clientCertName, clientCerts[0], sizeof(config.clientCertName) - 1);
+            } else {
+                printf("Select Client Certificate (1-%d): ", clientCertCount);
+                if (fgets(clientChoice, sizeof(clientChoice), stdin)) {
+                    int idx = atoi(clientChoice);
+                    if (idx > 0 && idx <= clientCertCount) {
+                        strncpy(config.clientCertName, clientCerts[idx - 1], sizeof(config.clientCertName) - 1);
                     }
                 }
             }
+            
+            if (keyCertCount == 1) {
+                strncpy(config.clientKeyName, keyCerts[0], sizeof(config.clientKeyName) - 1);
+            } else {
+                printf("Select Private Key (1-%d): ", keyCertCount);
+                if (fgets(clientChoice, sizeof(clientChoice), stdin)) {
+                    int idx = atoi(clientChoice);
+                    if (idx > 0 && idx <= keyCertCount) {
+                        strncpy(config.clientKeyName, keyCerts[idx - 1], sizeof(config.clientKeyName) - 1);
+                    }
+                }
+            }
+            
+            config.hasClientCert = (strlen(config.clientCertName) > 0 && strlen(config.clientKeyName) > 0);
+        }
+    }
+    
+    // Print what we're using
+    if (config.hasCA || config.hasClientCert) {
+        printf("\n");
+        if (config.hasCA) {
+            printf("✓ Using CA certificate: %s\n", config.caName);
+        }
+        if (config.hasClientCert) {
+            printf("✓ Using client certificate: %s\n", config.clientCertName);
+            printf("✓ Using private key: %s\n", config.clientKeyName);
         }
     }
     
