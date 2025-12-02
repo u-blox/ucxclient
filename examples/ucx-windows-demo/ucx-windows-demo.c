@@ -12098,18 +12098,27 @@ static void httpGetExample(void)
     }
     input[strcspn(input, "\r\n")] = 0;  // Remove newline
     
+    // Trim leading and trailing whitespace
+    char *trimmed = input;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\t')) {
+        *end = '\0';
+        end--;
+    }
+    
     // Use saved host if input is empty
-    if (strlen(input) == 0 && strlen(gHttpGetHost) > 0) {
+    if (strlen(trimmed) == 0 && strlen(gHttpGetHost) > 0) {
         strncpy(host, gHttpGetHost, sizeof(host) - 1);
         strncpy(path, gHttpGetPath, sizeof(path) - 1);
         port = gHttpGetPort;
         isHttps = gHttpGetIsHttps;
     }
     // Parse full URL if provided
-    else if (strncmp(input, "http://", 7) == 0 || strncmp(input, "https://", 8) == 0) {
+    else if (strncmp(trimmed, "http://", 7) == 0 || strncmp(trimmed, "https://", 8) == 0) {
         // Determine protocol
-        isHttps = (strncmp(input, "https://", 8) == 0);
-        const char *urlStart = isHttps ? input + 8 : input + 7;
+        isHttps = (strncmp(trimmed, "https://", 8) == 0);
+        const char *urlStart = isHttps ? trimmed + 8 : trimmed + 7;
         
         // Find end of host (either '/' for path or ':' for port)
         const char *pathStart = strchr(urlStart, '/');
@@ -12151,7 +12160,7 @@ static void httpGetExample(void)
     }
     // Host only provided, prompt for path and port
     else {
-        strncpy(host, input, sizeof(host) - 1);
+        strncpy(host, trimmed, sizeof(host) - 1);
         host[sizeof(host) - 1] = '\0';
         
         // Prompt for path
@@ -12456,17 +12465,26 @@ static void httpPostExample(void)
     }
     input[strcspn(input, "\r\n")] = 0;  // Remove newline
     
+    // Trim leading and trailing whitespace
+    char *trimmed = input;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\t')) {
+        *end = '\0';
+        end--;
+    }
+    
     // If empty and we have last URL, use it
-    if (strlen(input) == 0 && strlen(gHttpPostHost) > 0) {
+    if (strlen(trimmed) == 0 && strlen(gHttpPostHost) > 0) {
         strncpy(host, gHttpPostHost, sizeof(host) - 1);
         port = gHttpPostPort;
         strncpy(path, gHttpPostPath, sizeof(path) - 1);
         isHttps = gHttpPostIsHttps;
-    } else if (strlen(input) > 0) {
+    } else if (strlen(trimmed) > 0) {
         // Parse URL if it contains http:// or https://
-        if (strncmp(input, "http://", 7) == 0) {
+        if (strncmp(trimmed, "http://", 7) == 0) {
             isHttps = false;
-            char *hostStart = input + 7;
+            char *hostStart = trimmed + 7;
             char *portStart = strchr(hostStart, ':');
             char *pathStart = strchr(hostStart, '/');
             
@@ -12497,9 +12515,9 @@ static void httpPostExample(void)
                 strcpy(path, "/post");
                 port = 80;
             }
-        } else if (strncmp(input, "https://", 8) == 0) {
+        } else if (strncmp(trimmed, "https://", 8) == 0) {
             isHttps = true;
-            char *hostStart = input + 8;
+            char *hostStart = trimmed + 8;
             char *portStart = strchr(hostStart, ':');
             char *pathStart = strchr(hostStart, '/');
             
