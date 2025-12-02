@@ -194,6 +194,9 @@ static int32_t parseIncomingChar(uCxAtClient_t *pClient, char ch)
         pRxBuffer[pClient->rxBufferPos++] = ch;
         if (pClient->rxBufferPos == pClient->pConfig->rxBufferLen) {
             // Overflow - discard everything and start over
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                            "RX buffer overflow (%lu bytes), discarding data",
+                            (unsigned long)pClient->pConfig->rxBufferLen);
             pClient->rxBufferPos = 0;
         }
     }
