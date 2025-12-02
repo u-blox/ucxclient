@@ -1081,6 +1081,7 @@ static void tlsListCertificates(void);
 static void tlsShowCertificateDetails(void);
 static void tlsUploadCertificate(void);
 static void tlsDeleteCertificate(void);
+static bool checkAndPromptForCertificates(const char *protocol);
 static void socketCreateTcp(void);
 static void socketCreateUdp(void);
 static void socketConnect(void);
@@ -3633,7 +3634,49 @@ static void socketConnect(void)
         return;
     }
     
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connecting to %s:%d...", hostname, port);
+    // Ask if user wants to use TLS for this TCP connection
+    printf("Use TLS/SSL for this connection? (y/N): ");
+    char tlsChoice[10];
+    bool useTls = false;
+    uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;  // Default to TLS 1.2
+    
+    if (fgets(tlsChoice, sizeof(tlsChoice), stdin)) {
+        if (tolower(tlsChoice[0]) == 'y') {
+            if (checkAndPromptForCertificates("TCP/TLS")) {
+                useTls = true;
+                
+                // Ask for TLS version
+                printf("Select TLS version:\n");
+                printf("  [1] TLS 1.2 (default, widely supported)\n");
+                printf("  [2] TLS 1.3 (newer, more secure)\n");
+                printf("Choice [1]: ");
+                
+                char versionChoice[10];
+                if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
+                    if (versionChoice[0] == '2') {
+                        tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+                    }
+                    // else defaults to TLS 1.2
+                }
+            } else {
+                printf("Operation cancelled.\n");
+                return;
+            }
+        }
+    }
+    
+    // Enable TLS if requested (must be done before connect)
+    if (useTls) {
+        int32_t result = uCxSocketSetTLS2(&gUcxHandle, gCurrentSocket, tlsVersion);
+        if (result != 0) {
+            printf("ERROR: Failed to enable TLS (code %d)\n", result);
+            return;
+        }
+        printf("✓ TLS %s enabled for socket\n", 
+               tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
+    }
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Connecting to %s:%d...%s", hostname, port, useTls ? " (TLS)" : "");
     
     int32_t result = uCxSocketConnect(&gUcxHandle, gCurrentSocket, hostname, port);
     
@@ -10792,12 +10835,31 @@ static void mqttConnect(void)
     // Configure MQTT connection parameters
     const char *broker = MQTT_DEFAULT_HOST;
     int32_t port = MQTT_DEFAULT_PORT;
+    bool useTls = false;
     char clientId[64];
+    
+    // Ask if user wants to use MQTTS (TLS)
+    printf("Use MQTTS (MQTT over TLS/SSL)? (y/N): ");
+    char tlsChoice[10];
+    if (fgets(tlsChoice, sizeof(tlsChoice), stdin)) {
+        if (tolower(tlsChoice[0]) == 'y') {
+            // Check for certificates
+            if (checkAndPromptForCertificates("MQTTS")) {
+                useTls = true;
+                port = 8883;  // MQTTS port
+            } else {
+                printf("Operation cancelled.\n");
+                printf("\nPress Enter to continue...");
+                getchar();
+                return;
+            }
+        }
+    }
     
     // Generate client ID with random component
     snprintf(clientId, sizeof(clientId), "ucxclient-%d", rand() % 10000);
     
-    printf("Broker: %s:%d\n", broker, port);
+    printf("\nBroker: %s:%d (%s)\n", broker, port, useTls ? "MQTTS/TLS" : "Plain MQTT");
     printf("Client ID: %s\n", clientId);
     
     // Set connection parameters
@@ -10807,6 +10869,30 @@ static void mqttConnect(void)
     if (result != 0) {
         printf("ERROR: Failed to set connection parameters (code %d)\n", result);
         return;
+    }
+    
+    // Enable TLS if requested
+    if (useTls) {
+        // Ask for TLS version
+        printf("Select TLS version:\n");
+        printf("  [1] TLS 1.2 (default, widely supported)\n");
+        printf("  [2] TLS 1.3 (newer, more secure)\n");
+        printf("Choice [1]: ");
+        
+        uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;
+        char versionChoice[10];
+        if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
+            if (versionChoice[0] == '2') {
+                tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+            }
+        }
+        
+        result = uCxMqttSetTLS2(&gUcxHandle, MQTT_CONFIG_ID, tlsVersion);
+        if (result != 0) {
+            printf("ERROR: Failed to enable TLS (code %d)\n", result);
+            return;
+        }
+        printf("✓ TLS %s enabled\n", tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
     }
     
     // Set keepalive (60 seconds)
@@ -12121,17 +12207,41 @@ static void httpGetExample(void)
     
     bool saveToFile = (strlen(filename) > 0);
     
+    // Check for certificates if HTTPS
+    uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;
+    if (isHttps) {
+        if (!checkAndPromptForCertificates("HTTPS")) {
+            printf("Operation cancelled.\n");
+            printf("\nPress Enter to continue...");
+            getchar();
+            return;
+        }
+        
+        // Ask for TLS version
+        printf("Select TLS version:\n");
+        printf("  [1] TLS 1.2 (default, widely supported)\n");
+        printf("  [2] TLS 1.3 (newer, more secure)\n");
+        printf("Choice [1]: ");
+        
+        char versionChoice[10];
+        if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
+            if (versionChoice[0] == '2') {
+                tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+            }
+        }
+    }
+    
     printf("\n");
     printf("Configuring HTTP%s connection...\n", isHttps ? "S" : "");
     
     // Enable TLS if HTTPS
     if (isHttps) {
-        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, tlsVersion);
         if (err < 0) {
             printf("ERROR: Failed to enable TLS (error: %d)\n", err);
             return;
         }
-        printf("✓ TLS 1.2 enabled\n");
+        printf("✓ TLS %s enabled\n", tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
     }
     
     // Step 1: Set connection parameters (must include http:// or https:// prefix)
@@ -12502,12 +12612,36 @@ static void httpPostExample(void)
         return;
     }
     
+    // Check for certificates if HTTPS
+    uWifiTlsVersion_t tlsVersion = U_WIFI_TLS_VERSION_TLS1_2;
+    if (isHttps) {
+        if (!checkAndPromptForCertificates("HTTPS")) {
+            printf("Operation cancelled.\n");
+            printf("\nPress Enter to continue...");
+            getchar();
+            return;
+        }
+        
+        // Ask for TLS version
+        printf("Select TLS version:\n");
+        printf("  [1] TLS 1.2 (default, widely supported)\n");
+        printf("  [2] TLS 1.3 (newer, more secure)\n");
+        printf("Choice [1]: ");
+        
+        char versionChoice[10];
+        if (fgets(versionChoice, sizeof(versionChoice), stdin)) {
+            if (versionChoice[0] == '2') {
+                tlsVersion = U_WIFI_TLS_VERSION_TLS1_3;
+            }
+        }
+    }
+    
     // Step 1: Configure HTTPS if needed
     printf("\n");
     printf("Configuring %s connection...\n", isHttps ? "HTTPS" : "HTTP");
     
     if (isHttps) {
-        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, tlsVersion);
         if (err < 0) {
             printf("ERROR: Failed to enable TLS (error: %d)\n", err);
             printf("\n");
@@ -12515,7 +12649,7 @@ static void httpPostExample(void)
             getchar();
             return;
         }
-        printf("✓ TLS 1.2 enabled\n");
+        printf("✓ TLS %s enabled\n", tlsVersion == U_WIFI_TLS_VERSION_TLS1_3 ? "1.3" : "1.2");
     }
     
     // Step 2: Set connection parameters
@@ -16309,8 +16443,6 @@ static void tlsSetVersion(void)
     printf("\n");
     printf("For TLS configuration, use:\n");
     printf("  - Upload CA certificates (option [5])\n");
-    printf("  - Configure certificate validation (AT+USECVAL)\n");
-    printf("  - Enable/disable TLS extensions (AT+USECEXT)\n");
     printf("\n");
     printf("\n");
     printf("\n");
@@ -16944,6 +17076,89 @@ static void tlsDeleteCertificate(void)
     printf("\n────────────────────────────────────────────────────────────────────────────────\n");
     printf("Press Enter to continue...");
     getchar();
+}
+
+// ----------------------------------------------------------------
+// Certificate Helper Functions
+// ----------------------------------------------------------------
+
+// Check for installed certificates and prompt user if they want to use them
+// Returns: true if user wants to proceed with TLS, false if not
+static bool checkAndPromptForCertificates(const char *protocol)
+{
+    if (!gUcxConnected) {
+        return false;
+    }
+    
+    // Query installed certificates
+    uCxSecurityListCertificatesBegin(&gUcxHandle);
+    
+    uCxSecListCertificates_t certInfo;
+    int certCount = 0;
+    int rootCertCount = 0;
+    int clientCertCount = 0;
+    int keyCertCount = 0;
+    
+    while (uCxSecurityListCertificatesGetNext(&gUcxHandle, &certInfo)) {
+        certCount++;
+        if (certInfo.cert_type == U_SEC_CERT_TYPE_ROOT) rootCertCount++;
+        else if (certInfo.cert_type == U_SEC_CERT_TYPE_CLIENT) clientCertCount++;
+        else if (certInfo.cert_type == U_SEC_CERT_TYPE_KEY) keyCertCount++;
+    }
+    
+    uCxEnd(&gUcxHandle);
+    
+    // No certificates installed
+    if (certCount == 0) {
+        printf("\n");
+        printf("NOTE: No TLS certificates installed on module.\n");
+        printf("      For secure %s connections, upload certificates via [x] Security/TLS menu.\n", protocol);
+        printf("      - CA Root Certificate: Validates server identity (recommended)\n");
+        printf("      - Client Certificate + Key: For mutual TLS authentication\n");
+        printf("\n");
+        printf("Continue without certificates (connection may fail if server requires TLS)? (Y/n): ");
+        
+        char confirm[10];
+        if (!fgets(confirm, sizeof(confirm), stdin)) {
+            return false;
+        }
+        
+        // Default to yes if user just presses Enter
+        if (confirm[0] == '\n' || tolower(confirm[0]) == 'y') {
+            return true;
+        }
+        return false;
+    }
+    
+    // Certificates are installed - show summary
+    printf("\n");
+    printf("TLS Certificates installed:\n");
+    if (rootCertCount > 0) {
+        printf("  ✓ %d CA Root Certificate%s (validates server)\n", 
+               rootCertCount, rootCertCount > 1 ? "s" : "");
+    }
+    if (clientCertCount > 0) {
+        printf("  ✓ %d Client Certificate%s (for mutual TLS)\n", 
+               clientCertCount, clientCertCount > 1 ? "s" : "");
+    }
+    if (keyCertCount > 0) {
+        printf("  ✓ %d Private Key%s\n", 
+               keyCertCount, keyCertCount > 1 ? "s" : "");
+    }
+    printf("\n");
+    printf("Use TLS/SSL for this %s connection? (Y/n): ", protocol);
+    
+    char confirm[10];
+    if (!fgets(confirm, sizeof(confirm), stdin)) {
+        return false;
+    }
+    
+    // Default to yes if user just presses Enter
+    if (confirm[0] == '\n' || tolower(confirm[0]) == 'y') {
+        return true;
+    }
+    
+    return false;
 }
 
 // ----------------------------------------------------------------
