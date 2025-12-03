@@ -1251,6 +1251,8 @@ static void httpDisconnectUrc(struct uCxHandle *puCxHandle, int32_t session_id);
 // HTTP and REST API example functions
 static void httpGetExample(void);
 static void httpPostExample(void);
+static void httpDeleteExample(void);
+static void httpPutExample(void);
 static void httpQuoteApiExample(void);
 static void httpTimeApiExample(void);
 static void httpZenQuotesExample(void);
@@ -12942,6 +12944,650 @@ static void httpPostExample(void)
     getchar();
 }
 
+/**
+ * @brief HTTP DELETE request example with optional body data
+ * 
+ * Demonstrates DELETE requests for REST APIs. DELETE can optionally include
+ * a request body for additional data (though this is less common than GET/POST).
+ */
+static void httpDeleteExample(void)
+{
+    char input[512];
+    char host[256];
+    char path[512];
+    int port = 443;
+    char deleteData[4096] = "";
+    int32_t sessionId = 0;
+    int32_t err;
+    bool isHttps = true;
+    int32_t dataLen = 0;
+    bool includeBody = false;
+    
+    printf("\n");
+    printf("=== HTTP DELETE REQUEST ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Enter full URL or host/path separately:\n");
+    printf("  Examples: https://httpbin.org/delete\n");
+    printf("            http://api.example.com/resource/123\n");
+    printf("\n");
+    
+    // Show last used URL if available
+    if (strlen(gHttpDeleteHost) > 0) {
+        printf("Last used: %s://%s:%d%s\n", 
+               gHttpDeleteIsHttps ? "https" : "http",
+               gHttpDeleteHost, gHttpDeletePort, gHttpDeletePath);
+        printf("\n");
+    }
+    
+    // Prompt for URL or host
+    if (strlen(gHttpDeleteHost) > 0) {
+        printf("URL or Host (press Enter to use last URL, or enter new): ");
+    } else {
+        printf("URL or Host (e.g., https://httpbin.org/delete): ");
+    }
+    
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\r\n")] = 0;
+    
+    char *trimmed = input;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\t')) {
+        *end = '\0';
+        end--;
+    }
+    
+    // Use saved settings if empty
+    if (strlen(trimmed) == 0 && strlen(gHttpDeleteHost) > 0) {
+        strncpy(host, gHttpDeleteHost, sizeof(host) - 1);
+        port = gHttpDeletePort;
+        strncpy(path, gHttpDeletePath, sizeof(path) - 1);
+        isHttps = gHttpDeleteIsHttps;
+    } else if (strlen(trimmed) > 0) {
+        // Parse URL
+        if (strncmp(trimmed, "https://", 8) == 0) {
+            isHttps = true;
+            char *hostStart = trimmed + 8;
+            char *portStart = strchr(hostStart, ':');
+            char *pathStart = strchr(hostStart, '/');
+            
+            if (portStart && (!pathStart || portStart < pathStart)) {
+                size_t hostLen = portStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                port = atoi(portStart + 1);
+                if (port <= 0 || port > 65535) port = 443;
+                if (pathStart) {
+                    strncpy(path, pathStart, sizeof(path) - 1);
+                } else {
+                    strcpy(path, "/delete");
+                }
+            } else if (pathStart) {
+                size_t hostLen = pathStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                strncpy(path, pathStart, sizeof(path) - 1);
+                port = 443;
+            } else {
+                strncpy(host, hostStart, sizeof(host) - 1);
+                strcpy(path, "/delete");
+                port = 443;
+            }
+        } else if (strncmp(trimmed, "http://", 7) == 0) {
+            isHttps = false;
+            char *hostStart = trimmed + 7;
+            char *portStart = strchr(hostStart, ':');
+            char *pathStart = strchr(hostStart, '/');
+            
+            if (portStart && (!pathStart || portStart < pathStart)) {
+                size_t hostLen = portStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                port = atoi(portStart + 1);
+                if (port <= 0 || port > 65535) port = 80;
+                if (pathStart) {
+                    strncpy(path, pathStart, sizeof(path) - 1);
+                } else {
+                    strcpy(path, "/delete");
+                }
+            } else if (pathStart) {
+                size_t hostLen = pathStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                strncpy(path, pathStart, sizeof(path) - 1);
+                port = 80;
+            } else {
+                strncpy(host, hostStart, sizeof(host) - 1);
+                strcpy(path, "/delete");
+                port = 80;
+            }
+        } else {
+            // Just hostname
+            strncpy(host, trimmed, sizeof(host) - 1);
+            host[sizeof(host) - 1] = '\0';
+            
+            printf("Path (e.g., /delete) [/delete]: ");
+            if (!fgets(input, sizeof(input), stdin)) {
+                printf("ERROR: Failed to read path\n");
+                return;
+            }
+            input[strcspn(input, "\r\n")] = 0;
+            if (strlen(input) == 0) {
+                strcpy(path, "/delete");
+            } else {
+                strncpy(path, input, sizeof(path) - 1);
+            }
+            
+            printf("Port [443]: ");
+            if (!fgets(input, sizeof(input), stdin)) {
+                printf("ERROR: Failed to read port\n");
+                return;
+            }
+            input[strcspn(input, "\r\n")] = 0;
+            if (strlen(input) > 0) {
+                port = atoi(input);
+                if (port <= 0 || port > 65535) port = 443;
+            }
+            
+            printf("Use HTTPS? [Y/n]: ");
+            if (!fgets(input, sizeof(input), stdin)) {
+                printf("ERROR: Failed to read protocol\n");
+                return;
+            }
+            input[strcspn(input, "\r\n")] = 0;
+            if (strlen(input) > 0 && (input[0] == 'n' || input[0] == 'N')) {
+                isHttps = false;
+            }
+        }
+    } else {
+        printf("ERROR: No URL specified\n");
+        return;
+    }
+    
+    // Save settings
+    strncpy(gHttpDeleteHost, host, sizeof(gHttpDeleteHost) - 1);
+    gHttpDeletePort = port;
+    gHttpDeleteIsHttps = isHttps;
+    strncpy(gHttpDeletePath, path, sizeof(gHttpDeletePath) - 1);
+    
+    // Ask if user wants to include body data (optional for DELETE)
+    printf("\n");
+    printf("Include request body data? (optional) [y/N]: ");
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\r\n")] = 0;
+    if (strlen(input) > 0 && (input[0] == 'y' || input[0] == 'Y')) {
+        includeBody = true;
+        printf("Enter data to send (JSON or text): ");
+        if (!fgets(deleteData, sizeof(deleteData), stdin)) {
+            printf("ERROR: Failed to read data\n");
+            return;
+        }
+        deleteData[strcspn(deleteData, "\r\n")] = 0;
+        dataLen = strlen(deleteData);
+    }
+    
+    // Execute DELETE request
+    printf("\n");
+    printf("DELETE %s://%s:%d%s\n", isHttps ? "https" : "http", host, port, path);
+    if (includeBody) {
+        printf("Body: %s\n", deleteData);
+    }
+    printf("\n");
+    
+    // Step 1: Set connection parameters
+    printf("Setting connection parameters...\n");
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, host, port);
+    if (err != 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Step 2: Configure TLS if HTTPS
+    if (isHttps) {
+        printf("Configuring TLS...\n");
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_1_2);
+        if (err != 0) {
+            printf("ERROR: Failed to configure TLS (error: %d)\n", err);
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+    }
+    
+    // Step 3: Set request path
+    printf("Setting request path...\n");
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err != 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Step 4: Send DELETE request
+    printf("\n");
+    printf("Sending DELETE request...\n");
+    
+    bool loggingWasEnabled = uCxLogIsEnabled();
+    if (loggingWasEnabled) {
+        uCxLogDisable();
+    }
+    
+    if (includeBody) {
+        err = uCxHttpDeleteRequest2(&gUcxHandle, sessionId, deleteData, dataLen);
+    } else {
+        err = uCxHttpDeleteRequest1(&gUcxHandle, sessionId);
+    }
+    
+    if (loggingWasEnabled) {
+        uCxLogEnable();
+    }
+    
+    if (err < 0) {
+        printf("ERROR: DELETE request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ DELETE request sent successfully\n");
+    
+    // Step 5: Wait for response
+    printf("\n");
+    printf("Waiting for HTTP response...\n");
+    if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 30)) {
+        printf("ERROR: Timeout waiting for HTTP response ready\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ HTTP response ready\n");
+    
+    // Step 6: Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
+        printf("─────────────────────────────────────────────────\n");
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
+        printf("─────────────────────────────────────────────────\n");
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Step 7: Read response body
+    printf("\n");
+    printf("Reading response body...\n");
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
+    int32_t totalBytes = 0;
+    int32_t moreToRead = 1;
+    
+    while (moreToRead) {
+        int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            buffer[bytesRead] = '\0';
+            printf("%s", (char*)buffer);
+        }
+    }
+    printf("\n");
+    printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    // Disconnect
+    httpSafeDisconnect(sessionId);
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief HTTP PUT request example with body data
+ * 
+ * Demonstrates PUT requests for REST APIs. PUT is typically used to update
+ * or replace resources on the server.
+ */
+static void httpPutExample(void)
+{
+    char input[512];
+    char host[256];
+    char path[512];
+    int port = 443;
+    char putData[4096];
+    int32_t sessionId = 0;
+    int32_t err;
+    bool isHttps = true;
+    int32_t dataLen = 0;
+    
+    printf("\n");
+    printf("=== HTTP PUT REQUEST ===\n");
+    printf("\n");
+    
+    // Check Wi-Fi connectivity
+    if (!checkWiFiConnectivity(false, true)) {
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Enter full URL or host/path separately:\n");
+    printf("  Examples: https://httpbin.org/put\n");
+    printf("            http://api.example.com/resource/123\n");
+    printf("\n");
+    
+    // Show last used URL
+    if (strlen(gHttpPutHost) > 0) {
+        printf("Last used: %s://%s:%d%s\n", 
+               gHttpPutIsHttps ? "https" : "http",
+               gHttpPutHost, gHttpPutPort, gHttpPutPath);
+        printf("\n");
+    }
+    
+    // Prompt for URL or host
+    if (strlen(gHttpPutHost) > 0) {
+        printf("URL or Host (press Enter to use last URL, or enter new): ");
+    } else {
+        printf("URL or Host (e.g., https://httpbin.org/put): ");
+    }
+    
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\r\n")] = 0;
+    
+    char *trimmed = input;
+    while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    char *end = trimmed + strlen(trimmed) - 1;
+    while (end > trimmed && (*end == ' ' || *end == '\t')) {
+        *end = '\0';
+        end--;
+    }
+    
+    // Use saved settings if empty
+    if (strlen(trimmed) == 0 && strlen(gHttpPutHost) > 0) {
+        strncpy(host, gHttpPutHost, sizeof(host) - 1);
+        port = gHttpPutPort;
+        strncpy(path, gHttpPutPath, sizeof(path) - 1);
+        isHttps = gHttpPutIsHttps;
+    } else if (strlen(trimmed) > 0) {
+        // Parse URL
+        if (strncmp(trimmed, "https://", 8) == 0) {
+            isHttps = true;
+            char *hostStart = trimmed + 8;
+            char *portStart = strchr(hostStart, ':');
+            char *pathStart = strchr(hostStart, '/');
+            
+            if (portStart && (!pathStart || portStart < pathStart)) {
+                size_t hostLen = portStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                port = atoi(portStart + 1);
+                if (port <= 0 || port > 65535) port = 443;
+                if (pathStart) {
+                    strncpy(path, pathStart, sizeof(path) - 1);
+                } else {
+                    strcpy(path, "/put");
+                }
+            } else if (pathStart) {
+                size_t hostLen = pathStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                strncpy(path, pathStart, sizeof(path) - 1);
+                port = 443;
+            } else {
+                strncpy(host, hostStart, sizeof(host) - 1);
+                strcpy(path, "/put");
+                port = 443;
+            }
+        } else if (strncmp(trimmed, "http://", 7) == 0) {
+            isHttps = false;
+            char *hostStart = trimmed + 7;
+            char *portStart = strchr(hostStart, ':');
+            char *pathStart = strchr(hostStart, '/');
+            
+            if (portStart && (!pathStart || portStart < pathStart)) {
+                size_t hostLen = portStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                port = atoi(portStart + 1);
+                if (port <= 0 || port > 65535) port = 80;
+                if (pathStart) {
+                    strncpy(path, pathStart, sizeof(path) - 1);
+                } else {
+                    strcpy(path, "/put");
+                }
+            } else if (pathStart) {
+                size_t hostLen = pathStart - hostStart;
+                strncpy(host, hostStart, hostLen < sizeof(host) ? hostLen : sizeof(host) - 1);
+                host[hostLen < sizeof(host) ? hostLen : sizeof(host) - 1] = '\0';
+                strncpy(path, pathStart, sizeof(path) - 1);
+                port = 80;
+            } else {
+                strncpy(host, hostStart, sizeof(host) - 1);
+                strcpy(path, "/put");
+                port = 80;
+            }
+        } else {
+            // Just hostname
+            strncpy(host, trimmed, sizeof(host) - 1);
+            host[sizeof(host) - 1] = '\0';
+            
+            printf("Path (e.g., /put) [/put]: ");
+            if (!fgets(input, sizeof(input), stdin)) {
+                printf("ERROR: Failed to read path\n");
+                return;
+            }
+            input[strcspn(input, "\r\n")] = 0;
+            if (strlen(input) == 0) {
+                strcpy(path, "/put");
+            } else {
+                strncpy(path, input, sizeof(path) - 1);
+            }
+            
+            printf("Port [443]: ");
+            if (!fgets(input, sizeof(input), stdin)) {
+                printf("ERROR: Failed to read port\n");
+                return;
+            }
+            input[strcspn(input, "\r\n")] = 0;
+            if (strlen(input) > 0) {
+                port = atoi(input);
+                if (port <= 0 || port > 65535) port = 443;
+            }
+            
+            printf("Use HTTPS? [Y/n]: ");
+            if (!fgets(input, sizeof(input), stdin)) {
+                printf("ERROR: Failed to read protocol\n");
+                return;
+            }
+            input[strcspn(input, "\r\n")] = 0;
+            if (strlen(input) > 0 && (input[0] == 'n' || input[0] == 'N')) {
+                isHttps = false;
+            }
+        }
+    } else {
+        printf("ERROR: No URL specified\n");
+        return;
+    }
+    
+    // Save settings
+    strncpy(gHttpPutHost, host, sizeof(gHttpPutHost) - 1);
+    gHttpPutPort = port;
+    gHttpPutIsHttps = isHttps;
+    strncpy(gHttpPutPath, path, sizeof(gHttpPutPath) - 1);
+    
+    // Get PUT data (required for PUT)
+    printf("\n");
+    printf("Enter data to send (JSON or text): ");
+    if (!fgets(putData, sizeof(putData), stdin)) {
+        printf("ERROR: Failed to read data\n");
+        return;
+    }
+    putData[strcspn(putData, "\r\n")] = 0;
+    dataLen = strlen(putData);
+    
+    if (dataLen == 0) {
+        printf("WARNING: No data provided for PUT request\n");
+    }
+    
+    // Execute PUT request
+    printf("\n");
+    printf("PUT %s://%s:%d%s\n", isHttps ? "https" : "http", host, port, path);
+    printf("Body: %s\n", putData);
+    printf("\n");
+    
+    // Step 1: Set connection parameters
+    printf("Setting connection parameters...\n");
+    err = uCxHttpSetConnectionParams3(&gUcxHandle, sessionId, host, port);
+    if (err != 0) {
+        printf("ERROR: Failed to set connection parameters (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Step 2: Configure TLS if HTTPS
+    if (isHttps) {
+        printf("Configuring TLS...\n");
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_1_2);
+        if (err != 0) {
+            printf("ERROR: Failed to configure TLS (error: %d)\n", err);
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+    }
+    
+    // Step 3: Set request path
+    printf("Setting request path...\n");
+    err = uCxHttpSetRequestPath(&gUcxHandle, sessionId, path);
+    if (err != 0) {
+        printf("ERROR: Failed to set request path (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Step 4: Send PUT request
+    printf("\n");
+    printf("Sending PUT request...\n");
+    
+    bool loggingWasEnabled = uCxLogIsEnabled();
+    if (loggingWasEnabled) {
+        uCxLogDisable();
+    }
+    
+    err = uCxHttpPutRequest(&gUcxHandle, sessionId, (const uint8_t*)putData, dataLen);
+    
+    if (loggingWasEnabled) {
+        uCxLogEnable();
+    }
+    
+    if (err < 0) {
+        printf("ERROR: PUT request failed (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ PUT request sent successfully\n");
+    
+    // Step 5: Wait for response
+    printf("\n");
+    printf("Waiting for HTTP response...\n");
+    if (!waitEvent(URC_FLAG_HTTP_RESPONSE_READY, 30)) {
+        printf("ERROR: Timeout waiting for HTTP response ready\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    printf("✓ HTTP response ready\n");
+    
+    // Step 6: Read response headers
+    printf("\n");
+    printf("Reading response headers...\n");
+    char headerBuffer[2048] = {0};
+    int32_t headerLen = 0;
+    if (readHttpHeaders(sessionId, headerBuffer, sizeof(headerBuffer), &headerLen)) {
+        printf("─────────────────────────────────────────────────\n");
+        if (headerLen > 0) {
+            printf("%s", headerBuffer);
+        } else {
+            printf("(No headers or empty response)\n");
+        }
+        printf("─────────────────────────────────────────────────\n");
+    } else {
+        printf("WARNING: Failed to read response headers\n");
+    }
+    
+    // Step 7: Read response body
+    printf("\n");
+    printf("Reading response body...\n");
+    uint8_t buffer[HTTP_MAX_CHUNK_SIZE];
+    int32_t totalBytes = 0;
+    int32_t moreToRead = 1;
+    
+    while (moreToRead) {
+        int32_t chunkSize = HTTP_MAX_CHUNK_SIZE;
+        int32_t bytesRead = uCxHttpGetBody(&gUcxHandle, sessionId, chunkSize, buffer, &moreToRead);
+        if (bytesRead < 0) {
+            printf("\nERROR: Failed to read response body (error: %d)\n", bytesRead);
+            break;
+        }
+        if (bytesRead > 0) {
+            totalBytes += bytesRead;
+            buffer[bytesRead] = '\0';
+            printf("%s", (char*)buffer);
+        }
+    }
+    printf("\n");
+    printf("✓ Response received: %d bytes total\n", totalBytes);
+    
+    // Disconnect
+    httpSafeDisconnect(sessionId);
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
 // ============================================================================
 // HTTP HELPER FUNCTIONS
 // ============================================================================
@@ -18550,9 +19196,11 @@ static void printMenu(void)
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("      For HTTPS, upload CA certificate via Security/TLS menu [x]\n");
             printf("\n");
-            printf("BASIC HTTP:\n");
+            printf("BASIC HTTP (Full REST API Support):\n");
             printf("  [1] HTTP GET request (manual entry)\n");
             printf("  [2] HTTP POST request (text or file)\n");
+            printf("  [8] HTTP DELETE request (manual entry)\n");
+            printf("  [9] HTTP PUT request (text or file)\n");
             printf("\n");
             printf("REST API WITH JSON (HTTPS examples use built-in TLS):\n");
             printf("  [3] UUID Generator (httpbin.org)\n");
@@ -19505,6 +20153,12 @@ static void handleUserInput(void)
                     break;
                 case 7:
                     httpZenQuotesExample();
+                    break;
+                case 8:
+                    httpDeleteExample();
+                    break;
+                case 9:
+                    httpPutExample();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
