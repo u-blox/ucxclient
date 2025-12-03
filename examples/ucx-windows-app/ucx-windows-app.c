@@ -25266,6 +25266,9 @@ static void listAllApiCommands(void)
     };
     int moduleCount = sizeof(moduleOrder) / sizeof(moduleOrder[0]);
     
+    int linesDisplayed = 0;
+    const int LINES_PER_PAGE = 20;
+    
     // Process each module
     for (int i = 0; i < moduleCount; i++) {
         ApiModuleInfo module;
@@ -25288,25 +25291,71 @@ static void listAllApiCommands(void)
             char friendlyName[128];
             getModuleFriendlyName(module.headerFile, friendlyName, sizeof(friendlyName));
             
+            // Check if we need to pause for pagination
+            if (linesDisplayed > 0 && linesDisplayed >= LINES_PER_PAGE) {
+                printf("\n[Press Enter for next page, or 'q' to quit...]");
+                fflush(stdout);
+                int c = getchar();
+                if (c == 'q' || c == 'Q') {
+                    // Clear remaining input
+                    while (getchar() != '\n');
+                    printf("\n");
+                    
+                    // Free any allocated memory for this module
+                    if (module.functionCount > 0) {
+                        free(module.functions);
+                    }
+                    break;
+                }
+                if (c != '\n') {
+                    while (getchar() != '\n');  // Clear input buffer
+                }
+                linesDisplayed = 0;
+            }
+            
             // Print module header
             printf("\n");
             printf("╔════════════════════════════════════════════════════════════╗\n");
             printf("║  %-56s  ║\n", friendlyName);
             printf("╚════════════════════════════════════════════════════════════╝\n");
             printf("\n");
+            linesDisplayed += 5;
             
             // Print functions
             for (int j = 0; j < module.functionCount; j++) {
                 ApiFunctionInfo *func = &module.functions[j];
                 printWrappedDescription(func->functionName, func->description);
+                linesDisplayed += 2;  // Approximate lines per function
+                
+                // Check pagination within function list
+                if (linesDisplayed >= LINES_PER_PAGE && j < module.functionCount - 1) {
+                    printf("\n[Press Enter for more, or 'q' to quit...]");
+                    fflush(stdout);
+                    int c = getchar();
+                    if (c == 'q' || c == 'Q') {
+                        // Clear remaining input
+                        while (getchar() != '\n');
+                        printf("\n");
+                        
+                        // Free function array
+                        free(module.functions);
+                        goto exit_listing;
+                    }
+                    if (c != '\n') {
+                        while (getchar() != '\n');  // Clear input buffer
+                    }
+                    linesDisplayed = 0;
+                }
             }
             printf("\n");
+            linesDisplayed += 1;
             
             // Free function array
             free(module.functions);
         }
     }
     
+exit_listing:
     printf("\n");
 }
 
