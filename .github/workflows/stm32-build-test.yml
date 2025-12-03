@@ -2,14 +2,22 @@ name: STM32F407VG Build and Test
 
 on:
   push:
-    branches: [ master ]
+    paths:
+      - 'docker/stm32f4/**'  # Rebuild image when Dockerfile changes
   pull_request:
     branches: [ master ]
   workflow_dispatch:
 
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/stm32f4-builder
+
 jobs:
   build-and-test-stm32:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout code
@@ -30,19 +38,55 @@ jobs:
       working-directory: ./examples
       run: inv generate-config
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Cache Docker layers
-      uses: actions/cache@v4
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
       with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-stm32f4-${{ hashFiles('docker/stm32f4/Dockerfile') }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-stm32f4-
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Check if Docker image needs rebuild
+      id: docker-check
+      env:
+        BEFORE_SHA: ${{ github.event.before }}
+        CURRENT_SHA: ${{ github.sha }}
+      run: |
+        # Check if image exists in registry
+        if docker manifest inspect "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" > /dev/null 2>&1; then
+          echo "image_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "image_exists=false" >> $GITHUB_OUTPUT
+        fi
+        # Check if Dockerfile changed (safely using env vars)
+        dockerfile_changed=false
+        if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          if git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" 2>/dev/null | grep -q "docker/stm32f4/"; then
+            dockerfile_changed=true
+          fi
+        fi
+        echo "dockerfile_changed=$dockerfile_changed" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      if: |
+        github.event_name == 'push' &&
+        (steps.docker-check.outputs.image_exists == 'false' || steps.docker-check.outputs.dockerfile_changed == 'true')
+      uses: docker/build-push-action@v5
+      with:
+        context: ./docker
+        file: ./docker/stm32f4/Dockerfile
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+    - name: Pull Docker image
+      run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+    - name: Tag image for local use
+      run: docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ucxclient-stm32f4:latest
 
     - name: Build STM32F407VG firmware
       working-directory: ./examples
+      env:
+        SKIP_DOCKER_BUILD: '1'
       run: inv stm32.http --docker
 
     - name: Check build artifacts
@@ -54,6 +98,8 @@ jobs:
 
     - name: Run Renode emulation test
       working-directory: ./examples
+      env:
+        SKIP_DOCKER_BUILD: '1'
       run: inv stm32.renode 2>&1 | tee build_stm32/renode_output.txt
       timeout-minutes: 5
 

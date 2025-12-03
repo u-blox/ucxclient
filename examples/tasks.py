@@ -90,11 +90,21 @@ def _require_linux(task_name):
 
 
 def _reinvoke_inside_docker(c, task_label):
-    """Re-run the current invoke command inside the STM32 Docker builder."""
+    """Re-run the current invoke command inside the STM32 Docker builder.
+
+    Args:
+        c: Invoke context
+        task_label: Label for logging
+
+    Environment variables:
+        SKIP_DOCKER_BUILD: If set to '1', skip 'docker compose build' (useful in CI
+                          where the image is pre-built with caching)
+    """
     print(f">>> Reinvoking {task_label} inside Docker...")
 
     with c.cd(DOCKER_DIR):
-        c.run(f'docker compose build {DOCKER_SERVICE}', warn=True)
+        if os.environ.get('SKIP_DOCKER_BUILD') != '1':
+            c.run(f'docker compose build {DOCKER_SERVICE}', warn=True)
 
         # Strip 'examples.' prefix from task names since we cd into DOCKER_WORKDIR
         # This allows running from project root (inv examples.stm32.renode) or
