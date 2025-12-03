@@ -73,6 +73,21 @@ def _running_inside_docker():
     return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
 
 
+def _init_stm32cubef4_submodule(c):
+    """Initialize STM32CubeF4 submodule if needed.
+
+    Must be called BEFORE Docker reinvoke since Docker won't have access
+    to parent repo's .git/modules when ucxclient is used as a submodule.
+    """
+    cube_path = os.path.join(REPO_ROOT, 'ports/extra/stm32f4/STM32CubeF4')
+    if not os.path.exists(os.path.join(cube_path, 'Drivers/CMSIS')):
+        print("[STM32] Initializing STM32CubeF4 submodule...")
+        with c.cd(REPO_ROOT):
+            c.run('git submodule update --init --depth 1 ports/extra/stm32f4/STM32CubeF4')
+            c.run('cd ports/extra/stm32f4/STM32CubeF4 && git submodule update --init --depth 1 '
+                  'Drivers/STM32F4xx_HAL_Driver Drivers/CMSIS Middlewares/Third_Party/FreeRTOS')
+
+
 def _require_linux(task_name):
     """Check if running on Linux and print error if not.
 
@@ -211,6 +226,9 @@ def _stm32_build_target(c, target=None, clean=False, docker=False):
         clean: Whether to remove build directory first
         docker: Whether to build inside Docker container
     """
+
+    _init_stm32cubef4_submodule(c)
+
     # User wants Docker, but we are NOT inside Docker → REINVOKE
     if docker and not _running_inside_docker():
         _reinvoke_inside_docker(c, 'stm32 build')
@@ -226,14 +244,6 @@ def _stm32_build_target(c, target=None, clean=False, docker=False):
         return
 
     build_dir = 'build_stm32'
-
-    # Initialize STM32CubeF4 submodule if needed
-    cube_path = os.path.join(REPO_ROOT, 'ports/extra/stm32f4/STM32CubeF4')
-    if not os.path.exists(os.path.join(cube_path, '.git')):
-        print("[STM32] Initializing STM32CubeF4 submodule...")
-        with c.cd(REPO_ROOT):
-            c.run('git submodule update --init --depth 1 ports/extra/stm32f4/STM32CubeF4')
-            c.run('cd ports/extra/stm32f4/STM32CubeF4 && git submodule update --init --depth 1 Drivers/STM32F4xx_HAL_Driver Drivers/CMSIS Middlewares/Third_Party/FreeRTOS')
 
     build_path = os.path.join(EXAMPLES_DIR, build_dir)
     bin_path = os.path.join(EXAMPLES_DIR, 'bin')
@@ -276,6 +286,9 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
         build: Whether to build before running
         gdb: Whether to start GDB server and pause on startup
     """
+    if build:
+        _init_stm32cubef4_submodule(c)
+
     if not _running_inside_docker():
         _reinvoke_inside_docker(c, 'stm32.renode')
         return
@@ -283,7 +296,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
     # Build first if requested
     if build:
         print(f"[Renode] Building {example} first...")
-        _stm32_build_target(c, target=f"{example}_stm32", clean=False)
+        _stm32_build_target(c, target=f"{example}_stm32.elf", clean=False)
 
     # Check if binary exists
     local_elf = os.path.join(EXAMPLES_DIR, f"bin/{example}_stm32.elf")
