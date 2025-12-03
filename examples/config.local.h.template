@@ -1,0 +1,17 @@
+/**
+ * Local configuration for examples
+ *
+ * Copy this file to config.local.h and customize for your environment.
+ * config.local.h is gitignored, so sensitive data like WiFi PSK won't be committed.
+ */
+
+#ifndef CONFIG_LOCAL_H
+#define CONFIG_LOCAL_H
+
+/* WiFi SSID for HTTP example */
+#define U_EXAMPLE_SSID "your-wifi-ssid"
+
+/* WiFi WPA-PSK password (leave empty for open networks) */
+#define U_EXAMPLE_WPA_PSK "your-wifi-password"
+
+#endif // CONFIG_LOCAL_H

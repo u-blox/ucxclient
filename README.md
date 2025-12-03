@@ -120,7 +120,7 @@ void main(void)
 }
 ```
 
-## Building
+## Building and Testing
 
 The project uses [PyInvoke](https://www.pyinvoke.org/) for build automation. Install it with:
 
@@ -128,21 +128,41 @@ The project uses [PyInvoke](https://www.pyinvoke.org/) for build automation. Ins
 pip install invoke
 ```
 
-Then build examples:
+### Building Examples
 
 ```sh
-# From project root
-invoke build.examples
+# From project root - see all available tasks
+invoke --list
 
-# Or from examples/ directory
+# Build examples (delegated to examples/tasks.py)
+invoke examples.linux.http        # Build Linux HTTP example
+invoke examples.stm32.http        # Build STM32F4 HTTP example
+invoke examples.win32.http        # Build Windows HTTP example (Windows only)
+
+# Or from examples/ directory (without 'examples.' prefix)
 cd examples
-invoke all              # Build all examples
-invoke http             # Build http_example only
-invoke fw-upgrade       # Build fw_upgrade_example only
-invoke clean            # Clean build artifacts
+invoke linux.http        # Build Linux HTTP example
+invoke stm32.http        # Build STM32F4 HTTP example
+invoke stm32.all         # Build all STM32 examples
+invoke stm32.clean       # Clean STM32 build artifacts
 ```
 
 See [examples/README.md](examples/README.md) for more details on running the examples.
+
+### Running Tests
+
+```sh
+# Run Ceedling unit tests
+invoke test.ceedling
+
+# Run Zephyr Twister tests (automatically sets up west workspace)
+invoke test.zephyr
+
+# Clean test artifacts
+invoke clean.ceedling
+invoke clean.zephyr
+invoke clean.west      # Remove west workspace
+```
 
 ## Porting and Configuration
 
@@ -174,7 +194,7 @@ For systems running RTOS you will also need to port the mutex API below - for ba
 | Define   | Example (Posix) | Description |
 | -------- | --------------- | ----------- |
 | U_CX_MUTEX_HANDLE            | `pthread_mutex_t`                  | Define this to the mutex type of your system. |
-| U_CX_MUTEX_CREATE(mutex)     | `pthread_mutex_init(&mutex, NULL)` | If your system need to call a function before the mutex can be used, then define it here. |
+| U_CX_MUTEX_CREATE(mutex)     | `pthread_mutex_init(&mutex, NULL)` | If your system need to call a function before the mutex can be used, then define it here. <br><br>**Note for examples**: <br>The provided examples use mutexes for event signaling between threads/tasks, which requires the mutex to support being unlocked by a different thread/task than the one that locked it. For such use cases, consider using binary semaphores instead of recursive mutexes, and ensure they are initialized to an available/unlocked state. |
 | U_CX_MUTEX_DELETE(mutex)     | `pthread_mutex_destroy(&mutex)`    | If your system has a function to de-allocate a mutex, then define it here. |
 | U_CX_MUTEX_LOCK(mutex)       | `pthread_mutex_lock(&mutex)`       | Define this to corresponding "lock"/"take" function of your system. No return value is expected (any return value will be ignored). |
 | U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) | `uPortMutexTryLock(&mutex, timeoutMs)`<sup>1</sup> | Define this to a function that tries to lock/take the mutex but with a timeout `timeoutMs` in millisec. Must return 0 if the mutex is successfully taken/locked and can return any negative value on timeout. |
@@ -189,6 +209,14 @@ You will find example ports in [ports/](ports/). These ports are used by the [ex
 The port layer is split into:
 - **OS abstraction** (ports/os/): Mutex, time, and optional background RX task
 - **UART abstraction** (ports/uart/): Platform-specific UART I/O
+
+Available ports include:
+
+* **POSIX** (Linux/macOS): pthreads-based with termios UART
+* **Windows**: Windows API with COM port support
+* **Zephyr RTOS**: Integrated as a Zephyr module
+* **FreeRTOS + STM32F4**: ARM Cortex-M4 port (see [ports/extra/stm32f4/README.md](ports/extra/stm32f4/README.md))
+* **No-OS**: Bare-metal systems (user-driven RX polling)
 
 ## Disclaimer
 

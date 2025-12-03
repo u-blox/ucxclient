@@ -45,6 +45,8 @@ extern "C" {
 /* Include platform-specific port implementation first to define macros */
 #if defined(__ZEPHYR__) && defined(CONFIG_UCXCLIENT)
 # include "os/u_port_zephyr.h"
+#elif defined(U_PORT_FREERTOS)
+# include "os/u_port_freertos.h"
 #elif defined(U_PORT_NO_OS)
 # include "os/u_port_no_os.h"
 #elif defined(U_PORT_POSIX)
@@ -97,6 +99,19 @@ extern "C" {
 #ifndef U_CX_PORT_PRINTF
 # include <stdio.h>
 # define U_CX_PORT_PRINTF   printf
+#endif
+
+/* ----------------------------------------------------------------
+ * EXAMPLE MAIN ABSTRACTION
+ * -------------------------------------------------------------- */
+
+/* Porting layer for example main function
+ * By default examples use main(), but some platforms (e.g., FreeRTOS)
+ * may need to define a different function name that gets called from
+ * their platform-specific main()
+ */
+#ifndef U_EXAMPLE_MAIN
+# define U_EXAMPLE_MAIN   main
 #endif
 
 /* ----------------------------------------------------------------

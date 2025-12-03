@@ -23,6 +23,7 @@
 
 #include <stdarg.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <stdbool.h>
 
 #include "u_cx_at_config.h"
@@ -78,7 +79,7 @@
 #define __U_CX_LOG_BEGIN_I_FMT(enabled, chText, instance, format, ...)  \
     do { if (enabled && uCxLogIsEnabled()) {                \
         uCxLogPrintTime();                                  \
-        U_CX_PORT_PRINTF(chText "[%d] " format, instance, ##__VA_ARGS__); \
+        U_CX_PORT_PRINTF(chText "[%" PRId32 "] " format, instance, ##__VA_ARGS__); \
     } } while(0)
 #define __U_CX_LOG(enabled, chText, format, ...) \
     do { if (enabled && uCxLogIsEnabled()) {     \

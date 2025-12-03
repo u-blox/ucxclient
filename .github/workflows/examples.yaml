@@ -13,6 +13,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+      with:
+        submodules: false
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -20,7 +22,7 @@ jobs:
     - name: Install PyInvoke
       run: pip install invoke
     - name: Build All Examples
-      run: invoke build.examples
+      run: invoke examples.linux.all
 
   build-windows:
     runs-on: windows-latest
@@ -28,6 +30,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+      with:
+        submodules: false
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -37,4 +41,4 @@ jobs:
     - name: Install PyInvoke
       run: pip install invoke
     - name: Build All Examples
-      run: invoke build.examples
+      run: invoke examples.win32.all

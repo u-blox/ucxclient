@@ -10,6 +10,10 @@ All examples are designed to work with both OS and no-OS configurations by using
 | fw_upgrade_example.c | Example of performing firmware upgrade using AT+USYFWUS command and XMODEM protocol. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
 | example_utils.c/h   | Common utility functions that work with both OS and no-OS configurations, providing AT client initialization, event handling, and sleep functionality. |
 
+## Local configuration overrides
+
+Examples automatically include `config.local.h` when it exists in this directory. Copy `config.local.h.template` to `config.local.h` and edit the macros (for instance `U_EXAMPLE_SSID` / `U_EXAMPLE_WPA_PSK`) to store credentials locally without passing them via command-line arguments or CMake definitions. The file is `.gitignore`d so sensitive data stays out of commits, and any macros you place there take precedence over the built-in defaults.
+
 ## Building
 
 The examples use [PyInvoke](https://www.pyinvoke.org/) for build automation. Install it with:
@@ -53,7 +57,7 @@ cmake --build build
 After building, the executable is located in `bin/http_example`.
 To start it you will need to pass some arguments:
 
-```
+```text
 http_example <device> <SSID> <WPA_PSK>
   device:  the UART device that is connected to a u-connectXpress module
   SSID:    the Wi-Fi SSID to connect to
@@ -68,9 +72,9 @@ bin/http_example /dev/ttyUSB0 MySSID MyWiFiPasswd
 
 ### http_example_no_os
 
-The no-OS variant of http_example is built from the same source code but uses a different port layer (u_port_no_os.c). The UART device, Wi-Fi SSID and PSK are configured using CMake defines since command-line arguments are not available in typical bare-metal environments.
+The no-OS variant of http_example is built from the same source code but uses a different port layer (u_port_no_os.c). Because command-line arguments are typically unavailable on bare-metal targets, the UART device, Wi-Fi SSID and PSK must be provided as compile-time macros. You can define them once in `config.local.h`, or pass them through CMake when configuring the build.
 
-To set these defines, you can either use `cmake-gui`:
+To use CMake defines, you can either use `cmake-gui`:
 
 ![cmake-gui](/images/cmake-gui.png)
 
@@ -81,6 +85,8 @@ cd examples
 cmake -S . -B build -D U_EXAMPLE_UART="/dev/ttyUSB0" -D U_EXAMPLE_SSID="MySSID" -D U_EXAMPLE_WPA_PSK="MyWiFiPasswd"
 invoke all
 ```
+
+When relying on `config.local.h`, skip the `-D` arguments—the copied file is included automatically and will provide the macro definitions for every future build.
 
 Then run:
 
@@ -107,6 +113,7 @@ bin/fw_upgrade_example /dev/ttyUSB0 NORA-W36X-SW-1.0.0.bin
 ```
 
 The example will:
+
 1. Check communication with the module
 2. Issue the AT+USYFWUS command to enter bootloader mode
 3. Transfer the firmware file using XMODEM protocol at 921600 baud
@@ -115,9 +122,9 @@ The example will:
 
 ### fw_upgrade_example_no_os
 
-The no-OS variant of fw_upgrade_example is built from the same source code but uses a different port layer (u_port_no_os.c). The UART device and firmware file path are configured using CMake defines.
+The no-OS variant of fw_upgrade_example is built from the same source code but uses a different port layer (u_port_no_os.c). The UART device and firmware file path are configured via compile-time macros. Define them in `config.local.h` for a persistent setup, or provide them through CMake when configuring the build.
 
-To set these defines:
+To pass the values through CMake:
 
 ```sh
 cd examples

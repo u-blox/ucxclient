@@ -1,0 +1,19 @@
+services:
+  stm32f4-builder:
+    build:
+      context: .
+      dockerfile: stm32f4/Dockerfile
+      network: host # use host network during build to fix DNS resolution
+      cache_from:
+        - ucxclient-stm32f4:latest
+    image: ucxclient-stm32f4:latest
+    network_mode: host  # share host networking for Renode runs
+    volumes:
+      - ../:/project
+    working_dir: /project
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    environment:
+      - WIFI_SSID=${WIFI_SSID:-ubx}
+      - WIFI_PSK=${WIFI_PSK:-}
+      - HOME=/tmp/renode
+      - XDG_CONFIG_HOME=/tmp/renode/.config

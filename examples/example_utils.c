@@ -27,6 +27,7 @@
 #include "u_cx_log.h"
 #include "u_cx_at_client.h"
 #include <stdio.h>
+#include <inttypes.h>
 
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
@@ -84,7 +85,7 @@ bool exampleWaitEvent(uint32_t evtFlag, uint32_t timeoutS)
         gEventMutexInitialized = true;
     }
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%d, %d)", evtFlag, timeoutS);
+    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%" PRIu32 ", %" PRIu32 ")", evtFlag, timeoutS);
     do {
         // In no-OS mode, we need to manually handle RX to process URCs
 #if EXAMPLE_NO_OS_MODE
@@ -100,7 +101,7 @@ bool exampleWaitEvent(uint32_t evtFlag, uint32_t timeoutS)
         }
     } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %d", evtFlag);
+    U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %" PRIu32, evtFlag);
     return false;
 }
 
