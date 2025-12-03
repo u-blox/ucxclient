@@ -25296,6 +25296,12 @@ static void listAllApiCommands(void)
                 printf("\n[Press Enter for next page, or 'q' to quit...]");
                 fflush(stdout);
                 int c = getchar();
+                
+                // Clear the prompt line
+                printf("\r");
+                for (int k = 0; k < 60; k++) printf(" ");
+                printf("\r");
+                
                 if (c == 'q' || c == 'Q') {
                     // Clear remaining input
                     while (getchar() != '\n');
@@ -25332,6 +25338,12 @@ static void listAllApiCommands(void)
                     printf("\n[Press Enter for more, or 'q' to quit...]");
                     fflush(stdout);
                     int c = getchar();
+                    
+                    // Clear the prompt line
+                    printf("\r");
+                    for (int k = 0; k < 60; k++) printf(" ");
+                    printf("\r");
+                    
                     if (c == 'q' || c == 'Q') {
                         // Clear remaining input
                         while (getchar() != '\n');
