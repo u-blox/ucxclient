@@ -726,6 +726,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - bluetoothSyncConnections()       Sync BT connection list
 //   - bluetoothSetAdvertising()        Enable/disable advertising
 //   - bluetoothSetPairing()            Configure pairing mode
+//   - bluetoothUpdateLocalName()       Update Bluetooth local name
 //   - bluetoothListBondedDevices()     List bonded devices
 //   - bluetoothShowStatus()            Display BT connection status
 //   - showBluetoothStatus()            Show BT status (alternate)
@@ -757,7 +758,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - showWifiStatus()                 Display WiFi status
 //   - testConnectivity()               Test gateway/internet connectivity
 //   - testConnectivityWrapper()        Connectivity test wrapper
-//   - getCurrentPCIPAddress()          Get PC IP address
+//   - getCurrentPCIPAddress()          Get PC IP address (filter virtual adapters)
 //   - configureRegulatoryDomain()      Configure WiFi regulatory domain
 //   - listWifiChannels()               List available WiFi channels
 //   - checkWiFiConnectivity()          Check WiFi and internet connectivity
@@ -794,6 +795,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 // HTTP HELPER FUNCTIONS
 //   - winHttpGetRequest()              HTTP GET (text) via WinHTTP
 //   - winHttpGetBinaryRequest()        HTTP GET (binary) via WinHTTP
+//   - ucxHttpGetRequest()              HTTP GET via UCX API
 //   - httpSafeDisconnect()             Safe HTTP session disconnect
 //   - readHttpHeaders()                Read HTTP response headers
 //   - getHttpBody()                    Read HTTP response body
@@ -807,6 +809,8 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - calculateSHA256Fingerprint()     Calculate SHA256 hash
 //   - verifySHA256FromGitHubRelease()  Verify hash against GitHub release
 //   - extractFirmwareBinFromZip()      Extract firmware from ZIP
+//   - httpDownloadProgress()           HTTP download progress callback
+//   - httpUploadProgress()             HTTP upload progress callback
 //
 // JSON PARSING UTILITIES
 //   - extractJsonString()              Extract string from JSON
@@ -920,6 +924,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattServerCharWriteUrc()         Handle characteristic write URC
 //   - gattServerCharReadUrc()          Handle characteristic read URC
 //   - gattClientNotificationUrc()      Handle GATT client notification URC
+//   - gattClientSubscribeNotifications() Subscribe to notifications (generic)
 //
 // DIAGNOSTICS
 //   - pingExample()                    Ping test example
@@ -935,6 +940,8 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - tlsShowCertificateDetails()      Show certificate details
 //   - tlsUploadCertificate()           Upload certificate
 //   - tlsDeleteCertificate()           Delete certificate
+//   - getTlsVersionString()            Get TLS version as string
+//   - checkAndPromptForCertificates()  Check and prompt for certificates
 //
 // FIRMWARE UPDATE
 //   - downloadFirmwareFromGitHub()     Download firmware from GitHub
@@ -967,7 +974,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - apDownUrc()                      AP disabled
 //   - apStationAssociatedUrc()         Station connected to AP
 //   - apStationDisassociatedUrc()      Station disconnected from AP
-//   - socketConnected()                Socket connected
+//   - sockConnected()                  Socket connected
 //   - socketDataAvailable()            Socket data received
 //   - spsDataAvailable()               SPS data available
 //   - spsConnected()                   SPS connected
@@ -980,6 +987,7 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - httpDisconnectUrc()              HTTP disconnected
 //   - mqttConnectedUrc()               MQTT connected
 //   - mqttDataAvailableUrc()           MQTT data available
+//   - mqttDisconnectedUrc()            MQTT disconnected
 //   - bluetoothPairUrc()               Bluetooth pairing event
 //   - bluetoothUserConfirmationUrc()   BT user confirmation
 //   - bluetoothPasskeyDisplayUrc()     BT passkey display
@@ -990,11 +998,12 @@ static char gSettingsFilePath[MAX_PATH] = "";
 //   - gattClientNotificationUrc()      GATT client notification
 //   - btConnected()                    Bluetooth connected
 //   - btDisconnected()                 Bluetooth disconnected
-//
 // UTILITY & EVENT FUNCTIONS
 //   - enableAllUrcs()                  Enable all URC handlers
 //   - disableAllUrcs()                 Disable all URC handlers
+//   - waitEvent()                      Wait for URC event flag with timeout
 //
+// ============================================================================
 // ============================================================================
 
 // Forward declarations
