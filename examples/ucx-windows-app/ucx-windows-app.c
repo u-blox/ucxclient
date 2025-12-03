@@ -1097,6 +1097,8 @@ static void obfuscatePassword(const char *input, char *output, size_t outputSize
 static void deobfuscatePassword(const char *input, char *output, size_t outputSize);
 static void tlsSetVersion(void);
 static void tlsShowConfig(void);
+static void tlsConfigureServerNameIndication(void);
+static void tlsConfigureHandshakeFragmentation(void);
 static void tlsListCertificates(void);
 static void tlsShowCertificateDetails(void);
 static void tlsUploadCertificate(void);
@@ -17862,6 +17864,178 @@ static void tlsShowConfig(void)
     getchar();
 }
 
+static void tlsConfigureServerNameIndication(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("TLS SERVER NAME INDICATION (SNI) CONFIGURATION\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
+    
+    printf("WHAT IS SNI?\n");
+    printf("  Server Name Indication allows the TLS client to specify which hostname\n");
+    printf("  it's attempting to connect to during the TLS handshake. This is essential\n");
+    printf("  for servers hosting multiple domains on the same IP address.\n\n");
+    
+    printf("WHEN TO USE SNI:\n");
+    printf("  • ENABLE:  Connecting to cloud services (AWS, Azure, Google Cloud)\n");
+    printf("  • ENABLE:  Shared hosting servers with multiple domains\n");
+    printf("  • ENABLE:  Modern TLS servers with virtual hosting\n");
+    printf("  • DISABLE: Very old servers that don't support SNI\n");
+    printf("  • DISABLE: Testing with self-signed certificates\n\n");
+    
+    // Get current setting
+    uEnabled_t currentSni;
+    int32_t err = uCxSecurityGetTlsServerNameIndication(&gUcxHandle, &currentSni);
+    
+    if (err == 0) {
+        printf("CURRENT STATUS: %s\n\n",
+               (currentSni == (uEnabled_t)U_ENABLED_YES) ? "ENABLED" : "DISABLED");
+    } else {
+        printf("CURRENT STATUS: Unable to read (error %d)\n\n", err);
+    }
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("SELECT ACTION:\n");
+    printf("  [1] Enable SNI (recommended for most connections)\n");
+    printf("  [2] Disable SNI\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    uEnabled_t newSetting;
+    if (choice == 1) {
+        newSetting = (uEnabled_t)U_ENABLED_YES;
+        printf("\nEnabling Server Name Indication...\n");
+    } else if (choice == 2) {
+        newSetting = (uEnabled_t)U_ENABLED_NO;
+        printf("\nDisabling Server Name Indication...\n");
+    } else {
+        printf("Invalid choice\n");
+        return;
+    }
+    
+    err = uCxSecuritySetTlsServerNameIndication(&gUcxHandle, newSetting);
+    
+    if (err == 0) {
+        printf("✓ SNI %s successfully\n",
+               (newSetting == (uEnabled_t)U_ENABLED_YES) ? "ENABLED" : "DISABLED");
+        printf("\nNOTE: This setting is system-wide and affects all TLS connections.\n");
+        printf("      Use AT&W command to save this configuration permanently.\n");
+    } else {
+        printf("ERROR: Failed to update SNI setting (code %d)\n", err);
+    }
+    
+    printf("\n");
+}
+
+static void tlsConfigureHandshakeFragmentation(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("TLS HANDSHAKE FRAGMENTATION CONFIGURATION\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
+    
+    printf("WHAT IS HANDSHAKE FRAGMENTATION?\n");
+    printf("  TLS handshake fragmentation breaks large TLS handshake messages into\n");
+    printf("  smaller fragments. This is useful when network MTU (Maximum Transmission\n");
+    printf("  Unit) is limited or when dealing with certificate chains that are large.\n\n");
+    
+    printf("WHEN TO USE FRAGMENTATION:\n");
+    printf("  • ENABLE:  Network has small MTU (constrained networks, LoRa, etc.)\n");
+    printf("  • ENABLE:  Using large certificate chains\n");
+    printf("  • ENABLE:  Experiencing TLS handshake timeouts or failures\n");
+    printf("  • DISABLE: Standard Ethernet/WiFi networks (better performance)\n");
+    printf("  • DISABLE: Low-latency requirements\n\n");
+    
+    // Get current setting
+    uEnabled_t currentFrag;
+    int32_t err = uCxSecurityGetTlsHandshakeFrag(&gUcxHandle, &currentFrag);
+    
+    if (err == 0) {
+        printf("CURRENT STATUS: %s\n\n",
+               (currentFrag == (uEnabled_t)U_ENABLED_YES) ? "ENABLED" : "DISABLED");
+    } else {
+        printf("CURRENT STATUS: Unable to read (error %d)\n\n", err);
+    }
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("SELECT ACTION:\n");
+    printf("  [1] Enable Handshake Fragmentation\n");
+    printf("  [2] Disable Handshake Fragmentation (recommended for WiFi/Ethernet)\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    uEnabled_t newSetting;
+    if (choice == 1) {
+        newSetting = (uEnabled_t)U_ENABLED_YES;
+        printf("\nEnabling Handshake Fragmentation...\n");
+    } else if (choice == 2) {
+        newSetting = (uEnabled_t)U_ENABLED_NO;
+        printf("\nDisabling Handshake Fragmentation...\n");
+    } else {
+        printf("Invalid choice\n");
+        return;
+    }
+    
+    err = uCxSecuritySetTlsHandshakeFrag(&gUcxHandle, newSetting);
+    
+    if (err == 0) {
+        printf("✓ Handshake Fragmentation %s successfully\n",
+               (newSetting == (uEnabled_t)U_ENABLED_YES) ? "ENABLED" : "DISABLED");
+        printf("\nNOTE: This setting is system-wide and affects all TLS connections.\n");
+        printf("      Use AT&W command to save this configuration permanently.\n");
+        
+        if (newSetting == (uEnabled_t)U_ENABLED_YES) {
+            printf("\nFRAGMENTATION ACTIVE:\n");
+            printf("  • TLS handshake messages will be broken into smaller fragments\n");
+            printf("  • Handshake may take slightly longer\n");
+            printf("  • Better compatibility with constrained networks\n");
+        } else {
+            printf("\nFRAGMENTATION DISABLED:\n");
+            printf("  • Standard TLS handshake (faster)\n");
+            printf("  • Requires adequate MTU size\n");
+            printf("  • Recommended for WiFi/Ethernet connections\n");
+        }
+    } else {
+        printf("ERROR: Failed to update fragmentation setting (code %d)\n", err);
+    }
+    
+    printf("\n");
+}
+
 static void tlsListCertificates(void)
 {
     if (!gUcxConnected) {
@@ -19872,15 +20046,17 @@ static void printMenu(void)
             printf("TLS CONFIGURATION\n");
             printf("  [1] Set TLS version (1.2 / 1.3)\n");
             printf("  [2] Show TLS configuration\n");
+            printf("  [3] Configure Server Name Indication (SNI)\n");
+            printf("  [4] Configure Handshake Fragmentation\n");
             printf("\n");
             printf("CERTIFICATE MANAGEMENT\n");
-            printf("  [3] List all certificates\n");
-            printf("  [4] Show certificate details\n");
-            printf("  [5] Upload certificate\n");
+            printf("  [5] List all certificates\n");
+            printf("  [6] Show certificate details\n");
+            printf("  [7] Upload certificate\n");
             printf("      • CA Root Certificate - Validate server identity (most common)\n");
             printf("      • Client Certificate - Mutual TLS authentication\n");
             printf("      • Private Key - For client certificate\n");
-            printf("  [6] Delete certificate\n");
+            printf("  [8] Delete certificate\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -20842,15 +21018,21 @@ static void handleUserInput(void)
                     tlsShowConfig();
                     break;
                 case 3:
-                    tlsListCertificates();
+                    tlsConfigureServerNameIndication();
                     break;
                 case 4:
-                    tlsShowCertificateDetails();
+                    tlsConfigureHandshakeFragmentation();
                     break;
                 case 5:
-                    tlsUploadCertificate();
+                    tlsListCertificates();
                     break;
                 case 6:
+                    tlsShowCertificateDetails();
+                    break;
+                case 7:
+                    tlsUploadCertificate();
+                    break;
+                case 8:
                     tlsDeleteCertificate();
                     break;
                 case 0:
