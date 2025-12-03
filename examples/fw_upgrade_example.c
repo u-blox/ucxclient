@@ -146,6 +146,10 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     printf("Firmware file: %s\n", pFirmwareFile);
 #endif
 
+    printf("===========================================\n");
+    printf("Firmware Upgrade Example\n");
+    printf("===========================================\n");
+
     // Get file size
     struct stat st;
     if (stat(pFirmwareFile, &st) != 0) {

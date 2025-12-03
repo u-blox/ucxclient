@@ -466,7 +466,52 @@ def stm32_http(c, clean=False, wifi_ssid=None, wifi_psk=None, docker=False):
 })
 def stm32_fw_upgrade(c, clean=False, docker=False):
     """Build fw_upgrade_example for STM32."""
-    _stm32_build_target(c, target='fw_upgrade_example_stm32', clean=clean, docker=docker)
+    _stm32_build_target(c, target='fw_upgrade_example_stm32.elf', clean=clean, docker=docker)
+
+
+@task(help={
+    'clean': 'Clean build directory before building',
+    'docker': 'Build inside Docker container (no local ARM toolchain required)',
+})
+def stm32_ble_scan(c, clean=False, docker=False):
+    """Build ble_scan_example for STM32."""
+    _stm32_build_target(c, target='ble_scan_example_stm32.elf', clean=clean, docker=docker)
+
+
+@task(help={
+    'clean': 'Clean build directory before building',
+    'docker': 'Build inside Docker container (no local ARM toolchain required)',
+})
+def stm32_ble_advertise(c, clean=False, docker=False):
+    """Build ble_advertise_example for STM32."""
+    _stm32_build_target(c, target='ble_advertise_example_stm32.elf', clean=clean, docker=docker)
+
+
+@task(help={
+    'clean': 'Clean build directory before building',
+    'docker': 'Build inside Docker container (no local ARM toolchain required)',
+})
+def stm32_wifi_scan(c, clean=False, docker=False):
+    """Build wifi_scan_example for STM32."""
+    _stm32_build_target(c, target='wifi_scan_example_stm32.elf', clean=clean, docker=docker)
+
+
+@task(help={
+    'clean': 'Clean build directory before building',
+    'docker': 'Build inside Docker container (no local ARM toolchain required)',
+})
+def stm32_wifi_ap(c, clean=False, docker=False):
+    """Build wifi_ap_example for STM32."""
+    _stm32_build_target(c, target='wifi_ap_example_stm32.elf', clean=clean, docker=docker)
+
+
+@task(help={
+    'clean': 'Clean build directory before building',
+    'docker': 'Build inside Docker container (no local ARM toolchain required)',
+})
+def stm32_socket(c, clean=False, docker=False):
+    """Build socket_example for STM32."""
+    _stm32_build_target(c, target='socket_example_stm32.elf', clean=clean, docker=docker)
 
 
 @task(help={
@@ -525,6 +570,51 @@ def win32_fw_upgrade(c, clean=False):
 
 
 @task(help={'clean': 'Clean build directory before building'})
+def win32_ble_scan(c, clean=False):
+    """Build ble_scan_example for Windows (only available on Windows host)."""
+    if not _is_windows():
+        print("Error: win32 builds are only available on Windows hosts")
+        return
+    _build_target(c, target='ble_scan_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def win32_ble_advertise(c, clean=False):
+    """Build ble_advertise_example for Windows (only available on Windows host)."""
+    if not _is_windows():
+        print("Error: win32 builds are only available on Windows hosts")
+        return
+    _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def win32_wifi_scan(c, clean=False):
+    """Build wifi_scan_example for Windows (only available on Windows host)."""
+    if not _is_windows():
+        print("Error: win32 builds are only available on Windows hosts")
+        return
+    _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def win32_wifi_ap(c, clean=False):
+    """Build wifi_ap_example for Windows (only available on Windows host)."""
+    if not _is_windows():
+        print("Error: win32 builds are only available on Windows hosts")
+        return
+    _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def win32_socket(c, clean=False):
+    """Build socket_example for Windows (only available on Windows host)."""
+    if not _is_windows():
+        print("Error: win32 builds are only available on Windows hosts")
+        return
+    _build_target(c, target='socket_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
 def win32_all(c, clean=False):
     """Build all examples for Windows (only available on Windows host)."""
     if not _is_windows():
@@ -553,6 +643,51 @@ def linux_fw_upgrade(c, clean=False):
 
 
 @task(help={'clean': 'Clean build directory before building'})
+def linux_ble_scan(c, clean=False):
+    """Build ble_scan_example for Linux (only available on Linux host)."""
+    if not _is_linux():
+        print("Error: linux builds are only available on Linux hosts")
+        return
+    _build_target(c, target='ble_scan_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def linux_ble_advertise(c, clean=False):
+    """Build ble_advertise_example for Linux (only available on Linux host)."""
+    if not _is_linux():
+        print("Error: linux builds are only available on Linux hosts")
+        return
+    _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def linux_wifi_scan(c, clean=False):
+    """Build wifi_scan_example for Linux (only available on Linux host)."""
+    if not _is_linux():
+        print("Error: linux builds are only available on Linux hosts")
+        return
+    _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def linux_wifi_ap(c, clean=False):
+    """Build wifi_ap_example for Linux (only available on Linux host)."""
+    if not _is_linux():
+        print("Error: linux builds are only available on Linux hosts")
+        return
+    _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
+def linux_socket(c, clean=False):
+    """Build socket_example for Linux (only available on Linux host)."""
+    if not _is_linux():
+        print("Error: linux builds are only available on Linux hosts")
+        return
+    _build_target(c, target='socket_example', clean=clean, build_dir='build')
+
+
+@task(help={'clean': 'Clean build directory before building'})
 def linux_all(c, clean=False):
     """Build all examples for Linux (only available on Linux host)."""
     if not _is_linux():
@@ -568,6 +703,11 @@ ns = Collection()
 stm32_ns = Collection('stm32')
 stm32_ns.add_task(stm32_http, 'http')
 stm32_ns.add_task(stm32_fw_upgrade, 'fw-upgrade')
+stm32_ns.add_task(stm32_ble_scan, 'ble-scan')
+stm32_ns.add_task(stm32_ble_advertise, 'ble-advertise')
+stm32_ns.add_task(stm32_wifi_scan, 'wifi-scan')
+stm32_ns.add_task(stm32_wifi_ap, 'wifi-ap')
+stm32_ns.add_task(stm32_socket, 'socket')
 stm32_ns.add_task(stm32_all, 'all')
 stm32_ns.add_task(stm32_clean, 'clean')
 stm32_ns.add_task(stm32_renode, 'renode')
@@ -579,6 +719,11 @@ if _is_windows():
     win32_ns = Collection('win32')
     win32_ns.add_task(win32_http, 'http')
     win32_ns.add_task(win32_fw_upgrade, 'fw-upgrade')
+    win32_ns.add_task(win32_ble_scan, 'ble-scan')
+    win32_ns.add_task(win32_ble_advertise, 'ble-advertise')
+    win32_ns.add_task(win32_wifi_scan, 'wifi-scan')
+    win32_ns.add_task(win32_wifi_ap, 'wifi-ap')
+    win32_ns.add_task(win32_socket, 'socket')
     win32_ns.add_task(win32_all, 'all')
     ns.add_collection(win32_ns)
 
@@ -587,6 +732,11 @@ if _is_linux():
     linux_ns = Collection('linux')
     linux_ns.add_task(linux_http, 'http')
     linux_ns.add_task(linux_fw_upgrade, 'fw-upgrade')
+    linux_ns.add_task(linux_ble_scan, 'ble-scan')
+    linux_ns.add_task(linux_ble_advertise, 'ble-advertise')
+    linux_ns.add_task(linux_wifi_scan, 'wifi-scan')
+    linux_ns.add_task(linux_wifi_ap, 'wifi-ap')
+    linux_ns.add_task(linux_socket, 'socket')
     linux_ns.add_task(linux_all, 'all')
     ns.add_collection(linux_ns)
 

@@ -113,6 +113,21 @@ uCxAtClient_t *exampleInit(const char *pUartDevice,
                            int32_t baudRate, bool flowControl);
 
 /**
+ * Wait for an event flag with timeout (extended version).
+ *
+ * Waits for a specific event flag to be set by a URC callback.
+ * Automatically handles RX polling in no-OS mode to process incoming URCs.
+ *
+ * The event flag is automatically cleared when detected.
+ *
+ * @param evtFlag    Event flag to wait for (bit mask)
+ * @param timeoutS   Timeout in seconds
+ * @param silent     If true, suppress log output (useful for polling loops)
+ * @return           true if event occurred, false if timeout
+ */
+bool exampleWaitEventEx(uint32_t evtFlag, uint32_t timeoutS, bool silent);
+
+/**
  * Wait for an event flag with timeout.
  *
  * Waits for a specific event flag to be set by a URC callback.

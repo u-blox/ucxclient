@@ -115,6 +115,10 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     }
 #endif
 
+    printf("===========================================\n");
+    printf("HTTP GET Example\n");
+    printf("===========================================\n");
+
     // Initialize example utilities and AT client
     uCxAtClient_t *pClient = exampleInit(pDevice, 115200, true);
     if (pClient == NULL) {

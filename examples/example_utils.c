@@ -75,7 +75,7 @@ uCxAtClient_t *exampleInit(const char *pUartDevice,
     return &gClient;
 }
 
-bool exampleWaitEvent(uint32_t evtFlag, uint32_t timeoutS)
+bool exampleWaitEventEx(uint32_t evtFlag, uint32_t timeoutS, bool silent)
 {
     int32_t timeoutMs = (int32_t)timeoutS * 1000;
     int32_t startTime = U_CX_PORT_GET_TIME_MS();
@@ -85,7 +85,9 @@ bool exampleWaitEvent(uint32_t evtFlag, uint32_t timeoutS)
         gEventMutexInitialized = true;
     }
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%" PRIu32 ", %" PRIu32 ")", evtFlag, timeoutS);
+    if (!silent) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "waitEvent(%" PRIu32 ", %" PRIu32 ")", evtFlag, timeoutS);
+    }
     do {
         // In no-OS mode, we need to manually handle RX to process URCs
 #if EXAMPLE_NO_OS_MODE
@@ -101,8 +103,15 @@ bool exampleWaitEvent(uint32_t evtFlag, uint32_t timeoutS)
         }
     } while (U_CX_PORT_GET_TIME_MS() - startTime < timeoutMs);
 
-    U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %" PRIu32, evtFlag);
+    if (!silent) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Timeout waiting for: %" PRIu32, evtFlag);
+    }
     return false;
+}
+
+bool exampleWaitEvent(uint32_t evtFlag, uint32_t timeoutS)
+{
+    return exampleWaitEventEx(evtFlag, timeoutS, false);
 }
 
 void exampleSignalEvent(uint32_t evtFlag)

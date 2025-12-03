@@ -134,20 +134,17 @@ pip install invoke
 # From project root - see all available tasks
 invoke --list
 
-# Build examples (delegated to examples/tasks.py)
-invoke examples.linux.http        # Build Linux HTTP example
-invoke examples.stm32.http        # Build STM32F4 HTTP example
-invoke examples.win32.http        # Build Windows HTTP example (Windows only)
+# Build examples (from project root, prefix with 'examples.')
+invoke examples.linux.http         # Build HTTP example for Linux
+invoke examples.stm32.http --docker # Build HTTP example for STM32 using Docker
 
 # Or from examples/ directory (without 'examples.' prefix)
 cd examples
-invoke linux.http        # Build Linux HTTP example
-invoke stm32.http        # Build STM32F4 HTTP example
-invoke stm32.all         # Build all STM32 examples
-invoke stm32.clean       # Clean STM32 build artifacts
+invoke --list                      # See all available example tasks
+invoke linux.http                  # Build HTTP example for Linux
 ```
 
-See [examples/README.md](examples/README.md) for more details on running the examples.
+See [examples/README.md](examples/README.md) for complete build instructions and how to run the examples.
 
 ### Running Tests
 
