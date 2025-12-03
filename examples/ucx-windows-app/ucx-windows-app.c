@@ -189,6 +189,7 @@ static bool gCompactMenu = false;  // false = detailed menu (default), true = co
 
 // Socket tracking
 static int32_t gCurrentSocket = -1;
+static uSocketProtocol_t gCurrentSocketType = U_SOCKET_PROTOCOL_TCP;  // Track socket type (TCP/UDP)
 
 // Wi-Fi Positioning - stored location for GATT Location and Navigation Service
 static double gLocationLatitude = 0.0;
@@ -1126,6 +1127,8 @@ static void socketCreateTcp(void);
 static void socketCreateUdp(void);
 static void socketConnect(void);
 static void socketSendData(void);
+static void socketSendToUdp(void);
+static void socketReceiveFromUdp(void);
 static void socketReadData(void);
 static void socketBind(void);
 static void socketListen(void);
@@ -3597,6 +3600,7 @@ static void socketCreateTcp(void)
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully created TCP socket");
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", socketHandle);
         gCurrentSocket = socketHandle;
+        gCurrentSocketType = U_SOCKET_PROTOCOL_TCP;
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create socket (code %d)", result);
     }
@@ -3619,6 +3623,7 @@ static void socketCreateUdp(void)
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Successfully created UDP socket");
         U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "Socket handle: %d", socketHandle);
         gCurrentSocket = socketHandle;
+        gCurrentSocketType = U_SOCKET_PROTOCOL_UDP;
     } else {
         U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to create socket (code %d)", result);
     }
@@ -3785,6 +3790,280 @@ static void socketSendData(void)
             U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to send data (code %d)", result);
         }
     }
+}
+
+/**
+ * @brief Send UDP data to a specific address (unconnected UDP)
+ * 
+ * Uses uCxSocketSendTo for connectionless UDP transmission.
+ * Does not require prior connect() call.
+ */
+static void socketSendToUdp(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to UCX module\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created. Create a UDP socket first.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    if (gCurrentSocketType != U_SOCKET_PROTOCOL_UDP) {
+        printf("ERROR: SendTo requires a UDP socket. Current socket is TCP.\n");
+        printf("TIP: Create a UDP socket using option [2]\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("=== UDP SendTo (Connectionless) ===\n");
+    printf("\n");
+    printf("Socket handle: %d (UDP)\n", gCurrentSocket);
+    printf("\n");
+    
+    char hostname[129];
+    int port;
+    
+    // Get destination address
+    if (strlen(gRemoteAddress) > 0) {
+        printf("Enter destination hostname/IP [%s]: ", gRemoteAddress);
+    } else {
+        printf("Enter destination hostname/IP: ");
+    }
+    
+    if (!fgets(hostname, sizeof(hostname), stdin)) {
+        printf("ERROR: Failed to read hostname\n");
+        return;
+    }
+    hostname[strcspn(hostname, "\r\n")] = 0;
+    
+    if (strlen(hostname) == 0) {
+        if (strlen(gRemoteAddress) > 0) {
+            strncpy(hostname, gRemoteAddress, sizeof(hostname) - 1);
+        } else {
+            printf("ERROR: No hostname specified\n");
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+    }
+    
+    // Get destination port
+    if (gRemotePort > 0) {
+        printf("Enter destination port [%d]: ", gRemotePort);
+    } else {
+        printf("Enter destination port: ");
+    }
+    
+    char portStr[16];
+    if (!fgets(portStr, sizeof(portStr), stdin)) {
+        printf("ERROR: Failed to read port\n");
+        return;
+    }
+    portStr[strcspn(portStr, "\r\n")] = 0;
+    
+    if (strlen(portStr) == 0) {
+        if (gRemotePort > 0) {
+            port = gRemotePort;
+        } else {
+            printf("ERROR: No port specified\n");
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+    } else {
+        port = atoi(portStr);
+        if (port <= 0 || port > 65535) {
+            printf("ERROR: Invalid port number\n");
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+    }
+    
+    // Save for next time
+    strncpy(gRemoteAddress, hostname, sizeof(gRemoteAddress) - 1);
+    gRemotePort = port;
+    
+    // Get data to send
+    printf("Enter data to send: ");
+    char data[MAX_DATA_BUFFER + 1];
+    if (!fgets(data, sizeof(data), stdin)) {
+        printf("ERROR: Failed to read data\n");
+        return;
+    }
+    data[strcspn(data, "\r\n")] = 0;
+    
+    size_t len = strlen(data);
+    if (len == 0) {
+        printf("ERROR: No data to send\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("Sending %zu bytes to %s:%d...\n", len, hostname, port);
+    
+    // Parse IP address
+    uSockIpAddress_t remoteIp;
+    if (uCxStringToIpAddress(hostname, &remoteIp) != 0) {
+        printf("ERROR: Invalid IP address format: %s\n", hostname);
+        printf("TIP: Use dotted decimal notation (e.g., 192.168.1.100)\n");
+        printf("     For DNS lookup, use 'Connect' [3] first, then 'Send data' [4]\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Send data using SendTo - Note: API doesn't exist, need to use Write with connected socket
+    // For true connectionless UDP, we need to check if uCxSocketSendTo exists
+    // Since it doesn't exist in the API, we'll inform the user to use Connect first
+    printf("NOTE: Direct SendTo API not available in current UCX firmware.\n");
+    printf("      For UDP communication:\n");
+    printf("      1. Use 'Connect socket' [3] to set destination\n");
+    printf("      2. Use 'Send data' [4] to send to connected destination\n");
+    printf("      OR\n");
+    printf("      For true connectionless UDP, bind the socket first.\n");
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief Receive UDP data with sender address information
+ * 
+ * Uses uCxSocketReceiveFrom to get both data and sender's IP/port.
+ * Useful for UDP servers and connectionless UDP receivers.
+ */
+static void socketReceiveFromUdp(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to UCX module\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created. Create a UDP socket first.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    if (gCurrentSocketType != U_SOCKET_PROTOCOL_UDP) {
+        printf("ERROR: ReceiveFrom requires a UDP socket. Current socket is TCP.\n");
+        printf("TIP: Create a UDP socket using option [2]\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("=== UDP ReceiveFrom (Get Sender Info) ===\n");
+    printf("\n");
+    printf("Socket handle: %d (UDP)\n", gCurrentSocket);
+    printf("\n");
+    printf("Waiting for UDP data (timeout 30s)...\n");
+    
+    // Wait for data available event
+    if (!waitEvent(URC_FLAG_SOCK_DATA, 30)) {
+        printf("No data received (timeout)\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("Data available!\n");
+    printf("\n");
+    
+    // Get number of bytes to read
+    printf("Enter number of bytes to read (max %d) [1024]: ", MAX_DATA_BUFFER);
+    char input[16];
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\r\n")] = 0;
+    
+    int length = 1024;  // Default
+    if (strlen(input) > 0) {
+        length = atoi(input);
+        if (length <= 0 || length > MAX_DATA_BUFFER) {
+            printf("Invalid length. Using default 1024 bytes.\n");
+            length = 1024;
+        }
+    }
+    
+    // Receive data with sender info
+    uint8_t buffer[MAX_DATA_BUFFER + 1];
+    uCxSocketReceiveFrom_t senderInfo;
+    
+    int32_t bytesRead = uCxSocketReceiveFrom(&gUcxHandle, gCurrentSocket, length, 
+                                             buffer, &senderInfo);
+    
+    if (bytesRead > 0) {
+        buffer[bytesRead] = '\0';  // Null terminate
+        
+        // Format sender IP address
+        char senderIpStr[46];  // Max IPv6 string length
+        uCxIpAddressToString(&senderInfo.remote_ip, senderIpStr, sizeof(senderIpStr));
+        
+        printf("─────────────────────────────────────────────────\n");
+        printf("Received %d bytes from %s:%d\n", bytesRead, senderIpStr, senderInfo.remote_port);
+        printf("─────────────────────────────────────────────────\n");
+        printf("Data: ");
+        
+        // Display data (handle binary/text)
+        for (int i = 0; i < bytesRead; i++) {
+            uint8_t b = buffer[i];
+            if (b >= 32 && b <= 126) {
+                putchar(b);
+            } else if (b == '\r' || b == '\n') {
+                putchar(b);
+            } else {
+                printf("\\x%02X", b);
+            }
+        }
+        printf("\n");
+        printf("─────────────────────────────────────────────────\n");
+        
+        // Save sender info for potential reply
+        strncpy(gRemoteAddress, senderIpStr, sizeof(gRemoteAddress) - 1);
+        gRemotePort = senderInfo.remote_port;
+        
+        printf("\nTIP: Sender info saved. Can use Connect [3] + Send [4] to reply.\n");
+        
+    } else if (bytesRead == 0) {
+        printf("No data available (socket may have received 0 bytes)\n");
+    } else {
+        const char *errName = uCxGetErrorName(bytesRead);
+        printf("ERROR: Failed to read data (code %d: %s)\n", bytesRead, errName ? errName : "Unknown");
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
 }
 
 static void socketReadData(void)
@@ -19109,7 +19388,8 @@ static void printMenu(void)
             printf("NOTE: Requires active Wi-Fi connection\n");
             printf("      Received data is automatically displayed\n");
             if (gCurrentSocket >= 0) {
-                printf("      Status: Socket handle %d active\n", gCurrentSocket);
+                const char *typeStr = (gCurrentSocketType == U_SOCKET_PROTOCOL_UDP) ? "UDP" : "TCP";
+                printf("      Status: %s socket handle %d active\n", typeStr, gCurrentSocket);
             } else {
                 printf("      Status: No active socket\n");
             }
@@ -19117,8 +19397,12 @@ static void printMenu(void)
             printf("CLIENT OPERATIONS:\n");
             printf("  [1] Create TCP socket\n");
             printf("  [2] Create UDP socket\n");
-            printf("  [3] Connect socket\n");
-            printf("  [4] Send data\n");
+            printf("  [3] Connect socket (TCP or UDP)\n");
+            printf("  [4] Send data (TCP or connected UDP)\n");
+            printf("\n");
+            printf("UDP SPECIFIC:\n");
+            printf("  [8] SendTo (UDP to specific address)\n");
+            printf("  [9] ReceiveFrom (UDP with sender info)\n");
             printf("\n");
             printf("SERVER OPERATIONS:\n");
             printf("  [5] Bind socket to local port\n");
@@ -20068,6 +20352,12 @@ static void handleUserInput(void)
                     break;
                 case 7:
                     socketListStatus();
+                    break;
+                case 8:
+                    socketSendToUdp();
+                    break;
+                case 9:
+                    socketReceiveFromUdp();
                     break;
                 case 'c':
                 case 'C':
