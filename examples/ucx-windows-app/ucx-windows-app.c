@@ -15,15 +15,18 @@
  */
 
 /** @file
- * @brief Simple Windows Console Application for u-connectXpress
+ * @brief ucx-windows-app - Windows Console Application for u-connectXpress
  * 
- * A straightforward C application with text-based menu for:
- * - Listing available API functions
- * - Basic AT commands (AT, ATI9)
- * - Status commands (Bluetooth, WiFi)
- * - Bluetooth operations (scan, connect)
- * - WiFi operations (scan, connect)
+ * A comprehensive Windows application with text-based menu for:
+ * - Bluetooth operations (scan, connect, GATT client/server, SPS)
+ * - Wi-Fi operations (scan, connect, Access Point mode)
+ * - Network services (sockets, HTTP, MQTT, TLS)
+ * - GATT services (Heart Rate, Battery, Environmental Sensing, etc.)
+ * - System diagnostics (ping, iPerf, DNS, power management)
+ * - Firmware updates (XMODEM with SHA256 verification)
  * 
+ * Note: HID over GATT (HoG) keyboard functionality is experimental
+ * and may not work reliably with all devices.
  */
 
 // Configuration for ucxclient

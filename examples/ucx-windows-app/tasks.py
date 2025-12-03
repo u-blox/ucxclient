@@ -1,5 +1,5 @@
 """
-PyInvoke tasks for windows-demo.
+PyInvoke tasks for ucx-windows-app.
 
 """
 
@@ -50,20 +50,20 @@ def _build_target(c, target=None, clean=False):
 
     # Build
     target_name = f" --target {target}" if target else ""
-    print(f"Building {target or 'windows-demo'}...")
+    print(f"Building {target or 'ucx-windows-app'}...")
     c.run(f'cmake --build {build_dir}{target_name}')
 
     print(f"\nBuild completed successfully!")
     if target:
         print(f"Executable: bin/{target}.exe")
     else:
-        print(f"Executable: bin/windows-demo.exe")
+        print(f"Executable: bin/ucx-windows-app.exe")
 
 
 @task(help={'clean': 'Clean build directory before building'})
 def build(c, clean=False):
-    """Build windows-demo."""
-    _build_target(c, target='windows-demo', clean=clean)
+    """Build ucx-windows-app."""
+    _build_target(c, target='ucx-windows-app', clean=clean)
 
 
 @task

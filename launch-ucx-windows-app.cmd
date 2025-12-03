@@ -3,7 +3,7 @@ REM Launch script for ucx-windows-app
 
 setlocal enabledelayedexpansion
 
-echo ucxclient Windows Demo Launcher
+echo ucxclient Windows App Launcher
 echo.
 
 REM Change to project root directory
@@ -154,7 +154,7 @@ REM This allows the application to find and use a shared settings file
 if not exist "%SETTINGS_FILE%" (
     echo.
     echo Creating settings file: %SETTINGS_FILE%
-    echo # ucxclient Windows Demo Settings > "%SETTINGS_FILE%"
+    echo # ucxclient Windows App Settings > "%SETTINGS_FILE%"
     echo # This file stores COM port and connection preferences >> "%SETTINGS_FILE%"
     echo. >> "%SETTINGS_FILE%"
 )
