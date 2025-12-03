@@ -2,9 +2,9 @@ name: STM32F407VG Build and Test
 
 on:
   push:
-    branches: [ main, anan_stm32 ]
+    branches: [ master ]
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
   workflow_dispatch:
 
 jobs:
@@ -18,6 +18,18 @@ jobs:
         submodules: false
         fetch-depth: 1
 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
+    - name: Install invoke
+      run: pip install invoke
+
+    - name: Generate config for CI
+      working-directory: ./examples
+      run: inv generate-config
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -29,25 +41,9 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-buildx-stm32f4-
 
-    - name: Build Docker image
-      working-directory: ./docker
-      run: docker compose build stm32f4-builder
-      env:
-        DOCKER_BUILDKIT: 1
-        COMPOSE_DOCKER_CLI_BUILD: 1
-        BUILDKIT_INLINE_CACHE: 1
-
-    - name: Set UID/GID for Docker
-      run: |
-        echo "HOST_UID=$(id -u)" >> $GITHUB_ENV
-        echo "HOST_GID=$(id -g)" >> $GITHUB_ENV
-
     - name: Build STM32F407VG firmware
-      working-directory: ./docker
-      env:
-        WIFI_SSID: test_network
-        WIFI_PSK: test_password
-      run: docker compose run --rm stm32f4-builder bash -c "cd examples && inv stm32.http"
+      working-directory: ./examples
+      run: inv stm32.http --docker
 
     - name: Check build artifacts
       run: |
@@ -56,20 +52,9 @@ jobs:
         test -f examples/bin/http_example_stm32.bin
         test -f examples/bin/http_example_stm32.hex
 
-    - name: Display firmware size
-      run: |
-        docker compose -f docker/docker-compose.yml run --rm stm32f4-builder \
-          arm-none-eabi-size examples/bin/http_example_stm32.elf
-
     - name: Run Renode emulation test
-      working-directory: ./docker
-      env:
-        WIFI_SSID: test_network
-        WIFI_PSK: test_password
-      run: |
-        set -o pipefail
-        mkdir -p ../examples/build_stm32
-        docker compose run --rm stm32f4-builder bash -c "cd examples && inv stm32.renode" | tee ../examples/build_stm32/renode_output.txt
+      working-directory: ./examples
+      run: inv stm32.renode 2>&1 | tee build_stm32/renode_output.txt
       timeout-minutes: 5
 
     - name: Upload build artifacts
