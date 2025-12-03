@@ -1137,6 +1137,7 @@ static void socketListen(void);
 static void socketClose(void);
 static void socketCloseByHandle(void);
 static void socketListStatus(void);
+static void socketConfigureOptions(void);
 static void spsEnableService(void);
 static void spsConnect(void);
 static void spsSendData(void);
@@ -4260,6 +4261,216 @@ static void socketListStatus(void)
     }
     
     printf("─────────────────────────────────────────────────\n");
+}
+
+static void socketConfigureOptions(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentSocket < 0) {
+        printf("ERROR: No socket created. Create a socket first.\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("SOCKET OPTIONS CONFIGURATION\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("Socket Handle: %d\n", gCurrentSocket);
+    printf("Socket Type: %s\n\n", (gCurrentSocketType == U_SOCKET_PROTOCOL_UDP) ? "UDP" : "TCP");
+    
+    printf("AVAILABLE OPTIONS:\n\n");
+    
+    if (gCurrentSocketType == U_SOCKET_PROTOCOL_TCP) {
+        printf("TCP SOCKET OPTIONS:\n");
+        printf("  [1] Receive Timeout      - Timeout for receive operations (seconds, 0=infinite)\n");
+        printf("  [2] Keep-Alive           - Enable/disable TCP keepalive (0=off, 1=on)\n");
+        printf("  [3] Keep-Alive Idle      - Time before sending keepalive probes (seconds)\n");
+        printf("  [4] Keep-Alive Interval  - Time between keepalive retransmissions (seconds)\n");
+        printf("  [5] Keep-Alive Count     - Number of unanswered probes before closing (count)\n");
+    } else {
+        printf("UDP SOCKET OPTIONS:\n");
+        printf("  [1] Receive Timeout      - Timeout for receive operations (seconds, 0=infinite)\n");
+        printf("  [6] Broadcast            - Enable/disable UDP broadcast (0=off, 1=on)\n");
+    }
+    
+    printf("\n  [0] Cancel\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    // Validate choice based on socket type
+    if (gCurrentSocketType == U_SOCKET_PROTOCOL_UDP && (choice >= 2 && choice <= 5)) {
+        printf("ERROR: Options 2-5 are only valid for TCP sockets\n");
+        return;
+    }
+    
+    if (gCurrentSocketType == U_SOCKET_PROTOCOL_TCP && choice == 6) {
+        printf("ERROR: Broadcast option is only valid for UDP sockets\n");
+        return;
+    }
+    
+    uSocketOption_t option;
+    const char *optionName;
+    int32_t currentValue;
+    
+    switch (choice) {
+        case 1:
+            option = U_SOCKET_OPTION_RECEIVE_TIMEOUT;
+            optionName = "Receive Timeout";
+            break;
+        case 2:
+            option = U_SOCKET_OPTION_KEEP_ALIVE;
+            optionName = "Keep-Alive";
+            break;
+        case 3:
+            option = U_SOCKET_OPTION_KEEP_IDLE;
+            optionName = "Keep-Alive Idle";
+            break;
+        case 4:
+            option = U_SOCKET_OPTION_KEEP_INTVL;
+            optionName = "Keep-Alive Interval";
+            break;
+        case 5:
+            option = U_SOCKET_OPTION_KEEP_CNT;
+            optionName = "Keep-Alive Count";
+            break;
+        case 6:
+            option = U_SOCKET_OPTION_BROADCAST;
+            optionName = "Broadcast";
+            break;
+        default:
+            printf("Invalid option\n");
+            return;
+    }
+    
+    // Get current value
+    int32_t result = uCxSocketGetOption(&gUcxHandle, gCurrentSocket, option, &currentValue);
+    
+    if (result == 0) {
+        printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+        printf("OPTION: %s\n", optionName);
+        printf("Current value: %d\n", currentValue);
+    } else {
+        printf("\nWARNING: Could not read current value (code %d)\n", result);
+    }
+    
+    printf("\nEnter new value");
+    
+    // Provide hints for each option
+    switch (choice) {
+        case 1:
+            printf(" (seconds, 0 = infinite timeout, recommended: 30-120): ");
+            break;
+        case 2:
+            printf(" (0 = disable, 1 = enable): ");
+            break;
+        case 3:
+            printf(" (seconds, default: 3, recommended: 60-7200): ");
+            break;
+        case 4:
+            printf(" (seconds, default: 3, recommended: 1-75): ");
+            break;
+        case 5:
+            printf(" (count, default: 3, recommended: 3-9): ");
+            break;
+        case 6:
+            printf(" (0 = disable, 1 = enable broadcast): ");
+            break;
+    }
+    
+    int32_t newValue;
+    if (scanf("%d", &newValue) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    // Validate value ranges
+    if (choice == 2 || choice == 6) {  // Boolean options
+        if (newValue != 0 && newValue != 1) {
+            printf("ERROR: Value must be 0 (disable) or 1 (enable)\n");
+            return;
+        }
+    } else if (choice == 1) {  // Timeout
+        if (newValue < 0) {
+            printf("ERROR: Timeout cannot be negative\n");
+            return;
+        }
+    } else {  // Other numeric options
+        if (newValue < 1) {
+            printf("ERROR: Value must be positive\n");
+            return;
+        }
+    }
+    
+    printf("\nSetting %s to %d...\n", optionName, newValue);
+    
+    result = uCxSocketSetOption(&gUcxHandle, gCurrentSocket, option, newValue);
+    
+    if (result == 0) {
+        printf("✓ Socket option updated successfully\n");
+        printf("\n");
+        
+        // Provide additional context based on option
+        switch (choice) {
+            case 1:
+                if (newValue == 0) {
+                    printf("INFO: Receive operations will block indefinitely until data arrives.\n");
+                } else {
+                    printf("INFO: Receive operations will timeout after %d seconds.\n", newValue);
+                }
+                break;
+            case 2:
+                if (newValue == 1) {
+                    printf("INFO: TCP keepalive enabled. Connection will be monitored.\n");
+                    printf("      Keepalive time = KeepIdle + (KeepIntvl × KeepCnt)\n");
+                } else {
+                    printf("INFO: TCP keepalive disabled.\n");
+                }
+                break;
+            case 3:
+                printf("INFO: Keepalive probes will start after %d seconds of idle time.\n", newValue);
+                break;
+            case 4:
+                printf("INFO: Keepalive retransmissions will occur every %d seconds.\n", newValue);
+                break;
+            case 5:
+                printf("INFO: Connection will close after %d unanswered keepalive probes.\n", newValue);
+                break;
+            case 6:
+                if (newValue == 1) {
+                    printf("INFO: UDP broadcast enabled. Can send/receive to broadcast addresses.\n");
+                    printf("      Broadcast addresses: 255.255.255.255, subnet broadcast, etc.\n");
+                } else {
+                    printf("INFO: UDP broadcast disabled.\n");
+                }
+                break;
+        }
+    } else {
+        printf("ERROR: Failed to set socket option (code %d)\n", result);
+        printf("\nPossible reasons:\n");
+        printf("  - Invalid value for this option\n");
+        printf("  - Socket is not in correct state\n");
+        printf("  - Option not supported for this socket type\n");
+    }
+    
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
 }
 
 static void socketBind(void)
@@ -19883,6 +20094,7 @@ static void printMenu(void)
             printf("\n");
             printf("MANAGEMENT:\n");
             printf("  [7] List sockets\n");
+            printf("  [o] Configure socket options (timeout, keepalive, broadcast)\n");
             printf("  [c] Close socket (current session)\n");
             printf("  [a] Close socket by handle (any socket)\n");
             printf("\n");
@@ -20838,6 +21050,10 @@ static void handleUserInput(void)
                     break;
                 case 9:
                     socketReceiveFromUdp();
+                    break;
+                case 'o':
+                case 'O':
+                    socketConfigureOptions();
                     break;
                 case 'c':
                 case 'C':
