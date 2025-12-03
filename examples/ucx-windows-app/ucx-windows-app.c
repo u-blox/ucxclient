@@ -18138,8 +18138,8 @@ static void printMenu(void)
             
             printf("\n");
             printf("═════════════════════════════════════════════════════════════════\n");
-            printf("             u-blox ucxclient Windows Demo\n");
-            printf("     using ucxclient API v%s  |  Appication v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
+            printf("             u-blox ucxclient Windows App\n");
+            printf("     using ucxclient API v%s  |  Application v%s\n", U_CX_VERSION_STR, APP_VERSION_STRING);
             printf("═════════════════════════════════════════════════════════════════\n");
             
             // === STATUS DASHBOARD ===
