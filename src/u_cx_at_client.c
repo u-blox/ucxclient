@@ -29,7 +29,6 @@
 #include <ctype.h>   // isprint()
 
 #include "u_cx_at_config.h"
-#include "u_cx_error_codes.h"
 
 #include "u_cx_log.h"
 #include "u_cx_at_util.h"
@@ -132,19 +131,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 int code = (int)strtol(pCodeStr, &pEnd, 10);
                 if (isdigit((int) * pCodeStr) && (*pEnd == 0)) {
                     pClient->status = U_CX_EXTENDED_ERROR_OFFSET - code;
-                    
-                    const char *errorName = uCxGetErrorName(-code);
-                    const char *errorModule = uCxGetErrorModule(-code);
-                    
-                    if (errorName && errorModule) {
-                        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
-                                       "Command failed with error code: %d (%s [%s])", 
-                                       code, errorName, errorModule);
-                    } else {
-                        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, 
-                                       "Command failed with error code: %d", code);
-                    }
-                    
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Command failed with error code: %d", code);
                     ret = AT_PARSER_GOT_STATUS;
                 }
             }
@@ -207,6 +194,9 @@ static int32_t parseIncomingChar(uCxAtClient_t *pClient, char ch)
         pRxBuffer[pClient->rxBufferPos++] = ch;
         if (pClient->rxBufferPos == pClient->pConfig->rxBufferLen) {
             // Overflow - discard everything and start over
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                            "RX buffer overflow (%lu bytes), discarding data",
+                            (unsigned long)pClient->pConfig->rxBufferLen);
             pClient->rxBufferPos = 0;
         }
     }
@@ -218,7 +208,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
 {
     const struct uCxAtClientConfig *pConfig = pClient->pConfig;
 
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_RX, pClient->instance, "[%d bytes]", binLength);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_RX, pClient->instance, "[%u bytes]", binLength);
     switch (parserRet) {
         case AT_PARSER_GOT_RSP: {
             // We are receiving an AT response with binary data
@@ -660,7 +650,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 U_CX_AT_PORT_ASSERT(len > 0);
                 writeNoLog(pClient, binHeader, sizeof(binHeader));
                 writeNoLog(pClient, pData, (size_t)len);
-                U_CX_LOG(U_CX_LOG_CH_TX, "[%d bytes]", len);
+                U_CX_LOG(U_CX_LOG_CH_TX, "[%" PRId32 " bytes]", len);
 
                 // Binary transfer must always be last param
                 U_CX_AT_PORT_ASSERT(pCh[1] == 0);

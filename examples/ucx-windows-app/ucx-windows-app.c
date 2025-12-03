@@ -642,6 +642,7 @@ typedef enum {
     MENU_MAIN,
     MENU_BLUETOOTH,
     MENU_BLUETOOTH_FUNCTIONS,
+    MENU_BLUETOOTH_ADVANCED,
     MENU_GATT_EXAMPLES,
     MENU_WIFI,
     MENU_WIFI_AP,
@@ -1186,6 +1187,17 @@ static void bluetoothSetPairing(void);
 static void bluetoothUpdateLocalName(void);
 static void bluetoothListBondedDevices(void);
 static void bluetoothShowRssi(void);
+static void bluetoothConfigurePhy(void);
+static void bluetoothConfigureDeviceInfo(void);
+static void bluetoothConfigureLocalAddress(void);
+static void bluetoothConfigureConnectionParams(void);
+static void bluetoothConfigureScanParams(void);
+static void bluetoothConfigureAdvInterval(void);
+static void gattClientWriteLongChar(void);
+static void gattClientWriteNoResponse(void);
+static void gattServerSendServiceChanged(void);
+static void gattServerSendErrorResponse(void);
+static void gattServerDefineHostChar(void);
 static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBtBondStatus_t bond_status);
 static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
 static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t passkey);
@@ -5969,6 +5981,247 @@ static void gattClientSubscribeNotifications(void)
     }
 }
 
+// ============================================================================
+// GATT CLIENT ADVANCED OPERATIONS
+// ============================================================================
+
+// Write long characteristic (for data larger than MTU)
+static void gattClientWriteLongChar(void)
+{
+    if (!gUcxConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("GATT CLIENT: WRITE LONG CHARACTERISTIC\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS WRITE LONG?\n");
+    printf("  Used to write characteristic values larger than the MTU size.\n");
+    printf("  Supports partial writes using offset parameter.\n");
+    printf("  Can use 'reliable write' for guaranteed delivery with verification.\n\n");
+    
+    printf("WHEN TO USE:\n");
+    printf("  • OTA firmware updates (large binary chunks)\n");
+    printf("  • Writing large configuration data\n");
+    printf("  • Updating characteristic values > ~20 bytes\n\n");
+    
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        printf("ERROR: No active GATT connection. Use Bluetooth menu to connect first.\n\n");
+        return;
+    }
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Using connection handle: %d\n\n", connHandle);
+    
+    // Get value handle
+    printf("Enter characteristic value handle (hex, e.g., 002A): ");
+    char handleStr[16];
+    if (!fgets(handleStr, sizeof(handleStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    handleStr[strcspn(handleStr, "\r\n")] = 0;
+    
+    int32_t valueHandle = (int32_t)strtol(handleStr, NULL, 16);
+    if (valueHandle <= 0) {
+        printf("ERROR: Invalid handle\n");
+        return;
+    }
+    
+    // Get data to write
+    printf("Enter data (hex bytes, e.g., 010203... or text): ");
+    char dataStr[512];
+    if (!fgets(dataStr, sizeof(dataStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    dataStr[strcspn(dataStr, "\r\n")] = 0;
+    
+    uint8_t data[256];
+    size_t dataLen = 0;
+    
+    // Try to parse as hex first
+    bool isHex = true;
+    for (size_t i = 0; i < strlen(dataStr) && i < sizeof(data) * 2; i += 2) {
+        if (!isxdigit(dataStr[i]) || (i + 1 < strlen(dataStr) && !isxdigit(dataStr[i + 1]))) {
+            isHex = false;
+            break;
+        }
+    }
+    
+    if (isHex && strlen(dataStr) % 2 == 0 && strlen(dataStr) > 0) {
+        // Parse as hex
+        for (size_t i = 0; i < strlen(dataStr) && dataLen < sizeof(data); i += 2) {
+            char byte[3] = { dataStr[i], dataStr[i + 1], '\0' };
+            data[dataLen++] = (uint8_t)strtol(byte, NULL, 16);
+        }
+    } else {
+        // Use as text
+        dataLen = strlen(dataStr);
+        if (dataLen > sizeof(data)) dataLen = sizeof(data);
+        memcpy(data, dataStr, dataLen);
+    }
+    
+    if (dataLen == 0) {
+        printf("ERROR: No data to write\n");
+        return;
+    }
+    
+    // Get offset
+    printf("Enter offset (0 for beginning): ");
+    int32_t offset = 0;
+    if (scanf("%d", &offset) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid offset, using 0\n");
+        offset = 0;
+    }
+    while (getchar() != '\n');
+    
+    // Get reliable write option
+    printf("Use reliable write (guaranteed delivery)? (y/N): ");
+    char reliableStr[10];
+    if (!fgets(reliableStr, sizeof(reliableStr), stdin)) {
+        reliableStr[0] = 'n';
+    }
+    int32_t reliable = (tolower(reliableStr[0]) == 'y') ? U_GATT_CLIENT_RELIABLE_YES : U_GATT_CLIENT_RELIABLE_NO;
+    
+    // Get more data flag
+    printf("More data coming after this? (y/N): ");
+    char moreStr[10];
+    if (!fgets(moreStr, sizeof(moreStr), stdin)) {
+        moreStr[0] = 'n';
+    }
+    int32_t flag = (tolower(moreStr[0]) == 'y') ? U_GATT_CLIENT_FLAG_MORE_DATA : U_GATT_CLIENT_FLAG_FINAL_DATA;
+    
+    printf("\n");
+    printf("Writing %zu bytes to handle 0x%04X at offset %d...\n", dataLen, valueHandle, offset);
+    printf("  Reliable: %s\n", reliable ? "YES" : "NO");
+    printf("  More data: %s\n", (flag == U_GATT_CLIENT_FLAG_MORE_DATA) ? "YES" : "NO");
+    
+    int32_t result = uCxGattClientWriteLong(&gUcxHandle, connHandle, valueHandle, 
+                                            data, (int32_t)dataLen, reliable, flag, offset);
+    
+    if (result == 0) {
+        printf("✓ Write long operation successful\n");
+        if (flag == U_GATT_CLIENT_FLAG_MORE_DATA) {
+            printf("  Call this function again to send more data.\n");
+        }
+    } else {
+        printf("✗ ERROR: Failed to write long characteristic (code %d)\n", result);
+    }
+    
+    printf("\n");
+}
+
+// Write characteristic without response (fire and forget)
+static void gattClientWriteNoResponse(void)
+{
+    if (!gUcxConnected) {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Not connected to device");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("GATT CLIENT: WRITE WITHOUT RESPONSE\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS WRITE WITHOUT RESPONSE?\n");
+    printf("  Writes to a characteristic without waiting for acknowledgment.\n");
+    printf("  Faster than normal write, but no delivery guarantee.\n\n");
+    
+    printf("WHEN TO USE:\n");
+    printf("  • High-speed data streaming (sensor data, audio)\n");
+    printf("  • Non-critical updates where speed matters\n");
+    printf("  • Reducing latency in time-sensitive applications\n\n");
+    
+    printf("IMPORTANT:\n");
+    printf("  • No confirmation of delivery\n");
+    printf("  • Data might be lost if remote buffer is full\n");
+    printf("  • Use only for characteristics with 'Write Without Response' property\n\n");
+    
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        printf("ERROR: No active GATT connection. Use Bluetooth menu to connect first.\n\n");
+        return;
+    }
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Using connection handle: %d\n\n", connHandle);
+    
+    // Get value handle
+    printf("Enter characteristic value handle (hex, e.g., 002A): ");
+    char handleStr[16];
+    if (!fgets(handleStr, sizeof(handleStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    handleStr[strcspn(handleStr, "\r\n")] = 0;
+    
+    int32_t valueHandle = (int32_t)strtol(handleStr, NULL, 16);
+    if (valueHandle <= 0) {
+        printf("ERROR: Invalid handle\n");
+        return;
+    }
+    
+    // Get data to write
+    printf("Enter data (hex bytes, e.g., 010203... or text): ");
+    char dataStr[256];
+    if (!fgets(dataStr, sizeof(dataStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    dataStr[strcspn(dataStr, "\r\n")] = 0;
+    
+    uint8_t data[128];
+    size_t dataLen = 0;
+    
+    // Try to parse as hex first
+    bool isHex = true;
+    for (size_t i = 0; i < strlen(dataStr) && i < sizeof(data) * 2; i += 2) {
+        if (!isxdigit(dataStr[i]) || (i + 1 < strlen(dataStr) && !isxdigit(dataStr[i + 1]))) {
+            isHex = false;
+            break;
+        }
+    }
+    
+    if (isHex && strlen(dataStr) % 2 == 0 && strlen(dataStr) > 0) {
+        // Parse as hex
+        for (size_t i = 0; i < strlen(dataStr) && dataLen < sizeof(data); i += 2) {
+            char byte[3] = { dataStr[i], dataStr[i + 1], '\0' };
+            data[dataLen++] = (uint8_t)strtol(byte, NULL, 16);
+        }
+    } else {
+        // Use as text
+        dataLen = strlen(dataStr);
+        if (dataLen > sizeof(data)) dataLen = sizeof(data);
+        memcpy(data, dataStr, dataLen);
+    }
+    
+    if (dataLen == 0) {
+        printf("ERROR: No data to write\n");
+        return;
+    }
+    
+    printf("\nWriting %zu bytes to handle 0x%04X (no response)...\n", dataLen, valueHandle);
+    
+    int32_t result = uCxGattClientWriteNoRsp(&gUcxHandle, connHandle, valueHandle, 
+                                             data, (int32_t)dataLen);
+    
+    if (result == 0) {
+        printf("✓ Write sent (no confirmation expected)\n");
+        printf("  Note: No guarantee that remote device received the data.\n");
+    } else {
+        printf("✗ ERROR: Failed to send write (code %d)\n", result);
+    }
+    
+    printf("\n");
+}
+
 // ----------------------------------------------------------------
 // ============================================================================
 // GATT SERVER OPERATIONS
@@ -6334,6 +6587,338 @@ static void gattServerSendIndication(void)
         printf("  - Client has subscribed to indications (CCCD enabled for indications)\n");
         printf("  - Characteristic has Indicate property (0x20)\n");
     }
+}
+
+// ============================================================================
+// GATT SERVER ADVANCED OPERATIONS
+// ============================================================================
+
+// Send service changed indication
+static void gattServerSendServiceChanged(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("GATT SERVER: SEND SERVICE CHANGED INDICATION\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS SERVICE CHANGED INDICATION?\n");
+    printf("  Notifies connected clients that the GATT database has been modified.\n");
+    printf("  Clients should re-discover services and characteristics after receiving this.\n\n");
+    
+    printf("WHEN TO USE:\n");
+    printf("  • After adding or removing GATT services\n");
+    printf("  • After modifying characteristic properties\n");
+    printf("  • When GATT database structure changes dynamically\n\n");
+    
+    printf("SPECIFICATION:\n");
+    printf("  • Service: Generic Attribute (0x1801)\n");
+    printf("  • Characteristic: Service Changed (0x2A05)\n");
+    printf("  • Indicates range of affected handles (start to end)\n\n");
+    
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        printf("ERROR: No active GATT connection. Use Bluetooth menu to connect first.\n\n");
+        return;
+    }
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Using connection handle: %d\n\n", connHandle);
+    
+    // Get start handle
+    printf("Enter start handle of changed range (hex, e.g., 0001): ");
+    char startStr[16];
+    if (!fgets(startStr, sizeof(startStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    startStr[strcspn(startStr, "\r\n")] = 0;
+    
+    int32_t startHandle = (int32_t)strtol(startStr, NULL, 16);
+    if (startHandle <= 0) {
+        printf("ERROR: Invalid start handle\n");
+        return;
+    }
+    
+    // Get end handle
+    printf("Enter end handle of changed range (hex, e.g., FFFF): ");
+    char endStr[16];
+    if (!fgets(endStr, sizeof(endStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    endStr[strcspn(endStr, "\r\n")] = 0;
+    
+    int32_t endHandle = (int32_t)strtol(endStr, NULL, 16);
+    if (endHandle <= 0 || endHandle < startHandle) {
+        printf("ERROR: Invalid end handle (must be >= start handle)\n");
+        return;
+    }
+    
+    printf("\nSending Service Changed Indication...\n");
+    printf("  Connection: %d\n", connHandle);
+    printf("  Handle Range: 0x%04X - 0x%04X\n", startHandle, endHandle);
+    
+    int32_t result = uCxGattServerSendServiceChangedInd(&gUcxHandle, connHandle, 
+                                                         startHandle, endHandle);
+    
+    if (result == 0) {
+        printf("\n✓ Service Changed Indication sent successfully\n");
+        printf("  Client should now re-discover affected services.\n");
+    } else {
+        printf("\n✗ ERROR: Failed to send Service Changed Indication (code %d)\n", result);
+        printf("  Make sure the client is connected and bonded.\n");
+    }
+    
+    printf("\n");
+}
+
+// Send error response to read/write request
+static void gattServerSendErrorResponse(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("GATT SERVER: SEND ERROR RESPONSE\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT ARE ERROR RESPONSES?\n");
+    printf("  Send ATT protocol error codes in response to read/write requests.\n");
+    printf("  Used when request cannot be fulfilled or access is denied.\n\n");
+    
+    printf("COMMON ERROR CODES:\n");
+    printf("  0x01 - Invalid Handle\n");
+    printf("  0x02 - Read Not Permitted\n");
+    printf("  0x03 - Write Not Permitted\n");
+    printf("  0x04 - Invalid PDU\n");
+    printf("  0x05 - Insufficient Authentication\n");
+    printf("  0x06 - Request Not Supported\n");
+    printf("  0x07 - Invalid Offset\n");
+    printf("  0x08 - Insufficient Authorization\n");
+    printf("  0x09 - Prepare Queue Full\n");
+    printf("  0x0A - Attribute Not Found\n");
+    printf("  0x0D - Insufficient Encryption Key Size\n");
+    printf("  0x0E - Invalid Attribute Value Length\n");
+    printf("  0x0F - Unlikely Error\n\n");
+    
+    // Use the saved connection handle
+    int connHandle = gCurrentGattConnHandle;
+    if (connHandle < 0) {
+        printf("ERROR: No active GATT connection. Use Bluetooth menu to connect first.\n\n");
+        return;
+    }
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Using connection handle: %d\n\n", connHandle);
+    
+    // Select error type
+    printf("SELECT ERROR TYPE:\n");
+    printf("  [1] Read Request Error\n");
+    printf("  [2] Write Request Error\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    if (choice != 1 && choice != 2) {
+        printf("Invalid choice\n");
+        return;
+    }
+    
+    // Get error code
+    printf("\nEnter error code (hex, e.g., 02 for Read Not Permitted): ");
+    char errorStr[16];
+    if (!fgets(errorStr, sizeof(errorStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    errorStr[strcspn(errorStr, "\r\n")] = 0;
+    
+    // Parse error code as byte
+    uint8_t errorByte = (uint8_t)strtol(errorStr, NULL, 16);
+    
+    int32_t result;
+    
+    if (choice == 1) {
+        printf("\nSending Read Request Error (code 0x%02X)...\n", errorByte);
+        result = uCxGattServerReadReqError(&gUcxHandle, connHandle, &errorByte, 1);
+    } else {
+        printf("\nSending Write Request Error (code 0x%02X)...\n", errorByte);
+        result = uCxGattServerWriteReqError(&gUcxHandle, connHandle, &errorByte, 1);
+    }
+    
+    if (result == 0) {
+        printf("✓ Error response sent successfully\n");
+        printf("  Client should receive ATT error 0x%02X\n", errorByte);
+    } else {
+        printf("✗ ERROR: Failed to send error response (code %d)\n", result);
+    }
+    
+    printf("\n");
+}
+
+// Define host-side characteristic
+static void gattServerDefineHostChar(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("GATT SERVER: DEFINE HOST-SIDE CHARACTERISTIC\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS HOST-SIDE CHARACTERISTIC?\n");
+    printf("  A GATT characteristic where the value is managed by the host application,\n");
+    printf("  not stored in the module's GATT database. Read/write events are forwarded\n");
+    printf("  to the host for processing.\n\n");
+    
+    printf("WHEN TO USE:\n");
+    printf("  • Dynamic data that changes frequently (sensor readings)\n");
+    printf("  • Large or complex data structures\n");
+    printf("  • Values that require computation or external access\n");
+    printf("  • Custom business logic for read/write operations\n\n");
+    
+    printf("HOW IT WORKS:\n");
+    printf("  1. Define characteristic with properties and security\n");
+    printf("  2. Module returns service and characteristic handles\n");
+    printf("  3. When client reads/writes, host receives URC event\n");
+    printf("  4. Host responds with actual data or error\n\n");
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    
+    // Get UUID
+    printf("Enter characteristic UUID (16-bit hex, e.g., 2A37): ");
+    char uuidStr[16];
+    if (!fgets(uuidStr, sizeof(uuidStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    uuidStr[strcspn(uuidStr, "\r\n")] = 0;
+    
+    uint8_t uuid[2];
+    if (strlen(uuidStr) == 4) {
+        // Parse 16-bit UUID (big endian)
+        uint16_t uuid16 = (uint16_t)strtol(uuidStr, NULL, 16);
+        uuid[0] = (uuid16 >> 8) & 0xFF;
+        uuid[1] = uuid16 & 0xFF;
+    } else {
+        printf("ERROR: Only 16-bit UUIDs supported for this example\n");
+        return;
+    }
+    
+    // Get properties
+    printf("\nSELECT PROPERTIES (enter bit values to enable):\n");
+    printf("  Bit 0 (0x01) - Broadcast\n");
+    printf("  Bit 1 (0x02) - Read\n");
+    printf("  Bit 2 (0x04) - Write Without Response\n");
+    printf("  Bit 3 (0x08) - Write\n");
+    printf("  Bit 4 (0x10) - Notify\n");
+    printf("  Bit 5 (0x20) - Indicate\n");
+    printf("  Bit 6 (0x40) - Authenticated Signed Writes\n");
+    printf("  Bit 7 (0x80) - Extended Properties\n");
+    printf("\nEnter properties as hex (e.g., 12 for Read+Notify): ");
+    
+    char propStr[16];
+    if (!fgets(propStr, sizeof(propStr), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    propStr[strcspn(propStr, "\r\n")] = 0;
+    
+    uint8_t propByte = (uint8_t)strtol(propStr, NULL, 16);
+    uByteArray_t properties;
+    properties.pData = &propByte;
+    properties.length = 1;
+    
+    // Get read security
+    printf("\nSELECT READ SECURITY:\n");
+    printf("  [0] None (no security required)\n");
+    printf("  [1] Unauthenticated (encryption required)\n");
+    printf("  [2] Authenticated (pairing with authentication required)\n");
+    printf("Choice: ");
+    
+    int readSec;
+    if (scanf("%d", &readSec) != 1 || readSec < 0 || readSec > 2) {
+        while (getchar() != '\n');
+        printf("Invalid choice, using None\n");
+        readSec = 0;
+    }
+    while (getchar() != '\n');
+    
+    uGattServerReadSecurity_t readSecurity;
+    switch (readSec) {
+        case 0: readSecurity = U_GATT_SERVER_READ_SECURITY_NONE; break;
+        case 1: readSecurity = U_GATT_SERVER_READ_SECURITY_UNAUTHENTICATED; break;
+        case 2: readSecurity = U_GATT_SERVER_READ_SECURITY_AUTHENTICATED; break;
+        default: readSecurity = U_GATT_SERVER_READ_SECURITY_NONE;
+    }
+    
+    // Get write security
+    printf("\nSELECT WRITE SECURITY:\n");
+    printf("  [0] None (no security required)\n");
+    printf("  [1] Unauthenticated (encryption required)\n");
+    printf("  [2] Authenticated (pairing with authentication required)\n");
+    printf("Choice: ");
+    
+    int writeSec;
+    if (scanf("%d", &writeSec) != 1 || writeSec < 0 || writeSec > 2) {
+        while (getchar() != '\n');
+        printf("Invalid choice, using None\n");
+        writeSec = 0;
+    }
+    while (getchar() != '\n');
+    
+    uGattServerWriteSecurity_t writeSecurity;
+    switch (writeSec) {
+        case 0: writeSecurity = U_GATT_SERVER_WRITE_SECURITY_NONE; break;
+        case 1: writeSecurity = U_GATT_SERVER_WRITE_SECURITY_UNAUTHENTICATED; break;
+        case 2: writeSecurity = U_GATT_SERVER_WRITE_SECURITY_AUTHENTICATED; break;
+        default: writeSecurity = U_GATT_SERVER_WRITE_SECURITY_NONE;
+    }
+    
+    printf("\n");
+    printf("Defining host-side characteristic...\n");
+    printf("  UUID: 0x%02X%02X\n", uuid[0], uuid[1]);
+    printf("  Properties: 0x%02X\n", propByte);
+    printf("  Read Security: %d\n", readSecurity);
+    printf("  Write Security: %d\n", writeSecurity);
+    
+    uCxGattServerHostCharDefine_t response;
+    int32_t result = uCxGattServerHostCharDefine(&gUcxHandle, uuid, 2, &propByte, 1,
+                                                  readSecurity, writeSecurity, &response);
+    
+    if (result == 0) {
+        printf("\n✓ Host-side characteristic defined successfully\n");
+        printf("  Value Handle: 0x%04X\n", response.value_handle);
+        printf("  CCCD Handle: 0x%04X\n", response.cccd_handle);
+        printf("\nNOTE: When clients read/write this characteristic, you will receive\n");
+        printf("      URC events (+UUDPGRH: for read, +UUDPGWH: for write).\n");
+        printf("      You must respond with data or an error code.\n");
+    } else {
+        printf("\n✗ ERROR: Failed to define host-side characteristic (code %d)\n", result);
+    }
+    
+    printf("\n");
 }
 
 static void gattServerSetupHeartbeat(void)
@@ -11510,6 +12095,624 @@ static void bluetoothShowRssi(void)
     printf("    -75 to -85 dBm: Weak (10-20 meters)\n");
     printf("    -85 to -100 dBm: Very Weak (> 20 meters)\n");
     printf("  • Signal strength varies with obstacles, interference, and device orientation\n");
+    printf("\n");
+}
+
+// ============================================================================
+// BLUETOOTH ADVANCED CONFIGURATION
+// ============================================================================
+
+// Configure Bluetooth PHY (Physical Layer)
+static void bluetoothConfigurePhy(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gBtConnectionCount == 0) {
+        printf("\nNo active Bluetooth connections\n");
+        printf("Please connect to a device first (Bluetooth menu option 3)\n\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("BLUETOOTH PHY CONFIGURATION\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS PHY?\n");
+    printf("  PHY (Physical Layer) determines the data rate and range of BLE connections:\n\n");
+    
+    printf("  • 1M PHY (1 Mbps) - Standard, best balance of range and speed\n");
+    printf("  • 2M PHY (2 Mbps) - Doubled speed, slightly reduced range\n");
+    printf("  • Coded PHY       - Extended range (4x), reduced speed (125/500 kbps)\n\n");
+    
+    printf("WHEN TO USE EACH PHY:\n");
+    printf("  1M PHY:    Default, works with all BLE devices, ~100m range\n");
+    printf("  2M PHY:    Fast data transfer, close proximity (firmware updates, bulk data)\n");
+    printf("  Coded PHY: Long range applications (>200m), outdoor, IoT sensors\n\n");
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    
+    // Show active connections
+    printf("Active Connections:\n");
+    for (int i = 0; i < gBtConnectionCount && i < 7; i++) {
+        printf("  %d. Handle %d\n", i + 1, gBtConnections[i].handle);
+    }
+    printf("\n");
+    
+    // Select connection
+    int connIndex;
+    printf("Select connection (1-%d): ", gBtConnectionCount);
+    if (scanf("%d", &connIndex) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (connIndex < 1 || connIndex > gBtConnectionCount) {
+        printf("Invalid connection\n");
+        return;
+    }
+    
+    int32_t connHandle = gBtConnections[connIndex - 1].handle;
+    
+    printf("\n");
+    printf("SELECT PHY:\n");
+    printf("  [1] 1M PHY (1 Mbps) - Standard\n");
+    printf("  [2] 2M PHY (2 Mbps) - High speed\n");
+    printf("  [3] Coded PHY - Long range\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    // PHY values: Bit 0 = 1M, Bit 1 = 2M, Bit 2 = Coded
+    int32_t txPhy, rxPhy;
+    const char *phyName;
+    
+    switch (choice) {
+        case 1:
+            txPhy = rxPhy = 0x01;  // 1M
+            phyName = "1M PHY";
+            break;
+        case 2:
+            txPhy = rxPhy = 0x02;  // 2M
+            phyName = "2M PHY";
+            break;
+        case 3:
+            txPhy = rxPhy = 0x04;  // Coded
+            phyName = "Coded PHY";
+            break;
+        default:
+            printf("Invalid choice\n");
+            return;
+    }
+    
+    printf("\nRequesting %s on connection handle %d...\n", phyName, connHandle);
+    
+    int32_t result = uCxBluetoothRequestPhy(&gUcxHandle, connHandle, txPhy, rxPhy);
+    
+    if (result == 0) {
+        printf("✓ PHY request sent successfully\n\n");
+        printf("NOTE: The remote device must also support the selected PHY.\n");
+        printf("      You will receive a PHY Update event when the change is complete.\n");
+        printf("      Check Bluetooth status to see the current PHY in use.\n");
+    } else {
+        printf("✗ ERROR: Failed to request PHY change (code %d)\n", result);
+    }
+    
+    printf("\n");
+}
+
+// Configure Bluetooth connection parameters
+static void bluetoothConfigureConnectionParams(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("BLUETOOTH CONNECTION PARAMETERS\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT ARE CONNECTION PARAMETERS?\n");
+    printf("  These settings control how the BLE connection behaves:\n\n");
+    
+    printf("  • Connection Interval - How often devices exchange data\n");
+    printf("      Range: 7.5ms to 4000ms (in 1.25ms units: 6-3200)\n");
+    printf("      Shorter = lower latency, more power consumption\n");
+    printf("      Longer = higher latency, less power consumption\n\n");
+    
+    printf("  • Peripheral Latency - How many intervals peripheral can skip\n");
+    printf("      Range: 0 to 499 events\n");
+    printf("      Allows peripheral to save power by not responding\n\n");
+    
+    printf("  • Link Loss Timeout - Time before connection is lost\n");
+    printf("      Range: 100ms to 32000ms\n");
+    printf("      Longer = more tolerant of temporary signal loss\n\n");
+    
+    printf("CURRENT SETTINGS:\n");
+    
+    int32_t minInterval, maxInterval, latency, timeout;
+    
+    if (uCxBluetoothGetConnectionIntervalMin(&gUcxHandle, &minInterval) == 0) {
+        printf("  Min Interval: %d (%.1f ms)\n", minInterval, minInterval * 1.25);
+    }
+    
+    if (uCxBluetoothGetConnectionIntervalMax(&gUcxHandle, &maxInterval) == 0) {
+        printf("  Max Interval: %d (%.1f ms)\n", maxInterval, maxInterval * 1.25);
+    }
+    
+    if (uCxBluetoothGetConnectionPeripheralLatency(&gUcxHandle, &latency) == 0) {
+        printf("  Peripheral Latency: %d events\n", latency);
+    }
+    
+    if (uCxBluetoothGetConnectionLinklossTimeout(&gUcxHandle, &timeout) == 0) {
+        printf("  Link Loss Timeout: %d ms\n", timeout);
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("SELECT PARAMETER TO CONFIGURE:\n");
+    printf("  [1] Connection Interval (min/max)\n");
+    printf("  [2] Peripheral Latency\n");
+    printf("  [3] Link Loss Timeout\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    int32_t result = -1;
+    
+    switch (choice) {
+        case 1: {
+            printf("\nEnter connection interval minimum (6-3200, units of 1.25ms): ");
+            if (scanf("%d", &minInterval) != 1 || minInterval < 6 || minInterval > 3200) {
+                while (getchar() != '\n');
+                printf("Invalid value\n");
+                return;
+            }
+            while (getchar() != '\n');
+            
+            printf("Enter connection interval maximum (6-3200, units of 1.25ms): ");
+            if (scanf("%d", &maxInterval) != 1 || maxInterval < 6 || maxInterval > 3200) {
+                while (getchar() != '\n');
+                printf("Invalid value\n");
+                return;
+            }
+            while (getchar() != '\n');
+            
+            if (minInterval > maxInterval) {
+                printf("ERROR: Min interval cannot be greater than max interval\n");
+                return;
+            }
+            
+            result = uCxBluetoothSetConnectionIntervalMin(&gUcxHandle, minInterval);
+            if (result == 0) {
+                result = uCxBluetoothSetConnectionIntervalMax(&gUcxHandle, maxInterval);
+            }
+            
+            if (result == 0) {
+                printf("✓ Connection intervals set: %.1f - %.1f ms\n", 
+                       minInterval * 1.25, maxInterval * 1.25);
+            }
+            break;
+        }
+        
+        case 2: {
+            printf("\nEnter peripheral latency (0-499 events): ");
+            if (scanf("%d", &latency) != 1 || latency < 0 || latency > 499) {
+                while (getchar() != '\n');
+                printf("Invalid value\n");
+                return;
+            }
+            while (getchar() != '\n');
+            
+            result = uCxBluetoothSetConnectionPeripheralLatency(&gUcxHandle, latency);
+            
+            if (result == 0) {
+                printf("✓ Peripheral latency set: %d events\n", latency);
+            }
+            break;
+        }
+        
+        case 3: {
+            printf("\nEnter link loss timeout (100-32000 ms): ");
+            if (scanf("%d", &timeout) != 1 || timeout < 100 || timeout > 32000) {
+                while (getchar() != '\n');
+                printf("Invalid value\n");
+                return;
+            }
+            while (getchar() != '\n');
+            
+            result = uCxBluetoothSetConnectionLinklossTimeout(&gUcxHandle, timeout);
+            
+            if (result == 0) {
+                printf("✓ Link loss timeout set: %d ms\n", timeout);
+            }
+            break;
+        }
+        
+        default:
+            printf("Invalid choice\n");
+            return;
+    }
+    
+    if (result != 0) {
+        printf("✗ ERROR: Failed to set parameter (code %d)\n", result);
+    }
+    
+    printf("\nNOTE: These settings apply to new connections.\n");
+    printf("      Reconnect devices for settings to take effect.\n");
+    printf("\n");
+}
+
+// Configure scan parameters
+static void bluetoothConfigureScanParams(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("BLUETOOTH SCAN PARAMETERS\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT ARE SCAN PARAMETERS?\n");
+    printf("  Control how the device scans for nearby Bluetooth devices:\n\n");
+    
+    printf("  • Scan Interval - How often to scan for devices\n");
+    printf("      Range: 2.5ms to 10240ms (in 0.625ms units: 4-16384)\n");
+    printf("      Shorter = find devices faster, more power consumption\n\n");
+    
+    printf("  • Scan Window - How long to scan during each interval\n");
+    printf("      Range: 2.5ms to 10240ms (in 0.625ms units: 4-16384)\n");
+    printf("      Must be ≤ Scan Interval\n");
+    printf("      Longer = find more devices, more power consumption\n\n");
+    
+    printf("EXAMPLES:\n");
+    printf("  Fast scan:     Interval=96 (60ms), Window=48 (30ms)\n");
+    printf("  Balanced scan: Interval=160 (100ms), Window=80 (50ms)\n");
+    printf("  Power save:    Interval=800 (500ms), Window=400 (250ms)\n\n");
+    
+    printf("CURRENT SETTINGS:\n");
+    
+    int32_t scanInterval, scanWindow;
+    
+    if (uCxBluetoothGetScanInterval(&gUcxHandle, &scanInterval) == 0) {
+        printf("  Scan Interval: %d (%.1f ms)\n", scanInterval, scanInterval * 0.625);
+    }
+    
+    if (uCxBluetoothGetScanWindow(&gUcxHandle, &scanWindow) == 0) {
+        printf("  Scan Window: %d (%.1f ms)\n", scanWindow, scanWindow * 0.625);
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Enter scan interval (4-16384, units of 0.625ms): ");
+    
+    if (scanf("%d", &scanInterval) != 1 || scanInterval < 4 || scanInterval > 16384) {
+        while (getchar() != '\n');
+        printf("Invalid value\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    printf("Enter scan window (4-16384, units of 0.625ms, must be ≤ interval): ");
+    
+    if (scanf("%d", &scanWindow) != 1 || scanWindow < 4 || scanWindow > 16384) {
+        while (getchar() != '\n');
+        printf("Invalid value\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (scanWindow > scanInterval) {
+        printf("ERROR: Scan window cannot be greater than scan interval\n");
+        return;
+    }
+    
+    int32_t result = uCxBluetoothSetScanInterval(&gUcxHandle, scanInterval);
+    if (result == 0) {
+        result = uCxBluetoothSetScanWindow(&gUcxHandle, scanWindow);
+    }
+    
+    if (result == 0) {
+        printf("\n✓ Scan parameters set successfully\n");
+        printf("  Scan Interval: %.1f ms\n", scanInterval * 0.625);
+        printf("  Scan Window: %.1f ms\n", scanWindow * 0.625);
+        printf("  Duty Cycle: %.1f%%\n", (scanWindow * 100.0) / scanInterval);
+    } else {
+        printf("\n✗ ERROR: Failed to set scan parameters (code %d)\n", result);
+    }
+    
+    printf("\nNOTE: New settings take effect on next scan operation.\n");
+    printf("\n");
+}
+
+// Configure advertisement interval
+static void bluetoothConfigureAdvInterval(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("BLUETOOTH ADVERTISEMENT INTERVAL\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS ADVERTISEMENT INTERVAL?\n");
+    printf("  Controls how often the device broadcasts its presence:\n\n");
+    
+    printf("  Range: 20ms to 10240ms (in 0.625ms units: 32-16384)\n");
+    printf("  Shorter = faster discovery, more power consumption\n");
+    printf("  Longer = slower discovery, less power consumption\n\n");
+    
+    printf("RECOMMENDED VALUES:\n");
+    printf("  Fast (20ms):    Quick discovery, high power use\n");
+    printf("  Normal (100ms): Balanced (default)\n");
+    printf("  Slow (1000ms):  Power saving, slower discovery\n\n");
+    
+    printf("CURRENT SETTINGS:\n");
+    
+    uCxBtGetLegacyAdvertisementConfig_t advConfig;
+    if (uCxBluetoothGetLegacyAdvertisementConfig(&gUcxHandle, &advConfig) == 0) {
+        printf("  Min Interval: %d (%.1f ms)\n", advConfig.advertisement_interval_minimum,
+               advConfig.advertisement_interval_minimum * 0.625);
+        printf("  Max Interval: %d (%.1f ms)\n", advConfig.advertisement_interval_maximum,
+               advConfig.advertisement_interval_maximum * 0.625);
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Enter advertisement interval minimum (32-16384, units of 0.625ms): ");
+    
+    int32_t minInterval;
+    if (scanf("%d", &minInterval) != 1 || minInterval < 32 || minInterval > 16384) {
+        while (getchar() != '\n');
+        printf("Invalid value\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    printf("Enter advertisement interval maximum (32-16384, units of 0.625ms): ");
+    
+    int32_t maxInterval;
+    if (scanf("%d", &maxInterval) != 1 || maxInterval < 32 || maxInterval > 16384) {
+        while (getchar() != '\n');
+        printf("Invalid value\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (minInterval > maxInterval) {
+        printf("ERROR: Min interval cannot be greater than max interval\n");
+        return;
+    }
+    
+    int32_t result = uCxBluetoothSetLegacyAdvertisementConfig(&gUcxHandle, minInterval, maxInterval);
+    
+    if (result == 0) {
+        printf("\n✓ Advertisement intervals set successfully\n");
+        printf("  Min Interval: %.1f ms\n", minInterval * 0.625);
+        printf("  Max Interval: %.1f ms\n", maxInterval * 0.625);
+    } else {
+        printf("\n✗ ERROR: Failed to set advertisement interval (code %d)\n", result);
+    }
+    
+    printf("\nNOTE: New settings take effect when advertising is next enabled.\n");
+    printf("\n");
+}
+
+// Configure Device Information Service
+static void bluetoothConfigureDeviceInfo(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("DEVICE INFORMATION SERVICE (DIS)\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS DIS?\n");
+    printf("  Standard GATT service (0x180A) that provides device metadata.\n");
+    printf("  Useful for identification and version tracking.\n\n");
+    
+    printf("AVAILABLE CHARACTERISTICS:\n");
+    printf("  • Manufacturer Name   - Company/organization name\n");
+    printf("  • Model Number        - Product model identifier\n");
+    printf("  • Firmware Revision   - Firmware version string\n");
+    printf("  • Software Revision   - Software version string\n\n");
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("SELECT CHARACTERISTIC:\n");
+    printf("  [1] Manufacturer Name (max 31 chars)\n");
+    printf("  [2] Model Number (max 20 chars)\n");
+    printf("  [3] Firmware Revision (max 20 chars)\n");
+    printf("  [4] Software Revision (max 20 chars)\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    uBtCharId_t charId;
+    const char *charName;
+    int maxLen;
+    
+    switch (choice) {
+        case 1:
+            charId = U_BT_CHAR_ID_MANUFACTURER_NAME;
+            charName = "Manufacturer Name";
+            maxLen = 31;
+            break;
+        case 2:
+            charId = U_BT_CHAR_ID_MODEL_NAME;
+            charName = "Model Number";
+            maxLen = 20;
+            break;
+        case 3:
+            charId = U_BT_CHAR_ID_FIRMWARE_REVISION;
+            charName = "Firmware Revision";
+            maxLen = 20;
+            break;
+        case 4:
+            charId = U_BT_CHAR_ID_SOFTWARE_REVISION;
+            charName = "Software Revision";
+            maxLen = 20;
+            break;
+        default:
+            printf("Invalid choice\n");
+            return;
+    }
+    
+    char value[128];
+    printf("\nEnter %s (max %d chars): ", charName, maxLen);
+    if (!fgets(value, sizeof(value), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    value[strcspn(value, "\r\n")] = 0;
+    
+    if (strlen(value) == 0) {
+        printf("ERROR: Value cannot be empty\n");
+        return;
+    }
+    
+    if (strlen(value) > (size_t)maxLen) {
+        printf("WARNING: Value truncated to %d characters\n", maxLen);
+        value[maxLen] = '\0';
+    }
+    
+    int32_t result = uCxBluetoothSetDeviceInfoServiceChar(&gUcxHandle, charId, value);
+    
+    if (result == 0) {
+        printf("✓ %s set to: %s\n", charName, value);
+        printf("\nNOTE: DIS characteristics are readable by remote devices.\n");
+    } else {
+        printf("✗ ERROR: Failed to set %s (code %d)\n", charName, result);
+    }
+    
+    printf("\n");
+}
+
+// Configure local Bluetooth address
+static void bluetoothConfigureLocalAddress(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("CONFIGURE LOCAL BLUETOOTH ADDRESS\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS THIS?\n");
+    printf("  Sets the Bluetooth MAC address for the local device.\n");
+    printf("  Format: XX:XX:XX:XX:XX:XX (6 bytes in hexadecimal)\n\n");
+    
+    printf("WARNING:\n");
+    printf("  • Changing the Bluetooth address may affect pairing\n");
+    printf("  • Previously paired devices may need to re-pair\n");
+    printf("  • Use manufacturer-assigned address when possible\n\n");
+    
+    // Get current address
+    uMacAddress_t currentAddr;
+    if (uCxSystemGetLocalAddress(&gUcxHandle, U_INTERFACE_ID_BLUETOOTH, &currentAddr) == 0) {
+        printf("CURRENT ADDRESS: %02X:%02X:%02X:%02X:%02X:%02X\n\n",
+               currentAddr.address[0], currentAddr.address[1], currentAddr.address[2],
+               currentAddr.address[3], currentAddr.address[4], currentAddr.address[5]);
+    }
+    
+    printf("────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Enter new Bluetooth address (XX:XX:XX:XX:XX:XX): ");
+    
+    char input[32];
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("Invalid input\n");
+        return;
+    }
+    input[strcspn(input, "\r\n")] = 0;
+    
+    if (strlen(input) == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    // Parse address
+    uMacAddress_t newAddr;
+    int parsed = sscanf(input, "%2hhx:%2hhx:%2hhx:%2hhx:%2hhx:%2hhx",
+                       &newAddr.address[0], &newAddr.address[1], &newAddr.address[2],
+                       &newAddr.address[3], &newAddr.address[4], &newAddr.address[5]);
+    
+    if (parsed != 6) {
+        printf("ERROR: Invalid address format. Use XX:XX:XX:XX:XX:XX\n");
+        return;
+    }
+    
+    printf("\nNew address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+           newAddr.address[0], newAddr.address[1], newAddr.address[2],
+           newAddr.address[3], newAddr.address[4], newAddr.address[5]);
+    
+    printf("Confirm? (y/N): ");
+    char confirm[10];
+    if (!fgets(confirm, sizeof(confirm), stdin)) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    if (tolower(confirm[0]) != 'y') {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    int32_t result = uCxSystemSetLocalAddress(&gUcxHandle, U_INTERFACE_ID_BLUETOOTH, &newAddr);
+    
+    if (result == 0) {
+        printf("\n✓ Bluetooth address updated successfully\n");
+        printf("\nNOTE: Reboot device for changes to take effect.\n");
+        printf("      Previously paired devices may need to re-pair.\n");
+    } else {
+        printf("\n✗ ERROR: Failed to set Bluetooth address (code %d)\n", result);
+    }
+    
     printf("\n");
 }
 
@@ -20022,8 +21225,27 @@ static void printMenu(void)
             printf("  [8] Configure pairing settings\n");
             printf("  [9] List bonded devices\n");
             printf("  [r] Show RSSI (signal strength)\n");
+            printf("  [a] Advanced configuration (PHY, connection params, scan, etc.)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
+            break;
+            
+        case MENU_BLUETOOTH_ADVANCED:
+            printf("\n");
+            printf("              BLUETOOTH ADVANCED CONFIGURATION\n");
+            printf("\n");
+            printf("\n");
+            printf("CONNECTION & PHY:\n");
+            printf("  [1] Configure PHY (1M/2M/Coded)\n");
+            printf("  [2] Configure connection parameters (interval, latency, timeout)\n");
+            printf("  [3] Configure scan parameters (interval/window)\n");
+            printf("  [4] Configure advertisement interval\n");
+            printf("\n");
+            printf("DEVICE CONFIGURATION:\n");
+            printf("  [5] Configure Device Information Service\n");
+            printf("  [6] Configure local Bluetooth address\n");
+            printf("\n");
+            printf("  [0] Back to Bluetooth menu  [q] Quit\n");
             break;
             
         case MENU_WIFI:
@@ -20383,6 +21605,10 @@ static void printMenu(void)
             printf("  [4] Write characteristic\n");
             printf("  [5] Subscribe to notifications\n");
             printf("\n");
+            printf("ADVANCED OPERATIONS\n");
+            printf("  [6] Write long characteristic (for large data)\n");
+            printf("  [7] Write without response (no ACK)\n");
+            printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
             
@@ -20406,6 +21632,11 @@ static void printMenu(void)
             printf("  [3] Set characteristic value\n");
             printf("  [4] Send notification\n");
             printf("  [5] Send indication (acknowledged)\n");
+            printf("\n");
+            printf("ADVANCED OPERATIONS\n");
+            printf("  [6] Send service changed indication\n");
+            printf("  [7] Send error response (read/write)\n");
+            printf("  [8] Define host-side characteristic\n");
             printf("\n");
             printf("  [9] or [e] Service-specific examples (Heart Rate, HID, NUS, etc.)\n");
             printf("\n");
@@ -20962,8 +22193,41 @@ static void handleUserInput(void)
                 case 'R':
                     bluetoothShowRssi();
                     break;
+                case 'a':
+                case 'A':
+                    gMenuState = MENU_BLUETOOTH_ADVANCED;
+                    break;
                 case 0:
                     gMenuState = MENU_MAIN;
+                    break;
+                default:
+                    printf("Invalid choice!\n");
+                    break;
+            }
+            break;
+            
+        case MENU_BLUETOOTH_ADVANCED:
+            switch (choice) {
+                case 1:
+                    bluetoothConfigurePhy();
+                    break;
+                case 2:
+                    bluetoothConfigureConnectionParams();
+                    break;
+                case 3:
+                    bluetoothConfigureScanParams();
+                    break;
+                case 4:
+                    bluetoothConfigureAdvInterval();
+                    break;
+                case 5:
+                    bluetoothConfigureDeviceInfo();
+                    break;
+                case 6:
+                    bluetoothConfigureLocalAddress();
+                    break;
+                case 0:
+                    gMenuState = MENU_BLUETOOTH;
                     break;
                 default:
                     printf("Invalid choice!\n");
@@ -21487,6 +22751,12 @@ static void handleUserInput(void)
                 case 5:
                     gattClientSubscribeNotifications();
                     break;
+                case 6:
+                    gattClientWriteLongChar();
+                    break;
+                case 7:
+                    gattClientWriteNoResponse();
+                    break;
                 case 0:
                     gMenuState = MENU_MAIN;
                     break;
@@ -21522,6 +22792,15 @@ static void handleUserInput(void)
                     break;
                 case 5:
                     gattServerSendIndication();
+                    break;
+                case 6:
+                    gattServerSendServiceChanged();
+                    break;
+                case 7:
+                    gattServerSendErrorResponse();
+                    break;
+                case 8:
+                    gattServerDefineHostChar();
                     break;
                 case 9:
                     // Navigate to GATT Examples menu (as shown in the menu text)

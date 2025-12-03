@@ -57,12 +57,12 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "CompanyName", "u-blox AG"
-            VALUE "FileDescription", "ucxclient Windows Demo for NORA-W36/NORA-B26"
+            VALUE "FileDescription", "ucxclient Windows App for NORA-W36/NORA-B26"
             VALUE "FileVersion", VERSION_STRING
-            VALUE "InternalName", "ucx-windows-demo.exe"
+            VALUE "InternalName", "ucx-windows-app.exe"
             VALUE "LegalCopyright", "Copyright (C) 2025"
-            VALUE "OriginalFilename", "ucx-windows-demo.exe"
-            VALUE "ProductName", "ucxclient Windows Demo"
+            VALUE "OriginalFilename", "ucx-windows-app.exe"
+            VALUE "ProductName", "ucxclient Windows App"
             VALUE "ProductVersion", VERSION_STRING
         END
     END
