@@ -460,6 +460,8 @@ static char gWifiIpAddress[16] = "";               // Device IP address
 static int gWifiChannel = 0;                       // Wi-Fi channel (1-13)
 static int gRegDomain = 0;                         // Regulatory domain (0 = World, cached value)
 static char gWifiHostname[64] = "";                // WiFi hostname (saved to settings)
+static bool gWifiRoamingEnabled = false;           // WiFi roaming enabled (saved to settings)
+static int32_t gWifiRoamingThreshold = -70;        // WiFi roaming threshold in dBm (saved to settings)
 
 // HTTP configuration
 #define HTTP_MAX_CHUNK_SIZE 1000                   // Maximum bytes per HTTP read/write operation
@@ -1086,6 +1088,7 @@ static void wifiApShowStatus(void);
 static void wifiApGenerateQrCode(void);
 static void wifiApConfigure(void);
 static void wifiSetHostname(void);
+static void wifiConfigureRoaming(void);
 static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize);
 static void loadSettings(void);
 static void saveSettings(void);
@@ -19362,6 +19365,7 @@ static void printMenu(void)
             printf("  [3] HTTP Client (GET/POST/PUT)\n");
             printf("  [4] Security/TLS (certificates)\n");
             printf("  [5] Set WiFi Hostname\n");
+            printf("  [6] Configure WiFi Roaming (Auto AP switching)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -20394,6 +20398,9 @@ static void handleUserInput(void)
                     break;
                 case 5:
                     wifiSetHostname();
+                    break;
+                case 6:
+                    wifiConfigureRoaming();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -21854,6 +21861,17 @@ static void loadSettings(void)
                     printf("Loaded WiFi hostname from settings: %s\n", gWifiHostname);
                 }
             }
+            else if (strncmp(line, "wifi_roaming_enabled=", 21) == 0) {
+                gWifiRoamingEnabled = (atoi(line + 21) != 0);
+                printf("Loaded WiFi roaming from settings: %s\n", gWifiRoamingEnabled ? "ENABLED" : "DISABLED");
+            }
+            else if (strncmp(line, "wifi_roaming_threshold=", 23) == 0) {
+                gWifiRoamingThreshold = atoi(line + 23);
+                if (gWifiRoamingThreshold > -40 || gWifiRoamingThreshold < -90) {
+                    gWifiRoamingThreshold = -70;  // Default if invalid
+                }
+                printf("Loaded WiFi roaming threshold from settings: %d dBm\n", gWifiRoamingThreshold);
+            }
             else if (strncmp(line, "firmware_path_", 14) == 0) {
                 // Dynamic firmware path: firmware_path_<PRODUCT>=<path>
                 // e.g., "firmware_path_NORA-W36=/path/to/firmware.bin"
@@ -21912,6 +21930,8 @@ static void saveSettings(void)
         fprintf(f, "reg_domain=%d\n", gRegDomain);
         fprintf(f, "compact_menu=%d\n", gCompactMenu ? 1 : 0);
         fprintf(f, "wifi_hostname=%s\n", gWifiHostname);
+        fprintf(f, "wifi_roaming_enabled=%d\n", gWifiRoamingEnabled ? 1 : 0);
+        fprintf(f, "wifi_roaming_threshold=%d\n", gWifiRoamingThreshold);
         
         // Save Combain API key (obfuscated)
         if (strlen(gCombainApiKey) > 0) {
@@ -25711,6 +25731,21 @@ static void wifiConnect(void)
         }
     }
     
+    // Apply roaming settings if configured
+    if (gWifiRoamingEnabled) {
+        printf("Enabling WiFi roaming (threshold: %d dBm)...\n", gWifiRoamingThreshold);
+        
+        // Enable roaming
+        if (uCxWifiSetWifiRoaming(&gUcxHandle, U_WIFI_ROAMING_ENABLE) != 0) {
+            printf("WARNING: Failed to enable roaming (continuing anyway)\n");
+        } else {
+            // Set threshold
+            if (uCxWifiStationSetRoamingBGScanThreshold(&gUcxHandle, gWifiRoamingThreshold) != 0) {
+                printf("WARNING: Failed to set roaming threshold (continuing anyway)\n");
+            }
+        }
+    }
+    
     // Set connection parameters (wlan_handle = 0, default)
     if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
         printf("ERROR: Failed to set connection parameters\n");
@@ -26398,6 +26433,152 @@ static void wifiSetHostname(void)
         saveSettings();
     } else {
         printError("Failed to set hostname", err);
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+/**
+ * @brief Configure WiFi roaming settings
+ * 
+ * Allows enabling/disabling WiFi roaming and setting the signal threshold.
+ * When roaming is enabled, the module automatically switches to a better AP
+ * when the current signal drops below the threshold.
+ */
+static void wifiConfigureRoaming(void)
+{
+    char input[64];
+    
+    printf("\n");
+    printf("=== WiFi Roaming Configuration ===\n");
+    printf("\n");
+    
+    // Check if connected to UCX
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to UCX module\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Display current roaming settings
+    printf("Current Settings:\n");
+    
+    // Get current roaming state from module
+    uWifiRoaming_t currentRoaming;
+    int32_t err = uCxWifiGetWifiRoaming(&gUcxHandle, &currentRoaming);
+    if (err == 0) {
+        gWifiRoamingEnabled = (currentRoaming == U_WIFI_ROAMING_ENABLE);
+        printf("  Roaming: %s\n", gWifiRoamingEnabled ? "ENABLED" : "DISABLED");
+    } else {
+        printf("  Roaming: %s (cached)\n", gWifiRoamingEnabled ? "ENABLED" : "DISABLED");
+    }
+    
+    // Get current threshold from module
+    int32_t currentThreshold;
+    err = uCxWifiStationGetRoamingBGScanThreshold(&gUcxHandle, &currentThreshold);
+    if (err == 0) {
+        gWifiRoamingThreshold = currentThreshold;
+        printf("  Threshold: %d dBm\n", gWifiRoamingThreshold);
+    } else {
+        printf("  Threshold: %d dBm (cached)\n", gWifiRoamingThreshold);
+    }
+    
+    printf("\n");
+    printf("WiFi roaming allows automatic switching to a better access point\n");
+    printf("when signal strength drops below the threshold.\n");
+    printf("\n");
+    
+    // Prompt to enable/disable roaming
+    printf("Enable WiFi roaming? [%s]: ", gWifiRoamingEnabled ? "Y/n" : "y/N");
+    if (!fgets(input, sizeof(input), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    input[strcspn(input, "\r\n")] = 0;
+    
+    bool newRoamingEnabled;
+    if (strlen(input) == 0) {
+        newRoamingEnabled = gWifiRoamingEnabled;
+    } else {
+        char firstChar = (char)tolower(input[0]);
+        newRoamingEnabled = (firstChar == 'y');
+    }
+    
+    // If enabling roaming, prompt for threshold
+    int32_t newThreshold = gWifiRoamingThreshold;
+    if (newRoamingEnabled) {
+        printf("\n");
+        printf("Signal Threshold (dBm):\n");
+        printf("  -50 dBm = Excellent signal (aggressive roaming)\n");
+        printf("  -70 dBm = Good signal (balanced, recommended)\n");
+        printf("  -80 dBm = Weak signal (conservative roaming)\n");
+        printf("\n");
+        printf("Enter threshold [-90 to -40 dBm] [%d]: ", gWifiRoamingThreshold);
+        
+        if (!fgets(input, sizeof(input), stdin)) {
+            printf("ERROR: Failed to read input\n");
+            return;
+        }
+        input[strcspn(input, "\r\n")] = 0;
+        
+        if (strlen(input) > 0) {
+            newThreshold = atoi(input);
+            // Validate range
+            if (newThreshold > -40 || newThreshold < -90) {
+                printf("WARNING: Invalid threshold. Using default -70 dBm\n");
+                newThreshold = -70;
+            }
+        }
+    }
+    
+    // Apply settings to module
+    printf("\n");
+    printf("Applying roaming settings...\n");
+    
+    // Set roaming state
+    uWifiRoaming_t roamingState = newRoamingEnabled ? U_WIFI_ROAMING_ENABLE : U_WIFI_ROAMING_DISABLE;
+    err = uCxWifiSetWifiRoaming(&gUcxHandle, roamingState);
+    if (err != 0) {
+        printf("ERROR: Failed to set roaming state (error: %d)\n", err);
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Set threshold if roaming is enabled
+    if (newRoamingEnabled) {
+        err = uCxWifiStationSetRoamingBGScanThreshold(&gUcxHandle, newThreshold);
+        if (err != 0) {
+            printf("ERROR: Failed to set roaming threshold (error: %d)\n", err);
+            printf("\n");
+            printf("Press Enter to continue...");
+            getchar();
+            return;
+        }
+    }
+    
+    // Update global settings
+    gWifiRoamingEnabled = newRoamingEnabled;
+    gWifiRoamingThreshold = newThreshold;
+    
+    // Save to settings file
+    saveSettings();
+    
+    printf("✓ Roaming configuration updated successfully\n");
+    printf("\n");
+    printf("Current Configuration:\n");
+    printf("  Roaming: %s\n", gWifiRoamingEnabled ? "ENABLED" : "DISABLED");
+    if (gWifiRoamingEnabled) {
+        printf("  Threshold: %d dBm\n", gWifiRoamingThreshold);
+        printf("\n");
+        printf("NOTE: The module will automatically scan for better APs when\n");
+        printf("      the current signal drops below %d dBm and switch if a\n", gWifiRoamingThreshold);
+        printf("      stronger signal is available.\n");
     }
     
     printf("\n");
