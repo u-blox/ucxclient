@@ -1,4 +1,4 @@
-# Release Process for Windows Demo
+# Release Process for ucx-windows-app
 
 ## Overview
 
@@ -66,13 +66,14 @@ git push origin v3.2.0.257
 1. Go to: https://github.com/u-blox/ucxclient/releases
 2. Click "Draft a new release"
 3. **Tag:** v3.2.0.257 (must match Git tag)
-4. **Title:** Windows Demo v3.2.0.257
-5. **Description:** Write release notes including:
+4. **Title:** ucx-windows-app v3.2.0.257
+4. **Description:** Write release notes including:
    ```markdown
    ## Features
    - Bluetooth: Scan, connect, GATT client/server, SPS
    - Wi-Fi: Station/AP mode, HTTP, MQTT, NTP, location services
    - Firmware update via XMODEM with SHA256 verification
+   - Note: HID over GATT (HoG) keyboard is experimental
    
    ## Requirements
    - Windows 10/11 (64-bit)

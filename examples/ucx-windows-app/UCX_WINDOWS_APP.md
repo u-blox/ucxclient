@@ -12,6 +12,8 @@ A comprehensive Windows application for testing and configuring u-connectXpress 
 - ✅ **Easy Deployment** - Launch script handles building and dependencies
 - ✅ **Production Ready** - Code signing support for distribution
 
+**Note:** HID over GATT (HoG) keyboard functionality is experimental and may not work reliably with all devices.
+
 ## Prerequisites for a Clean PC
 
 To build and run this application from a fresh clone, you need:
@@ -104,7 +106,7 @@ For production releases, you can digitally sign the executable:
 .\launch-ucx-windows-app.cmd sign YOUR_CERT_THUMBPRINT_HERE
 
 # Example
-.\launch-ucx-windows-app.cmd sign EF3FD135F1CD669E0D7F4F2CF14FE1334EECD16E
+.\launch-ucx-windows-app.cmd sign EF3FD135F1CD669E0D7F4F...
 ```
 
 **Output Location:**
@@ -305,7 +307,7 @@ cd examples\ucx-windows-app\bin
 ### Main Menu
 ```
 ═════════════════════════════════════════════════════════════════
-             u-blox ucxclient Windows Demo
+             u-blox ucxclient Windows App
      using ucxclient API v3.2.0  |  Application v3.2.0.257
 ═════════════════════════════════════════════════════════════════
 
@@ -413,7 +415,7 @@ uCxSocketCreate(&gUcxHandle, protocol, &socketHandle);
 
 ```
 ═════════════════════════════════════════════════════════════════
-             u-blox ucxclient Windows Demo
+             u-blox ucxclient Windows App
      using ucxclient API v3.2.0  |  Application v3.2.0.257
 ═════════════════════════════════════════════════════════════════
 
