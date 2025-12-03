@@ -46,6 +46,7 @@
 // Winsock2 must be included BEFORE windows.h to avoid conflicts
 #include <winsock2.h>  // For socket functions
 #include <ws2tcpip.h>  // For getaddrinfo and related functions
+#include <iphlpapi.h>  // For GetAdaptersAddresses
 #include <windows.h>  // For Windows API
 #include <conio.h>  // For _kbhit() and _getch()
 #include <winhttp.h>  // For HTTP client to fetch from GitHub
@@ -57,6 +58,7 @@
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "ws2_32.lib")  // Windows Sockets library
+#pragma comment(lib, "iphlpapi.lib")  // IP Helper API library
 #pragma comment(lib, "crypt32.lib")  // Windows Crypto API
 
 // FTD2XX library dynamic loading
@@ -25647,32 +25649,76 @@ static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize)
         return;
     }
     
-    char hostname[256];
-    if (gethostname(hostname, sizeof(hostname)) == 0) {
-        struct addrinfo hints, *result;
-        ZeroMemory(&hints, sizeof(hints));
-        hints.ai_family = AF_INET;  // IPv4
-        hints.ai_socktype = SOCK_STREAM;
+    // Get adapter information to filter out virtual adapters
+    ULONG bufLen = 15000;
+    PIP_ADAPTER_ADDRESSES pAddresses = (PIP_ADAPTER_ADDRESSES)malloc(bufLen);
+    if (pAddresses == NULL) {
+        WSACleanup();
+        return;
+    }
+    
+    ULONG result = GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                                        NULL, pAddresses, &bufLen);
+    
+    if (result == ERROR_BUFFER_OVERFLOW) {
+        free(pAddresses);
+        pAddresses = (PIP_ADAPTER_ADDRESSES)malloc(bufLen);
+        if (pAddresses == NULL) {
+            WSACleanup();
+            return;
+        }
+        result = GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                                      NULL, pAddresses, &bufLen);
+    }
+    
+    if (result == NO_ERROR) {
+        PIP_ADAPTER_ADDRESSES pCurrAddresses = pAddresses;
         
-        if (getaddrinfo(hostname, NULL, &hints, &result) == 0) {
-            for (struct addrinfo *ptr = result; ptr != NULL; ptr = ptr->ai_next) {
-                struct sockaddr_in *sockaddr_ipv4 = (struct sockaddr_in *)ptr->ai_addr;
-                char ip[INET_ADDRSTRLEN];
-                inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), ip, INET_ADDRSTRLEN);
+        while (pCurrAddresses) {
+            // Get adapter friendly name for filtering
+            char adapterName[256];
+            wcstombs(adapterName, pCurrAddresses->FriendlyName, sizeof(adapterName));
+            
+            // Check if it's a virtual adapter
+            bool isVirtual = (strstr(adapterName, "Virtual") != NULL ||
+                            strstr(adapterName, "virtual") != NULL ||
+                            strstr(adapterName, "Hyper-V") != NULL ||
+                            strstr(adapterName, "VPN") != NULL ||
+                            strstr(adapterName, "vpn") != NULL ||
+                            strstr(adapterName, "AnyConnect") != NULL ||
+                            strstr(adapterName, "VMware") != NULL ||
+                            strstr(adapterName, "VirtualBox") != NULL);
+            
+            // Skip virtual adapters and non-operational adapters
+            if (!isVirtual && pCurrAddresses->OperStatus == IfOperStatusUp) {
+                PIP_ADAPTER_UNICAST_ADDRESS pUnicast = pCurrAddresses->FirstUnicastAddress;
                 
-                // Skip loopback (127.x.x.x) and APIPA/link-local (169.254.x.x) addresses
-                if (ip[0] != '\0' && 
-                    strncmp(ip, "127.", 4) != 0 && 
-                    strncmp(ip, "169.254.", 8) != 0) {
-                    strncpy(ipBuffer, ip, bufferSize - 1);
-                    ipBuffer[bufferSize - 1] = '\0';
-                    break;
+                while (pUnicast) {
+                    if (pUnicast->Address.lpSockaddr->sa_family == AF_INET) {
+                        struct sockaddr_in *sockaddr_ipv4 = (struct sockaddr_in *)pUnicast->Address.lpSockaddr;
+                        char ip[INET_ADDRSTRLEN];
+                        inet_ntop(AF_INET, &(sockaddr_ipv4->sin_addr), ip, INET_ADDRSTRLEN);
+                        
+                        // Skip loopback (127.x.x.x) and APIPA/link-local (169.254.x.x) addresses
+                        if (ip[0] != '\0' && 
+                            strncmp(ip, "127.", 4) != 0 && 
+                            strncmp(ip, "169.254.", 8) != 0) {
+                            strncpy(ipBuffer, ip, bufferSize - 1);
+                            ipBuffer[bufferSize - 1] = '\0';
+                            free(pAddresses);
+                            WSACleanup();
+                            return;
+                        }
+                    }
+                    pUnicast = pUnicast->Next;
                 }
             }
-            freeaddrinfo(result);
+            
+            pCurrAddresses = pCurrAddresses->Next;
         }
     }
     
+    free(pAddresses);
     WSACleanup();
 }
 
