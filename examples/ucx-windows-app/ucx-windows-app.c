@@ -1264,6 +1264,7 @@ static void httpTimeApiExample(void);
 static void httpZenQuotesExample(void);
 static void httpStatusCodeExample(void);
 static void httpJsonPostExample(void);
+static bool httpConfigureCustomHeaders(int32_t sessionId);
 
 // JSON parsing utility functions
 static bool extractJsonString(const char *json, const char *key, char *value, size_t valueSize);
@@ -12406,6 +12407,105 @@ static int32_t readPostDataFromFile(const char *filename, char *buffer, int32_t 
     return (int32_t)bytesRead;
 }
 
+/**
+ * @brief Configure custom HTTP headers for a request
+ * 
+ * Allows adding custom headers like Authorization, Content-Type, etc.
+ * Returns true if headers were configured, false if skipped.
+ * 
+ * @param sessionId HTTP session ID
+ * @return true if custom headers configured, false if skipped
+ */
+static bool httpConfigureCustomHeaders(int32_t sessionId)
+{
+    char input[512];
+    
+    printf("\n");
+    printf("Add custom HTTP headers? (y/N): ");
+    if (!fgets(input, sizeof(input), stdin)) {
+        return false;
+    }
+    input[strcspn(input, "\r\n")] = 0;
+    
+    if (strlen(input) == 0 || (input[0] != 'y' && input[0] != 'Y')) {
+        return false;  // User declined
+    }
+    
+    printf("\n");
+    printf("=== Custom HTTP Headers ===\n");
+    printf("\n");
+    printf("Common examples:\n");
+    printf("  Authorization: Bearer YOUR_TOKEN_HERE\n");
+    printf("  Content-Type: application/json\n");
+    printf("  X-API-Key: your-api-key\n");
+    printf("  User-Agent: MyApp/1.0\n");
+    printf("\n");
+    printf("You can add up to 10 header fields.\n");
+    printf("Press Enter with empty field name to finish.\n");
+    printf("\n");
+    
+    int headerCount = 0;
+    bool hasHeaders = false;
+    
+    while (headerCount < 10) {
+        char fieldName[128];
+        char fieldValue[384];
+        
+        printf("Header field name [%d/10] (or Enter to finish): ", headerCount + 1);
+        if (!fgets(fieldName, sizeof(fieldName), stdin)) {
+            break;
+        }
+        fieldName[strcspn(fieldName, "\r\n")] = 0;
+        
+        // Trim whitespace
+        char *trimmedName = fieldName;
+        while (*trimmedName == ' ' || *trimmedName == '\t') trimmedName++;
+        
+        if (strlen(trimmedName) == 0) {
+            break;  // User finished
+        }
+        
+        printf("Header field value: ");
+        if (!fgets(fieldValue, sizeof(fieldValue), stdin)) {
+            break;
+        }
+        fieldValue[strcspn(fieldValue, "\r\n")] = 0;
+        
+        // Trim whitespace
+        char *trimmedValue = fieldValue;
+        while (*trimmedValue == ' ' || *trimmedValue == '\t') trimmedValue++;
+        
+        if (strlen(trimmedValue) == 0) {
+            printf("WARNING: Empty value for '%s', skipping\n", trimmedName);
+            continue;
+        }
+        
+        // Add header field
+        int32_t err = uCxHttpAddHeaderField(&gUcxHandle, sessionId, trimmedName, trimmedValue);
+        if (err == 0) {
+            printf("✓ Added: %s: %s\n", trimmedName, trimmedValue);
+            headerCount++;
+            hasHeaders = true;
+        } else {
+            printf("ERROR: Failed to add header (error: %d)\n", err);
+            break;
+        }
+        
+        printf("\n");
+    }
+    
+    if (headerCount >= 10) {
+        printf("Maximum 10 headers reached.\n");
+    }
+    
+    if (hasHeaders) {
+        printf("\n");
+        printf("✓ %d custom header%s configured\n", headerCount, headerCount == 1 ? "" : "s");
+    }
+    
+    return hasHeaders;
+}
+
 // HTTP GET Request Example
 static void httpGetExample(void)
 {
@@ -12660,6 +12760,9 @@ static void httpGetExample(void)
         return;
     }
     printf("✓ Request path set to %s\n", path);
+    
+    // Step 2.5: Optional custom headers
+    httpConfigureCustomHeaders(sessionId);
     
     // Step 3: Send GET request
     printf("\n");
@@ -13103,6 +13206,9 @@ static void httpPostExample(void)
     }
     printf("✓ Request path set to %s\n", path);
     
+    // Step 3.5: Optional custom headers
+    httpConfigureCustomHeaders(sessionId);
+    
     // Step 4: Send POST request
     printf("\n");
     printf("Sending POST request to %s://%s:%d%s...\n", isHttps ? "https" : "http", host, port, path);
@@ -13466,6 +13572,9 @@ static void httpDeleteExample(void)
         return;
     }
     
+    // Step 3.5: Optional custom headers
+    httpConfigureCustomHeaders(sessionId);
+    
     // Step 4: Send DELETE request
     printf("\n");
     printf("Sending DELETE request...\n");
@@ -13785,6 +13894,9 @@ static void httpPutExample(void)
         getchar();
         return;
     }
+    
+    // Step 3.5: Optional custom headers
+    httpConfigureCustomHeaders(sessionId);
     
     // Step 4: Send PUT request
     printf("\n");
