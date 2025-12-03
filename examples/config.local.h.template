@@ -8,6 +8,10 @@
 #ifndef CONFIG_LOCAL_H
 #define CONFIG_LOCAL_H
 
+/* UART device for Linux/POSIX (default: /dev/ttyUSB0) or Windows (default: COM3) */
+/* Uncomment and modify if needed: */
+// #define U_EXAMPLE_UART "/dev/ttyUSB0"
+
 /* WiFi SSID for HTTP example */
 #define U_EXAMPLE_SSID "your-wifi-ssid"
 

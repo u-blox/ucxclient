@@ -24,7 +24,10 @@
  * - Print discovered devices with RSSI and name
  *
  * Execute with following args:
- * ble_scan_example <uart_device>
+ * ble_scan_example [uart_device]
+ *
+ * The uart_device argument is optional and defaults to U_EXAMPLE_UART
+ * from config.local.h.
  */
 
 #include <stdio.h>
@@ -65,20 +68,17 @@ static void printDeviceAddress(const uBtLeAddress_t *pAddr)
 
 int U_EXAMPLE_MAIN(int argc, char **argv)
 {
-    uCxHandle_t ucxHandle;
+    exampleCheckHelp(argc, argv, "ble_scan_example",
+        "Example of BLE device discovery/scanning using the uCx API.\n"
+        "Scans for nearby BLE devices and prints their address, name, and RSSI.",
+        "[uart_device]");
 
-#ifdef U_PORT_POSIX
-    if (argc != 2) {
-        fprintf(stderr, "Invalid arguments\n");
-        fprintf(stderr, "Syntax: %s <device>\n", argv[0]);
-        exit(1);
-    }
-    const char *pDevice = argv[1];
-#else
-    (void)argc;
-    (void)argv;
+    uCxHandle_t ucxHandle;
     const char *pDevice = U_EXAMPLE_UART;
-#endif
+
+    if (argc >= 2) {
+        pDevice = argv[1];
+    }
 
     printf("===========================================\n");
     printf("BLE Scan Example\n");

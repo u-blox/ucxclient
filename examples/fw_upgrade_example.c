@@ -21,11 +21,15 @@
  * AT+USYFWUS command followed by XMODEM protocol transfer.
  *
  * Execute with following args:
- * fw_upgrade_example <uart_device> <firmware_file>
+ * fw_upgrade_example <firmware_file> [uart_device]
+ *
+ * The uart_device argument is optional and defaults to U_EXAMPLE_UART
+ * from config.local.h.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #include "u_cx.h"
@@ -122,29 +126,35 @@ static int32_t firmwareDataCallback(uint8_t *pBuffer, size_t offset, size_t maxL
 
 int U_EXAMPLE_MAIN(int argc, char **argv)
 {
+    // Handle --help before other argument checks
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            printf("fw_upgrade_example\n\n");
+            printf("Example of how to perform firmware upgrade using XMODEM.\n"
+                   "Transfers a firmware file to the module using AT+USYFWUS command.\n\n");
+            printf("Usage: fw_upgrade_example <firmware_file> [uart_device]\n\n");
+            printf("Arguments:\n");
+            printf("  firmware_file  Path to firmware binary file (required)\n");
+            printf("  uart_device    UART device (optional, defaults to U_EXAMPLE_UART)\n");
+            return 0;
+        }
+    }
+
     int32_t result;
     uCxHandle_t ucxHandle;
+    const char *pUartDev = U_EXAMPLE_UART;
+    const char *pFirmwareFile = NULL;
 
-#ifdef U_PORT_POSIX
-    if (argc != 3) {
-        printf("Usage: %s <uart_device> <firmware_file>\n", argv[0]);
-        printf("Example: %s /dev/ttyUSB0 firmware.bin\n", argv[0]);
+    if (argc < 2) {
+        printf("Usage: %s <firmware_file> [uart_device]\n", argv[0]);
+        printf("Example: %s firmware.bin /dev/ttyUSB0\n", argv[0]);
         return -1;
     }
 
-    const char *pUartDev = argv[1];
-    const char *pFirmwareFile = argv[2];
-#else
-    (void)argc;
-    (void)argv;
-    // In no-OS mode, use hardcoded values (would typically come from config)
-    const char *pUartDev = U_EXAMPLE_UART;
-    const char *pFirmwareFile = "firmware.bin";
-
-    printf("No-OS firmware upgrade mode\n");
-    printf("UART device: %s\n", pUartDev);
-    printf("Firmware file: %s\n", pFirmwareFile);
-#endif
+    pFirmwareFile = argv[1];
+    if (argc >= 3) {
+        pUartDev = argv[2];
+    }
 
     printf("===========================================\n");
     printf("Firmware Upgrade Example\n");

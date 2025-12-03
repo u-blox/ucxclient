@@ -29,7 +29,10 @@
  * - http_example_no_os: Uses no-OS port (manual RX polling)
  *
  * Execute with following args:
- * http_example <uart_device> "<wifi_ssid>" "<wifi_psk>"
+ * http_example [uart_device] [wifi_ssid] [wifi_psk]
+ *
+ * All arguments are optional and default to U_EXAMPLE_UART, U_EXAMPLE_SSID,
+ * and U_EXAMPLE_WPA_PSK from config.local.h.
  */
 
 #include <stdio.h>
@@ -90,34 +93,31 @@ static void httpRequestStatus(struct uCxHandle *puCxHandle, int32_t session_id, 
 
 int U_EXAMPLE_MAIN(int argc, char **argv)
 {
-    uCxHandle_t ucxHandle;
+    exampleCheckHelp(argc, argv, "http_example",
+        "Example of how to do a HTTP GET request using the uCx API.\n"
+        "Connects to WiFi, sends HTTP GET to www.google.com, and prints response.",
+        "[uart_device] [wifi_ssid] [wifi_psk]");
 
-#ifdef U_PORT_POSIX
-    if (argc != 4) {
-        fprintf(stderr, "Invalid arguments\n");
-        fprintf(stderr, "Syntax: %s <device> <SSID> <WPA_PSK>\n", argv[0]);
-        exit(1);
-    }
-    const char *pDevice = argv[1];
-    const char *pSsid = argv[2];
-    const char *pWpaPsk = argv[3];
-#else
-    (void)argc;
-    (void)argv;
+    uCxHandle_t ucxHandle;
     const char *pDevice = U_EXAMPLE_UART;
     const char *pSsid = U_EXAMPLE_SSID;
     const char *pWpaPsk = U_EXAMPLE_WPA_PSK;
+
+    if (argc >= 2) {
+        pDevice = argv[1];
+    }
+    if (argc >= 3) {
+        pSsid = argv[2];
+    }
+    if (argc >= 4) {
+        pWpaPsk = argv[3];
+    }
 
     if (*pWpaPsk == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Wi-Fi not configured - connection will not work");
         U_CX_LOG_LINE(U_CX_LOG_CH_WARN,
             "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.");
     }
-#endif
-
-    printf("===========================================\n");
-    printf("HTTP GET Example\n");
-    printf("===========================================\n");
 
     // Initialize example utilities and AT client
     uCxAtClient_t *pClient = exampleInit(pDevice, 115200, true);

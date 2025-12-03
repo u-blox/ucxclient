@@ -15,9 +15,24 @@ All examples are designed to work with both OS and no-OS configurations by using
 | socket_example.c    | Example of raw TCP socket communication. Demonstrates socket creation, connection, data transfer, and URC-driven event handling. |
 | example_utils.c/h   | Common utility functions that work with both OS and no-OS configurations, providing AT client initialization, event handling, and sleep functionality. |
 
-## Local configuration overrides
+## Configuration
 
-Examples automatically include `config.local.h` when it exists in this directory. Copy `config.local.h.template` to `config.local.h` and edit the macros (for instance `U_EXAMPLE_SSID` / `U_EXAMPLE_WPA_PSK`) to store credentials locally without passing them via command-line arguments or CMake definitions. The file is `.gitignore`d so sensitive data stays out of commits, and any macros you place there take precedence over the built-in defaults.
+All configuration is done via `config.local.h`. Copy the template and edit it:
+
+```sh
+cp config.local.h.template config.local.h
+```
+
+Then edit the macros:
+
+```c
+#define U_EXAMPLE_SSID "your-wifi-ssid"
+#define U_EXAMPLE_WPA_PSK "your-wifi-password"
+// Uncomment if you need a different UART:
+// #define U_EXAMPLE_UART "/dev/ttyUSB1"
+```
+
+This file is `.gitignore`d, so your credentials stay out of commits. All examples automatically include this file when it exists.
 
 ## Building
 
@@ -57,10 +72,10 @@ To get help for a specific task:
 Usage: inv[oke] [--core-opts] stm32.http [--options] [other tasks here ...]
 
 Docstring:
-  Build http_example for STM32 with optional WiFi credentials.
+  Build http_example for STM32.
 
-  WiFi credentials can be provided via --wifi-ssid/--wifi-psk arguments
-  or via WIFI_SSID/WIFI_PSK environment variables (useful in CI).
+  WiFi credentials are configured in config.local.h.
+  For CI, run 'inv generate-config' before building to create the config file.
 
 Options:
   -c, --clean                     Clean build directory before building
@@ -102,42 +117,39 @@ If you prefer to use CMake directly:
 ### http_example
 
 After building, the executable is located in `bin/http_example`.
-To start it you will need to pass some arguments:
+All arguments are optional and default to values from `config.local.h`:
 
 ```text
-> http_example <device> <SSID> <WPA_PSK>
-  device:  the UART device that is connected to a u-connectXpress module
-  SSID:    the Wi-Fi SSID to connect to
-  WPA_PSK: the Wi-Fi WPA PSK
+> http_example [device] [SSID] [WPA_PSK]
+  device:  the UART device connected to a u-connectXpress module (default: U_EXAMPLE_UART)
+  SSID:    the Wi-Fi SSID to connect to (default: U_EXAMPLE_SSID)
+  WPA_PSK: the Wi-Fi WPA PSK (default: U_EXAMPLE_WPA_PSK)
 ```
 
 Example:
 
 ```sh
-> bin/http_example /dev/ttyUSB0 MySSID MyWiFiPasswd
+> bin/http_example                                         # Use all defaults from config.local.h
+> bin/http_example /dev/ttyUSB0                            # Override device only
+> bin/http_example /dev/ttyUSB0 MySSID MyWiFiPasswd        # Override all
 ```
 
 ### http_example_no_os
 
-The no-OS variant of http_example is built from the same source code but uses a different port layer (u_port_no_os.c). Because command-line arguments are typically unavailable on bare-metal targets, the UART device, Wi-Fi SSID and PSK must be provided as compile-time macros. You can define them once in `config.local.h`, or pass them through CMake when configuring the build.
+The no-OS variant of http_example is built from the same source code but uses a different port layer (u_port_no_os.c). Because command-line arguments are typically unavailable on bare-metal targets, the UART device, Wi-Fi SSID and PSK are read from compile-time macros defined in `config.local.h`.
 
-To use CMake defines, you can either use `cmake-gui`:
+To configure, copy `config.local.h.template` to `config.local.h` and edit the values:
 
-![cmake-gui](/images/cmake-gui.png)
-
-or configure from command line:
-
-```sh
-> cd examples
-> cmake -S . -B build -D U_EXAMPLE_UART="/dev/ttyUSB0" -D U_EXAMPLE_SSID="MySSID" -D U_EXAMPLE_WPA_PSK="MyWiFiPasswd"
-> cmake --build build
+```c
+#define U_EXAMPLE_SSID "your-wifi-ssid"
+#define U_EXAMPLE_WPA_PSK "your-wifi-password"
 ```
 
-When relying on `config.local.h`, skip the `-D` arguments—the copied file is included automatically and will provide the macro definitions for every future build.
-
-Then run:
+Then build and run:
 
 ```sh
+> cmake -S . -B build
+> cmake --build build
 > bin/http_example_no_os
 ```
 
@@ -149,14 +161,17 @@ This example demonstrates upgrading module firmware using the AT+USYFWUS command
 
 To run the firmware upgrade example:
 
-```sh
-> bin/fw_upgrade_example <device> <firmware_file>
+```text
+> fw_upgrade_example <firmware_file> [device]
+  firmware_file: path to the firmware binary file (required)
+  device:        the UART device connected to a u-connectXpress module (default: U_EXAMPLE_UART)
 ```
 
 Example:
 
 ```sh
-> bin/fw_upgrade_example /dev/ttyUSB0 NORA-W36X-SW-1.0.0.bin
+> bin/fw_upgrade_example NORA-W36X-SW-1.0.0.bin                    # Use default device
+> bin/fw_upgrade_example NORA-W36X-SW-1.0.0.bin /dev/ttyUSB0       # Specify device
 ```
 
 The example will:
@@ -193,15 +208,16 @@ This example demonstrates BLE device discovery scanning.
 
 To run the BLE scan example:
 
-```sh
-> bin/ble_scan_example <device> [scan_duration_seconds]
+```text
+> ble_scan_example [device]
+  device: the UART device connected to a u-connectXpress module (default: U_EXAMPLE_UART)
 ```
 
 Example:
 
 ```sh
-> bin/ble_scan_example /dev/ttyUSB0        # Scan for 10 seconds (default)
-> bin/ble_scan_example /dev/ttyUSB0 30     # Scan for 30 seconds
+> bin/ble_scan_example                      # Use default device from config.local.h
+> bin/ble_scan_example /dev/ttyUSB0         # Specify device
 ```
 
 The example will:
@@ -218,15 +234,18 @@ This example demonstrates BLE advertising with custom advertising data.
 
 To run the BLE advertise example:
 
-```sh
-> bin/ble_advertise_example <device> [advertise_duration_seconds]
+```text
+> ble_advertise_example [device] [device_name]
+  device:      the UART device connected to a u-connectXpress module (default: U_EXAMPLE_UART)
+  device_name: the BLE device name to advertise (default: "uCxExample")
 ```
 
 Example:
 
 ```sh
-> bin/ble_advertise_example /dev/ttyUSB0      # Advertise for 30 seconds (default)
-> bin/ble_advertise_example /dev/ttyUSB0 60   # Advertise for 60 seconds
+> bin/ble_advertise_example                         # Use all defaults
+> bin/ble_advertise_example /dev/ttyUSB0            # Override device only
+> bin/ble_advertise_example /dev/ttyUSB0 MyDevice   # Override device and name
 ```
 
 The example will:
@@ -243,14 +262,16 @@ This example demonstrates scanning for nearby WiFi access points.
 
 To run the WiFi scan example:
 
-```sh
-> bin/wifi_scan_example <device>
+```text
+> wifi_scan_example [device]
+  device: the UART device connected to a u-connectXpress module (default: U_EXAMPLE_UART)
 ```
 
 Example:
 
 ```sh
-> bin/wifi_scan_example /dev/ttyUSB0
+> bin/wifi_scan_example                     # Use default device from config.local.h
+> bin/wifi_scan_example /dev/ttyUSB0        # Specify device
 ```
 
 The example will:
@@ -266,16 +287,19 @@ This example demonstrates starting a WiFi access point (AP mode).
 
 To run the WiFi AP example:
 
-```sh
-> bin/wifi_ap_example <device> [SSID] [password]
+```text
+> wifi_ap_example [device] [SSID] [password]
+  device:   the UART device connected to a u-connectXpress module (default: U_EXAMPLE_UART)
+  SSID:     the AP network name (default: U_EXAMPLE_SSID)
+  password: the AP password (default: U_EXAMPLE_WPA_PSK, open network if < 8 chars)
 ```
 
 Example:
 
 ```sh
-> bin/wifi_ap_example /dev/ttyUSB0                           # Use default SSID "ucxclient_ap" (open)
-> bin/wifi_ap_example /dev/ttyUSB0 MyAP                      # Custom SSID (open network)
-> bin/wifi_ap_example /dev/ttyUSB0 MyAP MyPassword123        # Custom SSID with WPA2 password
+> bin/wifi_ap_example                                       # Use all defaults from config.local.h
+> bin/wifi_ap_example /dev/ttyUSB0                          # Override device only
+> bin/wifi_ap_example /dev/ttyUSB0 MyAP MyPassword123       # Override all
 ```
 
 The example will:
@@ -292,14 +316,18 @@ This example demonstrates raw TCP socket communication.
 
 To run the socket example:
 
-```sh
-> bin/socket_example <device> <SSID> <WPA_PSK>
+```text
+> socket_example [device] [SSID] [WPA_PSK]
+  device:  the UART device connected to a u-connectXpress module (default: U_EXAMPLE_UART)
+  SSID:    the Wi-Fi SSID to connect to (default: U_EXAMPLE_SSID)
+  WPA_PSK: the Wi-Fi WPA PSK (default: U_EXAMPLE_WPA_PSK)
 ```
 
 Example:
 
 ```sh
-> bin/socket_example /dev/ttyUSB0 MySSID MyWiFiPasswd
+> bin/socket_example                                        # Use all defaults from config.local.h
+> bin/socket_example /dev/ttyUSB0 MySSID MyWiFiPasswd       # Override all
 ```
 
 The example will:

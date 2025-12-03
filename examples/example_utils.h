@@ -162,6 +162,21 @@ void exampleSignalEvent(uint32_t evtFlag);
  */
 void exampleSleepMs(uint32_t timeMs);
 
+/**
+ * Check for --help argument and print help if requested.
+ *
+ * Call this at the beginning of main() to handle --help requests.
+ * If --help is found, prints the help message and exits with code 0.
+ *
+ * @param argc          Argument count from main()
+ * @param argv          Argument vector from main()
+ * @param exampleName   Name of the example (e.g., "http_example")
+ * @param description   Brief description of what the example does
+ * @param usage         Usage string showing arguments (e.g., "[uart_device] [wifi_ssid] [wifi_psk]")
+ */
+void exampleCheckHelp(int argc, char **argv, const char *exampleName,
+                      const char *description, const char *usage);
+
 #ifdef __cplusplus
 }
 #endif

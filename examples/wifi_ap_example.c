@@ -25,7 +25,10 @@
  * - Deactivate the Access Point
  *
  * Execute with following args:
- * wifi_ap_example <uart_device> [ssid] [passphrase]
+ * wifi_ap_example [uart_device] [ssid] [passphrase]
+ *
+ * All arguments are optional and default to U_EXAMPLE_UART, U_EXAMPLE_SSID,
+ * and U_EXAMPLE_WPA_PSK from config.local.h.
  */
 
 #include <stdio.h>
@@ -43,8 +46,8 @@
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
-#define DEFAULT_AP_SSID "uCxAP"
-#define DEFAULT_AP_PASSPHRASE "ucxclient123"
+// Note: We use U_EXAMPLE_SSID and U_EXAMPLE_WPA_PSK as defaults for the AP
+// These can be overridden via command line arguments
 #define DEFAULT_AP_CHANNEL U_WIFI_CHANNEL_6
 #define AP_DURATION_S 60
 
@@ -95,28 +98,25 @@ static void stationDisconnectedUrc(struct uCxHandle *puCxHandle, uMacAddress_t *
 
 int U_EXAMPLE_MAIN(int argc, char **argv)
 {
-    uCxHandle_t ucxHandle;
-    const char *pApSsid = DEFAULT_AP_SSID;
-    const char *pApPassphrase = DEFAULT_AP_PASSPHRASE;
+    exampleCheckHelp(argc, argv, "wifi_ap_example",
+        "Example of activating a WiFi Access Point using the uCx API.\n"
+        "Creates a WiFi hotspot that other devices can connect to.",
+        "[uart_device] [ssid] [passphrase]");
 
-#ifdef U_PORT_POSIX
-    if (argc < 2) {
-        fprintf(stderr, "Invalid arguments\n");
-        fprintf(stderr, "Syntax: %s <device> [ssid] [passphrase]\n", argv[0]);
-        exit(1);
+    uCxHandle_t ucxHandle;
+    const char *pDevice = U_EXAMPLE_UART;
+    const char *pApSsid = U_EXAMPLE_SSID;
+    const char *pApPassphrase = U_EXAMPLE_WPA_PSK;
+
+    if (argc >= 2) {
+        pDevice = argv[1];
     }
-    const char *pDevice = argv[1];
     if (argc >= 3) {
         pApSsid = argv[2];
     }
     if (argc >= 4) {
         pApPassphrase = argv[3];
     }
-#else
-    (void)argc;
-    (void)argv;
-    const char *pDevice = U_EXAMPLE_UART;
-#endif
 
     printf("===========================================\n");
     printf("WiFi Access Point Example\n");

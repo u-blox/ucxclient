@@ -27,6 +27,8 @@
 #include "u_cx_log.h"
 #include "u_cx_at_client.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <inttypes.h>
 
 /* ----------------------------------------------------------------
@@ -123,4 +125,19 @@ void exampleSignalEvent(uint32_t evtFlag)
 
     gEventFlags |= evtFlag;
     U_CX_MUTEX_UNLOCK(gEventMutex);
+}
+
+void exampleCheckHelp(int argc, char **argv, const char *exampleName,
+                      const char *description, const char *usage)
+{
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            printf("%s\n\n", exampleName);
+            printf("%s\n\n", description);
+            printf("Usage: %s %s\n\n", exampleName, usage);
+            printf("All arguments are optional and default to values from config.local.h\n");
+            printf("(U_EXAMPLE_UART, U_EXAMPLE_SSID, U_EXAMPLE_WPA_PSK)\n");
+            exit(0);
+        }
+    }
 }

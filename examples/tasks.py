@@ -8,6 +8,7 @@ import os
 import platform
 import sys
 import shlex
+import shutil
 import time
 import re
 import threading
@@ -186,7 +187,7 @@ def _build_target(c, target=None, clean=False, build_dir='build', cmake_args="")
     else:
         print(f"Executables are located in {bin_dir}")
 
-def _stm32_build_target(c, target=None, clean=False, docker=False, wifi_ssid=None, wifi_psk=None):
+def _stm32_build_target(c, target=None, clean=False, docker=False):
     """Unified STM32 build helper with Docker reinvoke pattern.
 
     Correct behavior:
@@ -199,14 +200,7 @@ def _stm32_build_target(c, target=None, clean=False, docker=False, wifi_ssid=Non
         target: CMake target base name (without .elf) or None for all
         clean: Whether to remove build directory first
         docker: Whether to build inside Docker container
-        wifi_ssid: WiFi SSID to embed in the binary (falls back to WIFI_SSID env var)
-        wifi_psk: WiFi WPA-PSK password to embed in the binary (falls back to WIFI_PSK env var)
     """
-    # Fall back to environment variables for CI/GitHub Actions
-    if wifi_ssid is None:
-        wifi_ssid = os.environ.get('WIFI_SSID')
-    if wifi_psk is None:
-        wifi_psk = os.environ.get('WIFI_PSK')
     # User wants Docker, but we are NOT inside Docker → REINVOKE
     if docker and not _running_inside_docker():
         _reinvoke_inside_docker(c, 'stm32 build')
@@ -236,20 +230,9 @@ def _stm32_build_target(c, target=None, clean=False, docker=False, wifi_ssid=Non
     os.makedirs(build_path, exist_ok=True)
     os.makedirs(bin_path, exist_ok=True)
 
-    # Build CMake args with optional WiFi credentials
-    cmake_args = STM32_CMAKE_ARGS
-
-    if wifi_ssid:
-        # Escape special characters for shell
-        escaped_ssid = wifi_ssid.replace('"', '\\"')
-        cmake_args += f' -DU_EXAMPLE_SSID="{escaped_ssid}"'
-    if wifi_psk:
-        # Escape special characters for shell - use single quotes to protect #, @, etc
-        cmake_args += f" '-DU_EXAMPLE_WPA_PSK={wifi_psk}'"
-
     # Build using native CMake
     _build_target(c, target=target, clean=clean, build_dir=build_dir,
-                  cmake_args=cmake_args)
+                  cmake_args=STM32_CMAKE_ARGS)
 
 
 def _stm32_clean(c):
@@ -410,6 +393,24 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
         sys.exit(1)
 
 
+@task
+def generate_config(c):
+    """Generate config.local.h from template.
+
+    Creates config.local.h with default values for CI builds.
+    The defaults in the template are suitable for testing with mock/emulated hardware.
+    """
+    template = os.path.join(EXAMPLES_DIR, 'config.local.h.template')
+    config = os.path.join(EXAMPLES_DIR, 'config.local.h')
+
+    if os.path.exists(config):
+        print(f"config.local.h already exists - skipping")
+        return
+
+    shutil.copy(template, config)
+    print(f"Generated {config} from template")
+
+
 @task(help={'clean': 'Clean build directory before building'})
 def all(c, clean=False):
     """Build all examples."""
@@ -446,18 +447,15 @@ def clean(c):
 # STM32 platform tasks
 @task(help={
     'clean': 'Clean build directory before building',
-    'wifi-ssid': 'WiFi SSID to embed in the binary (or set WIFI_SSID env var)',
-    'wifi-psk': 'WiFi WPA-PSK password to embed in the binary (or set WIFI_PSK env var)',
     'docker': 'Build inside Docker container (no local ARM toolchain required)',
 })
-def stm32_http(c, clean=False, wifi_ssid=None, wifi_psk=None, docker=False):
-    """Build http_example for STM32 with optional WiFi credentials.
+def stm32_http(c, clean=False, docker=False):
+    """Build http_example for STM32.
 
-    WiFi credentials can be provided via --wifi-ssid/--wifi-psk arguments
-    or via WIFI_SSID/WIFI_PSK environment variables (useful in CI).
+    WiFi credentials are configured in config.local.h.
+    For CI, run 'inv generate-config' before building to create the config file.
     """
-    _stm32_build_target(c, target='http_example_stm32.elf', clean=clean, docker=docker,
-                        wifi_ssid=wifi_ssid, wifi_psk=wifi_psk)
+    _stm32_build_target(c, target='http_example_stm32.elf', clean=clean, docker=docker)
 
 
 @task(help={
@@ -698,6 +696,9 @@ def linux_all(c, clean=False):
 
 # Create namespaces
 ns = Collection()
+
+# Add common tasks to root namespace
+ns.add_task(generate_config, 'generate-config')
 
 # STM32 platform namespace
 stm32_ns = Collection('stm32')

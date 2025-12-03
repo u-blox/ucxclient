@@ -23,7 +23,10 @@
  * - Print discovered networks with SSID, RSSI, channel and security info
  *
  * Execute with following args:
- * wifi_scan_example <uart_device>
+ * wifi_scan_example [uart_device]
+ *
+ * The uart_device argument is optional and defaults to U_EXAMPLE_UART
+ * from config.local.h.
  */
 
 #include <stdio.h>
@@ -93,20 +96,17 @@ static const char *getSecurityString(int32_t authSuites)
 
 int U_EXAMPLE_MAIN(int argc, char **argv)
 {
-    uCxHandle_t ucxHandle;
+    exampleCheckHelp(argc, argv, "wifi_scan_example",
+        "Example of WiFi network scanning using the uCx API.\n"
+        "Scans for nearby WiFi networks and prints their SSID, channel, RSSI, and security.",
+        "[uart_device]");
 
-#ifdef U_PORT_POSIX
-    if (argc != 2) {
-        fprintf(stderr, "Invalid arguments\n");
-        fprintf(stderr, "Syntax: %s <device>\n", argv[0]);
-        exit(1);
-    }
-    const char *pDevice = argv[1];
-#else
-    (void)argc;
-    (void)argv;
+    uCxHandle_t ucxHandle;
     const char *pDevice = U_EXAMPLE_UART;
-#endif
+
+    if (argc >= 2) {
+        pDevice = argv[1];
+    }
 
     printf("===========================================\n");
     printf("WiFi Scan Example\n");

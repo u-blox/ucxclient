@@ -17,10 +17,6 @@ set(EXAMPLE_COMMON_SRC
   ${UCXCLIENT_AT_API_SRC}
 )
 
-# WiFi credentials (override with -D flags)
-set(U_EXAMPLE_SSID "ubx" CACHE STRING "The Wi-Fi SSID to use for the examples")
-set(U_EXAMPLE_WPA_PSK "" CACHE STRING "The Wi-Fi WPA PSK to use for the examples")
-
 # Option to build STM32 examples
 option(BUILD_STM32_EXAMPLES "Build examples for STM32" OFF)
 
@@ -46,14 +42,12 @@ else()
 
     # Platform-specific port layer files
     if(WIN32)
-      set(U_EXAMPLE_UART "COM3" CACHE STRING "The UART device to use for the examples")
       set(PORT_OS_SRC ../ports/os/u_port_windows.c)
       set(PORT_UART_SRC ../ports/uart/u_port_uart_windows.c)
       set(PORT_DEFINES -DU_PORT_WINDOWS)
       set(PORT_LIBS "")
       set(EXAMPLE_COMPILE_OPTIONS /J /WX /wd4200 /wd4996)
     else()
-      set(U_EXAMPLE_UART "/dev/ttyUSB0" CACHE STRING "The UART device to use for the examples")
       set(PORT_OS_SRC ../ports/os/u_port_posix.c)
       set(PORT_UART_SRC ../ports/uart/u_port_uart_linux.c)
       set(PORT_DEFINES -DU_PORT_POSIX)
@@ -84,11 +78,6 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(http_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS)
-    target_compile_definitions(http_example_no_os PRIVATE
-      U_EXAMPLE_UART="${U_EXAMPLE_UART}"
-      U_EXAMPLE_SSID="${U_EXAMPLE_SSID}"
-      U_EXAMPLE_WPA_PSK="${U_EXAMPLE_WPA_PSK}"
-    )
     target_include_directories(http_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
 
     # Firmware Upgrade Example (OS-based)

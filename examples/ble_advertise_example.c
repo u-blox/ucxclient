@@ -24,7 +24,10 @@
  * - Advertise for a specified duration
  *
  * Execute with following args:
- * ble_advertise_example <uart_device> [device_name]
+ * ble_advertise_example [uart_device] [device_name]
+ *
+ * All arguments are optional. uart_device defaults to U_EXAMPLE_UART
+ * from config.local.h.
  */
 
 #include <stdio.h>
@@ -51,24 +54,21 @@
 
 int U_EXAMPLE_MAIN(int argc, char **argv)
 {
+    exampleCheckHelp(argc, argv, "ble_advertise_example",
+        "Example of BLE advertising using the uCx API.\n"
+        "Configures and starts legacy BLE advertising for 30 seconds.",
+        "[uart_device] [device_name]");
+
     uCxHandle_t ucxHandle;
+    const char *pDevice = U_EXAMPLE_UART;
     const char *pDeviceName = DEFAULT_DEVICE_NAME;
 
-#ifdef U_PORT_POSIX
-    if (argc < 2) {
-        fprintf(stderr, "Invalid arguments\n");
-        fprintf(stderr, "Syntax: %s <device> [device_name]\n", argv[0]);
-        exit(1);
+    if (argc >= 2) {
+        pDevice = argv[1];
     }
-    const char *pDevice = argv[1];
     if (argc >= 3) {
         pDeviceName = argv[2];
     }
-#else
-    (void)argc;
-    (void)argv;
-    const char *pDevice = U_EXAMPLE_UART;
-#endif
 
     printf("===========================================\n");
     printf("BLE Advertise Example\n");
