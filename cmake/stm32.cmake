@@ -42,31 +42,12 @@ set(STM32_INCLUDE_DIRS
 )
 
 # STM32 compile definitions
+# WiFi credentials (U_EXAMPLE_SSID, U_EXAMPLE_WPA_PSK) come from config.local.h
 set(STM32_COMPILE_DEFINITIONS
     U_PORT_FREERTOS
     U_EXAMPLE_UART="USART3"
     U_CX_LOG_DEBUG=1
 )
-
-# Add WiFi credentials if provided (escape special characters properly)
-if(DEFINED U_EXAMPLE_SSID)
-    # Escape the string properly for shell
-    string(REPLACE "\\" "\\\\" U_EXAMPLE_SSID_ESCAPED "${U_EXAMPLE_SSID}")
-    string(REPLACE "\"" "\\\"" U_EXAMPLE_SSID_ESCAPED "${U_EXAMPLE_SSID_ESCAPED}")
-    list(APPEND STM32_COMPILE_DEFINITIONS "U_EXAMPLE_SSID=\"${U_EXAMPLE_SSID_ESCAPED}\"")
-else()
-    list(APPEND STM32_COMPILE_DEFINITIONS "U_EXAMPLE_SSID=\"\"")
-endif()
-
-if(DEFINED U_EXAMPLE_WPA_PSK)
-    # For passwords with special characters, we'll set this directly on the target
-    # Store it for later use in the function
-    set(STM32_WIFI_PSK "${U_EXAMPLE_WPA_PSK}" CACHE INTERNAL "WiFi PSK for embedding")
-    message(STATUS "WiFi PSK will be embedded (length: ${CMAKE_MATCH_0})")
-else()
-    set(STM32_WIFI_PSK "" CACHE INTERNAL "WiFi PSK for embedding")
-    list(APPEND STM32_COMPILE_DEFINITIONS "U_EXAMPLE_WPA_PSK=\"\"")
-endif()
 
 # STM32 compile options
 set(STM32_COMPILE_OPTIONS
@@ -120,17 +101,6 @@ function(add_stm32_example)
     target_compile_definitions(${ARG_NAME}.elf PRIVATE
         ${STM32_COMPILE_DEFINITIONS}
     )
-
-    # Add WiFi PSK separately using compile_options to handle special characters like #
-    if(STM32_WIFI_PSK)
-        # Escape backslashes and quotes for the C preprocessor
-        string(REPLACE "\\" "\\\\" STM32_WIFI_PSK_ESCAPED "${STM32_WIFI_PSK}")
-        string(REPLACE "\"" "\\\"" STM32_WIFI_PSK_ESCAPED "${STM32_WIFI_PSK_ESCAPED}")
-
-        target_compile_options(${ARG_NAME}.elf PRIVATE
-            "SHELL:-DU_EXAMPLE_WPA_PSK=\\\"${STM32_WIFI_PSK_ESCAPED}\\\""
-        )
-    endif()
 
     # Apply compile options
     target_compile_options(${ARG_NAME}.elf PRIVATE ${STM32_COMPILE_OPTIONS})

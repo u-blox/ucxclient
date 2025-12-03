@@ -113,6 +113,21 @@ uCxAtClient_t *exampleInit(const char *pUartDevice,
                            int32_t baudRate, bool flowControl);
 
 /**
+ * Wait for an event flag with timeout (extended version).
+ *
+ * Waits for a specific event flag to be set by a URC callback.
+ * Automatically handles RX polling in no-OS mode to process incoming URCs.
+ *
+ * The event flag is automatically cleared when detected.
+ *
+ * @param evtFlag    Event flag to wait for (bit mask)
+ * @param timeoutS   Timeout in seconds
+ * @param silent     If true, suppress log output (useful for polling loops)
+ * @return           true if event occurred, false if timeout
+ */
+bool exampleWaitEventEx(uint32_t evtFlag, uint32_t timeoutS, bool silent);
+
+/**
  * Wait for an event flag with timeout.
  *
  * Waits for a specific event flag to be set by a URC callback.
@@ -146,6 +161,21 @@ void exampleSignalEvent(uint32_t evtFlag);
  * @param timeMs    Time to sleep in milliseconds
  */
 void exampleSleepMs(uint32_t timeMs);
+
+/**
+ * Check for --help argument and print help if requested.
+ *
+ * Call this at the beginning of main() to handle --help requests.
+ * If --help is found, prints the help message and exits with code 0.
+ *
+ * @param argc          Argument count from main()
+ * @param argv          Argument vector from main()
+ * @param exampleName   Name of the example (e.g., "http_example")
+ * @param description   Brief description of what the example does
+ * @param usage         Usage string showing arguments (e.g., "[uart_device] [wifi_ssid] [wifi_psk]")
+ */
+void exampleCheckHelp(int argc, char **argv, const char *exampleName,
+                      const char *description, const char *usage);
 
 #ifdef __cplusplus
 }

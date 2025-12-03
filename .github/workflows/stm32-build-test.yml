@@ -2,14 +2,22 @@ name: STM32F407VG Build and Test
 
 on:
   push:
-    branches: [ main, anan_stm32 ]
+    paths:
+      - 'docker/stm32f4/**'  # Rebuild image when Dockerfile changes
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
   workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/stm32f4-builder
 
 jobs:
   build-and-test-stm32:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout code
@@ -18,36 +26,68 @@ jobs:
         submodules: false
         fetch-depth: 1
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Cache Docker layers
-      uses: actions/cache@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
       with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-stm32f4-${{ hashFiles('docker/stm32f4/Dockerfile') }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-stm32f4-
+        python-version: '3.x'
 
-    - name: Build Docker image
-      working-directory: ./docker
-      run: docker compose build stm32f4-builder
+    - name: Install invoke
+      run: pip install invoke
+
+    - name: Generate config for CI
+      working-directory: ./examples
+      run: inv generate-config
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Check if Docker image needs rebuild
+      id: docker-check
       env:
-        DOCKER_BUILDKIT: 1
-        COMPOSE_DOCKER_CLI_BUILD: 1
-        BUILDKIT_INLINE_CACHE: 1
-
-    - name: Set UID/GID for Docker
+        BEFORE_SHA: ${{ github.event.before }}
+        CURRENT_SHA: ${{ github.sha }}
       run: |
-        echo "HOST_UID=$(id -u)" >> $GITHUB_ENV
-        echo "HOST_GID=$(id -g)" >> $GITHUB_ENV
+        # Check if image exists in registry
+        if docker manifest inspect "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest" > /dev/null 2>&1; then
+          echo "image_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "image_exists=false" >> $GITHUB_OUTPUT
+        fi
+        # Check if Dockerfile changed (safely using env vars)
+        dockerfile_changed=false
+        if [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          if git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" 2>/dev/null | grep -q "docker/stm32f4/"; then
+            dockerfile_changed=true
+          fi
+        fi
+        echo "dockerfile_changed=$dockerfile_changed" >> $GITHUB_OUTPUT
+
+    - name: Build and push Docker image
+      if: |
+        github.event_name == 'push' &&
+        (steps.docker-check.outputs.image_exists == 'false' || steps.docker-check.outputs.dockerfile_changed == 'true')
+      uses: docker/build-push-action@v5
+      with:
+        context: ./docker
+        file: ./docker/stm32f4/Dockerfile
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+    - name: Pull Docker image
+      run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+    - name: Tag image for local use
+      run: docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ucxclient-stm32f4:latest
 
     - name: Build STM32F407VG firmware
-      working-directory: ./docker
+      working-directory: ./examples
       env:
-        WIFI_SSID: test_network
-        WIFI_PSK: test_password
-      run: docker compose run --rm stm32f4-builder bash -c "cd examples && inv stm32.http"
+        SKIP_DOCKER_BUILD: '1'
+      run: inv stm32.http --docker
 
     - name: Check build artifacts
       run: |
@@ -56,20 +96,11 @@ jobs:
         test -f examples/bin/http_example_stm32.bin
         test -f examples/bin/http_example_stm32.hex
 
-    - name: Display firmware size
-      run: |
-        docker compose -f docker/docker-compose.yml run --rm stm32f4-builder \
-          arm-none-eabi-size examples/bin/http_example_stm32.elf
-
     - name: Run Renode emulation test
-      working-directory: ./docker
+      working-directory: ./examples
       env:
-        WIFI_SSID: test_network
-        WIFI_PSK: test_password
-      run: |
-        set -o pipefail
-        mkdir -p ../examples/build_stm32
-        docker compose run --rm stm32f4-builder bash -c "cd examples && inv stm32.renode" | tee ../examples/build_stm32/renode_output.txt
+        SKIP_DOCKER_BUILD: '1'
+      run: inv stm32.renode 2>&1 | tee build_stm32/renode_output.txt
       timeout-minutes: 5
 
     - name: Upload build artifacts
