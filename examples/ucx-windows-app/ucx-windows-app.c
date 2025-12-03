@@ -459,6 +459,7 @@ static char gWifiSsid[64] = "";                    // Connected network SSID
 static char gWifiIpAddress[16] = "";               // Device IP address
 static int gWifiChannel = 0;                       // Wi-Fi channel (1-13)
 static int gRegDomain = 0;                         // Regulatory domain (0 = World, cached value)
+static char gWifiHostname[64] = "";                // WiFi hostname (saved to settings)
 
 // HTTP configuration
 #define HTTP_MAX_CHUNK_SIZE 1000                   // Maximum bytes per HTTP read/write operation
@@ -1084,6 +1085,7 @@ static void wifiApDisable(void);
 static void wifiApShowStatus(void);
 static void wifiApGenerateQrCode(void);
 static void wifiApConfigure(void);
+static void wifiSetHostname(void);
 static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize);
 static void loadSettings(void);
 static void saveSettings(void);
@@ -18711,6 +18713,7 @@ static void printMenu(void)
             printf("  [2] MQTT (publish/subscribe)\n");
             printf("  [3] HTTP Client (GET/POST/PUT)\n");
             printf("  [4] Security/TLS (certificates)\n");
+            printf("  [5] Set WiFi Hostname\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -19734,6 +19737,9 @@ static void handleUserInput(void)
                     break;
                 case 4:
                     gMenuState = MENU_SECURITY_TLS;
+                    break;
+                case 5:
+                    wifiSetHostname();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -21187,6 +21193,13 @@ static void loadSettings(void)
             else if (strncmp(line, "compact_menu=", 13) == 0) {
                 gCompactMenu = (atoi(line + 13) != 0);
             }
+            else if (strncmp(line, "wifi_hostname=", 14) == 0) {
+                strncpy(gWifiHostname, line + 14, sizeof(gWifiHostname) - 1);
+                gWifiHostname[sizeof(gWifiHostname) - 1] = '\0';
+                if (strlen(gWifiHostname) > 0) {
+                    printf("Loaded WiFi hostname from settings: %s\n", gWifiHostname);
+                }
+            }
             else if (strncmp(line, "firmware_path_", 14) == 0) {
                 // Dynamic firmware path: firmware_path_<PRODUCT>=<path>
                 // e.g., "firmware_path_NORA-W36=/path/to/firmware.bin"
@@ -21244,6 +21257,7 @@ static void saveSettings(void)
         fprintf(f, "http_post_path=%s\n", gHttpPostPath);
         fprintf(f, "reg_domain=%d\n", gRegDomain);
         fprintf(f, "compact_menu=%d\n", gCompactMenu ? 1 : 0);
+        fprintf(f, "wifi_hostname=%s\n", gWifiHostname);
         
         // Save Combain API key (obfuscated)
         if (strlen(gCombainApiKey) > 0) {
@@ -25035,6 +25049,14 @@ static void wifiConnect(void)
     
     printf("Connecting to '%s'...\n", ssid);
     
+    // Set hostname if configured
+    if (strlen(gWifiHostname) > 0) {
+        printf("Setting hostname to '%s'...\n", gWifiHostname);
+        if (uCxWifiSetHostname(&gUcxHandle, gWifiHostname) != 0) {
+            printf("WARNING: Failed to set hostname (continuing anyway)\n");
+        }
+    }
+    
     // Set connection parameters (wlan_handle = 0, default)
     if (uCxWifiStationSetConnectionParams(&gUcxHandle, 0, ssid) != 0) {
         printf("ERROR: Failed to set connection parameters\n");
@@ -25637,6 +25659,91 @@ static void wifiApConfigure(void)
         default:
             printf("Cancelled.\n");
             break;
+    }
+    
+    printf("\n");
+    printf("Press Enter to continue...");
+    getchar();
+}
+
+static void wifiSetHostname(void)
+{
+    if (!gUcxConnected) {
+        printf("\nERROR: Not connected to UCX device\n");
+        return;
+    }
+    
+    printf("\n");
+    printf("\n");
+    printf("                    SET WI-FI HOSTNAME\n");
+    printf("\n");
+    printf("\n");
+    printf("The hostname is used to identify this device on the network.\n");
+    printf("It may appear in DHCP leases, mDNS, and network tools.\n");
+    printf("\n");
+    
+    // Show current hostname if set
+    if (strlen(gWifiHostname) > 0) {
+        printf("Current hostname: %s\n", gWifiHostname);
+    } else {
+        printf("Current hostname: (not set)\n");
+    }
+    printf("\n");
+    
+    // Get new hostname
+    printf("Enter new hostname (or press Enter to skip): ");
+    char hostname[64];
+    if (!fgets(hostname, sizeof(hostname), stdin)) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    // Remove newline
+    hostname[strcspn(hostname, "\r\n")] = 0;
+    
+    // Check if empty (user wants to skip)
+    if (strlen(hostname) == 0) {
+        printf("Hostname not changed.\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    // Validate hostname (basic check: alphanumeric and hyphens, no spaces)
+    bool valid = true;
+    for (size_t i = 0; i < strlen(hostname); i++) {
+        char c = hostname[i];
+        if (!isalnum((unsigned char)c) && c != '-' && c != '_') {
+            valid = false;
+            break;
+        }
+    }
+    
+    if (!valid) {
+        printf("ERROR: Hostname can only contain letters, numbers, hyphens, and underscores\n");
+        printf("\n");
+        printf("Press Enter to continue...");
+        getchar();
+        return;
+    }
+    
+    printf("\n");
+    printf("Setting hostname to: %s\n", hostname);
+    
+    int32_t err = uCxWifiSetHostname(&gUcxHandle, hostname);
+    if (err == 0) {
+        printf("✓ Hostname set successfully\n");
+        printf("\n");
+        printf("NOTE: The hostname will be used on the next Wi-Fi connection.\n");
+        printf("      If already connected, disconnect and reconnect for it to take effect.\n");
+        
+        // Save to settings
+        strncpy(gWifiHostname, hostname, sizeof(gWifiHostname) - 1);
+        gWifiHostname[sizeof(gWifiHostname) - 1] = '\0';
+        saveSettings();
+    } else {
+        printError("Failed to set hostname", err);
     }
     
     printf("\n");
