@@ -25297,10 +25297,9 @@ static void listAllApiCommands(void)
                 fflush(stdout);
                 int c = getchar();
                 
-                // Clear the prompt line
-                printf("\r");
-                for (int k = 0; k < 60; k++) printf(" ");
-                printf("\r");
+                // Clear the prompt line using ANSI escape codes
+                // Move cursor up one line, then clear the entire line
+                printf("\033[1A\033[2K");
                 
                 if (c == 'q' || c == 'Q') {
                     // Clear remaining input
@@ -25339,10 +25338,9 @@ static void listAllApiCommands(void)
                     fflush(stdout);
                     int c = getchar();
                     
-                    // Clear the prompt line
-                    printf("\r");
-                    for (int k = 0; k < 60; k++) printf(" ");
-                    printf("\r");
+                    // Clear the prompt line using ANSI escape codes
+                    // Move cursor up one line, then clear the entire line
+                    printf("\033[1A\033[2K");
                     
                     if (c == 'q' || c == 'Q') {
                         // Clear remaining input
