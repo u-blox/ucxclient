@@ -4328,10 +4328,7 @@ static void socketConfigureOptions(void)
         return;
     }
     
-    if (gCurrentSocketType == U_SOCKET_PROTOCOL_TCP && choice == 1 && gCurrentSocketType == U_SOCKET_PROTOCOL_UDP) {
-        printf("ERROR: Broadcast option is only valid for UDP sockets\n");
-        return;
-    }
+    // No additional validation needed - option 1 is valid for both TCP (Keep-Alive) and UDP (Broadcast)
     
     uSocketOption_t option;
     const char *optionName;
