@@ -131,9 +131,9 @@ static PFN_FT_Close gpFT_Close = NULL;
 
 // Settings file name
 // Location strategy:
-//   1. Launcher usage: Uses/creates ucx-windows-demo.ini in project root
-//   2. Direct exe usage: Checks ../../ucx-windows-demo.ini first, then creates next to exe
-#define SETTINGS_FILENAME "ucx-windows-demo.ini"
+//   1. Launcher usage: Uses/creates ucx-windows-app.ini in project root
+//   2. Direct exe usage: Checks ../../ucx-windows-app.ini first, then creates next to exe
+#define SETTINGS_FILENAME "ucx-windows-app.ini"
 
 // Buffer size constants
 #define MAX_DATA_BUFFER 1000
@@ -14784,7 +14784,7 @@ static void wifiPositioningExample(void)
     // Note: Using HTTP instead of HTTPS to avoid certificate requirements
     const char *host = "apiv2.combain.com";
     char path[256];
-    snprintf(path, sizeof(path), "/?key=%s&id=ucx-windows-demo", gCombainApiKey);
+    snprintf(path, sizeof(path), "/?key=%s&id=ucx-windows-app", gCombainApiKey);
     
     printf("Configuring HTTP connection to Combain...\n");
     printf("Note: Using HTTP (not HTTPS) - Combain supports both\n");
@@ -17599,8 +17599,8 @@ int main(int argc, char *argv[])
     SetConsoleOutputCP(CP_UTF8);
     
     // Initialize settings file path with smart location strategy:
-    // 1. Try project root (../../ucx-windows-demo.ini from bin/ or release/)
-    // 2. Fall back to exe directory (./ucx-windows-demo.ini)
+    // 1. Try project root (../../ucx-windows-app.ini from bin/ or release/)
+    // 2. Fall back to exe directory (./ucx-windows-app.ini)
     getExecutableDirectory(gSettingsFilePath, sizeof(gSettingsFilePath));
     
     // First, try project root location (for launcher usage)
@@ -17614,13 +17614,13 @@ int main(int argc, char *argv[])
         rootSettingsPath[pathLen - 1] = '\0';
     }
     
-    // Navigate up 3 levels: bin → ucx-windows-demo → examples → root
+    // Navigate up 3 levels: bin → ucx-windows-app → examples → root
     // Level 1: Remove "bin" or "release"
     char *lastSlash = strrchr(rootSettingsPath, '\\');
     if (lastSlash && lastSlash > rootSettingsPath) {
-        *lastSlash = '\0';  // Now at examples\ucx-windows-demo
+        *lastSlash = '\0';  // Now at examples\ucx-windows-app
         
-        // Level 2: Remove "ucx-windows-demo"
+        // Level 2: Remove "ucx-windows-app"
         lastSlash = strrchr(rootSettingsPath, '\\');
         if (lastSlash && lastSlash > rootSettingsPath) {
             *lastSlash = '\0';  // Now at examples
@@ -21281,7 +21281,7 @@ static void saveSettings(void)
 }
 
 // Initialize FTD2XX library (dynamic loading)
-// Resource ID for embedded FTDI DLL (must match ucx-windows-demo.rc)
+// Resource ID for embedded FTDI DLL (must match ucx-windows-app.rc)
 #define IDR_FTD2XX_DLL 101
 
 static bool initFtd2xxLibrary(void)

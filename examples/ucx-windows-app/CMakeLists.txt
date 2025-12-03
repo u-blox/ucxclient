@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(ucx-windows-demo)
+project(ucx-windows-app)
 
 # Include ucxclient library definitions
 include(../../ucxclient.cmake)
@@ -46,7 +46,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 
 # Windows-specific settings
 if(NOT WIN32)
-  message(FATAL_ERROR "ucx-windows-demo requires Windows")
+  message(FATAL_ERROR "ucx-windows-app requires Windows")
 endif()
 
 set(U_EXAMPLE_UART "COM3" CACHE STRING "The UART device to use")
@@ -59,12 +59,12 @@ set(PORT_UART_SRC ../../ports/uart/u_port_uart_windows.c)
 set(FTDI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi")
 set(FTDI_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/third-party/ftdi/ftd2xx.lib")
 
-# ucx-windows-demo Application (Monolithic)
-add_executable(ucx-windows-demo
-  ucx-windows-demo.c
+# ucx-windows-app Application (Monolithic)
+add_executable(ucx-windows-app
+  ucx-windows-app.c
   ${PORT_OS_SRC}
   ${PORT_UART_SRC}
-  ucx-windows-demo.rc
+  ucx-windows-app.rc
   third-party/qrcodegen/qrcodegen.c
   ../../src/u_cx_xmodem.c
   ${UCXCLIENT_UCX_API_SRC}
@@ -72,9 +72,9 @@ add_executable(ucx-windows-demo
   ${UCXCLIENT_HEADERS}
 )
 
-target_compile_options(ucx-windows-demo PRIVATE /W4 /FS /wd4200)
+target_compile_options(ucx-windows-app PRIVATE /W4 /FS /wd4200)
 
-target_compile_definitions(ucx-windows-demo PRIVATE
+target_compile_definitions(ucx-windows-app PRIVATE
   U_PORT_WINDOWS
   U_CX_PORT_HEADER_FILE="os/u_port_windows.h"
   U_CX_XMODEM_FILE_SUPPORT=1
@@ -86,7 +86,7 @@ target_compile_definitions(ucx-windows-demo PRIVATE
   APP_VERSION_BUILD=${APP_VERSION_BUILD}
 )
 
-target_include_directories(ucx-windows-demo PUBLIC 
+target_include_directories(ucx-windows-app PUBLIC 
   ${UCXCLIENT_INC} 
   ${UCXCLIENT_PORT_DIR} 
   ${FTDI_INCLUDE_DIR} 
@@ -94,10 +94,10 @@ target_include_directories(ucx-windows-demo PUBLIC
   ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(ucx-windows-demo PRIVATE setupapi ${FTDI_LIBRARY})
+target_link_libraries(ucx-windows-app PRIVATE setupapi ${FTDI_LIBRARY})
 
 # Set different output names for Debug and Release builds
-set_target_properties(ucx-windows-demo PROPERTIES
-  OUTPUT_NAME_DEBUG "ucx-windows-demo-debug"
-  OUTPUT_NAME_RELEASE "ucx-windows-demo"
+set_target_properties(ucx-windows-app PROPERTIES
+  OUTPUT_NAME_DEBUG "ucx-windows-app-debug"
+  OUTPUT_NAME_RELEASE "ucx-windows-app"
 )
