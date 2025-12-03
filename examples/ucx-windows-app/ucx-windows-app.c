@@ -1091,6 +1091,7 @@ static void wifiApGenerateQrCode(void);
 static void wifiApConfigure(void);
 static void wifiSetHostname(void);
 static void wifiConfigureRoaming(void);
+static void wifiConfigureEnterpriseSecurity(void);
 static void getCurrentPCIPAddress(char *ipBuffer, size_t bufferSize);
 static void loadSettings(void);
 static void saveSettings(void);
@@ -20339,6 +20340,7 @@ static void printMenu(void)
             printf("  [4] Security/TLS (certificates)\n");
             printf("  [5] Set WiFi Hostname\n");
             printf("  [6] Configure WiFi Roaming (Auto AP switching)\n");
+            printf("  [7] Configure Enterprise Security (PEAP/EAP-TLS)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -21398,6 +21400,9 @@ static void handleUserInput(void)
                     break;
                 case 6:
                     wifiConfigureRoaming();
+                    break;
+                case 7:
+                    wifiConfigureEnterpriseSecurity();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -24428,7 +24433,7 @@ static void executeStoreConfiguration(void)
     printf("  ✓ SPS (Serial Port Service) configuration\n");
     printf("  ✓ System settings (echo, startup behavior)\n\n");
     
-    printf("ADVANCED FEATURES (not implemented in ucxclient demo):\n");
+    printf("ADVANCED FEATURES (not implemented in ucxclient app):\n");
     printf("  • Persistent connections (sockets remain after reboot)\n");
     printf("  • Transparent/persistent mode settings\n");
     printf("  Note: These require firmware features not used in this application\n\n");
@@ -27687,6 +27692,226 @@ static void wifiConfigureRoaming(void)
     printf("\n");
     printf("Press Enter to continue...");
     getchar();
+}
+
+static void wifiConfigureEnterpriseSecurity(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("WIFI ENTERPRISE SECURITY CONFIGURATION (WPA2-Enterprise)\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("SUPPORTED METHODS (Station Mode Only, TLS 1.2):\n");
+    printf("  • EAP-TLS  - Certificate-based authentication (most secure)\n");
+    printf("  • PEAP     - Username/password authentication (most common)\n\n");
+    
+    printf("WHAT IS WPA2-ENTERPRISE?\n");
+    printf("  Enterprise Wi-Fi uses 802.1X authentication with RADIUS server.\n");
+    printf("  Common in corporate, university, and secure environments.\n");
+    printf("  Each user has unique credentials instead of shared password.\n\n");
+    
+    printf("PREREQUISITES:\n");
+    printf("  • TLS certificates uploaded (if using EAP-TLS or PEAP with CA)\n");
+    printf("  • Use Security/TLS menu [4] to upload certificates\n");
+    printf("  • WLAN handle already configured (use Wi-Fi Station menu)\n\n");
+    
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("SELECT AUTHENTICATION METHOD:\n");
+    printf("  [1] EAP-TLS (Certificate-based)\n");
+    printf("  [2] PEAP without CA (Username/Password only)\n");
+    printf("  [3] PEAP with CA (Username/Password + Server verification)\n");
+    printf("  [0] Cancel\n");
+    printf("Choice: ");
+    
+    int choice;
+    if (scanf("%d", &choice) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input\n");
+        return;
+    }
+    while (getchar() != '\n');
+    
+    if (choice == 0) {
+        printf("Cancelled.\n");
+        return;
+    }
+    
+    char input[256];
+    int32_t wlanHandle = 0;  // Default to handle 0
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("WLAN Handle [default: 0]: ");
+    if (fgets(input, sizeof(input), stdin)) {
+        input[strcspn(input, "\r\n")] = 0;
+        if (strlen(input) > 0) {
+            wlanHandle = atoi(input);
+        }
+    }
+    
+    int32_t result = -1;
+    
+    if (choice == 1) {
+        // EAP-TLS Configuration
+        printf("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        printf("EAP-TLS CONFIGURATION (Certificate-Based Authentication)\n");
+        printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+        
+        char caName[128], clientCertName[128], clientKeyName[128], identity[128];
+        
+        printf("CA Certificate Name (leave empty to skip): ");
+        if (!fgets(caName, sizeof(caName), stdin)) return;
+        caName[strcspn(caName, "\r\n")] = 0;
+        
+        printf("Client Certificate Name: ");
+        if (!fgets(clientCertName, sizeof(clientCertName), stdin)) return;
+        clientCertName[strcspn(clientCertName, "\r\n")] = 0;
+        
+        printf("Client Private Key Name: ");
+        if (!fgets(clientKeyName, sizeof(clientKeyName), stdin)) return;
+        clientKeyName[strcspn(clientKeyName, "\r\n")] = 0;
+        
+        printf("Identity (username, leave empty to skip): ");
+        if (!fgets(identity, sizeof(identity), stdin)) return;
+        identity[strcspn(identity, "\r\n")] = 0;
+        
+        if (strlen(clientCertName) == 0 || strlen(clientKeyName) == 0) {
+            printf("ERROR: Client certificate and key are required for EAP-TLS\n");
+            return;
+        }
+        
+        printf("\n📋 Configuration Summary:\n");
+        printf("  WLAN Handle: %d\n", wlanHandle);
+        printf("  Method: EAP-TLS\n");
+        printf("  TLS Version: 1.2 (only version supported)\n");
+        if (strlen(caName) > 0) printf("  CA Certificate: %s\n", caName);
+        printf("  Client Certificate: %s\n", clientCertName);
+        printf("  Client Key: %s\n", clientKeyName);
+        if (strlen(identity) > 0) printf("  Identity: %s\n", identity);
+        
+        printf("\nConfiguring EAP-TLS...\n");
+        
+        if (strlen(identity) > 0) {
+            result = uCxWifiStationSetSecurityEnterprise6(&gUcxHandle, wlanHandle, 
+                                                          U_WIFI_TLS_VERSION_1_2,
+                                                          strlen(caName) > 0 ? caName : "",
+                                                          clientCertName, clientKeyName, identity);
+        } else {
+            result = uCxWifiStationSetSecurityEnterprise5(&gUcxHandle, wlanHandle,
+                                                          U_WIFI_TLS_VERSION_1_2,
+                                                          strlen(caName) > 0 ? caName : "",
+                                                          clientCertName, clientKeyName);
+        }
+        
+    } else if (choice == 2 || choice == 3) {
+        // PEAP Configuration
+        printf("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+        printf("PEAP CONFIGURATION (Username/Password Authentication)\n");
+        printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+        
+        char username[256], password[256], caName[128];
+        
+        printf("Username (use @ for domain, e.g., user@example.com): ");
+        if (!fgets(username, sizeof(username), stdin)) return;
+        username[strcspn(username, "\r\n")] = 0;
+        
+        printf("Password: ");
+        if (!fgets(password, sizeof(password), stdin)) return;
+        password[strcspn(password, "\r\n")] = 0;
+        
+        if (strlen(username) == 0 || strlen(password) == 0) {
+            printf("ERROR: Username and password are required for PEAP\n");
+            return;
+        }
+        
+        printf("\n📋 Configuration Summary:\n");
+        printf("  WLAN Handle: %d\n", wlanHandle);
+        printf("  Method: PEAP\n");
+        printf("  TLS Version: 1.2 (only version supported)\n");
+        printf("  Username: %s\n", username);
+        printf("  Password: %s\n", "********");
+        
+        if (choice == 3) {
+            printf("\nCA Certificate Name: ");
+            if (!fgets(caName, sizeof(caName), stdin)) return;
+            caName[strcspn(caName, "\r\n")] = 0;
+            
+            if (strlen(caName) == 0) {
+                printf("ERROR: CA certificate name required for PEAP with CA\n");
+                return;
+            }
+            
+            printf("  CA Certificate: %s\n", caName);
+            printf("  Note: Server certificate will be validated\n");
+            
+            printf("\nConfiguring PEAP with CA...\n");
+            result = uCxWifiStationSetSecurityPeap5(&gUcxHandle, wlanHandle,
+                                                    U_WIFI_TLS_VERSION_1_2,
+                                                    username, password, caName);
+        } else {
+            printf("  Note: Server certificate will NOT be validated (less secure)\n");
+            
+            printf("\nConfiguring PEAP...\n");
+            result = uCxWifiStationSetSecurityPeap4(&gUcxHandle, wlanHandle,
+                                                    U_WIFI_TLS_VERSION_1_2,
+                                                    username, password);
+        }
+        
+    } else {
+        printf("Invalid choice\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    
+    if (result == 0) {
+        printf("✓ Enterprise security configured successfully!\n\n");
+        
+        printf("NEXT STEPS:\n");
+        printf("  1. Set connection parameters (SSID) using Wi-Fi Station menu\n");
+        printf("  2. Use AT&W to save configuration permanently\n");
+        printf("  3. Connect to the enterprise network\n\n");
+        
+        printf("IMPORTANT NOTES:\n");
+        printf("  • TLS 1.2 is the only supported version for enterprise security\n");
+        printf("  • Station mode only (not available for AP mode)\n");
+        printf("  • Certificates must be uploaded before configuration\n");
+        printf("  • Use Security/TLS menu to manage certificates\n");
+        printf("  • Configuration can be stored with AT&W\n\n");
+        
+        if (choice == 1) {
+            printf("EAP-TLS TIPS:\n");
+            printf("  • Most secure method - uses certificates for mutual authentication\n");
+            printf("  • Requires client certificate and private key on device\n");
+            printf("  • Server certificate validated if CA provided\n");
+            printf("  • No password transmitted over the air\n");
+        } else {
+            printf("PEAP TIPS:\n");
+            printf("  • Common in corporate and university networks\n");
+            printf("  • Username/password sent in encrypted tunnel\n");
+            if (choice == 3) {
+                printf("  • Server certificate validation enabled (recommended)\n");
+            } else {
+                printf("  • Server certificate validation disabled (less secure)\n");
+                printf("  • Consider using PEAP with CA for better security\n");
+            }
+        }
+        
+    } else {
+        printf("✗ ERROR: Failed to configure enterprise security (code %d)\n\n", result);
+        
+        printf("TROUBLESHOOTING:\n");
+        printf("  • Verify WLAN handle is correct (usually 0)\n");
+        printf("  • Check that certificates are uploaded (use Security/TLS menu)\n");
+        printf("  • Ensure certificate names match exactly\n");
+        printf("  • Verify TLS version is 1.2 (only supported version)\n");
+        printf("  • Check module firmware version supports enterprise security\n");
+    }
+    
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
 }
 
 // ============================================================================
