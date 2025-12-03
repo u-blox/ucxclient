@@ -471,6 +471,7 @@ static int32_t gWifiRoamingThreshold = -70;        // WiFi roaming threshold in 
 static char gComPort[16] = "COM31";           // Default COM port
 static char gLastDeviceModel[64] = "";        // Last connected device model
 static char gRemoteAddress[128] = "";         // Last remote address/hostname
+static int gRemotePort = 80;                   // Last remote port
 static char gCombainApiKey[128] = "";         // Combain API key (obfuscated in settings)
 static char gHttpGetHost[256] = "";           // Last HTTP GET host
 static int gHttpGetPort = 443;                 // Last HTTP GET port (443 = HTTPS default)
@@ -480,6 +481,14 @@ static char gHttpPostHost[256] = "";          // Last HTTP POST host
 static int gHttpPostPort = 443;                // Last HTTP POST port (443 = HTTPS default)
 static bool gHttpPostIsHttps = true;           // Last HTTP POST protocol (true = HTTPS, false = HTTP)
 static char gHttpPostPath[512] = "/post";     // Last HTTP POST path
+static char gHttpDeleteHost[256] = "";        // Last HTTP DELETE host
+static int gHttpDeletePort = 443;              // Last HTTP DELETE port (443 = HTTPS default)
+static bool gHttpDeleteIsHttps = true;         // Last HTTP DELETE protocol (true = HTTPS, false = HTTP)
+static char gHttpDeletePath[512] = "/";       // Last HTTP DELETE path
+static char gHttpPutHost[256] = "";           // Last HTTP PUT host
+static int gHttpPutPort = 443;                 // Last HTTP PUT port (443 = HTTPS default)
+static bool gHttpPutIsHttps = true;            // Last HTTP PUT protocol (true = HTTPS, false = HTTP)
+static char gHttpPutPath[512] = "/";          // Last HTTP PUT path
 static int32_t gHttpDownloadTotalBytes = 0;   // Total bytes expected for current HTTP download
 static int32_t gHttpDownloadBytesReceived = 0; // Bytes downloaded so far
 static int32_t gHttpUploadTotalBytes = 0;     // Total bytes to upload
@@ -4287,15 +4296,13 @@ static void socketConfigureOptions(void)
     
     if (gCurrentSocketType == U_SOCKET_PROTOCOL_TCP) {
         printf("TCP SOCKET OPTIONS:\n");
-        printf("  [1] Receive Timeout      - Timeout for receive operations (seconds, 0=infinite)\n");
-        printf("  [2] Keep-Alive           - Enable/disable TCP keepalive (0=off, 1=on)\n");
-        printf("  [3] Keep-Alive Idle      - Time before sending keepalive probes (seconds)\n");
-        printf("  [4] Keep-Alive Interval  - Time between keepalive retransmissions (seconds)\n");
-        printf("  [5] Keep-Alive Count     - Number of unanswered probes before closing (count)\n");
+        printf("  [1] Keep-Alive           - Enable/disable TCP keepalive (0=off, 1=on)\n");
+        printf("  [2] Keep-Alive Idle      - Time before sending keepalive probes (seconds)\n");
+        printf("  [3] Keep-Alive Interval  - Time between keepalive retransmissions (seconds)\n");
+        printf("  [4] Keep-Alive Count     - Number of unanswered probes before closing (count)\n");
     } else {
         printf("UDP SOCKET OPTIONS:\n");
-        printf("  [1] Receive Timeout      - Timeout for receive operations (seconds, 0=infinite)\n");
-        printf("  [6] Broadcast            - Enable/disable UDP broadcast (0=off, 1=on)\n");
+        printf("  [1] Broadcast            - Enable/disable UDP broadcast (0=off, 1=on)\n");
     }
     
     printf("\n  [0] Cancel\n");
@@ -4316,12 +4323,12 @@ static void socketConfigureOptions(void)
     }
     
     // Validate choice based on socket type
-    if (gCurrentSocketType == U_SOCKET_PROTOCOL_UDP && (choice >= 2 && choice <= 5)) {
-        printf("ERROR: Options 2-5 are only valid for TCP sockets\n");
+    if (gCurrentSocketType == U_SOCKET_PROTOCOL_UDP && (choice >= 2 && choice <= 4)) {
+        printf("ERROR: Options 2-4 are only valid for TCP sockets\n");
         return;
     }
     
-    if (gCurrentSocketType == U_SOCKET_PROTOCOL_TCP && choice == 6) {
+    if (gCurrentSocketType == U_SOCKET_PROTOCOL_TCP && choice == 1 && gCurrentSocketType == U_SOCKET_PROTOCOL_UDP) {
         printf("ERROR: Broadcast option is only valid for UDP sockets\n");
         return;
     }
@@ -4332,28 +4339,25 @@ static void socketConfigureOptions(void)
     
     switch (choice) {
         case 1:
-            option = U_SOCKET_OPTION_RECEIVE_TIMEOUT;
-            optionName = "Receive Timeout";
+            if (gCurrentSocketType == U_SOCKET_PROTOCOL_TCP) {
+                option = U_SOCKET_OPTION_KEEP_ALIVE;
+                optionName = "Keep-Alive";
+            } else {
+                option = U_SOCKET_OPTION_BROADCAST;
+                optionName = "Broadcast";
+            }
             break;
         case 2:
-            option = U_SOCKET_OPTION_KEEP_ALIVE;
-            optionName = "Keep-Alive";
-            break;
-        case 3:
             option = U_SOCKET_OPTION_KEEP_IDLE;
             optionName = "Keep-Alive Idle";
             break;
-        case 4:
+        case 3:
             option = U_SOCKET_OPTION_KEEP_INTVL;
             optionName = "Keep-Alive Interval";
             break;
-        case 5:
+        case 4:
             option = U_SOCKET_OPTION_KEEP_CNT;
             optionName = "Keep-Alive Count";
-            break;
-        case 6:
-            option = U_SOCKET_OPTION_BROADCAST;
-            optionName = "Broadcast";
             break;
         default:
             printf("Invalid option\n");
@@ -10983,8 +10987,7 @@ static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_ad
 
         // printf("[INFO] Restarting advertising for HID reconnect...\n");
         // // Re-enable general advertising so Host can reconnect automatically
-        // uCxAtClientExecSimpleCmd(gUcxHandle.pAtClient, "AT+UBTAL");
-        // int32_t result = uCxEnd(&gUcxHandle);
+        // int32_t result = uCxBluetoothLegacyAdvertisementStart(&gUcxHandle);
         // if (result == 0) {
         //     printf("✓ Advertising restarted for reconnect\n");
         // } else {
@@ -11447,7 +11450,7 @@ static void bluetoothShowRssi(void)
     printf("Active Connections: %d\n\n", gBtConnectionCount);
     
     for (int i = 0; i < gBtConnectionCount && i < 7; i++) {
-        int32_t connHandle = gBtConnections[i];
+        int32_t connHandle = gBtConnections[i].handle;
         int32_t rssi = 0;
         
         printf("Connection %d (handle %d):\n", i + 1, connHandle);
@@ -13927,7 +13930,7 @@ static void httpDeleteExample(void)
             return;
         }
         deleteData[strcspn(deleteData, "\r\n")] = 0;
-        dataLen = strlen(deleteData);
+        dataLen = (int32_t)strlen(deleteData);
     }
     
     // Execute DELETE request
@@ -13952,7 +13955,7 @@ static void httpDeleteExample(void)
     // Step 2: Configure TLS if HTTPS
     if (isHttps) {
         printf("Configuring TLS...\n");
-        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_1_2);
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
         if (err != 0) {
             printf("ERROR: Failed to configure TLS (error: %d)\n", err);
             printf("\n");
@@ -14249,7 +14252,7 @@ static void httpPutExample(void)
         return;
     }
     putData[strcspn(putData, "\r\n")] = 0;
-    dataLen = strlen(putData);
+    dataLen = (int32_t)strlen(putData);
     
     if (dataLen == 0) {
         printf("WARNING: No data provided for PUT request\n");
@@ -14275,7 +14278,7 @@ static void httpPutExample(void)
     // Step 2: Configure TLS if HTTPS
     if (isHttps) {
         printf("Configuring TLS...\n");
-        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_1_2);
+        err = uCxHttpSetTLS2(&gUcxHandle, sessionId, U_WIFI_TLS_VERSION_TLS1_2);
         if (err != 0) {
             printf("ERROR: Failed to configure TLS (error: %d)\n", err);
             printf("\n");
@@ -19354,14 +19357,14 @@ int main(int argc, char *argv[])
             printf("\n  Reconfiguring module after restart...\n");
             
             // Disable echo
-            if (uCxAtClientExecSimpleCmd(gUcxHandle.pAtClient, "ATE0") == 0) {
+            if (uCxSystemSetEchoOff(&gUcxHandle) == 0) {
                 printf("  ✓ Echo disabled\n");
             } else {
                 printf("  ✗ Failed to disable echo\n");
             }
             
             // Enable extended error codes
-            if (uCxAtClientExecSimpleCmdF(gUcxHandle.pAtClient, "AT+USYEE=", "d", 1, U_CX_AT_UTIL_PARAM_LAST) == 0) {
+            if (uCxSystemSetExtendedError(&gUcxHandle, U_SYS_EXTENDED_ERRORS_ON) == 0) {
                 printf("  ✓ Extended error codes enabled\n");
             } else {
                 printf("  ✗ Failed to enable extended error codes\n");
@@ -27783,7 +27786,7 @@ static void wifiConfigureEnterpriseSecurity(void)
             return;
         }
         
-        printf("\n📋 Configuration Summary:\n");
+        printf("\n Configuration Summary:\n");
         printf("  WLAN Handle: %d\n", wlanHandle);
         printf("  Method: EAP-TLS\n");
         printf("  TLS Version: 1.2 (only version supported)\n");
@@ -27796,12 +27799,12 @@ static void wifiConfigureEnterpriseSecurity(void)
         
         if (strlen(identity) > 0) {
             result = uCxWifiStationSetSecurityEnterprise6(&gUcxHandle, wlanHandle, 
-                                                          U_WIFI_TLS_VERSION_1_2,
+                                                          U_WIFI_TLS_VERSION_TLS1_2,
                                                           strlen(caName) > 0 ? caName : "",
                                                           clientCertName, clientKeyName, identity);
         } else {
             result = uCxWifiStationSetSecurityEnterprise5(&gUcxHandle, wlanHandle,
-                                                          U_WIFI_TLS_VERSION_1_2,
+                                                          U_WIFI_TLS_VERSION_TLS1_2,
                                                           strlen(caName) > 0 ? caName : "",
                                                           clientCertName, clientKeyName);
         }
@@ -27827,7 +27830,7 @@ static void wifiConfigureEnterpriseSecurity(void)
             return;
         }
         
-        printf("\n📋 Configuration Summary:\n");
+        printf("\n Configuration Summary:\n");
         printf("  WLAN Handle: %d\n", wlanHandle);
         printf("  Method: PEAP\n");
         printf("  TLS Version: 1.2 (only version supported)\n");
@@ -27849,14 +27852,14 @@ static void wifiConfigureEnterpriseSecurity(void)
             
             printf("\nConfiguring PEAP with CA...\n");
             result = uCxWifiStationSetSecurityPeap5(&gUcxHandle, wlanHandle,
-                                                    U_WIFI_TLS_VERSION_1_2,
+                                                    U_WIFI_TLS_VERSION_TLS1_2,
                                                     username, password, caName);
         } else {
             printf("  Note: Server certificate will NOT be validated (less secure)\n");
             
             printf("\nConfiguring PEAP...\n");
             result = uCxWifiStationSetSecurityPeap4(&gUcxHandle, wlanHandle,
-                                                    U_WIFI_TLS_VERSION_1_2,
+                                                    U_WIFI_TLS_VERSION_TLS1_2,
                                                     username, password);
         }
         
@@ -27872,7 +27875,7 @@ static void wifiConfigureEnterpriseSecurity(void)
         
         printf("NEXT STEPS:\n");
         printf("  1. Set connection parameters (SSID) using Wi-Fi Station menu\n");
-        printf("  2. Use AT&W to save configuration permanently\n");
+        printf("  2. Use Power & System menu [8] to save configuration permanently\n");
         printf("  3. Connect to the enterprise network\n\n");
         
         printf("IMPORTANT NOTES:\n");
@@ -27880,7 +27883,7 @@ static void wifiConfigureEnterpriseSecurity(void)
         printf("  • Station mode only (not available for AP mode)\n");
         printf("  • Certificates must be uploaded before configuration\n");
         printf("  • Use Security/TLS menu to manage certificates\n");
-        printf("  • Configuration can be stored with AT&W\n\n");
+        printf("  • Configuration can be stored (System menu option 8)\n\n");
         
         if (choice == 1) {
             printf("EAP-TLS TIPS:\n");
