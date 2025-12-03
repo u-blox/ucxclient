@@ -24415,18 +24415,29 @@ static void executeStoreConfiguration(void)
     printf("  This makes your settings persistent across reboots and power cycles.\n\n");
     
     printf("SETTINGS THAT WILL BE SAVED:\n");
-    printf("  ✓ WiFi configurations (SSIDs, passwords, roaming settings)\n");
-    printf("  ✓ Network settings (IP configuration, DNS servers)\n");
-    printf("  ✓ Bluetooth settings (device name, pairing mode)\n");
-    printf("  ✓ TLS/Security settings (SNI, fragmentation)\n");
-    printf("  ✓ Power save settings\n");
-    printf("  ✓ UART/interface settings\n");
-    printf("  ✓ All other configuration parameters\n\n");
+    printf("  ✓ WiFi station configurations (SSID, password, security)\n");
+    printf("  ✓ WiFi will AUTO-RECONNECT on reboot if stored while connected\n");
+    printf("  ✓ Network settings (static IP, DNS, gateway, hostname)\n");
+    printf("  ✓ WiFi roaming parameters (threshold, scan interval, aggressive mode)\n");
+    printf("  ✓ Bluetooth settings (device name, pairing mode, PHY preferences)\n");
+    printf("  ✓ TLS/Security settings (SNI, fragmentation, cipher suites)\n");
+    printf("  ✓ Power save settings (level, timeout)\n");
+    printf("  ✓ UART/interface settings (baudrate, flow control)\n");
+    printf("  ✓ MQTT client configuration\n");
+    printf("  ✓ Network time settings\n");
+    printf("  ✓ SPS (Serial Port Service) configuration\n");
+    printf("  ✓ System settings (echo, startup behavior)\n\n");
     
-    printf("SETTINGS NOT SAVED (Runtime only):\n");
-    printf("  ✗ Active connections (WiFi, Bluetooth, TCP/UDP sockets)\n");
-    printf("  ✗ Current session state\n");
-    printf("  ✗ Temporary runtime variables\n\n");
+    printf("ADVANCED FEATURES (not implemented in ucxclient demo):\n");
+    printf("  • Persistent connections (sockets remain after reboot)\n");
+    printf("  • Transparent/persistent mode settings\n");
+    printf("  Note: These require firmware features not used in this application\n\n");
+    
+    printf("RUNTIME-ONLY DATA (not saved):\n");
+    printf("  ✗ Active GATT services and characteristics\n");
+    printf("  ✗ Current data buffers and queues\n");
+    printf("  ✗ Temporary session variables\n");
+    printf("  ✗ Non-persistent socket connections (standard sockets)\n\n");
     
     printf("WHEN TO USE AT&W:\n");
     printf("  • After configuring WiFi credentials\n");
