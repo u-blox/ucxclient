@@ -1169,6 +1169,7 @@ static void bluetoothShowStatus(void);
 static void bluetoothSetPairing(void);
 static void bluetoothUpdateLocalName(void);
 static void bluetoothListBondedDevices(void);
+static void bluetoothShowRssi(void);
 static void bluetoothPairUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, uBtBondStatus_t bond_status);
 static void bluetoothUserConfirmationUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t numeric_value);
 static void bluetoothPasskeyDisplayUrc(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t passkey);
@@ -11112,6 +11113,93 @@ static void bluetoothListBondedDevices(void)
     printf("\n");
 }
 
+// Show RSSI (Received Signal Strength Indication) for active Bluetooth connections
+static void bluetoothShowRssi(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gBtConnectionCount == 0) {
+        printf("\nNo active Bluetooth connections\n");
+        printf("Please connect to a device first (option 3 in Bluetooth menu)\n\n");
+        return;
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("BLUETOOTH RSSI - SIGNAL STRENGTH\n");
+    printf("────────────────────────────────────────────────────────────────────────────────\n\n");
+    
+    printf("Active Connections: %d\n\n", gBtConnectionCount);
+    
+    for (int i = 0; i < gBtConnectionCount && i < 7; i++) {
+        int32_t connHandle = gBtConnections[i];
+        int32_t rssi = 0;
+        
+        printf("Connection %d (handle %d):\n", i + 1, connHandle);
+        
+        int32_t result = uCxBluetoothGetRssi(&gUcxHandle, connHandle, &rssi);
+        
+        if (result == 0) {
+            // Determine signal quality based on RSSI value
+            const char *quality;
+            const char *qualitySymbol;
+            
+            if (rssi >= -50) {
+                quality = "Excellent";
+                qualitySymbol = "████████";
+            } else if (rssi >= -65) {
+                quality = "Good";
+                qualitySymbol = "██████░░";
+            } else if (rssi >= -75) {
+                quality = "Fair";
+                qualitySymbol = "████░░░░";
+            } else if (rssi >= -85) {
+                quality = "Weak";
+                qualitySymbol = "██░░░░░░";
+            } else {
+                quality = "Very Weak";
+                qualitySymbol = "░░░░░░░░";
+            }
+            
+            printf("  RSSI: %d dBm  [%s]  %s\n", rssi, qualitySymbol, quality);
+            
+            // Provide context
+            if (rssi >= -50) {
+                printf("  Status: Excellent signal - device is very close\n");
+            } else if (rssi >= -65) {
+                printf("  Status: Good signal - normal operating range\n");
+            } else if (rssi >= -75) {
+                printf("  Status: Fair signal - connection stable but weakening\n");
+            } else if (rssi >= -85) {
+                printf("  Status: Weak signal - device near maximum range\n");
+            } else {
+                printf("  Status: Very weak signal - connection may drop soon\n");
+            }
+        } else {
+            printf("  ERROR: Failed to read RSSI (code %d)\n", result);
+        }
+        
+        if (i < gBtConnectionCount - 1) {
+            printf("\n");
+        }
+    }
+    
+    printf("\n");
+    printf("RSSI Information:\n");
+    printf("  • RSSI measures signal strength in dBm (decibel-milliwatts)\n");
+    printf("  • Higher values (closer to 0) indicate stronger signal\n");
+    printf("  • Typical ranges:\n");
+    printf("    -30 to -50 dBm: Excellent (< 1 meter)\n");
+    printf("    -50 to -65 dBm: Good (1-5 meters)\n");
+    printf("    -65 to -75 dBm: Fair (5-10 meters)\n");
+    printf("    -75 to -85 dBm: Weak (10-20 meters)\n");
+    printf("    -85 to -100 dBm: Very Weak (> 20 meters)\n");
+    printf("  • Signal strength varies with obstacles, interference, and device orientation\n");
+    printf("\n");
+}
+
 // Show current Bluetooth status
 static void bluetoothShowStatus(void)
 {
@@ -19448,6 +19536,7 @@ static void printMenu(void)
             printf("  [7] Update local name\n");
             printf("  [8] Configure pairing settings\n");
             printf("  [9] List bonded devices\n");
+            printf("  [r] Show RSSI (signal strength)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
             break;
@@ -20377,6 +20466,10 @@ static void handleUserInput(void)
                     break;
                 case 9:
                     bluetoothListBondedDevices();
+                    break;
+                case 'r':
+                case 'R':
+                    bluetoothShowRssi();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
