@@ -1051,6 +1051,7 @@ static void executeAtTerminal(void);
 static void executeAti9(void);
 static void executeModuleReboot(void);
 static void executeFactoryReset(void);
+static void executeStoreConfiguration(void);
 static void executeCrashInfo(void);
 static void executeGetPowerSaveLevel(void);
 static void executeSetPowerSaveLevel(void);
@@ -20287,6 +20288,7 @@ static void printMenu(void)
             printf("SYSTEM COMMANDS\n");
             printf("  [1] Reboot module\n");
             printf("  [2] Factory reset (restore defaults)\n");
+            printf("  [8] Store configuration (AT&W - save current settings)\n");
             printf("  [3] Read crash/assert info (AT+USYCI?)\n");
             printf("\n");
             printf("  [0] Back to main menu  [q] Quit\n");
@@ -21282,6 +21284,9 @@ static void handleUserInput(void)
                     break;
                 case 7:
                     executeDeepSleep();
+                    break;
+                case 8:
+                    executeStoreConfiguration();
                     break;
                 case 0:
                     gMenuState = MENU_MAIN;
@@ -24392,6 +24397,98 @@ static void executeFactoryReset(void)
     } else {
         printf("ERROR: Failed to send AT+CPWROFF (error %d)\n", result);
     }
+}
+
+static void executeStoreConfiguration(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("STORE CONFIGURATION TO FLASH (AT&W)\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("WHAT IS AT&W?\n");
+    printf("  The AT&W command saves the current configuration to non-volatile flash memory.\n");
+    printf("  This makes your settings persistent across reboots and power cycles.\n\n");
+    
+    printf("SETTINGS THAT WILL BE SAVED:\n");
+    printf("  ✓ WiFi configurations (SSIDs, passwords, roaming settings)\n");
+    printf("  ✓ Network settings (IP configuration, DNS servers)\n");
+    printf("  ✓ Bluetooth settings (device name, pairing mode)\n");
+    printf("  ✓ TLS/Security settings (SNI, fragmentation)\n");
+    printf("  ✓ Power save settings\n");
+    printf("  ✓ UART/interface settings\n");
+    printf("  ✓ All other configuration parameters\n\n");
+    
+    printf("SETTINGS NOT SAVED (Runtime only):\n");
+    printf("  ✗ Active connections (WiFi, Bluetooth, TCP/UDP sockets)\n");
+    printf("  ✗ Current session state\n");
+    printf("  ✗ Temporary runtime variables\n\n");
+    
+    printf("WHEN TO USE AT&W:\n");
+    printf("  • After configuring WiFi credentials\n");
+    printf("  • After setting up TLS certificates\n");
+    printf("  • After changing system settings you want to keep\n");
+    printf("  • Before deploying a device to production\n");
+    printf("  • After any configuration you want to persist\n\n");
+    
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("WARNING: This will overwrite previously saved configuration!\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
+    
+    printf("Do you want to save the current configuration to flash? (y/n): ");
+    
+    int confirmation = getchar();
+    while (getchar() != '\n');  // Clear input buffer
+    
+    if (confirmation != 'y' && confirmation != 'Y') {
+        printf("\nConfiguration NOT saved. No changes made.\n");
+        return;
+    }
+    
+    printf("\n────────────────────────────────────────────────────────────────────────────────\n");
+    printf("Saving configuration to flash memory (AT&W)...\n");
+    
+    int32_t result = uCxSystemStoreConfiguration(&gUcxHandle);
+    
+    if (result == 0) {
+        printf("✓ Configuration saved successfully!\n");
+        printf("\n");
+        printf("SUCCESS: All current settings have been written to flash memory.\n");
+        printf("\n");
+        printf("WHAT THIS MEANS:\n");
+        printf("  • Your settings will persist after reboot\n");
+        printf("  • Configuration survives power cycles\n");
+        printf("  • Settings remain after firmware updates (in most cases)\n");
+        printf("  • You can restore to these settings by rebooting\n");
+        printf("\n");
+        printf("NEXT STEPS:\n");
+        printf("  • To restore factory defaults: Use Factory Reset option\n");
+        printf("  • To update settings: Change them and run AT&W again\n");
+        printf("  • To verify settings: Reboot and check configuration\n");
+        printf("\n");
+        printf("TIP: Many settings in the menus show 'Can be stored using AT&W' in\n");
+        printf("     the API documentation. Use this command after configuring those.\n");
+    } else {
+        printf("✗ ERROR: Failed to save configuration (error code: %d)\n", result);
+        printf("\n");
+        printf("POSSIBLE REASONS:\n");
+        printf("  • Flash memory write failure\n");
+        printf("  • Insufficient flash space\n");
+        printf("  • Configuration validation failed\n");
+        printf("  • Module is in an inconsistent state\n");
+        printf("\n");
+        printf("TROUBLESHOOTING:\n");
+        printf("  1. Try rebooting the module and attempting again\n");
+        printf("  2. Check for any configuration errors\n");
+        printf("  3. Verify module firmware version\n");
+        printf("  4. Contact support if issue persists\n");
+    }
+    
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
 }
 
 static void executeCrashInfo(void)
