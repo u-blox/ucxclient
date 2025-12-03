@@ -1150,6 +1150,8 @@ static void gattServerAddService(void);
 static void gattServerAddCharacteristic(void);
 static void gattServerSetCharacteristic(void);
 static void gattServerSendNotification(void);
+static void gattServerSendIndication(void);
+static void gattServerIndicationAckUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t char_handle);
 static void gattServerSetupHeartbeat(void);
 static void gattServerSetupHidKeyboard(void);
 static void gattServerSetupBatteryOnly(void);
@@ -6042,6 +6044,82 @@ static void gattServerSendNotification(void)
     }
 }
 
+static void gattServerSendIndication(void)
+{
+    if (!gUcxConnected) {
+        printf("ERROR: Not connected to device\n");
+        return;
+    }
+    
+    if (gCurrentGattConnHandle == -1) {
+        printf("\nERROR: No active Bluetooth connection.\n");
+        printf("Tip: Use Bluetooth menu to connect first.\n");
+        return;
+    }
+    
+    if (gGattServerCharHandle == -1) {
+        printf("\nERROR: No characteristic created yet.\n");
+        printf("Tip: Use option [2] to add a characteristic with Indicate property.\n");
+        return;
+    }
+    
+    printf("\n--- GATT Server: Send Indication (Acknowledged) ---\n");
+    printf("Connection handle: %d\n", gCurrentGattConnHandle);
+    printf("Characteristic handle: %d\n\n", gGattServerCharHandle);
+    
+    printf("INDICATION vs NOTIFICATION:\n");
+    printf("  • Indication: Client must acknowledge receipt (confirmed delivery)\n");
+    printf("  • Notification: Fire-and-forget (no acknowledgment)\n");
+    printf("  • Use indications for critical data that must be confirmed\n\n");
+    
+    printf("Enter data (hex format, e.g., 01020304): ");
+    char hexInput[MAX_DATA_BUFFER * 2 + 1];
+    if (fgets(hexInput, sizeof(hexInput), stdin) == NULL) {
+        printf("ERROR: Failed to read input\n");
+        return;
+    }
+    
+    // Remove newline
+    hexInput[strcspn(hexInput, "\n")] = '\0';
+    
+    // Convert hex string to bytes
+    size_t hexLen = strlen(hexInput);
+    if (hexLen % 2 != 0) {
+        printf("ERROR: Invalid hex data (must be even number of digits)\n");
+        return;
+    }
+    
+    uint8_t data[MAX_DATA_BUFFER];
+    size_t dataLen = hexLen / 2;
+    
+    for (size_t i = 0; i < dataLen; i++) {
+        char byteStr[3];
+        byteStr[0] = hexInput[i*2];
+        byteStr[1] = hexInput[i*2 + 1];
+        byteStr[2] = '\0';
+        data[i] = (uint8_t)strtol(byteStr, NULL, 16);
+    }
+    
+    printf("Sending indication (%zu bytes)...\n", dataLen);
+    printf("Waiting for client acknowledgment...\n\n");
+    
+    // Call GATT server send indication command
+    int32_t result = uCxGattServerSendIndication(&gUcxHandle, gCurrentGattConnHandle, 
+                                                  gGattServerCharHandle, data, (int32_t)dataLen);
+    
+    if (result == 0) {
+        printf("✓ Indication sent successfully\n");
+        printf("  The client will acknowledge receipt (check for ACK event)\n");
+        printf("  Acknowledgment callback will be triggered when received\n");
+    } else {
+        printf("ERROR: Failed to send indication (code %d)\n", result);
+        printf("Make sure:\n");
+        printf("  - Client is connected\n");
+        printf("  - Client has subscribed to indications (CCCD enabled for indications)\n");
+        printf("  - Characteristic has Indicate property (0x20)\n");
+    }
+}
+
 static void gattServerSetupHeartbeat(void)
 {
     if (!gUcxConnected) {
@@ -8596,6 +8674,7 @@ static void enableAllUrcs(void)
     
     // GATT Server events
     uCxGattServerRegisterNotification(&gUcxHandle, gattServerCharWriteUrc);
+    uCxGattServerRegisterIndicationAck(&gUcxHandle, gattServerIndicationAckUrc);
     
     // GATT Client events (notifications and indications)
     uCxGattClientRegisterNotification(&gUcxHandle, gattClientNotificationUrc);
@@ -8648,6 +8727,7 @@ static void disableAllUrcs(void)
     uCxBluetoothRegisterPasskeyRequest(&gUcxHandle, NULL);
     uCxBluetoothRegisterPhyUpdate(&gUcxHandle, NULL);
     uCxGattServerRegisterNotification(&gUcxHandle, NULL);
+    uCxGattServerRegisterIndicationAck(&gUcxHandle, NULL);
     uCxGattClientRegisterNotification(&gUcxHandle, NULL);
     uCxGattClientRegisterIndication(&gUcxHandle, NULL);
 }
@@ -10801,6 +10881,24 @@ static void bluetoothPhyUpdateUrc(struct uCxHandle *puCxHandle, int32_t conn_han
     
     printf("\n[PHY Update] Connection %d: TX=%s, RX=%s\n", conn_handle, txPhyStr, rxPhyStr);
     U_CX_LOG_LINE(U_CX_LOG_CH_DBG, "PHY updated - conn=%d, TX=%d, RX=%d", conn_handle, tx_phy, rx_phy);
+}
+
+// GATT Server Indication Acknowledgment URC
+// This callback is triggered when a remote client acknowledges an indication
+static void gattServerIndicationAckUrc(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t char_handle)
+{
+    (void)puCxHandle;
+    
+    printf("\n════════════════════════════════════════════════════════════════════════════════\n");
+    printf("[GATT SERVER] INDICATION ACKNOWLEDGED\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n");
+    printf("  Connection Handle: %d\n", conn_handle);
+    printf("  Characteristic Handle: %d\n", char_handle);
+    printf("  Status: Client confirmed receipt of indication\n");
+    printf("\n");
+    printf("  This confirms the client successfully received and acknowledged the\n");
+    printf("  indication message. Unlike notifications, indications guarantee delivery.\n");
+    printf("════════════════════════════════════════════════════════════════════════════════\n\n");
 }
 
 // Enable/disable Bluetooth advertising (discoverable mode)
@@ -19915,6 +20013,7 @@ static void printMenu(void)
             printf("  [2] Add characteristic\n");
             printf("  [3] Set characteristic value\n");
             printf("  [4] Send notification\n");
+            printf("  [5] Send indication (acknowledged)\n");
             printf("\n");
             printf("  [9] or [e] Service-specific examples (Heart Rate, HID, NUS, etc.)\n");
             printf("\n");
@@ -21012,6 +21111,9 @@ static void handleUserInput(void)
                     break;
                 case 4:
                     gattServerSendNotification();
+                    break;
+                case 5:
+                    gattServerSendIndication();
                     break;
                 case 9:
                     // Navigate to GATT Examples menu (as shown in the menu text)
