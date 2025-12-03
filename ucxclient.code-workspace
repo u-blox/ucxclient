@@ -9,14 +9,107 @@
 			"*.h": "c",
 			"ostream": "c"
 		},
+		"cmake.sourceDirectory": "${workspaceFolder}/examples",
 		"ceedlingExplorer.problemMatching": {"mode": "gcc"},
-		"ceedlingExplorer.debugConfiguration": "Ceedling Test Explorer Debug"
+		"ceedlingExplorer.debugConfiguration": "Ceedling Test Explorer Debug",
+		"debug.focusEditorOnBreak": false
 	},
 	"extensions": {
 		"recommendations": [
 			"numaru.vscode-ceedling-test-adapter",
 			"ms-vscode.cpptools",
-			"shardulm94.trailing-spaces"
+			"shardulm94.trailing-spaces",
+			"marus25.cortex-debug"
 		]
-	}
+	},
+	"tasks": {
+		"version": "2.0.0",
+		"tasks": [
+			{
+				"label": "stm32:run-renode-gdbserver",
+				"type": "shell",
+				"command": "bash",
+				"args": [
+					"-c",
+					"cd examples && inv stm32.renode --gdb --example http_example || true"
+				],
+				"isBackground": true,
+				"problemMatcher": [
+					{
+						"owner": "stm32-renode",
+						"pattern": {
+							"regexp": ".*"
+						},
+						"background": {
+							"activeOnStart": true,
+							"beginsPattern": "^$",
+							"endsPattern": ".*Renode GDB server listening on.*"
+						}
+					}
+				],
+				"presentation": {
+					"panel": "dedicated",
+					"clear": true,
+					"focus": true,
+					"close": false
+				},
+				"detail": "Starts Renode inside docker with GDB server on port 3333"
+			},
+			{
+				"label": "stm32:stop-renode-gdbserver",
+				"type": "shell",
+				"command": "bash",
+				"args": [
+					"-c",
+					"cd examples && inv stm32.cleanup"
+				],
+				"problemMatcher": [],
+				"presentation": {
+					"focus": false,
+					"close": true
+				}
+			},
+			{
+				"label": "stm32:start-debug-session",
+				"dependsOrder": "sequence",
+				"dependsOn": [
+					"stm32:run-renode-gdbserver"
+				],
+				"problemMatcher": [],
+				"detail": "Starts Renode GDB server"
+			}
+		]
+	},
+	"launch": {
+		"configurations": [
+			{
+				"name": "STM32 HTTP (Renode GDB)",
+				"type": "cortex-debug",
+				"request": "attach",
+				"servertype": "external",
+				"cwd": "${workspaceFolder}",
+				"executable": "${workspaceFolder}/examples/bin/http_example_stm32.elf",
+				"gdbTarget": "localhost:3333",
+				"preLaunchTask": "stm32:start-debug-session",
+				"postAttachCommands": [
+					"set substitute-path /project ${workspaceFolder}",
+					"monitor reset halt",
+					"load"
+				],
+				"postDebugTask": "stm32:stop-renode-gdbserver"
+			},
+			{
+				"name": "STM32 HTTP (Hardware ST-Link)",
+				"type": "cortex-debug",
+				"request": "launch",
+				"servertype": "stutil",
+				"cwd": "${workspaceFolder}",
+				"executable": "${workspaceFolder}/examples/bin/http_example_stm32.elf",
+				"device": "STM32F407VG",
+				"interface": "swd",
+				"runToEntryPoint": "main",
+				"armToolchainPath": "/opt/arm-gnu-toolchain-14.3.rel1-x86_64-arm-none-eabi/bin"
+			}
+		]
+	},
 }

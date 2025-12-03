@@ -21,6 +21,7 @@
 #include <limits.h>  // For INT_MAX
 #include <stddef.h>  // NULL, size_t etc.
 #include <stdint.h>  // int32_t etc.
+#include <inttypes.h> // PRId32 etc.
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>  // memcpy(), strcmp(), strcspn(), strspm()
@@ -48,7 +49,7 @@
         CLIENT->lastIoError = READ_RET;     \
         CLIENT->status = U_CX_ERROR_IO;     \
         U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, CLIENT->instance, \
-                        "read() failed with return value: %d", READ_RET); \
+                        "read() failed with return value: %" PRId32, READ_RET); \
         return AT_PARSER_ERROR;             \
     }
 

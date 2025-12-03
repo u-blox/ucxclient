@@ -29,11 +29,15 @@
  * - http_example_no_os: Uses no-OS port (manual RX polling)
  *
  * Execute with following args:
- * http_example <uart_device> "<wifi_ssid>" "<wifi_psk>"
+ * http_example [uart_device] [wifi_ssid] [wifi_psk]
+ *
+ * All arguments are optional and default to U_EXAMPLE_UART, U_EXAMPLE_SSID,
+ * and U_EXAMPLE_WPA_PSK from config.local.h.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "u_cx_log.h"
 #include "u_cx.h"
@@ -79,7 +83,7 @@ static void httpRequestStatus(struct uCxHandle *puCxHandle, int32_t session_id, 
     (void)puCxHandle;
     (void)session_id;
     (void)description;
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "HTTP response: %d", status_code);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, puCxHandle->pAtClient->instance, "HTTP response: %" PRId32, status_code);
     exampleSignalEvent(URC_FLAG_HTTP_RESPONSE);
 }
 
@@ -87,32 +91,33 @@ static void httpRequestStatus(struct uCxHandle *puCxHandle, int32_t session_id, 
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-int main(int argc, char **argv)
+int U_EXAMPLE_MAIN(int argc, char **argv)
 {
-    uCxHandle_t ucxHandle;
+    exampleCheckHelp(argc, argv, "http_example",
+        "Example of how to do a HTTP GET request using the uCx API.\n"
+        "Connects to WiFi, sends HTTP GET to www.google.com, and prints response.",
+        "[uart_device] [wifi_ssid] [wifi_psk]");
 
-#ifdef U_PORT_POSIX
-    if (argc != 4) {
-        fprintf(stderr, "Invalid arguments\n");
-        fprintf(stderr, "Syntax: %s <device> <SSID> <WPA_PSK>\n", argv[0]);
-        exit(1);
-    }
-    const char *pDevice = argv[1];
-    const char *pSsid = argv[2];
-    const char *pWpaPsk = argv[3];
-#else
-    (void)argc;
-    (void)argv;
+    uCxHandle_t ucxHandle;
     const char *pDevice = U_EXAMPLE_UART;
     const char *pSsid = U_EXAMPLE_SSID;
     const char *pWpaPsk = U_EXAMPLE_WPA_PSK;
+
+    if (argc >= 2) {
+        pDevice = argv[1];
+    }
+    if (argc >= 3) {
+        pSsid = argv[2];
+    }
+    if (argc >= 4) {
+        pWpaPsk = argv[3];
+    }
 
     if (*pWpaPsk == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Wi-Fi not configured - connection will not work");
         U_CX_LOG_LINE(U_CX_LOG_CH_WARN,
             "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.");
     }
-#endif
 
     // Initialize example utilities and AT client
     uCxAtClient_t *pClient = exampleInit(pDevice, 115200, true);
@@ -138,26 +143,31 @@ int main(int argc, char **argv)
 
     // Configure HTTP connection
     ret = uCxHttpSetConnectionParams2(&ucxHandle, sessionId, EXAMPLE_URL);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %" PRId32, ret);
 
     // Set request path
     ret = uCxHttpSetRequestPath(&ucxHandle, sessionId, "/");
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetRequestPath() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetRequestPath() returned %" PRId32, ret);
 
     // Send GET request
     ret = uCxHttpGetRequest(&ucxHandle, sessionId);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpGetRequest() returned %d", ret);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpGetRequest() returned %" PRId32, ret);
 
     // Wait for response
     exampleWaitEvent(URC_FLAG_HTTP_RESPONSE, 10);
 
-    // Read response headers
+    // Read response headers in chunks
     uCxHttpGetHeader_t headerRsp;
-    if (uCxHttpGetHeader1Begin(&ucxHandle, sessionId, &headerRsp)) {
-        printf("HTTP Headers:\n");
-        printf("%.*s\n", (int)headerRsp.byte_array_data.length, headerRsp.byte_array_data.pData);
-        uCxEnd(&ucxHandle);
-    }
+    printf("HTTP Headers:\n");
+    do {
+        if (uCxHttpGetHeader2Begin(&ucxHandle, sessionId, 512, &headerRsp)) {
+            printf("%.*s", (int)headerRsp.byte_array_data.length, headerRsp.byte_array_data.pData);
+            uCxEnd(&ucxHandle);
+        } else {
+            break;
+        }
+    } while (headerRsp.more_to_read);
+    printf("\n");
 
     // Read response body
     uint8_t rxData[512];

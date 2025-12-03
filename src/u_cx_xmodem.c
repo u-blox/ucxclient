@@ -21,6 +21,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <inttypes.h>
 
 #include "u_cx_xmodem.h"
 #include "u_cx_log.h"
@@ -101,14 +102,14 @@ static int32_t xmodemWaitForStart(uCxXmodemConfig_t *pConfig, int32_t timeoutMs)
     int32_t startTime = U_CX_PORT_GET_TIME_MS();
     int32_t attemptsCount = 0;
 
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: Waiting for start signal (timeout=%dms)...", timeoutMs);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: Waiting for start signal (timeout=%" PRId32 "ms)...", timeoutMs);
 
     while ((U_CX_PORT_GET_TIME_MS() - startTime) < timeoutMs) {
         bytesRead = uPortUartRead(pConfig->uartHandle, &startChar, 1, 100);
 
         if (bytesRead == 1) {
             attemptsCount++;
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: Received byte 0x%02X (attempt %d)", startChar, attemptsCount);
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: Received byte 0x%02X (attempt %" PRId32 ")", startChar, attemptsCount);
 
             if (startChar == U_CX_XMODEM_CCHR) {
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: Receiver ready (CRC mode) - starting transfer");
@@ -125,7 +126,7 @@ static int32_t xmodemWaitForStart(uCxXmodemConfig_t *pConfig, int32_t timeoutMs)
         }
     }
 
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pConfig->instance, "XMODEM: Timeout waiting for start signal (received %d bytes in %dms)",
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pConfig->instance, "XMODEM: Timeout waiting for start signal (received %" PRId32 " bytes in %" PRId32 "ms)",
                     attemptsCount, (int32_t)(U_CX_PORT_GET_TIME_MS() - startTime));
     return -1;
 }
@@ -191,7 +192,7 @@ static int32_t xmodemSendBlock(uCxXmodemConfig_t *pConfig, uint8_t blockNum,
         int32_t bytesWritten = uPortUartWrite(pConfig->uartHandle, packet, packetSize);
         if (bytesWritten != (int32_t)packetSize) {
             U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pConfig->instance,
-                            "XMODEM: Write error on block %u (wrote %d of %zu bytes)",
+                            "XMODEM: Write error on block %u (wrote %" PRId32 " of %zu bytes)",
                             blockNum, bytesWritten, packetSize);
             continue;
         }
@@ -249,11 +250,11 @@ static int32_t xmodemSendEot(uCxXmodemConfig_t *pConfig, int32_t timeoutMs)
 
     int32_t bytesWritten = uPortUartWrite(pConfig->uartHandle, &eot, 1);
     if (bytesWritten != 1) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pConfig->instance, "XMODEM: Failed to write EOT (wrote %d bytes)", bytesWritten);
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pConfig->instance, "XMODEM: Failed to write EOT (wrote %" PRId32 " bytes)", bytesWritten);
         return -1;
     }
 
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: <<< Waiting for final ACK (timeout=%dms)...", timeoutMs);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance, "XMODEM: <<< Waiting for final ACK (timeout=%" PRId32 "ms)...", timeoutMs);
 
     // Wait for final ACK
     int32_t startTime = U_CX_PORT_GET_TIME_MS();
@@ -268,7 +269,7 @@ static int32_t xmodemSendEot(uCxXmodemConfig_t *pConfig, int32_t timeoutMs)
 
             if (response == U_CX_XMODEM_ACK) {
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance,
-                                "XMODEM: <<< EOT ACKed (0x06) after %dms - TRANSFER COMPLETE!", elapsed);
+                                "XMODEM: <<< EOT ACKed (0x06) after %" PRId32 "ms - TRANSFER COMPLETE!", elapsed);
                 return 0;
             } else if (response == U_CX_XMODEM_NAK) {
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pConfig->instance,
@@ -277,7 +278,7 @@ static int32_t xmodemSendEot(uCxXmodemConfig_t *pConfig, int32_t timeoutMs)
                 // But don't implement retry here yet, just log it
             } else {
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pConfig->instance,
-                                "XMODEM: <<< Unexpected response to EOT: 0x%02X (attempt %d, elapsed %dms)",
+                                "XMODEM: <<< Unexpected response to EOT: 0x%02X (attempt %" PRId32 ", elapsed %" PRId32 "ms)",
                                 response, readAttempts, elapsed);
             }
         }
@@ -285,7 +286,7 @@ static int32_t xmodemSendEot(uCxXmodemConfig_t *pConfig, int32_t timeoutMs)
 
     int32_t totalElapsed = U_CX_PORT_GET_TIME_MS() - startTime;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pConfig->instance,
-                    "XMODEM: Timeout waiting for ACK after EOT (waited %dms, read attempts=%d)",
+                    "XMODEM: Timeout waiting for ACK after EOT (waited %" PRId32 "ms, read attempts=%" PRId32 ")",
                     totalElapsed, readAttempts);
     return -1;
 }
@@ -327,7 +328,7 @@ int32_t uCxXmodemOpen(uCxXmodemConfig_t *pConfig, int32_t baudRate, bool flowCon
 
     pConfig->opened = true;
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pConfig->instance,
-                    "XMODEM: Opened UART '%s' at %d baud", pConfig->pUartDevName, baudRate);
+                    "XMODEM: Opened UART '%s' at %" PRId32 " baud", pConfig->pUartDevName, baudRate);
     return 0;
 }
 

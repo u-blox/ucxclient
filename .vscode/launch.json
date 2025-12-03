@@ -6,10 +6,10 @@
     "configurations": [
 
         {
-            "name": "Debug ucxclient-x64 (Debug)",
+            "name": "Debug ucx-windows-demo (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/examples/bin/ucxclient-x64-debug.exe",
+            "program": "${workspaceFolder}/examples/bin/ucx-windows-demo-debug.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

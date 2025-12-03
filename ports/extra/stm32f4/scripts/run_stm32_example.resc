@@ -1,0 +1,34 @@
+# Generic Renode script for STM32F407VG
+# Variables (set before including this script):
+#   $ELF_FILE - Path to the ELF binary to load
+#   $EXAMPLE_NAME - Name for display purposes
+#   $AT_PTY - Path to PTY for USART3 connection to AT module
+
+mach create "stm32f407"
+
+machine LoadPlatformDescription @platforms/boards/stm32f4_discovery-kit.repl
+
+# Create socket terminal for UART2 (console/log output with ANSI colors)
+emulation CreateServerSocketTerminal 3456 "uart2_term" false
+connector Connect sysbus.usart2 uart2_term
+
+# Connect USART3 to local PTY
+emulation CreateUartPtyTerminal "usart3_pty" $AT_PTY true
+connector Connect sysbus.usart3 usart3_pty
+
+# Suppress unhandled offset warnings for UART peripherals
+logLevel 3 sysbus.usart2
+logLevel 3 sysbus.usart3
+logLevel 3 sysbus.cpu
+
+sysbus LoadELF $ELF_FILE
+
+log ""
+log "======================================"
+log "  STM32F407VG Example - Renode"
+log "======================================"
+log "UART2 (console) available on: nc localhost 3456"
+log "--------------------------------------"
+log ""
+
+start

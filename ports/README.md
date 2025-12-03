@@ -18,6 +18,9 @@ The port layer is organized into:
 | os/u_port_windows | Windows port using Windows API for mutex, threads, and time. |
 | os/u_port_no_os   | "No OS" port for bare-metal systems. Provides stub mutex and no background RX task - user must call uCxAtClientHandleRx() manually. |
 | os/u_port_zephyr  | Zephyr RTOS port using work queues for background RX handling. |
+| os/u_port_freertos | FreeRTOS port using FreeRTOS mutexes, timers, and tasks for background RX handling. |
+
+See also: [STM32F4 port](extra/stm32f4/README.md) for embedded ARM Cortex-M4 with FreeRTOS.
 
 ## UART Ports
 
@@ -27,6 +30,7 @@ The port layer is organized into:
 | uart/u_port_uart_linux    | Linux termios-based UART implementation. Used by both POSIX and no-OS ports. |
 | uart/u_port_uart_windows  | Windows COM port UART implementation using Windows API. |
 | uart/u_port_uart_zephyr   | Zephyr interrupt-driven UART with ring buffer. |
+| uart/u_port_uart_stm32f4  | STM32F4 HAL-based UART implementation with DMA support. |
 
 ## Background RX Task
 
@@ -35,6 +39,7 @@ The port layer optionally implements `uPortBgRxTaskCreate()` and `uPortBgRxTaskD
 * **POSIX port**: Creates a pthread that polls `uCxAtClientHandleRx()` every 10ms
 * **Windows port**: Creates a Windows thread that polls `uCxAtClientHandleRx()` every 10ms
 * **Zephyr port**: Uses work queue that is triggered by UART ISR
+* **FreeRTOS port**: Creates a FreeRTOS task that polls `uCxAtClientHandleRx()` every 10ms
 * **No-OS port**: Stub implementation - user must call `uCxAtClientHandleRx()` manually in their main loop
 
 These functions are called automatically by `uCxAtClientInit()` and `uCxAtClientDeinit()`.
@@ -48,6 +53,7 @@ You can tell ucxclient which port to use by using the following defines during b
 | u_port_posix   | `U_PORT_POSIX`    |
 | u_port_windows | `U_PORT_WINDOWS`  |
 | u_port_no_os   | `U_PORT_NO_OS`    |
+| u_port_freertos | `U_PORT_FREERTOS` |
 | u_port_zephyr  | No define needed; it will be selected automatically if you use ucxclient as a Zephyr module (see [/zephyr/README.md](/zephyr/README.md)). |
 
 You will also need to add corresponding .c files to your build (not needed for Zephyr).
