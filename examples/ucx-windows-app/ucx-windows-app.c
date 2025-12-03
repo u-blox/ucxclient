@@ -25186,20 +25186,24 @@ static void listAllApiCommands(void)
     char exeDir[MAX_PATH];
     getExecutableDirectory(exeDir, sizeof(exeDir));
     
-    // App runs from build\release folder, need to go up 2 levels to workspace root
-    // build\release -> build -> workspace_root
-    snprintf(apiPath, sizeof(apiPath), "%s\\..\\..\\ucx_api\\generated", exeDir);
-    
-    // Check if directory exists
+    // Try multiple possible locations:
+    // 1. examples/ucx-windows-app/bin -> workspace root (3 levels up)
+    snprintf(apiPath, sizeof(apiPath), "%s\\..\\..\\..\\ucx_api\\generated", exeDir);
     DWORD attribs = GetFileAttributesA(apiPath);
     
-    // If not found, try one level up (in case running from build folder directly)
+    // 2. build\release -> workspace root (2 levels up)
+    if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
+        snprintf(apiPath, sizeof(apiPath), "%s\\..\\..\\ucx_api\\generated", exeDir);
+        attribs = GetFileAttributesA(apiPath);
+    }
+    
+    // 3. One level up (in case running from build folder directly)
     if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
         snprintf(apiPath, sizeof(apiPath), "%s\\..\\ucx_api\\generated", exeDir);
         attribs = GetFileAttributesA(apiPath);
     }
     
-    // If still not found, try current directory
+    // 4. Current directory
     if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
         strcpy(apiPath, "ucx_api\\generated");
         attribs = GetFileAttributesA(apiPath);
@@ -25208,6 +25212,7 @@ static void listAllApiCommands(void)
     if (attribs == INVALID_FILE_ATTRIBUTES || !(attribs & FILE_ATTRIBUTE_DIRECTORY)) {
         printf("ERROR: Could not find ucx_api/generated directory\n");
         printf("Tried paths:\n");
+        printf("  %s\\..\\..\\..\\ucx_api\\generated\n", exeDir);
         printf("  %s\\..\\..\\ucx_api\\generated\n", exeDir);
         printf("  %s\\..\\ucx_api\\generated\n", exeDir);
         printf("  ucx_api\\generated\n");
