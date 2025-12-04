@@ -91,6 +91,9 @@ cd ucxclient
 
 # Code sign the Release build
 .\launch-ucx-windows-app.cmd sign YOUR_CERT_THUMBPRINT
+
+# Run comprehensive workspace tests
+.\launch-ucx-windows-app.cmd selftest
 ```
 
 ### Code Signing (Optional)
@@ -124,6 +127,23 @@ The launch script automatically verifies:
 - ✅ Windows 10/11 (64-bit)
 - ✅ CMake installed and in PATH
 - ✅ Visual Studio with C++ tools installed
+
+### Workspace Validation
+Run a comprehensive selftest to verify workspace integrity:
+```powershell
+.\launch-ucx-windows-app.cmd selftest
+```
+
+This checks:
+- ✅ Directory structure (src, inc, ucx_api, examples, build)
+- ✅ Critical source files
+- ✅ UCX API generated headers
+- ✅ CMake configuration
+- ✅ Build artifacts and executables
+- ✅ Version information (-v flag)
+- ✅ Git repository status
+
+Use selftest before releases or after cloning to ensure everything is ready.
 
 ### Troubleshooting
 If you get errors:
@@ -308,50 +328,64 @@ cd examples\ucx-windows-app\bin
 ```
 ═════════════════════════════════════════════════════════════════
              u-blox ucxclient Windows App
-     using ucxclient API v3.2.0  |  Application v3.2.0.257
+     using ucxclient API v3.2.0  |  Application v3.2.0.321
 ═════════════════════════════════════════════════════════════════
+  CONNECTION:  ✓ ACTIVE
+  DEVICE:      NORA-W36 (Firmware 3.2.0-046)
+  PORT:        COM10
+─────────────────────────────────────────────────────────────────
+  Wi-Fi:       ○ Disconnected  |  Reg: ETSI
+  Bluetooth:   NORA-W36-14CD8E | Centr+Periph | No connections | Adv: OFF
+  Resources:   0 active sockets  |  3 certificates
+─────────────────────────────────────────────────────────────────
+QUICK ACTIONS
+  [a]     AT command test
+  [i]     Device information (ATI9)
+  [t]     AT Terminal (interactive)
 
-=== STATUS DASHBOARD ===
-┌─────────────────────────────────────────────────────────────────┐
-│ Device  │ COM10                                                  │
-│ Module  │ NORA-W36                                               │
-│ Version │ 3.2.0                                                  │
-├─────────────────────────────────────────────────────────────────┤
-│ Wi-Fi   │ ● Connected - ubx (Ch 1, -42 dBm)                     │
-│ IP      │ 10.12.71.133                                           │
-│ BT      │ ○ Not Advertising                                     │
-└─────────────────────────────────────────────────────────────────┘
-
-=== MAIN MENU ===
 POWER & SYSTEM
-  [r] Reboot Module        [j] Factory Reset       [p] Power Management
+  [r]     Reboot module
+  [p]     Power Management - Power save, deep sleep
+  [53]    Factory reset (restore defaults)
 
-BLUETOOTH
-  [b] Bluetooth Operations [s] SPS - BLE Serial    [t] GATT Client      
-  [u] GATT Server
+BLUETOOTH FEATURES
+  [b]     Bluetooth - Scan, connect, pair
+  [s]     Serial Port Service (SPS)
+  [j]     GATT Client - Generic operations
+  [u]     GATT Server - Generic operations
 
-WI-FI (NORA-W36)
-  [w] Wi-Fi Station        [o] Access Point        [d] Network Diagnostics
-
-EXAMPLES
-  Bluetooth: [e] GATT Server (9)  [g] GATT Client (9)
-  Wi-Fi:     [h] HTTP  [m] MQTT  [y] Time Sync  [k] Location
-
-NETWORK SERVICES
-  [n] Network Menu - Socket, HTTP, MQTT, Security, Time
-
-TOOLS & SETTINGS
-  [l] Logging: ON          [z] Timestamps: OFF     [c] Menu: Detailed
-  [i] Device Info (ATI9)   [v] List UCX API        [?] Help & Tips
+Wi-Fi FEATURES
+  [w]     Wi-Fi Station - Scan, connect
+  [o]     Wi-Fi Access Point - Hotspot
+  [n]     Network - Sockets (TCP, UDP)
+  [d]     Network Diagnostics - Ping, DNS
+  [x]     Security/TLS - Certificates & Encryption
 
 FIRMWARE
-  [f] Update Module Firmware (XMODEM + SHA256)
+  [f]     Firmware update (XMODEM)
 
-  [q] Quit
+BLUETOOTH EXAMPLES
+  [e]     GATT Server Profiles (9 examples)
+  [g]     GATT Client Profiles (9 examples)
 
-═════════════════════════════════════════════════════════════════
+Wi-Fi EXAMPLES
+  [h]     HTTP - GET, POST
+  [m]     MQTT - Publish, Subscribe
+  [y]     Time Sync - NTP, TimeAPI
+  [k]     Location - IP Geo, Wi-Fi Pos
 
-Enter choice:
+TOOLS & SETTINGS
+  [l]     Toggle logging: ON (AT commands)
+  [z]     Timestamps: ON
+  [c]     Menu mode: Detailed
+  [v]     List UCX API commands
+  [?]     Help & getting started
+
+  [q]     Quit
+
+Tip: Press [?] for help, [t] for AT terminal
+
+Choice:
 ```
 
 ### Compact Menu Mode

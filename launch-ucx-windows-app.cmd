@@ -16,6 +16,7 @@ if /i "%1"=="-h" goto :help
 if /i "%1"=="/?" goto :help
 if /i "%1"=="sign" goto :sign
 if /i "%1"=="signed" goto :launch_signed
+if /i "%1"=="selftest" goto :selftest
 
 REM Commands that need prerequisites
 if /i "%1"=="clean" goto :clean_with_checks
@@ -695,6 +696,9 @@ echo   sign [thumbprint]     Code sign the Release executable
 echo                         - thumbprint: Certificate thumbprint (required)
 echo                         Example: sign 1234567890ABCDEF...
 echo.
+echo   selftest              Run comprehensive workspace tests
+echo                         Tests workspace structure, builds, version checks
+echo.
 echo   help / --help / -h    Show this help message
 echo.
 echo EXAMPLES:
@@ -734,6 +738,9 @@ echo.
 echo   launch-ucx-windows-app.cmd sign 1234567890ABCDEF...
 echo       Sign Release build and save to ucx-windows-app-signed.exe
 echo.
+echo   launch-ucx-windows-app.cmd selftest
+echo       Run comprehensive workspace tests and validation
+echo.
 echo NOTES:
 echo   - Release is the default (optimized, no debug symbols)
 echo   - Debug is for development/troubleshooting (symbols, no optimization)
@@ -744,3 +751,364 @@ echo   - Exe-only usage: Creates ucx-windows-app.ini next to executable
 echo.
 exit /b 0
 
+REM ===================================
+REM Selftest command
+REM ===================================
+:selftest
+echo.
+echo ========================================
+echo ucx-windows-app SELFTEST
+echo ========================================
+echo.
+echo This will verify the workspace integrity by checking:
+echo   - Directory structure
+echo   - Required source files
+echo   - Build artifacts
+echo   - Executable version information
+echo   - CMake configuration
+echo.
+
+set "SELFTEST_ERRORS=0"
+set "SELFTEST_WARNINGS=0"
+
+REM Check current directory is project root
+if not exist "examples\ucx-windows-app\ucx-windows-app.c" (
+    echo [ERROR] Not in ucxclient project root!
+    echo Current directory: %CD%
+    echo Expected to find: examples\ucx-windows-app\ucx-windows-app.c
+    exit /b 1
+)
+echo [OK] Working directory is ucxclient project root
+
+REM Check critical directory structure
+echo.
+echo Checking directory structure...
+set "REQUIRED_DIRS=src inc ucx_api examples\ucx-windows-app build"
+for %%d in (%REQUIRED_DIRS%) do (
+    if exist "%%d\" (
+        echo [OK] %%d\
+    ) else (
+        echo [ERROR] Missing directory: %%d\
+        set /a SELFTEST_ERRORS+=1
+    )
+)
+
+REM Check critical source files
+echo.
+echo Checking critical source files...
+set "REQUIRED_FILES=src\u_cx_at_client.c inc\u_cx_at_client.h examples\ucx-windows-app\ucx-windows-app.c examples\ucx-windows-app\CMakeLists.txt examples\ucx-windows-app\README.md"
+for %%f in (%REQUIRED_FILES%) do (
+    if exist "%%f" (
+        echo [OK] %%f
+    ) else (
+        echo [ERROR] Missing file: %%f
+        set /a SELFTEST_ERRORS+=1
+    )
+)
+
+REM Check ucx_api generated files
+echo.
+echo Checking UCX API generated files...
+if exist "ucx_api\generated\" (
+    set "API_FILES=0"
+    for %%f in (ucx_api\generated\u_cx_*.h) do set /a API_FILES+=1
+    if !API_FILES! GTR 10 (
+        echo [OK] ucx_api\generated\ contains !API_FILES! header files
+    ) else (
+        echo [WARNING] ucx_api\generated\ has only !API_FILES! files ^(expected more^)
+        set /a SELFTEST_WARNINGS+=1
+    )
+) else (
+    echo [ERROR] Missing ucx_api\generated\ directory
+    set /a SELFTEST_ERRORS+=1
+)
+
+REM Check build directory and CMake configuration
+echo.
+echo Checking build configuration...
+if exist "build\CMakeCache.txt" (
+    echo [OK] CMake is configured ^(build\CMakeCache.txt exists^)
+) else (
+    echo [WARNING] CMake not configured yet ^(build\CMakeCache.txt missing^)
+    echo          Run the launcher without arguments to auto-configure
+    set /a SELFTEST_WARNINGS+=1
+)
+
+if exist "build\ucx-windows-app.sln" (
+    echo [OK] Visual Studio solution generated
+) else (
+    echo [WARNING] ucx-windows-app.sln not found
+    echo          Run the launcher to generate build files
+    set /a SELFTEST_WARNINGS+=1
+)
+
+REM Check executables
+echo.
+echo Checking executables...
+set "RELEASE_EXE=examples\ucx-windows-app\bin\ucx-windows-app.exe"
+set "DEBUG_EXE=examples\ucx-windows-app\bin\ucx-windows-app-debug.exe"
+set "SIGNED_EXE=examples\ucx-windows-app\release\ucx-windows-app-signed.exe"
+
+if exist "!RELEASE_EXE!" (
+    echo [OK] Release executable exists
+    REM Check version
+    for /f "delims=" %%v in ('"!RELEASE_EXE!" -v 2^>nul') do set "RELEASE_VER=%%v"
+    if defined RELEASE_VER (
+        echo [OK] Release executable can run - Version: !RELEASE_VER!
+    ) else (
+        echo [WARNING] Release executable exists but -v flag failed
+        set /a SELFTEST_WARNINGS+=1
+    )
+) else (
+    echo [INFO] Release executable not built yet
+)
+
+if exist "!DEBUG_EXE!" (
+    echo [OK] Debug executable exists
+    REM Check version
+    for /f "delims=" %%v in ('"!DEBUG_EXE!" -v 2^>nul') do set "DEBUG_VER=%%v"
+    if defined DEBUG_VER (
+        echo [OK] Debug executable can run - Version: !DEBUG_VER!
+    ) else (
+        echo [WARNING] Debug executable exists but -v flag failed
+        set /a SELFTEST_WARNINGS+=1
+    )
+) else (
+    echo [INFO] Debug executable not built yet ^(use: launch-ucx-windows-app.cmd debug^)
+)
+
+if exist "!SIGNED_EXE!" (
+    echo [OK] Signed executable exists
+    REM Check version
+    for /f "delims=" %%v in ('"!SIGNED_EXE!" -v 2^>nul') do set "SIGNED_VER=%%v"
+    if defined SIGNED_VER (
+        echo [OK] Signed executable can run - Version: !SIGNED_VER!
+    ) else (
+        echo [WARNING] Signed executable exists but -v flag failed
+        set /a SELFTEST_WARNINGS+=1
+    )
+) else (
+    echo [INFO] Signed executable not created yet ^(use: launch-ucx-windows-app.cmd sign^)
+)
+
+REM Check launcher script itself
+echo.
+echo Checking launcher script...
+if exist "launch-ucx-windows-app.cmd" (
+    echo [OK] Launcher script exists
+) else (
+    echo [ERROR] Launcher script not found!
+    set /a SELFTEST_ERRORS+=1
+)
+
+REM Check for Git repository
+echo.
+echo Checking Git repository...
+git rev-parse --git-dir >nul 2>&1
+if !errorlevel! equ 0 (
+    echo [OK] Git repository detected
+    for /f "tokens=*" %%b in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set "GIT_BRANCH=%%b"
+    echo     Current branch: !GIT_BRANCH!
+    for /f "tokens=*" %%c in ('git rev-list --count HEAD 2^>nul') do set "COMMIT_COUNT=%%c"
+    echo     Commit count: !COMMIT_COUNT!
+    
+    REM Get remote URL
+    for /f "tokens=*" %%r in ('git config --get remote.origin.url 2^>nul') do set "GIT_REMOTE=%%r"
+    if defined GIT_REMOTE (
+        echo     Remote: !GIT_REMOTE!
+    )
+) else (
+    echo [WARNING] Not a Git repository or Git not installed
+    set /a SELFTEST_WARNINGS+=1
+)
+
+REM Ask about extended tests (master branch comparison)
+echo.
+echo ========================================
+echo EXTENDED TESTS (Optional)
+echo ========================================
+echo.
+echo Do you want to clone master branch for comparison?
+echo This will:
+echo   - Clone master branch to temp folder
+echo   - Compare directory structure
+echo   - Show differences in file counts
+echo   - Report any missing critical files
+echo.
+set /p CLONE_MASTER="Clone master branch? (y/N): "
+
+if /i "!CLONE_MASTER!"=="y" (
+    echo.
+    echo Starting master branch clone and comparison...
+    call :clone_and_compare_master
+) else (
+    echo.
+    echo Skipping master branch comparison.
+)
+
+REM Summary
+echo.
+echo ========================================
+echo SELFTEST SUMMARY
+echo ========================================
+if !SELFTEST_ERRORS! equ 0 (
+    if !SELFTEST_WARNINGS! equ 0 (
+        echo [SUCCESS] All tests passed!
+        echo.
+        echo Your workspace is ready for development and release.
+    ) else (
+        echo [PARTIAL] Tests passed with !SELFTEST_WARNINGS! warning^(s^)
+        echo.
+        echo Warnings are typically about missing optional builds.
+        echo Run the launcher to build and resolve warnings.
+    )
+) else (
+    echo [FAILED] Found !SELFTEST_ERRORS! error^(s^) and !SELFTEST_WARNINGS! warning^(s^)
+    echo.
+    echo Please fix the errors above before proceeding.
+)
+echo ========================================
+echo.
+
+exit /b !SELFTEST_ERRORS!
+
+REM ===================================
+REM Clone and compare master branch
+REM ===================================
+:clone_and_compare_master
+echo.
+echo =======================================
+echo MASTER BRANCH COMPARISON
+echo =======================================
+echo.
+
+REM Create temp directory
+set "TEMP_DIR=%TEMP%\ucxclient-master-%RANDOM%"
+echo Creating temp directory: !TEMP_DIR!
+mkdir "!TEMP_DIR!" 2>nul
+
+REM Get remote URL
+for /f "tokens=*" %%r in ('git config --get remote.origin.url 2^>nul') do set "REPO_URL=%%r"
+if not defined REPO_URL (
+    echo [ERROR] Cannot determine Git remote URL
+    echo Make sure you're in a Git repository with a remote configured.
+    goto :cleanup_temp
+)
+
+echo Cloning master branch from: !REPO_URL!
+echo Please wait, this may take a minute...
+echo.
+
+REM Clone only master branch (shallow clone for speed)
+git clone --depth 1 --branch master --single-branch "!REPO_URL!" "!TEMP_DIR!"
+if !errorlevel! neq 0 (
+    echo.
+    echo [ERROR] Failed to clone master branch
+    echo This could be because:
+    echo   - No network connection
+    echo   - Master branch doesn't exist
+    echo   - Authentication required
+    goto :cleanup_temp
+)
+
+echo [OK] Master branch cloned successfully
+echo.
+
+REM Compare directory structure
+echo Comparing directory structure...
+echo.
+
+set "COMPARE_DIRS=src inc ucx_api examples build"
+for %%d in (!COMPARE_DIRS!) do (
+    if exist "%%d\" (
+        if exist "!TEMP_DIR!\%%d\" (
+            echo [MATCH] %%d\ - exists in both branches
+        ) else (
+            echo [LOCAL ONLY] %%d\ - exists locally but NOT in master
+        )
+    ) else (
+        if exist "!TEMP_DIR!\%%d\" (
+            echo [MASTER ONLY] %%d\ - exists in master but NOT locally
+        )
+    )
+)
+
+echo.
+echo Checking if examples\ucx-windows-app exists in master...
+if exist "!TEMP_DIR!\examples\ucx-windows-app\" (
+    echo [INFO] examples\ucx-windows-app\ EXISTS in master
+    echo.
+    echo Comparing file counts:
+    
+    REM Count .c files
+    set "LOCAL_C=0"
+    set "MASTER_C=0"
+    for %%f in (examples\ucx-windows-app\*.c) do set /a LOCAL_C+=1
+    for %%f in (!TEMP_DIR!\examples\ucx-windows-app\*.c) do set /a MASTER_C+=1
+    echo   Local .c files:  !LOCAL_C!
+    echo   Master .c files: !MASTER_C!
+    
+    REM Count .h files
+    set "LOCAL_H=0"
+    set "MASTER_H=0"
+    for %%f in (examples\ucx-windows-app\*.h) do set /a LOCAL_H+=1
+    for %%f in (!TEMP_DIR!\examples\ucx-windows-app\*.h) do set /a MASTER_H+=1
+    echo   Local .h files:  !LOCAL_H!
+    echo   Master .h files: !MASTER_H!
+) else (
+    echo [INFO] examples\ucx-windows-app\ does NOT exist in master
+    echo       This is your new contribution not yet merged!
+)
+
+echo.
+echo Comparing core library files...
+set "CORE_FILES=src\u_cx_at_client.c inc\u_cx_at_client.h"
+for %%f in (!CORE_FILES!) do (
+    if exist "%%f" (
+        if exist "!TEMP_DIR!\%%f" (
+            fc /b "%%f" "!TEMP_DIR!\%%f" >nul 2>&1
+            if !errorlevel! equ 0 (
+                echo [IDENTICAL] %%f
+            ) else (
+                echo [MODIFIED] %%f - differs from master
+            )
+        ) else (
+            echo [LOCAL ONLY] %%f - not in master
+        )
+    )
+)
+
+echo.
+echo Checking ucx_api header count...
+set "LOCAL_API=0"
+set "MASTER_API=0"
+for %%f in (ucx_api\generated\u_cx_*.h) do set /a LOCAL_API+=1
+if exist "!TEMP_DIR!\ucx_api\generated\" (
+    for %%f in (!TEMP_DIR!\ucx_api\generated\u_cx_*.h) do set /a MASTER_API+=1
+)
+echo   Local UCX API headers:  !LOCAL_API!
+echo   Master UCX API headers: !MASTER_API!
+
+:cleanup_temp
+echo.
+echo =======================================
+echo.
+set /p REMOVE_TEMP="Remove temp folder (!TEMP_DIR!)? (Y/n): "
+if /i "!REMOVE_TEMP!"=="n" (
+    echo.
+    echo Temp folder kept at: !TEMP_DIR!
+    echo Remember to delete it later.
+) else (
+    echo.
+    echo Removing temp folder...
+    rmdir /s /q "!TEMP_DIR!" 2>nul
+    if exist "!TEMP_DIR!" (
+        echo [WARNING] Could not remove temp folder: !TEMP_DIR!
+        echo Please delete it manually.
+    ) else (
+        echo [OK] Temp folder removed
+    )
+)
+
+echo.
+goto :eof

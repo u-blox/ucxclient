@@ -47,8 +47,12 @@
     if (READ_RET < 0) {                     \
         CLIENT->lastIoError = READ_RET;     \
         CLIENT->status = U_CX_ERROR_IO;     \
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, CLIENT->instance, \
-                        "read() failed with return value: %" PRId32, READ_RET); \
+        /* Only log if this appears to be a real error, not just timeout/no data */ \
+        /* Suppress warning spam for -1 which is normal during polling */ \
+        if (READ_RET != -1) {               \
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, CLIENT->instance, \
+                            "read() failed with return value: %" PRId32, READ_RET); \
+        }                                   \
         return AT_PARSER_ERROR;             \
     }
 
