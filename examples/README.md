@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains application examples of how to use ucxclient. The examples make use of the [example ports](port/README.md).
+This directory contains application examples of how to use ucxclient. The examples make use of the [example ports](../ports/README.md).
 
 All examples are designed to work with both OS and no-OS configurations by using the shared utilities in `example_utils.c/h`. This demonstrates the portability of ucxclient across different execution environments.
 
@@ -80,8 +80,16 @@ Docstring:
 Options:
   -c, --clean                     Clean build directory before building
   -d, --docker                    Build inside Docker container (no local ARM toolchain required)
-  -i STRING, --wifi-psk=STRING    WiFi WPA-PSK password to embed in the binary (or set WIFI_PSK env var)
-  -w STRING, --wifi-ssid=STRING   WiFi SSID to embed in the binary (or set WIFI_SSID env var)
+  -j INT, --jobs=INT              Number of parallel jobs (default: CPU cores)
+```
+
+### Selecting a target module
+
+Use `invoke ucx-module` to select the target u-connectXpress module. The selection persists across builds:
+
+```sh
+invoke ucx-module                      # Show current module and available options
+invoke ucx-module --set NORA-W36X      # Set module for all subsequent builds
 ```
 
 ### Building examples
@@ -89,9 +97,9 @@ Options:
 Build from the `examples/` directory using `invoke <platform>.<example>`:
 
 ```sh
-invoke linux.http          # Build http_example for Linux
-invoke stm32.http --docker # Build http_example for STM32 using Docker
-invoke stm32.all --docker  # Build all STM32 examples using Docker
+invoke linux.http                   # Build http_example for Linux
+invoke stm32.http --docker          # Build http_example for STM32 using Docker
+invoke stm32.all --docker           # Build all STM32 examples using Docker
 ```
 
 Or from the project root (prefix with `examples.`):
@@ -110,7 +118,13 @@ If you prefer to use CMake directly:
 # From examples/ directory
 > cmake -S . -B build
 > cmake --build build
+
+# Build for a specific module
+> cmake -S . -B build -D UCX_MODULE=NORA-W36X
+> cmake --build build
 ```
+
+The `UCX_MODULE` variable selects the module-specific generated API from `ucx_api/generated/<module>/`. If not specified, it defaults to `NORA-W36X`.
 
 ## Running
 

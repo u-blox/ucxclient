@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.10)
 project(ucxclient_examples C ASM)
 string(TOLOWER ${CMAKE_SYSTEM_NAME} OS_NAME)
 
+# Enable ccache if available
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    message(STATUS "Found ccache: ${CCACHE_PROGRAM}")
+    set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+endif()
+
 # Include ucxclient library definitions
 include(../ucxclient.cmake)
 

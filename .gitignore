@@ -5,4 +5,5 @@ west-workspace/
 __pycache__
 filesystem.bin
 examples/config.local.h
+examples/.ucx_module
 settings.json
