@@ -1,6 +1,6 @@
 # Examples
 
-This directory contains application examples of how to use ucxclient. The examples make use of the [example ports](port/README.md).
+This directory contains application examples of how to use ucxclient. The examples make use of the [example ports](../ports/README.md).
 
 All examples are designed to work with both OS and no-OS configurations by using the shared utilities in `example_utils.c/h`. This demonstrates the portability of ucxclient across different execution environments.
 
