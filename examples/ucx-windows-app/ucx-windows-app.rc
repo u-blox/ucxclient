@@ -1,0 +1,73 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include <windows.h>
+
+// Version information from CMake
+#ifndef APP_VERSION_MAJOR
+#define APP_VERSION_MAJOR 3
+#endif
+#ifndef APP_VERSION_MINOR
+#define APP_VERSION_MINOR 2
+#endif
+#ifndef APP_VERSION_PATCH
+#define APP_VERSION_PATCH 0
+#endif
+#ifndef APP_VERSION_BUILD
+#define APP_VERSION_BUILD 0
+#endif
+
+// Helper macros for stringification
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define VERSION_STRING TOSTRING(APP_VERSION_MAJOR) "." TOSTRING(APP_VERSION_MINOR) "." TOSTRING(APP_VERSION_PATCH) "." TOSTRING(APP_VERSION_BUILD)
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_ICON1               ICON                    "../images/ShortRange.ico"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Binary Resources - Embedded FTDI DLL
+//
+
+#define IDR_FTD2XX_DLL          101
+
+IDR_FTD2XX_DLL          RCDATA                  "third-party/ftdi/ftd2xx64.dll"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION APP_VERSION_MAJOR,APP_VERSION_MINOR,APP_VERSION_PATCH,APP_VERSION_BUILD
+ PRODUCTVERSION APP_VERSION_MAJOR,APP_VERSION_MINOR,APP_VERSION_PATCH,APP_VERSION_BUILD
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "u-blox AG"
+            VALUE "FileDescription", "ucxclient Windows App for NORA-W36/NORA-B26"
+            VALUE "FileVersion", VERSION_STRING
+            VALUE "InternalName", "ucx-windows-app.exe"
+            VALUE "LegalCopyright", "Copyright (C) 2025"
+            VALUE "OriginalFilename", "ucx-windows-app.exe"
+            VALUE "ProductName", "ucxclient Windows App"
+            VALUE "ProductVersion", VERSION_STRING
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
