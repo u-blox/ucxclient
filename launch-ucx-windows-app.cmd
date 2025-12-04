@@ -182,7 +182,8 @@ if not exist "!EXE_PATH!" (
         echo Checking for signed version and source modifications...
         
         REM Check if source has been modified by comparing with signed executable timestamp
-        powershell -Command "if ((Get-Item '!SOURCE_FILE!').LastWriteTime -gt (Get-Item '!SIGNED_EXE!').LastWriteTime) { exit 1 }" >nul 2>&1
+        REM Allow 1 minute tolerance to avoid rebuilding for tiny timestamp differences
+        powershell -Command "$src = Get-Item '!SOURCE_FILE!'; $signed = Get-Item '!SIGNED_EXE!'; $diff = ($src.LastWriteTime - $signed.LastWriteTime).TotalSeconds; if ($diff -gt 60) { exit 1 } else { exit 0 }" >nul 2>&1
         if errorlevel 1 (
             echo [INFO] Source code has been modified - building from source...
             set NEED_BUILD=1
