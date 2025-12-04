@@ -6,3 +6,13 @@ __pycache__
 filesystem.bin
 examples/config.local.h
 settings.json
+
+# ucx-windows-app build outputs
+examples/ucx-windows-app/bin/ucx-windows-app.exe
+examples/ucx-windows-app/bin/ucx-windows-app-debug.exe
+ucx-windows-app.ini
+# Visual Studio / CMake
+.vs/
+CMakeCache.txt
+CMakeFiles/
+*.vcxproj.user
