@@ -20,6 +20,11 @@ DOCKER_DIR = os.path.join(REPO_ROOT, 'docker')
 DOCKER_SERVICE = 'stm32f4-builder'
 DOCKER_WORKDIR = '/project/examples'
 
+# Default module for u-connectXpress API
+DEFAULT_UCX_MODULE = 'NORA-W36X'
+# File to persist last used module selection
+MODULE_CONFIG_FILE = os.path.join(EXAMPLES_DIR, '.ucx_module')
+
 STM32_CMAKE_ARGS = (
     f'-DCMAKE_TOOLCHAIN_FILE={REPO_ROOT}/cmake/arm-none-eabi-gcc.cmake '
     '-DBUILD_STM32_EXAMPLES=ON'
@@ -66,6 +71,28 @@ def _is_windows():
 def _is_linux():
     """Check if running on Linux."""
     return platform.system() == "Linux"
+
+
+def _get_saved_module():
+    """Get the last used module from config file, or DEFAULT_UCX_MODULE if not set."""
+    if os.path.exists(MODULE_CONFIG_FILE):
+        try:
+            with open(MODULE_CONFIG_FILE, 'r') as f:
+                module = f.read().strip()
+                if set:
+                    return module
+        except Exception:
+            pass
+    return DEFAULT_UCX_MODULE
+
+
+def _save_module(module):
+    """Save the module selection to config file."""
+    try:
+        with open(MODULE_CONFIG_FILE, 'w') as f:
+            f.write(module)
+    except Exception as e:
+        print(f"Warning: Could not save module selection: {e}")
 
 
 def _running_inside_docker():
@@ -191,6 +218,9 @@ def _build_target(c, target=None, clean=False, build_dir='build', cmake_args="",
         cmake_args: Additional CMake configuration arguments
         jobs: Number of parallel jobs (default: number of CPU cores)
     """
+    # Get the saved module selection
+    module = _get_saved_module()
+
     build_path = os.path.join(EXAMPLES_DIR, build_dir)
     if clean and os.path.exists(build_path):
         print(f"Cleaning {build_dir}...")
@@ -199,13 +229,16 @@ def _build_target(c, target=None, clean=False, build_dir='build', cmake_args="",
         else:
             c.run(f'rm -rf {build_path}')
 
+    # Add UCX_MODULE to cmake args
+    cmake_args = f'{cmake_args} -DUCX_MODULE={module}'.strip()
+
     _configure_cmake(c, build_dir, cmake_args)
 
     # Build with parallel jobs
     if jobs is None:
         jobs = os.cpu_count() or 1
     target_name = f" --target {target}" if target else ""
-    print(f"Building {target or 'all examples'} with {jobs} parallel job(s)...")
+    print(f"Building {target or 'all examples'} for {module} with {jobs} parallel job(s)...")
     c.run(f'cmake --build {build_path}{target_name} --parallel {jobs}')
 
     print(f"\nBuild completed successfully!")
@@ -436,6 +469,45 @@ def generate_config(c):
 
     shutil.copy(template, config)
     print(f"Generated {config} from template")
+
+
+@task
+def ucx_module(c, set=''):
+    """Show or set the target u-connectXpress module.
+
+    The module selection persists across builds.
+
+    Usage:
+        invoke ucx-module                 # Show current module
+        invoke ucx-module --set NORA-W36X # Set module
+
+    Available modules are subdirectories in ucx_api/generated/.
+    """
+    # Get available modules
+    generated_dir = os.path.join(REPO_ROOT, 'ucx_api', 'generated')
+    available_modules = []
+    if os.path.isdir(generated_dir):
+        available_modules = [d for d in os.listdir(generated_dir)
+                            if os.path.isdir(os.path.join(generated_dir, d))]
+
+    if set:
+        # Validate the module exists
+        if set not in available_modules:
+            print(f"Error: Module '{set}' not found.")
+            if available_modules:
+                print(f"Available modules: {', '.join(sorted(available_modules))}")
+            else:
+                print("No modules available in ucx_api/generated/")
+            return
+        _save_module(set)
+        print(f"Module set to: {set}")
+    else:
+        current = _get_saved_module()
+        print(f"Current module: {current}")
+
+    # List available modules
+    if available_modules:
+        print(f"Available modules: {', '.join(sorted(available_modules))}")
 
 
 @task(help={
@@ -791,6 +863,7 @@ ns = Collection()
 
 # Add common tasks to root namespace
 ns.add_task(generate_config, 'generate-config')
+ns.add_task(ucx_module, 'ucx-module')
 
 # STM32 platform namespace
 stm32_ns = Collection('stm32')
