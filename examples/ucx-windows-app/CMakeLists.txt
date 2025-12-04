@@ -5,32 +5,20 @@ project(ucx-windows-app)
 include(../../ucxclient.cmake)
 
 # ============================================================================
-# Auto-versioning: Get build number from Git commit count
+# Auto-versioning: Use timestamp-based build number
 # ============================================================================
 set(APP_VERSION_MAJOR 3)
 set(APP_VERSION_MINOR 2)
 set(APP_VERSION_PATCH 0)
 set(APP_VERSION_BUILD 0)
 
-# Try to get Git commit count for build number
-find_package(Git QUIET)
-if(GIT_FOUND)
-  execute_process(
-    COMMAND ${GIT_EXECUTABLE} rev-list --count HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_COMMIT_COUNT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-  )
-  if(GIT_COMMIT_COUNT)
-    set(APP_VERSION_BUILD ${GIT_COMMIT_COUNT})
-    message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git commit count)")
-  else()
-    message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git not available)")
-  endif()
-else()
-  message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (Git not found)")
-endif()
+# Generate build number from current date: YYDDD (e.g., 25338 = 2025, day 338)
+# This is consistent across branches and increases over time
+string(TIMESTAMP BUILD_YEAR "%y")
+string(TIMESTAMP BUILD_DAY_OF_YEAR "%j")
+math(EXPR APP_VERSION_BUILD "${BUILD_YEAR}${BUILD_DAY_OF_YEAR}")
+
+message(STATUS "Build version: ${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD} (timestamp-based)")
 
 # Generate version header
 configure_file(
