@@ -131,6 +131,20 @@ def _require_linux(task_name):
     return True
 
 
+def _require_windows():
+    """Check if running on Windows and exit with error if not."""
+    if not _is_windows():
+        print("Error: win32 builds are only available on Windows hosts")
+        sys.exit(1)
+
+
+def _require_native_linux():
+    """Check if running on Linux and exit with error if not."""
+    if not _is_linux():
+        print("Error: linux builds are only available on Linux hosts")
+        sys.exit(1)
+
+
 def _reinvoke_inside_docker(c, task_label):
     """Re-run the current invoke command inside the STM32 Docker builder.
 
@@ -278,7 +292,7 @@ def _stm32_build_target(c, target=None, clean=False, docker=False, jobs=None):
         print("\nTo build STM32 examples, either:")
         print("  1. Install ARM GCC toolchain locally, or")
         print("  2. Use --docker flag to build using stm32f4-builder Docker image")
-        return
+        sys.exit(1)
 
     build_dir = 'build_stm32'
 
@@ -339,7 +353,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
     local_elf = os.path.join(EXAMPLES_DIR, f"bin/{example}_stm32.elf")
     if not os.path.exists(local_elf):
         print(f"Error: {local_elf} not found. Build first with --build flag.")
-        return
+        sys.exit(1)
 
     elf_path = os.path.join(EXAMPLES_DIR, f"bin/{example}_stm32.elf")
     script_file = os.path.join(REPO_ROOT, "ports/extra/stm32f4/scripts/run_stm32_example.resc")
@@ -392,7 +406,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
         timeout -= 1
         if timeout <= 0:
             print("[ERROR] Timeout waiting for PTY")
-            return
+            sys.exit(1)
 
     # Make PTY world-readable
     try:
@@ -498,7 +512,7 @@ def ucx_module(c, set=''):
                 print(f"Available modules: {', '.join(sorted(available_modules))}")
             else:
                 print("No modules available in ucx_api/generated/")
-            return
+            sys.exit(1)
         _save_module(set)
         print(f"Module set to: {set}")
     else:
@@ -671,9 +685,7 @@ def stm32_cleanup(c):
 })
 def win32_http(c, clean=False, jobs=None):
     """Build http_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target='http_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -683,9 +695,7 @@ def win32_http(c, clean=False, jobs=None):
 })
 def win32_fw_upgrade(c, clean=False, jobs=None):
     """Build fw_upgrade_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target='fw_upgrade_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -695,9 +705,7 @@ def win32_fw_upgrade(c, clean=False, jobs=None):
 })
 def win32_ble_scan(c, clean=False, jobs=None):
     """Build ble_scan_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target='ble_scan_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -707,9 +715,7 @@ def win32_ble_scan(c, clean=False, jobs=None):
 })
 def win32_ble_advertise(c, clean=False, jobs=None):
     """Build ble_advertise_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -719,9 +725,7 @@ def win32_ble_advertise(c, clean=False, jobs=None):
 })
 def win32_wifi_scan(c, clean=False, jobs=None):
     """Build wifi_scan_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -731,9 +735,7 @@ def win32_wifi_scan(c, clean=False, jobs=None):
 })
 def win32_wifi_ap(c, clean=False, jobs=None):
     """Build wifi_ap_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -743,9 +745,7 @@ def win32_wifi_ap(c, clean=False, jobs=None):
 })
 def win32_socket(c, clean=False, jobs=None):
     """Build socket_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target='socket_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -755,9 +755,7 @@ def win32_socket(c, clean=False, jobs=None):
 })
 def win32_all(c, clean=False, jobs=None):
     """Build all examples for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target=None, clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -768,9 +766,7 @@ def win32_all(c, clean=False, jobs=None):
 })
 def linux_http(c, clean=False, jobs=None):
     """Build http_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target='http_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -780,9 +776,7 @@ def linux_http(c, clean=False, jobs=None):
 })
 def linux_fw_upgrade(c, clean=False, jobs=None):
     """Build fw_upgrade_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target='fw_upgrade_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -792,9 +786,7 @@ def linux_fw_upgrade(c, clean=False, jobs=None):
 })
 def linux_ble_scan(c, clean=False, jobs=None):
     """Build ble_scan_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target='ble_scan_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -804,9 +796,7 @@ def linux_ble_scan(c, clean=False, jobs=None):
 })
 def linux_ble_advertise(c, clean=False, jobs=None):
     """Build ble_advertise_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -816,9 +806,7 @@ def linux_ble_advertise(c, clean=False, jobs=None):
 })
 def linux_wifi_scan(c, clean=False, jobs=None):
     """Build wifi_scan_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -828,9 +816,7 @@ def linux_wifi_scan(c, clean=False, jobs=None):
 })
 def linux_wifi_ap(c, clean=False, jobs=None):
     """Build wifi_ap_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -840,9 +826,7 @@ def linux_wifi_ap(c, clean=False, jobs=None):
 })
 def linux_socket(c, clean=False, jobs=None):
     """Build socket_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target='socket_example', clean=clean, build_dir='build', jobs=jobs)
 
 
@@ -852,9 +836,7 @@ def linux_socket(c, clean=False, jobs=None):
 })
 def linux_all(c, clean=False, jobs=None):
     """Build all examples for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target=None, clean=clean, build_dir='build', jobs=jobs)
 
 
