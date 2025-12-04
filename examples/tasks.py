@@ -95,9 +95,9 @@ def _save_module(module):
         print(f"Warning: Could not save module selection: {e}")
 
 
-def _running_inside_docker():
-    """Check if running inside a Docker container."""
-    return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+def _running_inside_stm32_docker():
+    """Check if running inside our STM32 Docker container."""
+    return os.environ.get('UCX_STM32_DOCKER') == '1'
 
 
 def _init_stm32cubef4_submodule(c):
@@ -281,7 +281,7 @@ def _stm32_build_target(c, target=None, clean=False, docker=False, jobs=None):
     _init_stm32cubef4_submodule(c)
 
     # User wants Docker, but we are NOT inside Docker → REINVOKE
-    if docker and not _running_inside_docker():
+    if docker and not _running_inside_stm32_docker():
         _reinvoke_inside_docker(c, 'stm32 build')
         return
 
@@ -317,7 +317,7 @@ def _stm32_clean(c):
 def _stm32_cleanup_containers(c):
     """Kill any stale Renode containers and UART console connections."""
     # Only run docker commands if not inside docker
-    if not _running_inside_docker():
+    if not _running_inside_stm32_docker():
         c.run('docker ps -aq --filter name=docker-stm32f4-builder-run | xargs -r docker rm -f', warn=True)
     # Kill any netcat processes connected to port 3456 (UART console)
     c.run('pkill -f "nc.*localhost.*3456" || true', warn=True)
@@ -340,7 +340,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
     if build:
         _init_stm32cubef4_submodule(c)
 
-    if not _running_inside_docker():
+    if not _running_inside_stm32_docker():
         _reinvoke_inside_docker(c, 'stm32.renode')
         return
 
