@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     xz-utils \
     make \
     cmake \
+    ccache \
     git \
     mono-complete \
     python3 \
