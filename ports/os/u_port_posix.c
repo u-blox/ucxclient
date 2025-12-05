@@ -22,6 +22,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <time.h>
 #include <pthread.h>
 #include <string.h>
@@ -81,7 +82,10 @@ static void *rxTask(void *pArg)
 
     while (!pCtx->terminateRxTask) {
         U_CX_PORT_SLEEP_MS(10);
-        uCxAtClientHandleRx(pCtx->pClient);
+        if (uCxAtClientHandleRx(pCtx->pClient) < 0) {
+            printf("Error in RX handling thread\n");
+            exit(1);
+        }
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX task terminated");
