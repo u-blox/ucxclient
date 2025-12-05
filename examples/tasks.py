@@ -188,7 +188,7 @@ def _reinvoke_inside_docker(c, task_label):
         c.run(
             f"{env_vars} docker compose run --rm {DOCKER_SERVICE} "
             f"bash -c 'cd {DOCKER_WORKDIR} && invoke {argv}'",
-            pty=True,
+            pty=_is_linux(),
         )
 
 
@@ -702,14 +702,35 @@ def _make_win32_build_task(target_base):
     return task_func
 
 
+def _enable_windows_ansi():
+    """Enable ANSI escape sequence processing on Windows."""
+    if _is_windows():
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            # STD_OUTPUT_HANDLE = -11
+            # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+            handle = kernel32.GetStdHandle(-11)
+            mode = ctypes.c_ulong()
+            kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+            kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+        except Exception:
+            pass
+
+
 def _make_win32_run_task(target_base):
     """Create a Windows run task for a specific example."""
     def task_func(c, clean=False, jobs=None):
+        import subprocess
         _require_windows()
+        _enable_windows_ansi()
         _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
         exe_path = os.path.join(EXAMPLES_DIR, f'bin/{target_base}.exe')
         print(f"\n[Run] Running {exe_path}...")
-        c.run(exe_path, pty=True)
+        # Run directly with subprocess, inheriting stdio for proper terminal handling
+        result = subprocess.run([exe_path])
+        if result.returncode != 0:
+            raise SystemExit(result.returncode)
     return task_func
 
 
@@ -728,7 +749,7 @@ def _make_linux_run_task(target_base):
         _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
         exe_path = os.path.join(EXAMPLES_DIR, f'bin/{target_base}')
         print(f"\n[Run] Running {exe_path}...")
-        c.run(exe_path, pty=True)
+        c.run(exe_path, pty=_is_linux())
     return task_func
 
 
