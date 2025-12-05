@@ -335,17 +335,21 @@ def _stm32_clean(c):
     print("STM32 clean complete!")
 
 
-def _stm32_cleanup_containers(c):
+def _stm32_cleanup_containers(c, kill_inv = True):
     """Kill any stale Renode containers and UART console connections."""
     # Only run docker commands if not inside docker
     if not _running_inside_stm32_docker():
         c.run('docker ps -aq --filter name=docker-stm32f4-builder-run | xargs -r docker rm -f', warn=True)
+    if kill_inv:
+        # Kill any invoke emulate tasks
+        c.run('pkill -f "inv stm32.*emulate" || true', warn=True)
+    # Kill any Renode processes
+    c.run('pkill -f "renode.*--disable-xwt" || true', warn=True)
     # Kill any netcat processes connected to port 3456 (UART console)
     c.run('pkill -f "nc.*localhost.*3456" || true', warn=True)
-    # Kill any invoke stm32.uart-console tasks
-    c.run('pkill -f "inv stm32.uart-console" || true', warn=True)
     # Kill any ucx_mock emulator processes
     c.run('pkill -f "ucx_mock.*--pty" || true', warn=True)
+
 
 def _stm32_renode(c, example='http_example', build=False, gdb=False, timeout=None):
     """Run an STM32 example in Renode emulator with GDB server.
@@ -395,7 +399,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False, timeout=Non
     print(f"[Renode] Press Ctrl+C to exit\n")
 
     # Cleanup any stale processes
-    _stm32_cleanup_containers(c)
+    _stm32_cleanup_containers(c, False)
 
     # Create HOME/.config directory for Renode
     os.makedirs(os.path.expanduser("~/.config"), exist_ok=True)
@@ -422,11 +426,11 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False, timeout=Non
 
     # Wait for PTY to be created
     print(f"[Renode] Waiting for PTY: {pty_renode}")
-    timeout = 300  # 60 seconds * 0.2s per loop
+    pty_timeout = 300  # 60 seconds * 0.2s per loop
     while not os.path.exists(pty_renode):
         time.sleep(0.2)
-        timeout -= 1
-        if timeout <= 0:
+        pty_timeout -= 1
+        if pty_timeout <= 0:
             print("[ERROR] Timeout waiting for PTY")
             sys.exit(1)
 

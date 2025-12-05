@@ -161,6 +161,20 @@ invoke test.zephyr.clean
 invoke test.zephyr.clean-west  # Remove west workspace
 ```
 
+## Try it in GitHub Codespaces
+
+The easiest way to try ucxclient is using GitHub Codespaces. Click the button below to open a fully configured development environment in your browser:
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/u-blox/ucxclient)
+
+The Codespace includes:
+
+* Pre-installed ARM toolchain and Renode emulator
+* Example that runs on an emulated STM32F4 board connected to a mocked u-connectXpress module
+* Ready-to-use VS Code debug configuration
+
+Once the Codespace is ready, you will see a welcome text with further instructions.
+
 ## Porting and Configuration
 
 The porting layer is defined in [ports/u_port.h](ports/u_port.h) and the AT client configuration is in [inc/u_cx_at_config.h](inc/u_cx_at_config.h).

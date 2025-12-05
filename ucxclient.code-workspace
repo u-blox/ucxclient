@@ -10,9 +10,12 @@
 			"ostream": "c"
 		},
 		"cmake.sourceDirectory": "${workspaceFolder}/examples",
+		"ceedlingExplorer.shellPath": "/bin/bash",
+		"ceedlingExplorer.projectPath": "${workspaceFolder}",
 		"ceedlingExplorer.problemMatching": {"mode": "gcc"},
 		"ceedlingExplorer.debugConfiguration": "Ceedling Test Explorer Debug",
-		"debug.focusEditorOnBreak": false
+		"debug.focusEditorOnBreak": false,
+		"debug.internalConsoleOptions": "neverOpen"
 	},
 	"extensions": {
 		"recommendations": [
@@ -99,18 +102,37 @@
 	"launch": {
 		"configurations": [
 			{
+				"name": "Ceedling Test Explorer Debug",
+				"type": "cppdbg",
+				"request": "launch",
+				"program": "${workspaceFolder}/build/test/out/${command:ceedlingExplorer.debugTestExecutable}",
+				"args": [],
+				"stopAtEntry": false,
+				"cwd": "${workspaceFolder}",
+				"environment": [],
+				"externalConsole": false,
+				"MIMode": "gdb",
+				"setupCommands": [
+					{
+						"description": "Enable pretty-printing for gdb",
+						"text": "-enable-pretty-printing",
+						"ignoreFailures": true
+					}
+				]
+			},
+			{
 				"name": "STM32 HTTP (Renode GDB)",
 				"type": "cortex-debug",
-				"request": "attach",
+				"request": "launch",
 				"servertype": "external",
 				"cwd": "${workspaceFolder}",
 				"executable": "${workspaceFolder}/examples/bin/http_example_stm32.elf",
 				"gdbTarget": "localhost:3333",
+				"gdbPath": "gdb-multiarch",
 				"preLaunchTask": "stm32:start-debug-session",
-				"postAttachCommands": [
-					"set substitute-path /project ${workspaceFolder}",
-					"monitor reset halt",
-					"load"
+				"runToEntryPoint": "main",
+				"postLaunchCommands": [
+					"set substitute-path /project ${workspaceFolder}"
 				],
 				"postDebugTask": "stm32:stop-renode-gdbserver"
 			},

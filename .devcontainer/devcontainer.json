@@ -1,0 +1,110 @@
+{
+    "name": "ucxclient STM32 Development",
+    "build": {
+        "dockerfile": "../docker/stm32f4/Dockerfile",
+        "context": ".."
+    },
+    "workspaceFolder": "/workspaces/ucxclient",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cmake-tools",
+                "marus25.cortex-debug",
+                "shardulm94.trailing-spaces"
+            ],
+            "settings": {
+                "files.associations": {
+                    "*.h": "c",
+                    "ostream": "c"
+                },
+                "cmake.sourceDirectory": "${containerWorkspaceFolder}/examples",
+                "cmake.configureOnOpen": false,
+                "cmake.showOptionsMovedNotification": false,
+                "debug.focusEditorOnBreak": false,
+                "debug.internalConsoleOptions": "neverOpen",
+                "cortex-debug.gdbPath": "gdb-multiarch",
+                "launch": {
+                    "configurations": [
+                        {
+                            "name": "STM32 HTTP (Renode GDB)",
+                            "type": "cortex-debug",
+                            "request": "launch",
+                            "servertype": "external",
+                            "cwd": "${workspaceFolder}",
+                            "executable": "${workspaceFolder}/examples/bin/http_example_stm32.elf",
+                            "gdbTarget": "localhost:3333",
+                            "gdbPath": "gdb-multiarch",
+                            "preLaunchTask": "stm32:start-debug-session",
+                            "runToEntryPoint": "main",
+                            "postLaunchCommands": [
+                                "set substitute-path /project ${workspaceFolder}"
+                            ],
+                            "postDebugTask": "stm32:stop-renode-gdbserver"
+                        }
+                    ],
+                    "compounds": []
+                },
+                "tasks": {
+                    "version": "2.0.0",
+                    "tasks": [
+                        {
+                            "label": "stm32:run-renode-gdbserver",
+                            "type": "shell",
+                            "command": "cd examples && inv stm32.http.emulate --gdb || true",
+                            "isBackground": true,
+                            "problemMatcher": [
+                                {
+                                    "owner": "stm32-renode",
+                                    "pattern": { "regexp": ".*" },
+                                    "background": {
+                                        "activeOnStart": true,
+                                        "beginsPattern": "^$",
+                                        "endsPattern": ".*Renode GDB server listening on.*"
+                                    }
+                                }
+                            ],
+                            "detail": "Starts Renode with GDB server on port 3333"
+                        },
+                        {
+                            "label": "stm32:stop-renode-gdbserver",
+                            "type": "shell",
+                            "command": "cd examples && inv stm32.cleanup",
+                            "problemMatcher": []
+                        },
+                        {
+                            "label": "stm32:build-http",
+                            "type": "shell",
+                            "command": "cd examples && inv stm32.http.build",
+                            "problemMatcher": "$gcc",
+                            "detail": "Build http_example for STM32"
+                        },
+                        {
+                            "label": "stm32:start-debug-session",
+                            "dependsOrder": "sequence",
+                            "dependsOn": [
+                                "stm32:build-http",
+                                "stm32:run-renode-gdbserver"
+                            ],
+                            "problemMatcher": [],
+                            "detail": "Build and start Renode GDB server"
+                        }
+                    ]
+                },
+                "workbench.editorAssociations": {
+                    "*.md": "vscode.markdown.preview.editor"
+                },
+                "git.ignoredRepositories": [
+                    "ports/extra/stm32f4/STM32CubeF4"
+                ],
+                "terminal.integrated.defaultProfile.linux": "bash"
+            }
+        },
+        "codespaces": {
+            "openFiles": [
+                ".devcontainer/WELCOME.txt"
+            ]
+        }
+    },
+    "remoteUser": "vscode"
+}

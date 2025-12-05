@@ -21,6 +21,7 @@ connector Connect sysbus.usart3 usart3_pty
 logLevel 3 sysbus.usart2
 logLevel 3 sysbus.usart3
 logLevel 3 sysbus.cpu
+logLevel 3 sysbus
 
 sysbus LoadELF $ELF_FILE
 
