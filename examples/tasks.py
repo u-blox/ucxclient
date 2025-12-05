@@ -30,6 +30,17 @@ STM32_CMAKE_ARGS = (
     '-DBUILD_STM32_EXAMPLES=ON'
 )
 
+# List of example targets: (task_name, cmake_target_base)
+EXAMPLES_TASKS = [
+    ('http', 'http_example'),
+    ('fw-upgrade', 'fw_upgrade_example'),
+    ('ble-scan', 'ble_scan_example'),
+    ('ble-advertise', 'ble_advertise_example'),
+    ('wifi-scan', 'wifi_scan_example'),
+    ('wifi-ap', 'wifi_ap_example'),
+    ('socket', 'socket_example'),
+]
+
 
 class OutputCapture:
     """File-like helper that mirrors output and captures patterns."""
@@ -572,80 +583,6 @@ def clean(c):
     'docker': 'Build inside Docker container (no local ARM toolchain required)',
     'jobs': 'Number of parallel jobs (default: CPU cores)',
 })
-def stm32_http(c, clean=False, docker=False, jobs=None):
-    """Build http_example for STM32.
-
-    WiFi credentials are configured in config.local.h.
-    For CI, run 'inv generate-config' before building to create the config file.
-    """
-    _stm32_build_target(c, target='http_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_fw_upgrade(c, clean=False, docker=False, jobs=None):
-    """Build fw_upgrade_example for STM32."""
-    _stm32_build_target(c, target='fw_upgrade_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_ble_scan(c, clean=False, docker=False, jobs=None):
-    """Build ble_scan_example for STM32."""
-    _stm32_build_target(c, target='ble_scan_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_ble_advertise(c, clean=False, docker=False, jobs=None):
-    """Build ble_advertise_example for STM32."""
-    _stm32_build_target(c, target='ble_advertise_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_wifi_scan(c, clean=False, docker=False, jobs=None):
-    """Build wifi_scan_example for STM32."""
-    _stm32_build_target(c, target='wifi_scan_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_wifi_ap(c, clean=False, docker=False, jobs=None):
-    """Build wifi_ap_example for STM32."""
-    _stm32_build_target(c, target='wifi_ap_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_socket(c, clean=False, docker=False, jobs=None):
-    """Build socket_example for STM32."""
-    _stm32_build_target(c, target='socket_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
 def stm32_all(c, clean=False, docker=False, jobs=None):
     """Build all STM32 examples."""
     _stm32_build_target(c, target=None, clean=clean, docker=docker, jobs=jobs)
@@ -678,77 +615,7 @@ def stm32_cleanup(c):
         _stm32_cleanup_containers(c)
 
 
-# Windows platform tasks
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_http(c, clean=False, jobs=None):
-    """Build http_example for Windows (only available on Windows host)."""
-    _require_windows()
-    _build_target(c, target='http_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_fw_upgrade(c, clean=False, jobs=None):
-    """Build fw_upgrade_example for Windows (only available on Windows host)."""
-    _require_windows()
-    _build_target(c, target='fw_upgrade_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_ble_scan(c, clean=False, jobs=None):
-    """Build ble_scan_example for Windows (only available on Windows host)."""
-    _require_windows()
-    _build_target(c, target='ble_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_ble_advertise(c, clean=False, jobs=None):
-    """Build ble_advertise_example for Windows (only available on Windows host)."""
-    _require_windows()
-    _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_wifi_scan(c, clean=False, jobs=None):
-    """Build wifi_scan_example for Windows (only available on Windows host)."""
-    _require_windows()
-    _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_wifi_ap(c, clean=False, jobs=None):
-    """Build wifi_ap_example for Windows (only available on Windows host)."""
-    _require_windows()
-    _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_socket(c, clean=False, jobs=None):
-    """Build socket_example for Windows (only available on Windows host)."""
-    _require_windows()
-    _build_target(c, target='socket_example', clean=clean, build_dir='build', jobs=jobs)
-
-
+# Windows/Linux platform tasks
 @task(help={
     'clean': 'Clean build directory before building',
     'jobs': 'Number of parallel jobs (default: CPU cores)',
@@ -757,77 +624,6 @@ def win32_all(c, clean=False, jobs=None):
     """Build all examples for Windows (only available on Windows host)."""
     _require_windows()
     _build_target(c, target=None, clean=clean, build_dir='build', jobs=jobs)
-
-
-# Linux platform tasks
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_http(c, clean=False, jobs=None):
-    """Build http_example for Linux (only available on Linux host)."""
-    _require_native_linux()
-    _build_target(c, target='http_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_fw_upgrade(c, clean=False, jobs=None):
-    """Build fw_upgrade_example for Linux (only available on Linux host)."""
-    _require_native_linux()
-    _build_target(c, target='fw_upgrade_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_ble_scan(c, clean=False, jobs=None):
-    """Build ble_scan_example for Linux (only available on Linux host)."""
-    _require_native_linux()
-    _build_target(c, target='ble_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_ble_advertise(c, clean=False, jobs=None):
-    """Build ble_advertise_example for Linux (only available on Linux host)."""
-    _require_native_linux()
-    _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_wifi_scan(c, clean=False, jobs=None):
-    """Build wifi_scan_example for Linux (only available on Linux host)."""
-    _require_native_linux()
-    _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_wifi_ap(c, clean=False, jobs=None):
-    """Build wifi_ap_example for Linux (only available on Linux host)."""
-    _require_native_linux()
-    _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_socket(c, clean=False, jobs=None):
-    """Build socket_example for Linux (only available on Linux host)."""
-    _require_native_linux()
-    _build_target(c, target='socket_example', clean=clean, build_dir='build', jobs=jobs)
 
 
 @task(help={
@@ -840,6 +636,30 @@ def linux_all(c, clean=False, jobs=None):
     _build_target(c, target=None, clean=clean, build_dir='build', jobs=jobs)
 
 
+# Task factory functions for generating per-example tasks
+def _make_stm32_task(target_base):
+    """Create an STM32 build task for a specific example."""
+    def task_func(c, clean=False, docker=False, jobs=None):
+        _stm32_build_target(c, target=f'{target_base}_stm32.elf', clean=clean, docker=docker, jobs=jobs)
+    return task_func
+
+
+def _make_win32_task(target_base):
+    """Create a Windows build task for a specific example."""
+    def task_func(c, clean=False, jobs=None):
+        _require_windows()
+        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+    return task_func
+
+
+def _make_linux_task(target_base):
+    """Create a Linux build task for a specific example."""
+    def task_func(c, clean=False, jobs=None):
+        _require_native_linux()
+        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+    return task_func
+
+
 # Create namespaces
 ns = Collection()
 
@@ -849,42 +669,60 @@ ns.add_task(ucx_module, 'ucx-module')
 
 # STM32 platform namespace
 stm32_ns = Collection('stm32')
-stm32_ns.add_task(stm32_http, 'http')
-stm32_ns.add_task(stm32_fw_upgrade, 'fw-upgrade')
-stm32_ns.add_task(stm32_ble_scan, 'ble-scan')
-stm32_ns.add_task(stm32_ble_advertise, 'ble-advertise')
-stm32_ns.add_task(stm32_wifi_scan, 'wifi-scan')
-stm32_ns.add_task(stm32_wifi_ap, 'wifi-ap')
-stm32_ns.add_task(stm32_socket, 'socket')
 stm32_ns.add_task(stm32_all, 'all')
 stm32_ns.add_task(stm32_clean, 'clean')
 stm32_ns.add_task(stm32_renode, 'renode')
 stm32_ns.add_task(stm32_cleanup, 'cleanup')
+
+# Generate STM32 tasks for each example
+for task_name, target_base in EXAMPLES_TASKS:
+    stm32_task = task(
+        _make_stm32_task(target_base),
+        help={
+            'clean': 'Clean build directory before building',
+            'docker': 'Build inside Docker container (no local ARM toolchain required)',
+            'jobs': 'Number of parallel jobs (default: CPU cores)',
+        }
+    )
+    stm32_task.__doc__ = f"Build {target_base} for STM32."
+    stm32_ns.add_task(stm32_task, task_name)
+
 ns.add_collection(stm32_ns)
 
 # Windows platform namespace
 if _is_windows():
     win32_ns = Collection('win32')
-    win32_ns.add_task(win32_http, 'http')
-    win32_ns.add_task(win32_fw_upgrade, 'fw-upgrade')
-    win32_ns.add_task(win32_ble_scan, 'ble-scan')
-    win32_ns.add_task(win32_ble_advertise, 'ble-advertise')
-    win32_ns.add_task(win32_wifi_scan, 'wifi-scan')
-    win32_ns.add_task(win32_wifi_ap, 'wifi-ap')
-    win32_ns.add_task(win32_socket, 'socket')
     win32_ns.add_task(win32_all, 'all')
+
+    for task_name, target_base in EXAMPLES_TASKS:
+        win32_task = task(
+            _make_win32_task(target_base),
+            help={
+                'clean': 'Clean build directory before building',
+                'jobs': 'Number of parallel jobs (default: CPU cores)',
+            }
+        )
+        win32_task.__doc__ = f"Build {target_base} for Windows."
+        win32_ns.add_task(win32_task, task_name)
+
     ns.add_collection(win32_ns)
 
 # Linux platform namespace
 if _is_linux():
     linux_ns = Collection('linux')
-    linux_ns.add_task(linux_http, 'http')
-    linux_ns.add_task(linux_fw_upgrade, 'fw-upgrade')
-    linux_ns.add_task(linux_ble_scan, 'ble-scan')
-    linux_ns.add_task(linux_ble_advertise, 'ble-advertise')
-    linux_ns.add_task(linux_wifi_scan, 'wifi-scan')
-    linux_ns.add_task(linux_wifi_ap, 'wifi-ap')
-    linux_ns.add_task(linux_socket, 'socket')
     linux_ns.add_task(linux_all, 'all')
+
+    for task_name, target_base in EXAMPLES_TASKS:
+        linux_task = task(
+            _make_linux_task(target_base),
+            help={
+                'clean': 'Clean build directory before building',
+                'jobs': 'Number of parallel jobs (default: CPU cores)',
+            }
+        )
+        linux_task.__doc__ = f"Build {target_base} for Linux."
+        linux_ns.add_task(linux_task, task_name)
+
     ns.add_collection(linux_ns)
+
 
