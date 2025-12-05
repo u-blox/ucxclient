@@ -29,7 +29,7 @@ jobs:
     - name: Install PyInvoke
       run: pip install invoke
     - name: Run Unit Tests
-      run: invoke test.ceedling
+      run: invoke test.ceedling.run
     - name: Process Test results
       uses: dorny/test-reporter@v1
       if: always() # always run even if the previous step fails

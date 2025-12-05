@@ -31,7 +31,7 @@
 				"command": "bash",
 				"args": [
 					"-c",
-					"cd examples && inv stm32.renode --gdb --example http_example || true"
+					"cd examples && inv stm32.http.emulate --gdb || true"
 				],
 				"isBackground": true,
 				"problemMatcher": [
@@ -70,13 +70,29 @@
 				}
 			},
 			{
+				"label": "stm32:build-http",
+				"type": "shell",
+				"command": "bash",
+				"args": [
+					"-c",
+					"cd examples && inv stm32.http.build --docker"
+				],
+				"problemMatcher": "$gcc",
+				"presentation": {
+					"panel": "dedicated",
+					"clear": true
+				},
+				"detail": "Build http_example for STM32 using Docker"
+			},
+			{
 				"label": "stm32:start-debug-session",
 				"dependsOrder": "sequence",
 				"dependsOn": [
+					"stm32:build-http",
 					"stm32:run-renode-gdbserver"
 				],
 				"problemMatcher": [],
-				"detail": "Starts Renode GDB server"
+				"detail": "Build and start Renode GDB server"
 			}
 		]
 	},

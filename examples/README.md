@@ -60,27 +60,32 @@ To see all available build tasks, run from the `examples/` directory:
 > invoke --list
 Available tasks:
 
-  linux.all             Build all examples for Linux (only available on Linux host).
-  linux.ble-advertise   Build ble_advertise_example for Linux (only available on Linux host).
-  linux.ble-scan        Build ble_scan_example for Linux (only available on Linux host).
+  build-all                   Build all examples for all available platforms.
+  generate-config             Generate config.local.h from template.
+  ucx-module                  Show or set the target u-connectXpress module.
+  linux.build-all             Build all examples for Linux (only available on Linux host).
+  linux.http.build            Build http_example for Linux.
+  linux.http.run              Build and run http_example for Linux.
+  stm32.build-all             Build all STM32 examples.
+  stm32.http.build            Build http_example for STM32.
+  stm32.http.flash            Flash http_example to STM32 target.
+  stm32.http.emulate          Run http_example in Renode emulator.
+  ...
 ```
 
 To get help for a specific task:
 
 ```sh
-> invoke --help stm32.http
-Usage: inv[oke] [--core-opts] stm32.http [--options] [other tasks here ...]
+> invoke --help stm32.http.build
+Usage: inv[oke] [--core-opts] stm32.http.build [--options] [other tasks here ...]
 
 Docstring:
   Build http_example for STM32.
 
-  WiFi credentials are configured in config.local.h.
-  For CI, run 'inv generate-config' before building to create the config file.
-
 Options:
   -c, --clean                     Clean build directory before building
   -d, --docker                    Build inside Docker container (no local ARM toolchain required)
-  -j INT, --jobs=INT              Number of parallel jobs (default: CPU cores)
+  -j STRING, --jobs=STRING        Number of parallel jobs (default: CPU cores)
 ```
 
 ### Selecting a target module
@@ -94,18 +99,29 @@ invoke ucx-module --set NORA-W36X      # Set module for all subsequent builds
 
 ### Building examples
 
-Build from the `examples/` directory using `invoke <platform>.<example>`:
+Build from the `examples/` directory using `invoke <platform>.<example>.build`:
 
 ```sh
-invoke linux.http                   # Build http_example for Linux
-invoke stm32.http --docker          # Build http_example for STM32 using Docker
-invoke stm32.all --docker           # Build all STM32 examples using Docker
+invoke linux.http.build             # Build http_example for Linux
+invoke linux.http.run               # Build and run http_example for Linux
+invoke stm32.http.build --docker    # Build http_example for STM32 using Docker
+invoke stm32.http.flash             # Flash http_example to STM32 hardware
+invoke stm32.http.emulate           # Run http_example in Renode emulator
+```
+
+Build all examples:
+
+```sh
+invoke build-all --docker           # Build all examples for all platforms (STM32 via Docker)
+invoke stm32.build-all --docker     # Build all STM32 examples using Docker
+invoke linux.build-all              # Build all Linux examples
 ```
 
 Or from the project root (prefix with `examples.`):
 
 ```sh
-invoke examples.linux.http
+invoke examples.linux.http.build
+invoke examples.build-all --docker
 ```
 
 Executables are placed in `examples/bin/`.

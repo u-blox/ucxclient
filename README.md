@@ -150,15 +150,15 @@ See [examples/README.md](examples/README.md) for complete build instructions and
 
 ```sh
 # Run Ceedling unit tests
-invoke test.ceedling
+invoke test.ceedling.run
 
 # Run Zephyr Twister tests (automatically sets up west workspace)
-invoke test.zephyr
+invoke test.zephyr.run
 
 # Clean test artifacts
-invoke clean.ceedling
-invoke clean.zephyr
-invoke clean.west      # Remove west workspace
+invoke test.ceedling.clean
+invoke test.zephyr.clean
+invoke test.zephyr.clean-west  # Remove west workspace
 ```
 
 ## Porting and Configuration
