@@ -1,4 +1,7 @@
-FROM debian:stable-slim
+FROM ubuntu:22.04
+
+# Non-interactive debconf package configuration
+ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
     wget \
@@ -8,12 +11,11 @@ RUN apt-get update && apt-get install -y \
     ccache \
     git \
     mono-complete \
-    python3 \
-    python3-pip \
+    python3 python3-pip python-is-python3 python3-dev python3-wheel \
     netcat-openbsd \
     sudo \
     gdb-multiarch \
-    && pip3 install --break-system-packages invoke \
+    && pip3 install invoke \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -34,6 +36,10 @@ RUN wget -q https://github.com/renode/renode/releases/download/v1.15.3/renode-1.
 
 # Add Renode to PATH
 ENV PATH="/opt/renode:${PATH}"
+
+# Configure ccache to use a directory accessible to all users
+ENV CCACHE_DIR=/tmp/ccache
+RUN mkdir -p /tmp/ccache && chmod 777 /tmp/ccache
 
 # Mark that we're inside the STM32 Docker container (prevents re-invoking docker)
 ENV UCX_STM32_DOCKER=1
