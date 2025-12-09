@@ -690,6 +690,9 @@ def _make_stm32_emulate_task(target_base):
     def task_func(c, build=False, gdb=False, timeout=None):
         if not _require_linux('stm32 emulate'):
             sys.exit(1)
+        # Convert timeout to int if provided (invoke passes CLI args as strings)
+        if timeout is not None:
+            timeout = int(timeout)
         _stm32_renode(c, example=target_base, build=build, gdb=gdb, timeout=timeout)
     return task_func
 

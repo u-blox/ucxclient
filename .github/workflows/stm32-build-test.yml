@@ -100,7 +100,9 @@ jobs:
       working-directory: ./examples
       env:
         SKIP_DOCKER_BUILD: '1'
-      run: inv stm32.http.emulate --timeout 120 2>&1 | tee build_stm32/renode_output.txt
+      run: |
+        set -o pipefail
+        inv stm32.http.emulate --timeout 120 2>&1 | tee build_stm32/renode_output.txt
       timeout-minutes: 5
 
     - name: Upload build artifacts
