@@ -30,6 +30,18 @@ STM32_CMAKE_ARGS = (
     '-DBUILD_STM32_EXAMPLES=ON'
 )
 
+# List of example targets: (task_name, cmake_target_base, supports_emulation)
+# Emulation support requires ucx_mock to implement the necessary AT commands
+EXAMPLES_TASKS = [
+    ('http', 'http_example', True),
+    ('fw-upgrade', 'fw_upgrade_example', False),
+    ('ble-scan', 'ble_scan_example', False),
+    ('ble-advertise', 'ble_advertise_example', False),
+    ('wifi-scan', 'wifi_scan_example', False),
+    ('wifi-ap', 'wifi_ap_example', False),
+    ('socket', 'socket_example', True),
+]
+
 
 class OutputCapture:
     """File-like helper that mirrors output and captures patterns."""
@@ -95,9 +107,9 @@ def _save_module(module):
         print(f"Warning: Could not save module selection: {e}")
 
 
-def _running_inside_docker():
-    """Check if running inside a Docker container."""
-    return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+def _running_inside_stm32_docker():
+    """Check if running inside our STM32 Docker container."""
+    return os.environ.get('UCX_STM32_DOCKER') == '1'
 
 
 def _init_stm32cubef4_submodule(c):
@@ -131,6 +143,20 @@ def _require_linux(task_name):
     return True
 
 
+def _require_windows():
+    """Check if running on Windows and exit with error if not."""
+    if not _is_windows():
+        print("Error: win32 builds are only available on Windows hosts")
+        sys.exit(1)
+
+
+def _require_native_linux():
+    """Check if running on Linux and exit with error if not."""
+    if not _is_linux():
+        print("Error: linux builds are only available on Linux hosts")
+        sys.exit(1)
+
+
 def _reinvoke_inside_docker(c, task_label):
     """Re-run the current invoke command inside the STM32 Docker builder.
 
@@ -162,14 +188,23 @@ def _reinvoke_inside_docker(c, task_label):
         c.run(
             f"{env_vars} docker compose run --rm {DOCKER_SERVICE} "
             f"bash -c 'cd {DOCKER_WORKDIR} && invoke {argv}'",
-            pty=True,
+            pty=_is_linux(),
         )
 
 
-def _wait_for_app_main_return(captures, timeout=120, poll_interval=0.1):
-    """Poll OutputCapture instances until pattern match or timeout."""
+def _wait_for_app_main_return(captures, timeout=None, poll_interval=0.1):
+    """Poll OutputCapture instances until pattern match or timeout.
+
+    Args:
+        captures: List of (source_name, OutputCapture) tuples to monitor
+        timeout: Timeout in seconds, or None for no timeout (wait indefinitely)
+        poll_interval: How often to poll in seconds
+
+    Returns:
+        Exit code if pattern matched, None if timed out
+    """
     start = time.time()
-    while time.time() - start < timeout:
+    while timeout is None or (time.time() - start < timeout):
         for source, capture in captures:
             if capture.match:
                 exit_code = int(capture.match.group(1))
@@ -267,7 +302,7 @@ def _stm32_build_target(c, target=None, clean=False, docker=False, jobs=None):
     _init_stm32cubef4_submodule(c)
 
     # User wants Docker, but we are NOT inside Docker → REINVOKE
-    if docker and not _running_inside_docker():
+    if docker and not _running_inside_stm32_docker():
         _reinvoke_inside_docker(c, 'stm32 build')
         return
 
@@ -278,7 +313,7 @@ def _stm32_build_target(c, target=None, clean=False, docker=False, jobs=None):
         print("\nTo build STM32 examples, either:")
         print("  1. Install ARM GCC toolchain locally, or")
         print("  2. Use --docker flag to build using stm32f4-builder Docker image")
-        return
+        sys.exit(1)
 
     build_dir = 'build_stm32'
 
@@ -300,19 +335,23 @@ def _stm32_clean(c):
     print("STM32 clean complete!")
 
 
-def _stm32_cleanup_containers(c):
+def _stm32_cleanup_containers(c, kill_inv = True):
     """Kill any stale Renode containers and UART console connections."""
     # Only run docker commands if not inside docker
-    if not _running_inside_docker():
+    if not _running_inside_stm32_docker():
         c.run('docker ps -aq --filter name=docker-stm32f4-builder-run | xargs -r docker rm -f', warn=True)
+    if kill_inv:
+        # Kill any invoke emulate tasks
+        c.run('pkill -f "inv stm32.*emulate" || true', warn=True)
+    # Kill any Renode processes
+    c.run('pkill -f "renode.*--disable-xwt" || true', warn=True)
     # Kill any netcat processes connected to port 3456 (UART console)
     c.run('pkill -f "nc.*localhost.*3456" || true', warn=True)
-    # Kill any invoke stm32.uart-console tasks
-    c.run('pkill -f "inv stm32.uart-console" || true', warn=True)
     # Kill any ucx_mock emulator processes
     c.run('pkill -f "ucx_mock.*--pty" || true', warn=True)
 
-def _stm32_renode(c, example='http_example', build=False, gdb=False):
+
+def _stm32_renode(c, example='http_example', build=False, gdb=False, timeout=None):
     """Run an STM32 example in Renode emulator with GDB server.
 
     This function always runs inside Docker and uses reinvoke pattern if needed.
@@ -322,11 +361,12 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
         example: Example name (http_example or fw_upgrade_example)
         build: Whether to build before running
         gdb: Whether to start GDB server and pause on startup
+        timeout: Timeout in seconds, or None for no timeout (wait indefinitely)
     """
     if build:
         _init_stm32cubef4_submodule(c)
 
-    if not _running_inside_docker():
+    if not _running_inside_stm32_docker():
         _reinvoke_inside_docker(c, 'stm32.renode')
         return
 
@@ -339,7 +379,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
     local_elf = os.path.join(EXAMPLES_DIR, f"bin/{example}_stm32.elf")
     if not os.path.exists(local_elf):
         print(f"Error: {local_elf} not found. Build first with --build flag.")
-        return
+        sys.exit(1)
 
     elf_path = os.path.join(EXAMPLES_DIR, f"bin/{example}_stm32.elf")
     script_file = os.path.join(REPO_ROOT, "ports/extra/stm32f4/scripts/run_stm32_example.resc")
@@ -359,7 +399,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
     print(f"[Renode] Press Ctrl+C to exit\n")
 
     # Cleanup any stale processes
-    _stm32_cleanup_containers(c)
+    _stm32_cleanup_containers(c, False)
 
     # Create HOME/.config directory for Renode
     os.makedirs(os.path.expanduser("~/.config"), exist_ok=True)
@@ -386,13 +426,13 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
 
     # Wait for PTY to be created
     print(f"[Renode] Waiting for PTY: {pty_renode}")
-    timeout = 300  # 60 seconds * 0.2s per loop
+    pty_timeout = 300  # 60 seconds * 0.2s per loop
     while not os.path.exists(pty_renode):
         time.sleep(0.2)
-        timeout -= 1
-        if timeout <= 0:
+        pty_timeout -= 1
+        if pty_timeout <= 0:
             print("[ERROR] Timeout waiting for PTY")
-            return
+            sys.exit(1)
 
     # Make PTY world-readable
     try:
@@ -429,7 +469,7 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
         exit_code = _wait_for_app_main_return([
             ("netcat", nc_output),
             ("ucx_mock", ucx_output),
-        ])
+        ], timeout=timeout)
     except KeyboardInterrupt:
         print("\n[Renode] Received Ctrl+C")
     finally:
@@ -448,7 +488,8 @@ def _stm32_renode(c, example='http_example', build=False, gdb=False):
         print("[Renode] ERROR: Test did not complete - 'app_main returned' not detected")
         print("[Renode] This could mean:")
         print("  - The application hung or crashed")
-        print("  - The test timed out (120 seconds)")
+        if timeout:
+            print(f"  - The test timed out ({timeout} seconds)")
         print("  - Output capture failed")
         sys.exit(1)
 
@@ -498,7 +539,7 @@ def ucx_module(c, set=''):
                 print(f"Available modules: {', '.join(sorted(available_modules))}")
             else:
                 print("No modules available in ucx_api/generated/")
-            return
+            sys.exit(1)
         _save_module(set)
         print(f"Module set to: {set}")
     else:
@@ -558,80 +599,6 @@ def clean(c):
     'docker': 'Build inside Docker container (no local ARM toolchain required)',
     'jobs': 'Number of parallel jobs (default: CPU cores)',
 })
-def stm32_http(c, clean=False, docker=False, jobs=None):
-    """Build http_example for STM32.
-
-    WiFi credentials are configured in config.local.h.
-    For CI, run 'inv generate-config' before building to create the config file.
-    """
-    _stm32_build_target(c, target='http_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_fw_upgrade(c, clean=False, docker=False, jobs=None):
-    """Build fw_upgrade_example for STM32."""
-    _stm32_build_target(c, target='fw_upgrade_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_ble_scan(c, clean=False, docker=False, jobs=None):
-    """Build ble_scan_example for STM32."""
-    _stm32_build_target(c, target='ble_scan_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_ble_advertise(c, clean=False, docker=False, jobs=None):
-    """Build ble_advertise_example for STM32."""
-    _stm32_build_target(c, target='ble_advertise_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_wifi_scan(c, clean=False, docker=False, jobs=None):
-    """Build wifi_scan_example for STM32."""
-    _stm32_build_target(c, target='wifi_scan_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_wifi_ap(c, clean=False, docker=False, jobs=None):
-    """Build wifi_ap_example for STM32."""
-    _stm32_build_target(c, target='wifi_ap_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def stm32_socket(c, clean=False, docker=False, jobs=None):
-    """Build socket_example for STM32."""
-    _stm32_build_target(c, target='socket_example_stm32.elf', clean=clean, docker=docker, jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'docker': 'Build inside Docker container (no local ARM toolchain required)',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
 def stm32_all(c, clean=False, docker=False, jobs=None):
     """Build all STM32 examples."""
     _stm32_build_target(c, target=None, clean=clean, docker=docker, jobs=jobs)
@@ -643,18 +610,6 @@ def stm32_clean(c):
     _stm32_clean(c)
 
 
-@task(help={
-    'example': 'Example to run (http_example or fw_upgrade_example), default: http_example',
-    'build': 'Build before running',
-    'gdb': 'Start GDB server on port 3333 and pause emulation on startup',
-})
-def stm32_renode(c, example='http_example', build=False, gdb=False):
-    """Run STM32 example in Renode emulator with optional GDB server on port 3333."""
-    if not _require_linux('stm32.renode'):
-        return
-    _stm32_renode(c, example=example, build=build, gdb=gdb)
-
-
 @task
 def stm32_cleanup(c):
     """Stop any running Renode containers and UART console connections."""
@@ -664,186 +619,15 @@ def stm32_cleanup(c):
         _stm32_cleanup_containers(c)
 
 
-# Windows platform tasks
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_http(c, clean=False, jobs=None):
-    """Build http_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
-    _build_target(c, target='http_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_fw_upgrade(c, clean=False, jobs=None):
-    """Build fw_upgrade_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
-    _build_target(c, target='fw_upgrade_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_ble_scan(c, clean=False, jobs=None):
-    """Build ble_scan_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
-    _build_target(c, target='ble_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_ble_advertise(c, clean=False, jobs=None):
-    """Build ble_advertise_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
-    _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_wifi_scan(c, clean=False, jobs=None):
-    """Build wifi_scan_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
-    _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_wifi_ap(c, clean=False, jobs=None):
-    """Build wifi_ap_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
-    _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def win32_socket(c, clean=False, jobs=None):
-    """Build socket_example for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
-    _build_target(c, target='socket_example', clean=clean, build_dir='build', jobs=jobs)
-
-
+# Windows/Linux platform tasks
 @task(help={
     'clean': 'Clean build directory before building',
     'jobs': 'Number of parallel jobs (default: CPU cores)',
 })
 def win32_all(c, clean=False, jobs=None):
     """Build all examples for Windows (only available on Windows host)."""
-    if not _is_windows():
-        print("Error: win32 builds are only available on Windows hosts")
-        return
+    _require_windows()
     _build_target(c, target=None, clean=clean, build_dir='build', jobs=jobs)
-
-
-# Linux platform tasks
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_http(c, clean=False, jobs=None):
-    """Build http_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
-    _build_target(c, target='http_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_fw_upgrade(c, clean=False, jobs=None):
-    """Build fw_upgrade_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
-    _build_target(c, target='fw_upgrade_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_ble_scan(c, clean=False, jobs=None):
-    """Build ble_scan_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
-    _build_target(c, target='ble_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_ble_advertise(c, clean=False, jobs=None):
-    """Build ble_advertise_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
-    _build_target(c, target='ble_advertise_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_wifi_scan(c, clean=False, jobs=None):
-    """Build wifi_scan_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
-    _build_target(c, target='wifi_scan_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_wifi_ap(c, clean=False, jobs=None):
-    """Build wifi_ap_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
-    _build_target(c, target='wifi_ap_example', clean=clean, build_dir='build', jobs=jobs)
-
-
-@task(help={
-    'clean': 'Clean build directory before building',
-    'jobs': 'Number of parallel jobs (default: CPU cores)',
-})
-def linux_socket(c, clean=False, jobs=None):
-    """Build socket_example for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
-    _build_target(c, target='socket_example', clean=clean, build_dir='build', jobs=jobs)
 
 
 @task(help={
@@ -852,10 +636,121 @@ def linux_socket(c, clean=False, jobs=None):
 })
 def linux_all(c, clean=False, jobs=None):
     """Build all examples for Linux (only available on Linux host)."""
-    if not _is_linux():
-        print("Error: linux builds are only available on Linux hosts")
-        return
+    _require_native_linux()
     _build_target(c, target=None, clean=clean, build_dir='build', jobs=jobs)
+
+
+# Task factory functions for generating per-example tasks
+def _make_stm32_build_task(target_base):
+    """Create an STM32 build task for a specific example."""
+    def task_func(c, clean=False, docker=False, jobs=None):
+        _stm32_build_target(c, target=f'{target_base}_stm32.elf', clean=clean, docker=docker, jobs=jobs)
+    return task_func
+
+
+def _make_stm32_flash_task(target_base):
+    """Create an STM32 flash task for a specific example."""
+    def task_func(c, build=False, docker=False):
+        # Flash must run on host (ST-Link is connected to host, not Docker)
+        if _running_inside_stm32_docker():
+            print("Error: Flash must be run from host, not inside Docker")
+            print("The ST-Link programmer is connected to the host machine")
+            sys.exit(1)
+
+        # Check if st-flash is installed
+        result = c.run('which st-flash', warn=True, hide=True)
+        if result.exited != 0:
+            print("Error: st-flash not found in PATH")
+            print("\nTo install stlink tools:")
+            if _is_linux():
+                print("  Ubuntu/Debian: sudo apt install stlink-tools")
+                print("  Arch Linux:    sudo pacman -S stlink")
+                print("  Fedora:        sudo dnf install stlink")
+            else:
+                print("  See: https://github.com/stlink-org/stlink")
+            sys.exit(1)
+
+        elf_path = os.path.join(EXAMPLES_DIR, f'bin/{target_base}_stm32.elf')
+
+        # Build first if requested
+        if build:
+            _stm32_build_target(c, target=f'{target_base}_stm32.elf', clean=False, docker=docker, jobs=None)
+        elif not os.path.exists(elf_path):
+            print(f"Error: {elf_path} not found")
+            print("Build first with --build flag or run the build task")
+            sys.exit(1)
+
+        print(f"\n[Flash] Flashing {elf_path} to target...")
+        c.run(f'st-flash --reset write {elf_path} 0x8000000')
+    return task_func
+
+
+def _make_stm32_emulate_task(target_base):
+    """Create an STM32 emulate task for a specific example."""
+    def task_func(c, build=False, gdb=False, timeout=None):
+        if not _require_linux('stm32 emulate'):
+            sys.exit(1)
+        _stm32_renode(c, example=target_base, build=build, gdb=gdb, timeout=timeout)
+    return task_func
+
+
+def _make_win32_build_task(target_base):
+    """Create a Windows build task for a specific example."""
+    def task_func(c, clean=False, jobs=None):
+        _require_windows()
+        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+    return task_func
+
+
+def _enable_windows_ansi():
+    """Enable ANSI escape sequence processing on Windows."""
+    if _is_windows():
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            # STD_OUTPUT_HANDLE = -11
+            # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+            handle = kernel32.GetStdHandle(-11)
+            mode = ctypes.c_ulong()
+            kernel32.GetConsoleMode(handle, ctypes.byref(mode))
+            kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+        except Exception:
+            pass
+
+
+def _make_win32_run_task(target_base):
+    """Create a Windows run task for a specific example."""
+    def task_func(c, clean=False, jobs=None):
+        import subprocess
+        _require_windows()
+        _enable_windows_ansi()
+        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+        exe_path = os.path.join(EXAMPLES_DIR, f'bin/{target_base}.exe')
+        print(f"\n[Run] Running {exe_path}...")
+        # Run directly with subprocess, inheriting stdio for proper terminal handling
+        result = subprocess.run([exe_path])
+        if result.returncode != 0:
+            raise SystemExit(result.returncode)
+    return task_func
+
+
+def _make_linux_build_task(target_base):
+    """Create a Linux build task for a specific example."""
+    def task_func(c, clean=False, jobs=None):
+        _require_native_linux()
+        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+    return task_func
+
+
+def _make_linux_run_task(target_base):
+    """Create a Linux run task for a specific example."""
+    def task_func(c, clean=False, jobs=None):
+        _require_native_linux()
+        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+        exe_path = os.path.join(EXAMPLES_DIR, f'bin/{target_base}')
+        print(f"\n[Run] Running {exe_path}...")
+        c.run(exe_path, pty=_is_linux())
+    return task_func
 
 
 # Create namespaces
@@ -865,44 +760,148 @@ ns = Collection()
 ns.add_task(generate_config, 'generate-config')
 ns.add_task(ucx_module, 'ucx-module')
 
-# STM32 platform namespace
+# STM32 platform namespace - each example gets its own sub-collection with build/flash/emulate tasks
 stm32_ns = Collection('stm32')
-stm32_ns.add_task(stm32_http, 'http')
-stm32_ns.add_task(stm32_fw_upgrade, 'fw-upgrade')
-stm32_ns.add_task(stm32_ble_scan, 'ble-scan')
-stm32_ns.add_task(stm32_ble_advertise, 'ble-advertise')
-stm32_ns.add_task(stm32_wifi_scan, 'wifi-scan')
-stm32_ns.add_task(stm32_wifi_ap, 'wifi-ap')
-stm32_ns.add_task(stm32_socket, 'socket')
-stm32_ns.add_task(stm32_all, 'all')
+stm32_ns.add_task(stm32_all, 'build-all')
 stm32_ns.add_task(stm32_clean, 'clean')
-stm32_ns.add_task(stm32_renode, 'renode')
 stm32_ns.add_task(stm32_cleanup, 'cleanup')
+
+for task_name, target_base, supports_emulation in EXAMPLES_TASKS:
+    example_ns = Collection(task_name)
+
+    # Build task
+    build_task = task(
+        _make_stm32_build_task(target_base),
+        help={
+            'clean': 'Clean build directory before building',
+            'docker': 'Build inside Docker container (no local ARM toolchain required)',
+            'jobs': 'Number of parallel jobs (default: CPU cores)',
+        }
+    )
+    build_task.__doc__ = f"Build {target_base} for STM32."
+    example_ns.add_task(build_task, 'build')
+
+    # Flash task
+    flash_task = task(
+        _make_stm32_flash_task(target_base),
+        help={
+            'build': 'Build before flashing',
+            'docker': 'Use Docker for building (only with --build)',
+        }
+    )
+    flash_task.__doc__ = f"Flash {target_base} to STM32 target."
+    example_ns.add_task(flash_task, 'flash')
+
+    # Emulate task (only for examples that ucx_mock supports)
+    if supports_emulation:
+        emulate_task = task(
+            _make_stm32_emulate_task(target_base),
+            help={
+                'build': 'Build before emulating',
+                'gdb': 'Start GDB server on port 3333 and pause emulation on startup',
+                'timeout': 'Timeout in seconds (default: no timeout, wait indefinitely)',
+            }
+        )
+        emulate_task.__doc__ = f"Run {target_base} in Renode emulator."
+        example_ns.add_task(emulate_task, 'emulate')
+
+    stm32_ns.add_collection(example_ns)
+
 ns.add_collection(stm32_ns)
 
-# Windows platform namespace
+# Windows platform namespace - each example gets its own sub-collection with build/run tasks
 if _is_windows():
     win32_ns = Collection('win32')
-    win32_ns.add_task(win32_http, 'http')
-    win32_ns.add_task(win32_fw_upgrade, 'fw-upgrade')
-    win32_ns.add_task(win32_ble_scan, 'ble-scan')
-    win32_ns.add_task(win32_ble_advertise, 'ble-advertise')
-    win32_ns.add_task(win32_wifi_scan, 'wifi-scan')
-    win32_ns.add_task(win32_wifi_ap, 'wifi-ap')
-    win32_ns.add_task(win32_socket, 'socket')
-    win32_ns.add_task(win32_all, 'all')
+    win32_ns.add_task(win32_all, 'build-all')
+
+    for task_name, target_base, _ in EXAMPLES_TASKS:
+        example_ns = Collection(task_name)
+
+        # Build task
+        build_task = task(
+            _make_win32_build_task(target_base),
+            help={
+                'clean': 'Clean build directory before building',
+                'jobs': 'Number of parallel jobs (default: CPU cores)',
+            }
+        )
+        build_task.__doc__ = f"Build {target_base} for Windows."
+        example_ns.add_task(build_task, 'build')
+
+        # Run task
+        run_task = task(
+            _make_win32_run_task(target_base),
+            help={
+                'clean': 'Clean build directory before building',
+                'jobs': 'Number of parallel jobs (default: CPU cores)',
+            }
+        )
+        run_task.__doc__ = f"Build and run {target_base} for Windows."
+        example_ns.add_task(run_task, 'run')
+
+        win32_ns.add_collection(example_ns)
+
     ns.add_collection(win32_ns)
 
-# Linux platform namespace
+# Linux platform namespace - each example gets its own sub-collection with build/run tasks
 if _is_linux():
     linux_ns = Collection('linux')
-    linux_ns.add_task(linux_http, 'http')
-    linux_ns.add_task(linux_fw_upgrade, 'fw-upgrade')
-    linux_ns.add_task(linux_ble_scan, 'ble-scan')
-    linux_ns.add_task(linux_ble_advertise, 'ble-advertise')
-    linux_ns.add_task(linux_wifi_scan, 'wifi-scan')
-    linux_ns.add_task(linux_wifi_ap, 'wifi-ap')
-    linux_ns.add_task(linux_socket, 'socket')
-    linux_ns.add_task(linux_all, 'all')
+    linux_ns.add_task(linux_all, 'build-all')
+
+    for task_name, target_base, _ in EXAMPLES_TASKS:
+        example_ns = Collection(task_name)
+
+        # Build task
+        build_task = task(
+            _make_linux_build_task(target_base),
+            help={
+                'clean': 'Clean build directory before building',
+                'jobs': 'Number of parallel jobs (default: CPU cores)',
+            }
+        )
+        build_task.__doc__ = f"Build {target_base} for Linux."
+        example_ns.add_task(build_task, 'build')
+
+        # Run task
+        run_task = task(
+            _make_linux_run_task(target_base),
+            help={
+                'clean': 'Clean build directory before building',
+                'jobs': 'Number of parallel jobs (default: CPU cores)',
+            }
+        )
+        run_task.__doc__ = f"Build and run {target_base} for Linux."
+        example_ns.add_task(run_task, 'run')
+
+        linux_ns.add_collection(example_ns)
+
     ns.add_collection(linux_ns)
 
+
+# Root build-all task that builds for all available platforms
+@task
+def build_all(ctx, clean=False, docker=False, jobs=None):
+    """Build all examples for all available platforms."""
+    platforms_built = []
+
+    # Always available: STM32 (via Docker or inside container)
+    print("=== Building STM32 examples ===")
+    stm32_all(ctx, clean=clean, docker=docker, jobs=jobs)
+    platforms_built.append("stm32")
+
+    # Linux native builds (only outside Docker on Linux)
+    if _is_linux() and not _running_inside_stm32_docker():
+        print("\n=== Building Linux examples ===")
+        linux_all(ctx, clean=clean, jobs=jobs)
+        platforms_built.append("linux")
+
+    # Windows native builds
+    if _is_windows():
+        print("\n=== Building Win32 examples ===")
+        win32_all(ctx, clean=clean, jobs=jobs)
+        platforms_built.append("win32")
+
+    print(f"\n=== Build completed for platforms: {', '.join(platforms_built)} ===")
+
+
+ns.add_task(build_all, 'build-all')

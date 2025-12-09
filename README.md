@@ -150,16 +150,30 @@ See [examples/README.md](examples/README.md) for complete build instructions and
 
 ```sh
 # Run Ceedling unit tests
-invoke test.ceedling
+invoke test.ceedling.run
 
 # Run Zephyr Twister tests (automatically sets up west workspace)
-invoke test.zephyr
+invoke test.zephyr.run
 
 # Clean test artifacts
-invoke clean.ceedling
-invoke clean.zephyr
-invoke clean.west      # Remove west workspace
+invoke test.ceedling.clean
+invoke test.zephyr.clean
+invoke test.zephyr.clean-west  # Remove west workspace
 ```
+
+## Try it in GitHub Codespaces
+
+The easiest way to try ucxclient is using GitHub Codespaces. Click the button below to open a fully configured development environment in your browser:
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/u-blox/ucxclient)
+
+The Codespace includes:
+
+* Pre-installed ARM toolchain and Renode emulator
+* Example that runs on an emulated STM32F4 board connected to a mocked u-connectXpress module
+* Ready-to-use VS Code debug configuration
+
+Once the Codespace is ready, you will see a welcome text with further instructions.
 
 ## Porting and Configuration
 

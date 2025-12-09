@@ -1,0 +1,81 @@
+================================================================================
+     Welcome to ucxclient Codespace!
+================================================================================
+
+This Codespace is pre-configured to build and debug the HTTP example running
+on an emulated STM32F4 board connected to a mocked u-connectXpress module.
+
+
+WHAT'S INCLUDED
+---------------
+  * ARM GNU Toolchain (13.2) - Cross-compiler for STM32
+  * Renode                   - Hardware emulator for STM32F4
+  * ucx_mock                 - u-connectXpress module mock
+  * PyInvoke                 - Build automation
+
+
+QUICK START
+-----------
+
+1. Run the Demo
+   -------------
+   The fastest way to see ucxclient in action is to start the debug session
+   by pressing F5.
+
+   This will automatically:
+     - Build the HTTP example for STM32
+     - Start Renode emulator with GDB server
+     - Attach the debugger and stop at main()
+
+   Set breakpoints in examples/http_example.c and step through the code!
+
+
+2. Using PyInvoke Tasks
+   --------------------
+   For more control, you can use PyInvoke tasks from the terminal:
+
+   List all available tasks:
+     $ cd examples
+     $ inv --list
+
+   Build the HTTP example:
+     $ inv stm32.http.build
+
+   Run in emulator (without debugger):
+     $ inv stm32.http.emulate
+
+   This starts the Renode emulator with the HTTP example. You'll see:
+     - The STM32F4 board booting
+     - Connection to the mocked u-connectXpress module
+     - HTTP request/response output
+
+
+PROJECT STRUCTURE
+-----------------
+  examples/               Example applications
+  examples/http_example.c HTTP GET example source
+  src/                    ucxclient library source
+  ucx_api/                u-connectXpress API
+  ports/                  Platform porting layer
+
+
+USEFUL LINKS
+------------
+  * ucxclient README:     See README.md in the root directory
+  * Examples README:      See examples/README.md
+
+
+TROUBLESHOOTING
+---------------
+
+Build fails with missing submodule:
+  $ git submodule update --init --recursive
+
+Emulator doesn't start (make sure no other Renode instance is running):
+  $ cd examples
+  $ inv stm32.cleanup
+
+
+================================================================================
+                            Happy coding!
+================================================================================

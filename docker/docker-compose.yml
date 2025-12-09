@@ -12,6 +12,7 @@ services:
     working_dir: /project
     user: "${HOST_UID:-0}:${HOST_GID:-0}"
     environment:
+      - UCX_STM32_DOCKER=1
       - WIFI_SSID=${WIFI_SSID:-ubx}
       - WIFI_PSK=${WIFI_PSK:-}
       - HOME=/tmp/renode

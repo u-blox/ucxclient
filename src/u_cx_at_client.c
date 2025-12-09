@@ -763,16 +763,20 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient)
     return cmdEnd(pClient);
 }
 
-void uCxAtClientHandleRx(uCxAtClient_t *pClient)
+int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
 {
     if (!pClient->opened) {
-        return;
+        return 0;
     }
 
+    int32_t ret = 0;
     U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
     if (!pClient->executingCmd) {
-        handleRxData(pClient);
+        int32_t parserRet = handleRxData(pClient);
+        if (parserRet == AT_PARSER_ERROR && pClient->status == U_CX_ERROR_IO) {
+            ret = pClient->lastIoError;
+        }
     }
 
     U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
@@ -780,6 +784,8 @@ void uCxAtClientHandleRx(uCxAtClient_t *pClient)
 #if U_CX_USE_URC_QUEUE == 1
     processUrcs(pClient);
 #endif
+
+    return ret;
 }
 
 int32_t uCxAtClientGetLastIoError(uCxAtClient_t *pClient)

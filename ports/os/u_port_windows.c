@@ -20,6 +20,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 
@@ -74,7 +75,10 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                     "RX thread started");
 
     while (!pCtx->terminateRxTask) {
-        uCxAtClientHandleRx(pCtx->pClient);
+        if (uCxAtClientHandleRx(pCtx->pClient) < 0) {
+            printf("Error in RX handling thread\n");
+            exit(1);
+        }
         // Sleep for polling interval (10ms)
         Sleep(10);
     }

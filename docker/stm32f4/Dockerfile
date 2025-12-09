@@ -11,6 +11,8 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     netcat-openbsd \
+    sudo \
+    gdb-multiarch \
     && pip3 install --break-system-packages invoke \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -33,10 +35,20 @@ RUN wget -q https://github.com/renode/renode/releases/download/v1.15.3/renode-1.
 # Add Renode to PATH
 ENV PATH="/opt/renode:${PATH}"
 
+# Mark that we're inside the STM32 Docker container (prevents re-invoking docker)
+ENV UCX_STM32_DOCKER=1
+
 # Ensure PATH is available in login shells
 RUN echo 'export PATH=/opt/renode:/opt/arm-toolchain/bin:$PATH' >> /etc/profile
 
 # Configure git to allow /project directory (system-level for all users)
-RUN git config --system --add safe.directory /project
+RUN git config --system --add safe.directory /project \
+    && git config --system --add safe.directory '*'
+
+# Create vscode user for devcontainer/codespaces support
+RUN groupadd --gid 1000 vscode \
+    && useradd --uid 1000 --gid 1000 -m vscode \
+    && echo vscode ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/vscode \
+    && chmod 0440 /etc/sudoers.d/vscode
 
 WORKDIR /project

@@ -324,8 +324,9 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient);
   * or when the client is not opened (it will do nothing in those cases).
   *
   * @param[in]  pClient:   the AT client from uCxAtClientInit().
+  * @retval                0 on success, negative value on error.
   */
-void uCxAtClientHandleRx(uCxAtClient_t *pClient);
+int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient);
 
 /**
   * @brief  Get last I/O error code

@@ -100,17 +100,23 @@ def clean_west(c):
 
 
 # Create namespaces for better organization
-test_ns = Collection('test')
-test_ns.add_task(ceedling, 'ceedling')
-test_ns.add_task(zephyr, 'zephyr')
+# Ceedling sub-collection under test
+ceedling_ns = Collection('ceedling')
+ceedling_ns.add_task(ceedling, 'run')
+ceedling_ns.add_task(clean_ceedling, 'clean')
 
-clean_ns = Collection('clean')
-clean_ns.add_task(clean_ceedling, 'ceedling')
-clean_ns.add_task(clean_zephyr, 'zephyr')
-clean_ns.add_task(clean_west, 'west')
+# Zephyr sub-collection under test
+zephyr_ns = Collection('zephyr')
+zephyr_ns.add_task(zephyr, 'run')
+zephyr_ns.add_task(clean_zephyr, 'clean')
+zephyr_ns.add_task(clean_west, 'clean-west')
+
+# Test namespace with sub-collections
+test_ns = Collection('test')
+test_ns.add_collection(ceedling_ns)
+test_ns.add_collection(zephyr_ns)
 
 # Create main namespace
 ns = Collection()
 ns.add_collection(test_ns)
-ns.add_collection(clean_ns)
 ns.add_collection(examples_ns, 'examples')
