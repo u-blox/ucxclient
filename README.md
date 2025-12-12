@@ -8,7 +8,9 @@ The client can run on both bare-metal and OS systems using a tiny porting layer 
 
 There are two levels of APIs included in this repo; the lower [uAtClient API](#uatclient-api) and the upper [u-connectXpress API](#u-connectxpress-api).
 
-If you need even more features you can checkout [ubxlib](https://github.com/u-blox/ubxlib) which uses the ucxclient for communicating with the new u-connectXpress modules.
+See the [examples/](examples/README.md) directory for small, working examples that run on Windows, Linux and STM32F4. If you want a Windows desktop example that integrates the
+`ucxclient`, check out the [ucx-windows-app](https://github.com/u-blox/ucx-windows-app)
+project which demonstrates using the ucxclient on Windows with a TUI front-end.
 
 **Please note: The code in this repo is in experimental status and changes to the APIs are to be expected.**
 
