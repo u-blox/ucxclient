@@ -19,7 +19,7 @@ project which demonstrates using the ucxclient on Windows with a TUI front-end.
 This API contains an AT client implementation that handles transmission of AT commands, reception and parsing of AT responses and URCs. You will find the uAtClient API in the [inc/](inc) directory.
 
 ### Example
-
+ 
 ```c
 #include "u_cx_at_client.h"
 #include "u_port.h"
