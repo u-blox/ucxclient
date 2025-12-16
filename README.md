@@ -2,7 +2,8 @@
 
 This repo contains a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
 
-* NORA-W36.
+* NORA-W36
+* NORA-B26
 
 The client can run on both bare-metal and OS systems using a tiny porting layer (see [Porting and Configuration](#porting-and-configuration))
 
