@@ -82,7 +82,7 @@ void main(void)
 
 ## u-connectXpress API
 
-This API is a higher level API that that simplifies communication with new u-connectXpress u-blox modules (only NORA-W36 at the moment).
+This API is a higher level API that that simplifies communication with new u-connectXpress u-blox modules (see support list at the top of this page).
 Using this API eliminates the need of manually sending AT commands to the module.
 You will find the u-connectXpress API in the [ucx_api/](ucx_api) directory.
 
