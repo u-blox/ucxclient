@@ -177,7 +177,7 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     printf("Firmware file: %s (%ld bytes)\n", pFirmwareFile, (long)st.st_size);
 
     // Initialize example utilities and AT client
-    uCxAtClient_t *pClient = exampleInit(pUartDev, 115200, true);
+    uCxAtClient_t *pClient = exampleInit(pUartDev, 115200, false);
     if (pClient == NULL) {
         fclose(pFile);
         return -1;

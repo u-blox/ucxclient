@@ -120,7 +120,7 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     }
 
     // Initialize example utilities and AT client
-    uCxAtClient_t *pClient = exampleInit(pDevice, 115200, true);
+    uCxAtClient_t *pClient = exampleInit(pDevice, 115200, false);
     if (pClient == NULL) {
         return 1;
     }
