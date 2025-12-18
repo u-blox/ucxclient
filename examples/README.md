@@ -6,7 +6,7 @@ All examples are designed to work with both OS and no-OS configurations by using
 
 | Files               | Description |
 | ------------------- | ----------- |
-| http_example.c      | Example of doing a HTTP GET request using the uCx API. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
+| http_example.c      | Example of doing a HTTP GET request using the uCx API. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. This example will also illustrate how to switch baud rate for increased throughput. |
 | fw_upgrade_example.c | Example of performing firmware upgrade using AT+USYFWUS command and XMODEM protocol. This example can be compiled for both OS (POSIX) and no-OS (bare-metal) configurations. |
 | ble_scan_example.c  | Example of performing a BLE device discovery scan. Demonstrates how to start/stop BLE scanning and handle scan result URCs. |
 | ble_advertise_example.c | Example of BLE advertising with custom advertising data. Demonstrates how to configure and start BLE advertising. |
