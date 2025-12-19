@@ -723,24 +723,18 @@ int32_t uCxBluetoothGetPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, uCxBtG
     return ret;
 }
 
-int32_t uCxBluetoothSetMaxOutputPower1(uCxHandle_t * puCxHandle, int32_t int_dBm)
+int32_t uCxBluetoothSetMaxOutputPower(uCxHandle_t * puCxHandle, int32_t int_dBm)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTMOP=", "d", int_dBm, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxBluetoothSetMaxOutputPower2(uCxHandle_t * puCxHandle, int32_t int_dBm, int32_t decimal_dBm)
-{
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTMOP=", "dd", int_dBm, decimal_dBm, U_CX_AT_UTIL_PARAM_LAST);
-}
-
-int32_t uCxBluetoothGetMaxOutputPower(uCxHandle_t * puCxHandle, uCxBtGetMaxOutputPower_t * pBtGetMaxOutputPowerRsp)
+int32_t uCxBluetoothGetMaxOutputPower(uCxHandle_t * puCxHandle, int32_t * pIntDbm)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UBTMOP?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTMOP:", NULL, NULL, "dd", &pBtGetMaxOutputPowerRsp->int_dBm, &pBtGetMaxOutputPowerRsp->decimal_dBm, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTMOP:", NULL, NULL, "d", pIntDbm, U_CX_AT_UTIL_PARAM_LAST);
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
