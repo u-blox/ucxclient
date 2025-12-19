@@ -295,6 +295,12 @@ int32_t uCxWifiGetActiveChannels(uCxHandle_t * puCxHandle, uIntList_t * pChannel
     return ret;
 }
 
+int32_t uCxWifiClearMaxOutputPower(uCxHandle_t * puCxHandle)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWMOPC", "", U_CX_AT_UTIL_PARAM_LAST);
+}
+
 void uCxWifiStationScanDefaultBegin(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;

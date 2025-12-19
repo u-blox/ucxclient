@@ -684,6 +684,34 @@ int32_t uCxBluetoothGetPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, uCxBtG
     return ret;
 }
 
+int32_t uCxBluetoothSetMaxOutputPower(uCxHandle_t * puCxHandle, int32_t int_dBm)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTMOP=", "d", int_dBm, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxBluetoothGetMaxOutputPower(uCxHandle_t * puCxHandle, int32_t * pIntDbm)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTMOP?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTMOP:", NULL, NULL, "d", pIntDbm, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxBluetoothClearMaxOutputPower(uCxHandle_t * puCxHandle)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTMOPC", "", U_CX_AT_UTIL_PARAM_LAST);
+}
+
 void uCxBluetoothRegisterConnect(uCxHandle_t * puCxHandle, uUEBTC_t callback)
 {
     puCxHandle->callbacks.UEBTC = callback;

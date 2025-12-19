@@ -203,6 +203,26 @@ int32_t uCxSocketReceiveFrom(uCxHandle_t * puCxHandle, int32_t socket_handle, in
     return ret;
 }
 
+int32_t uCxSocketSendTo(uCxHandle_t * puCxHandle, int32_t socket_handle, uSockIpAddress_t * remote_ip, int32_t remote_port, const uint8_t * binary_data, int32_t binary_data_len)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t written_length;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+USOSTB=", "didB", socket_handle, remote_ip, remote_port, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOSTB:", NULL, NULL, "-d", &written_length, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    if (ret >= 0) {
+        ret = written_length;
+    }
+    return ret;
+}
+
 int32_t uCxSocketGetPeerAddress(uCxHandle_t * puCxHandle, int32_t socket_handle, uCxSocketGetPeerAddress_t * pSocketGetPeerAddressRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;

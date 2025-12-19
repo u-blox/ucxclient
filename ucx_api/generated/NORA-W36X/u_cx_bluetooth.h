@@ -1176,6 +1176,48 @@ int32_t uCxBluetoothRequestPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, in
 int32_t uCxBluetoothGetPhy(uCxHandle_t * puCxHandle, int32_t conn_handle, uCxBtGetPhy_t * pBtGetPhyRsp);
 
 /**
+ * Set the Bluetooth Max Output Power level.
+ * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
+ * 
+ * Output AT command:
+ * > AT+UBTMOP=<int_dBm>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      int_dBm:    TX power level in dBm, integer part.
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxBluetoothSetMaxOutputPower(uCxHandle_t * puCxHandle, int32_t int_dBm);
+
+/**
+ * Read current Bluetooth Max Output Power level. Will return error if the Bluetooth Max Output Power has not been set
+ * and the default power level is used.
+ * 
+ * Output AT command:
+ * > AT+UBTMOP?
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pIntDbm:    TX power level in dBm, integer part.
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxBluetoothGetMaxOutputPower(uCxHandle_t * puCxHandle, int32_t * pIntDbm);
+
+/**
+ * Clear any previously set max Bluetooth Max Output Power level.
+ * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
+ * 
+ * Output AT command:
+ * > AT+UBTMOPC
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxBluetoothClearMaxOutputPower(uCxHandle_t * puCxHandle);
+
+/**
  * Register Connect event callback
  * 
  * Event indicating successful Bluetooth connection.
