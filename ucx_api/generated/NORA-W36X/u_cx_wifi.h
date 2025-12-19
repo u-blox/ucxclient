@@ -611,6 +611,20 @@ int32_t uCxWifiGetChannelList(uCxHandle_t * puCxHandle, uIntList_t * pChannelLis
 int32_t uCxWifiGetActiveChannels(uCxHandle_t * puCxHandle, uIntList_t * pChannelList);
 
 /**
+ * Clear any previously set Wi-Fi Max Output Power level.
+ * 
+ * Notes:
+ * Requires AT&W and a reboot before taking effect.
+ * 
+ * Output AT command:
+ * > AT+UWMOPC
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxWifiClearMaxOutputPower(uCxHandle_t * puCxHandle);
+
+/**
  * Initiate synchronous Wi-Fi scan (will lock AT interface until scan has finished)
  * 
  * Output AT command:

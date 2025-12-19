@@ -310,6 +310,23 @@ int32_t uCxSocketListen2(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_
 int32_t uCxSocketReceiveFrom(uCxHandle_t * puCxHandle, int32_t socket_handle, int32_t length, uint8_t * pDataBuf, uCxSocketReceiveFrom_t * pSocketReceiveFromRsp);
 
 /**
+ * Sends binary data to the specified UDP socket.
+ * 
+ * Output AT command:
+ * > AT+USOSTB=<socket_handle>,<remote_ip>,<remote_port>,<binary_data>,<binary_data_len>
+ *
+ * @param[in]  puCxHandle:      uCX API handle
+ * @param      socket_handle:   Socket identifier be used for any operation on that socket.
+ * @param      remote_ip:       The ip address of the remote peer.
+ * @param      remote_port:     The port of the remote peer.
+ * @param      binary_data:     The data to write.
+ * @param      binary_data_len: length of binary_data
+ * @return                      Negative value on error. On success:
+ *                              Data length that was written.
+ */
+int32_t uCxSocketSendTo(uCxHandle_t * puCxHandle, int32_t socket_handle, uSockIpAddress_t * remote_ip, int32_t remote_port, const uint8_t * binary_data, int32_t binary_data_len);
+
+/**
  * Get the address of remote peer.
  * 
  * Output AT command:
