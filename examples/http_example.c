@@ -44,6 +44,7 @@
 #include "u_cx_wifi.h"
 #include "u_cx_http.h"
 #include "u_cx_system.h"
+#include "u_cx_general.h"
 #include "example_utils.h"
 
 /* ----------------------------------------------------------------
@@ -95,10 +96,12 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
 {
     exampleCheckHelp(argc, argv, "http_example",
         "Example of how to do a HTTP GET request using the uCx API.\n"
-        "Connects to WiFi, sends HTTP GET to www.google.com, and prints response.",
+        "Connects to WiFi, sends HTTP GET to www.google.com, and prints response.\n"
+        "This example will also illustrate how to change UART baud rate on the module.",
         "[uart_device] [wifi_ssid] [wifi_psk]");
 
     uCxHandle_t ucxHandle;
+    int32_t ret;
     const char *pDevice = U_EXAMPLE_UART;
     const char *pSsid = U_EXAMPLE_SSID;
     const char *pWpaPsk = U_EXAMPLE_WPA_PSK;
@@ -115,30 +118,67 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
 
     if (*pWpaPsk == 0) {
         U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "Wi-Fi not configured - connection will not work");
-        U_CX_LOG_LINE(U_CX_LOG_CH_WARN,
-            "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.");
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "- You need to define U_EXAMPLE_UART, U_EXAMPLE_SSID & U_EXAMPLE_WPA_PSK.");
     }
 
     // Initialize example utilities and AT client
-    uCxAtClient_t *pClient = exampleInit(pDevice, 115200, true);
+    int currentBaud = 115200;
+    uCxAtClient_t *pClient = exampleInit(pDevice, currentBaud, false);
     if (pClient == NULL) {
-        return 1;
+        goto fail;
     }
 
     uCxInit(pClient, &ucxHandle);
+
+    // Check communication with device - try different baud rates if needed
+    uCxAtClientSetCommandTimeout(pClient, 500, false);
+    if (uCxGeneralAttention(&ucxHandle) != 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "No response from device at 115200 baud - try 921600 baud");
+        uCxAtClientClose(pClient);
+        currentBaud = 921600;
+        uCxAtClientOpen(pClient, currentBaud, true);
+        if (uCxGeneralAttention(&ucxHandle) != 0) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "No response from device");
+            goto fail;
+        }
+    }
+
+    // Register URC callbacks
     uCxWifiRegisterStationNetworkUp(&ucxHandle, networkUpUrc);
     uCxHttpRegisterRequestStatus(&ucxHandle, httpRequestStatus);
 
+    // Reboot the module to ensure a clean state
     uCxSystemReboot(&ucxHandle);
+    if (currentBaud == 921600) {
+        // If module was at 921600 baud, after reboot it will be back to 115200
+        U_CX_PORT_SLEEP_MS(200);
+        uCxAtClientClose(pClient);
+        currentBaud = 115200;
+        uCxAtClientOpen(pClient, currentBaud, true);
+    }
     U_CX_PORT_SLEEP_MS(4000);
     uCxSystemSetEchoOff(&ucxHandle);
+
+    // Increase UART speed for better throughput
+    ret = uCxSystemSetUartSettings3(&ucxHandle, 921600, 1, 1);
+    if (ret < 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "uCxSystemSetUartSettings3() failed");
+        goto fail;
+    }
+    // Re-open AT client at new speed
+    uCxAtClientClose(pClient);
+    U_CX_PORT_SLEEP_MS(200);
+    uCxAtClientOpen(pClient, 921600, true);
+    if (uCxGeneralAttention(&ucxHandle) != 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "No response from device at 921600 baud");
+        goto fail;
+    }
 
     uCxWifiStationSetSecurityWpa(&ucxHandle, 0, pWpaPsk, U_WIFI_WPA_THRESHOLD_WPA2);
     uCxWifiStationSetConnectionParams(&ucxHandle, 0, pSsid);
     uCxWifiStationConnect(&ucxHandle, 0);
     exampleWaitEvent(URC_FLAG_NETWORK_UP, 20);
 
-    int32_t ret;
     const int32_t sessionId = 0;
 
     // Configure HTTP connection
@@ -183,10 +223,21 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     // Disconnect HTTP session
     uCxHttpDisconnect(&ucxHandle, sessionId);
 
+    // Reboot module to restore default UART settings
+    uCxSystemReboot(&ucxHandle);
+
     // Clean up
     uCxAtClientClose(pClient);
     uCxAtClientDeinit(pClient);
     uPortDeinit();
 
     return 0;
+
+fail:
+    if (pClient != NULL) {
+        uCxAtClientClose(pClient);
+        uCxAtClientDeinit(pClient);
+        uPortDeinit();
+    }
+    return 1;
 }
