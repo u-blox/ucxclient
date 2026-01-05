@@ -11,6 +11,10 @@
 #include "u_cx_at_client.h"
 #include "u_cx_types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
@@ -51,5 +55,8 @@ void uCxInit(uCxAtClient_t *pAtClient, uCxHandle_t *puCxHandle);
   */
 int32_t uCxEnd(uCxHandle_t *puCxHandle);
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif // U_CX_H
