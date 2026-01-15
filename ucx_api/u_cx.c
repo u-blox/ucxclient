@@ -67,10 +67,25 @@ void uCxInit(uCxAtClient_t *pClient, uCxHandle_t *puCxHandle)
 {
     memset(puCxHandle, 0, sizeof(uCxHandle_t));
     puCxHandle->pAtClient = pClient;
+    U_CX_MUTEX_CREATE(puCxHandle->sessionMutex);  // Initialize session mutex
     uCxAtClientSetUrcCallback(pClient, urcCallback, puCxHandle);
 }
 
 int32_t uCxEnd(uCxHandle_t *puCxHandle)
 {
     return uCxAtClientCmdEnd(puCxHandle->pAtClient);
+}
+
+void uCxSessionLock(uCxHandle_t *puCxHandle)
+{
+    if (puCxHandle != NULL) {
+        U_CX_MUTEX_LOCK(puCxHandle->sessionMutex);
+    }
+}
+
+void uCxSessionUnlock(uCxHandle_t *puCxHandle)
+{
+    if (puCxHandle != NULL) {
+        U_CX_MUTEX_UNLOCK(puCxHandle->sessionMutex);
+    }
 }
