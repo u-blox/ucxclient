@@ -307,6 +307,18 @@ int32_t uCxSocketGetHostByName(uCxHandle_t * puCxHandle, const char * host_name,
     return ret;
 }
 
+int32_t uCxSocketJoinMulticastGroup(uCxHandle_t * puCxHandle, int32_t socket_handle, const char * multicast_addr)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USOMG=", "dds", socket_handle, 1, multicast_addr, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxSocketLeaveMulticastGroup(uCxHandle_t * puCxHandle, int32_t socket_handle, const char * multicast_addr)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USOMG=", "dds", socket_handle, 0, multicast_addr, U_CX_AT_UTIL_PARAM_LAST);
+}
+
 void uCxSocketRegisterConnect(uCxHandle_t * puCxHandle, uUESOC_t callback)
 {
     puCxHandle->callbacks.UESOC = callback;
@@ -325,4 +337,9 @@ void uCxSocketRegisterClosed(uCxHandle_t * puCxHandle, uUESOCL_t callback)
 void uCxSocketRegisterIncomingConnection(uCxHandle_t * puCxHandle, uUESOIC_t callback)
 {
     puCxHandle->callbacks.UESOIC = callback;
+}
+
+void uCxSocketRegisterDirectBinaryDataFrom(uCxHandle_t * puCxHandle, uUESODBF_t callback)
+{
+    puCxHandle->callbacks.UESODBF = callback;
 }

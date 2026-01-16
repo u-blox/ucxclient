@@ -36,12 +36,17 @@ static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine, si
                         uint8_t *pBinaryData, size_t binaryDataLen)
 {
     (void)pClient;
-    (void)pTag;
-    (void)pBinaryData;
-    (void)binaryDataLen;
     uCxHandle_t *puCxHandle = (uCxHandle_t *)pTag;
     char *pParams = pLine;
     size_t paramLen = lineLength;
+    
+    // Debug: Log binary data info
+    if (binaryDataLen > 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
+                        "urcCallback: BINARY DATA PRESENT! len=%u, ptr=%p", 
+                        (unsigned)binaryDataLen, pBinaryData);
+    }
+    
     // Start by checking where params starts. All URCs that have params will have a ':' before params
     while (pParams < pLine + lineLength) {
         if (*pParams == ':') {
@@ -56,7 +61,7 @@ static void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine, si
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
                     "Received URC '%s', params: '%s'", pLine, pParams);
-    uCxUrcParse(puCxHandle, pLine, pParams, paramLen);
+    uCxUrcParse(puCxHandle, pLine, pParams, paramLen, pBinaryData, binaryDataLen);
 }
 
 /* ----------------------------------------------------------------

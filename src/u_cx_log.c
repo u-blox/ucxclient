@@ -25,6 +25,7 @@
 #include <inttypes.h>
 
 #include "u_cx_log.h"
+#include "u_cx_at_config.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -42,6 +43,8 @@
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
 static bool gUCxLogEnabled = true;
+static U_CX_MUTEX_HANDLE gLogMutex;
+static bool gLogMutexInitialized = false;
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -77,4 +80,29 @@ void uCxLogEnable(void)
 bool uCxLogIsEnabled(void)
 {
     return gUCxLogEnabled;
+}
+
+void uCxLogInit(void)
+{
+    if (!gLogMutexInitialized) {
+        U_CX_MUTEX_CREATE(gLogMutex);
+        gLogMutexInitialized = true;
+    }
+}
+
+void uCxLogLock(void)
+{
+    // Lazy init as fallback, but uCxLogInit() should be called at startup
+    if (!gLogMutexInitialized) {
+        U_CX_MUTEX_CREATE(gLogMutex);
+        gLogMutexInitialized = true;
+    }
+    U_CX_MUTEX_LOCK(gLogMutex);
+}
+
+void uCxLogUnlock(void)
+{
+    if (gLogMutexInitialized) {
+        U_CX_MUTEX_UNLOCK(gLogMutex);
+    }
 }

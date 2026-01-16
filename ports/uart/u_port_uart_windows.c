@@ -120,10 +120,10 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
         return INVALID_HANDLE_VALUE;
     }
 
-    // Set timeouts
-    timeouts.ReadIntervalTimeout = 0;
-    timeouts.ReadTotalTimeoutMultiplier = 0;
-    timeouts.ReadTotalTimeoutConstant = 100;
+    // Set timeouts - BLOCKING with character-level timeout for URC reception
+    timeouts.ReadIntervalTimeout = 10;        // 10ms max between characters
+    timeouts.ReadTotalTimeoutMultiplier = 1;  // 1ms per byte
+    timeouts.ReadTotalTimeoutConstant = 100;  // Base timeout 100ms
     timeouts.WriteTotalTimeoutMultiplier = 0;
     timeouts.WriteTotalTimeoutConstant = 1000;
 

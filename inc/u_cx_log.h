@@ -39,17 +39,20 @@
 #define U_CX_LOG_CH_WARN   U_CX_LOG_WARNING,   ANSI_YEL "[WARN ]"
 #define U_CX_LOG_CH_ERROR  U_CX_LOG_ERROR,     ANSI_RED "[ERROR]"
 
-/* Simple line logging printf style (\n will be added automatically) */
+/* Simple line logging printf style (\n will be added automatically) 
+   NOTE: These single-line logs lock and unlock within the same macro */
 #define U_CX_LOG_LINE(logCh, format, ...) \
-    _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__)
+    do { _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__); \
+         _U_CX_LOG_END(logCh, ""); } while(0)
 #define U_CX_LOG_LINE_I(logCh, instance, format, ...) \
-    _U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__)
+    do { _U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__); \
+         _U_CX_LOG_END(logCh, ""); } while(0)
 
 /* Log API for splitting up line in several U_CX_LOG() calls */
 #define U_CX_LOG_BEGIN(logCh)              _U_CX_LOG_BEGIN_FMT(logCh, "")
 #define U_CX_LOG_BEGIN_I(logCh, instance)  _U_CX_LOG_BEGIN_I_FMT(logCh, instance, "")
 #define U_CX_LOG(logCh, format, ...)       _U_CX_LOG(logCh, format, ##__VA_ARGS__)
-#define U_CX_LOG_END(logCh)                _U_CX_LOG(logCh, ANSI_RST "\n")
+#define U_CX_LOG_END(logCh)                _U_CX_LOG_END(logCh, ANSI_RST "\n")
 
 /* ANSI color escape codes */
 #if U_CX_LOG_USE_ANSI_COLOR
@@ -73,17 +76,24 @@
 /* Internal defines - do not use! */
 #define __U_CX_LOG_BEGIN_FMT(enabled, chText, format, ...)  \
     do { if (enabled && uCxLogIsEnabled()) {                \
+        uCxLogLock();                                       \
         uCxLogPrintTime();                                  \
         U_CX_PORT_PRINTF(chText " " format, ##__VA_ARGS__); \
     } } while(0)
 #define __U_CX_LOG_BEGIN_I_FMT(enabled, chText, instance, format, ...)  \
     do { if (enabled && uCxLogIsEnabled()) {                \
+        uCxLogLock();                                       \
         uCxLogPrintTime();                                  \
         U_CX_PORT_PRINTF(chText "[%" PRId32 "] " format, instance, ##__VA_ARGS__); \
     } } while(0)
 #define __U_CX_LOG(enabled, chText, format, ...) \
     do { if (enabled && uCxLogIsEnabled()) {     \
         U_CX_PORT_PRINTF(format, ##__VA_ARGS__); \
+    } } while(0)
+#define __U_CX_LOG_END(enabled, chText, format, ...)  \
+    do { if (enabled && uCxLogIsEnabled()) {          \
+        U_CX_PORT_PRINTF(format, ##__VA_ARGS__);      \
+        uCxLogUnlock();                               \
     } } while(0)
 
 /* MSVC preprocessor workaround: force expansion of variadic arguments */
@@ -92,10 +102,12 @@
 # define _U_CX_LOG_BEGIN_FMT(...) _EXPAND(__U_CX_LOG_BEGIN_FMT(__VA_ARGS__))
 # define _U_CX_LOG_BEGIN_I_FMT(...) _EXPAND(__U_CX_LOG_BEGIN_I_FMT(__VA_ARGS__))
 # define _U_CX_LOG(...) _EXPAND(__U_CX_LOG(__VA_ARGS__))
+# define _U_CX_LOG_END(...) _EXPAND(__U_CX_LOG_END(__VA_ARGS__))
 #else
 # define _U_CX_LOG_BEGIN_FMT __U_CX_LOG_BEGIN_FMT
 # define _U_CX_LOG_BEGIN_I_FMT __U_CX_LOG_BEGIN_I_FMT
 # define _U_CX_LOG __U_CX_LOG
+# define _U_CX_LOG_END __U_CX_LOG_END
 #endif
 
 /* ----------------------------------------------------------------
@@ -111,6 +123,27 @@
  * -------------------------------------------------------------- */
 
 void uCxLogPrintTime(void);
+
+/**
+  * @brief Initialize the global log mutex
+  *
+  * Call this once at startup before any logging or multi-threaded operations.
+  * This prevents race conditions during first log call.
+  */
+void uCxLogInit(void);
+
+/**
+  * @brief Lock the global log mutex for thread-safe multi-line output
+  *
+  * Use this to prevent interleaved log output from multiple threads.
+  * Must be paired with uCxLogUnlock().
+  */
+void uCxLogLock(void);
+
+/**
+  * @brief Unlock the global log mutex
+  */
+void uCxLogUnlock(void);
 
 /**
   * @brief Turn off all logging
