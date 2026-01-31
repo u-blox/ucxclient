@@ -18,6 +18,25 @@
  * @brief XMODEM protocol implementation for firmware updates
  */
 
+/* Suppress format warnings for MinGW %zu compatibility issue.
+ * MinGW links against msvcrt.dll which doesn't support C99 %zu format specifier.
+ * The %zu format strings are correct for standard C99/C11 compilers.
+ */
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat"
+#pragma GCC diagnostic ignored "-Wformat-extra-args"
+#endif
+
+/* Define optional feature macros to avoid -Wundef warnings */
+#ifndef U_CX_XMODEM_FILE_SUPPORT
+#define U_CX_XMODEM_FILE_SUPPORT 0
+#endif
+
+#ifndef U_CX_XMODEM_VERBOSE_DEBUG
+#define U_CX_XMODEM_VERBOSE_DEBUG 0
+#endif
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -514,3 +533,8 @@ int32_t uCxXmodemSendFile(uCxXmodemConfig_t *pConfig,
 }
 
 #endif // U_CX_XMODEM_FILE_SUPPORT
+
+/* Restore GCC diagnostics */
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif

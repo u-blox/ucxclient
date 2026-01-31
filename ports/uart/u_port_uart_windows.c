@@ -226,3 +226,34 @@ void uPortUartClose(uPortUartHandle_t handle)
 
     free(pHandle);
 }
+
+void uPortUartFlushRx(uPortUartHandle_t handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+
+    if (pHandle->hComPort != INVALID_HANDLE_VALUE) {
+        // PURGE_RXCLEAR: Clears the input buffer (if the device driver has one)
+        // PURGE_RXABORT: Terminates all outstanding overlapped read operations
+        PurgeComm(pHandle->hComPort, PURGE_RXCLEAR | PURGE_RXABORT);
+    }
+}
+
+void uPortUartFlushTx(uPortUartHandle_t handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+
+    if (pHandle->hComPort != INVALID_HANDLE_VALUE) {
+        // First flush - wait for pending writes to complete
+        FlushFileBuffers(pHandle->hComPort);
+        // Then purge any remaining data in the driver buffer
+        PurgeComm(pHandle->hComPort, PURGE_TXCLEAR | PURGE_TXABORT);
+    }
+}

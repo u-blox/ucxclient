@@ -43,10 +43,10 @@
    NOTE: These single-line logs lock and unlock within the same macro */
 #define U_CX_LOG_LINE(logCh, format, ...) \
     do { _U_CX_LOG_BEGIN_FMT(logCh, format ANSI_RST "\n", ##__VA_ARGS__); \
-         _U_CX_LOG_END(logCh, ""); } while(0)
+         _U_CX_LOG_END(logCh, "%s", ""); } while(0)
 #define U_CX_LOG_LINE_I(logCh, instance, format, ...) \
     do { _U_CX_LOG_BEGIN_I_FMT(logCh, instance, format ANSI_RST "\n", ##__VA_ARGS__); \
-         _U_CX_LOG_END(logCh, ""); } while(0)
+         _U_CX_LOG_END(logCh, "%s", ""); } while(0)
 
 /* Log API for splitting up line in several U_CX_LOG() calls */
 #define U_CX_LOG_BEGIN(logCh)              _U_CX_LOG_BEGIN_FMT(logCh, "")

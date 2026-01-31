@@ -94,6 +94,24 @@ int32_t uPortUartWrite(uPortUartHandle_t handle, const void *pData, size_t lengt
  */
 int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int32_t timeoutMs);
 
+/**
+ * @brief Flush UART RX buffer
+ *
+ * Discards all data in the UART receive buffer.
+ *
+ * @param[in]  handle  UART handle from uPortUartOpen()
+ */
+void uPortUartFlushRx(uPortUartHandle_t handle);
+
+/**
+ * @brief Flush UART TX buffer
+ *
+ * Waits until all pending data has been transmitted, then clears the TX buffer.
+ *
+ * @param[in]  handle  UART handle from uPortUartOpen()
+ */
+void uPortUartFlushTx(uPortUartHandle_t handle);
+
 #ifdef __cplusplus
 }
 #endif

@@ -610,7 +610,7 @@ typedef void (*uUESOC_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
 typedef void (*uUESODA_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, int32_t number_bytes);
 typedef void (*uUESODS_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uByteArray_t *string_data);
 typedef void (*uUESODSF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port, uByteArray_t *string_data);
-typedef void (*uUESODB_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
+typedef void (*uUESODB_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uint8_t *pBinaryData, size_t binaryDataLen);
 typedef void (*uUESODBF_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t remote_port, uint8_t *pBinaryData, size_t binaryDataLen);
 typedef void (*uUESOCL_t)(struct uCxHandle *puCxHandle, int32_t socket_handle);
 typedef void (*uUESOIC_t)(struct uCxHandle *puCxHandle, int32_t socket_handle, uSockIpAddress_t *remote_ip, int32_t listening_socket_handle);

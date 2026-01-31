@@ -47,6 +47,8 @@ extern "C" {
 # include "os/u_port_zephyr.h"
 #elif defined(U_PORT_FREERTOS)
 # include "os/u_port_freertos.h"
+#elif defined(U_PORT_PICO)
+# include "os/u_port_pico.h"
 #elif defined(U_PORT_NO_OS)
 # include "os/u_port_no_os.h"
 #elif defined(U_PORT_POSIX)

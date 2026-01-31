@@ -454,8 +454,14 @@ int32_t uWebServerStart(uWebServer_t *server)
     // to us via uWebServerHandle*() functions. This allows UDP and TCP
     // to coexist without overwriting each other's callbacks.
     
-    // Create TCP socket
+    // Use DIRECT BINARY mode (USORM=2) for ALL sockets:
+    // - UDP: +UESODBF fires with data inline (no uCxSocketRead needed)
+    // - TCP: +UESODB fires as notification, we call uCxSocketRead to get data
+    // Both work in direct mode, just different callback handling.
+    
+    // Create TCP listen socket (uses current USORM setting - direct binary)
     int32_t result = uCxSocketCreate1(server->ucx_handle, U_SOCKET_PROTOCOL_TCP, &server->listen_socket);
+    
     if (result < 0) {
         return result;
     }

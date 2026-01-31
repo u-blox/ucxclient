@@ -33,6 +33,21 @@
 #include <windows.h>
 #include <sys/types.h>
 
+/* CRITICAL: Undefine Windows macros that conflict with Matter SDK
+ * windows.h defines ERROR as 0, which breaks CHIP logging macros
+ * that use ERROR as a category name (e.g., ChipLogError).
+ * Also undefine IN/OUT which conflict with mDNS QClass enum values.
+ */
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef IN
+#undef IN
+#endif
+#ifdef OUT
+#undef OUT
+#endif
+
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */

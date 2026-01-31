@@ -29,7 +29,26 @@ extern "C" {
 
 /* ========================================
  * Configuration
- * ======================================== */
+ * ========================================
+ * 
+ * Memory Footprint:
+ * -----------------
+ * RAM (persistent):  ~10 KB (server context + client buffers)
+ *   - uWebServerClient_t × 4:  ~8.2 KB (4 × 2048 rx_buffer)
+ *   - uRoute_t × 16:           ~2.1 KB (16 × 128 path)
+ *   - uWebServer struct:       ~40 bytes
+ * 
+ * RAM (stack during request): +16 KB (response buffer)
+ * 
+ * Flash (code + data): ~25-35 KB
+ *   - u_webserver.c compiled:  ~10-15 KB
+ *   - Dashboard HTML:          ~8 KB (embedded string)
+ * 
+ * To reduce RAM on constrained devices:
+ *   - U_WEBSERVER_MAX_CLIENTS to 2:       saves ~4 KB
+ *   - U_WEBSERVER_MAX_REQUEST_SIZE to 1024: saves ~4 KB
+ *   - U_WEBSERVER_MAX_RESPONSE_SIZE to 8192: saves 8 KB (dashboard won't fit)
+ */
 
 #define U_WEBSERVER_MAX_CLIENTS         4      /**< Maximum concurrent connections (includes SSE) */
 #define U_WEBSERVER_MAX_REQUEST_SIZE    2048   /**< Maximum HTTP request size */
