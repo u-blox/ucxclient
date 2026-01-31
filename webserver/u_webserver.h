@@ -33,7 +33,7 @@ extern "C" {
 
 #define U_WEBSERVER_MAX_CLIENTS         4      /**< Maximum concurrent connections (includes SSE) */
 #define U_WEBSERVER_MAX_REQUEST_SIZE    2048   /**< Maximum HTTP request size */
-#define U_WEBSERVER_MAX_RESPONSE_SIZE   4096   /**< Maximum HTTP response size */
+#define U_WEBSERVER_MAX_RESPONSE_SIZE   16384  /**< Maximum HTTP response size (16KB for dashboard HTML) */
 #define U_WEBSERVER_MAX_ROUTES          16     /**< Maximum route handlers */
 #define U_WEBSERVER_SSE_EVENT_SIZE      512    /**< Maximum SSE event size */
 
@@ -256,6 +256,79 @@ int32_t uWebServerCloseSSE(uWebServer_t *server, uSseClient_t client);
  * @return        Number of active SSE connections
  */
 int32_t uWebServerGetSSEClientCount(uWebServer_t *server);
+
+/* ========================================
+ * External Event Handler API
+ * 
+ * These functions allow integration with a socket multiplexer.
+ * Instead of registering its own callbacks, the web server can receive
+ * events from an external dispatcher (e.g., UcxClientManager).
+ * ======================================== */
+
+/**
+ * Handle incoming TCP connection event (from external dispatcher).
+ * 
+ * @param server          Web server context
+ * @param puCxHandle      uCX handle
+ * @param clientSocket    New client socket handle
+ * @param remoteIp        Remote IP address (may be NULL)
+ * @param listenSocket    Listening socket that received the connection
+ */
+void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *puCxHandle,
+                                        int32_t clientSocket, uSockIpAddress_t *remoteIp, 
+                                        int32_t listenSocket);
+
+/**
+ * Handle data available event from BUFFERED mode (USORM=0/1).
+ * Must call uCxSocketRead to retrieve the data.
+ * 
+ * @param server          Web server context
+ * @param puCxHandle      uCX handle
+ * @param socketHandle    Socket with data available
+ * @param bytesAvailable  Number of bytes available to read (-1 if unknown)
+ */
+void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxHandle,
+                                   int32_t socketHandle, int32_t bytesAvailable);
+
+/**
+ * Handle binary data received in DIRECT BINARY mode (USORM=2).
+ * Data is provided inline, no uCxSocketRead needed.
+ * 
+ * @param server          Web server context
+ * @param puCxHandle      uCX handle
+ * @param socketHandle    Socket that received data
+ * @param pData           Pointer to binary data
+ * @param dataLen         Length of binary data
+ */
+void uWebServerHandleBinaryData(uWebServer_t *server, struct uCxHandle *puCxHandle,
+                                int32_t socketHandle, uint8_t *pData, size_t dataLen);
+
+/**
+ * Handle socket closed event (from external dispatcher).
+ * 
+ * @param server          Web server context
+ * @param puCxHandle      uCX handle
+ * @param socketHandle    Socket that was closed
+ */
+void uWebServerHandleSocketClosed(uWebServer_t *server, struct uCxHandle *puCxHandle,
+                                  int32_t socketHandle);
+
+/**
+ * Check if a socket is owned by this web server.
+ * 
+ * @param server          Web server context
+ * @param socketHandle    Socket to check
+ * @return                true if owned by this server (listen socket or client socket)
+ */
+bool uWebServerOwnsSocket(uWebServer_t *server, int32_t socketHandle);
+
+/**
+ * Get the listening socket handle.
+ * 
+ * @param server  Web server context
+ * @return        Listen socket handle, or -1 if not listening
+ */
+int32_t uWebServerGetListenSocket(uWebServer_t *server);
 
 #ifdef __cplusplus
 }
