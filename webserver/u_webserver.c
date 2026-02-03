@@ -18,10 +18,14 @@
 
 #include "u_webserver.h"
 #include "u_cx_socket.h"
+#include "u_cx_log.h"
 #include "u_port.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* Webserver log channel */
+#define U_CX_LOG_CH_WEB    U_CX_LOG_DEBUG, "[WEB  ]"
 
 /* ========================================
  * Internal Structures
@@ -34,6 +38,7 @@ typedef struct {
     int32_t socket;                                /**< Client socket handle */
     bool active;                                   /**< Connection active */
     bool is_sse;                                   /**< SSE (keep-alive) connection */
+    bool closing;                                  /**< Close initiated, ignore incoming data */
     char rx_buffer[U_WEBSERVER_MAX_REQUEST_SIZE];  /**< Receive buffer */
     int32_t rx_length;                             /**< Received bytes */
     bool request_complete;                         /**< Full request received */
@@ -136,10 +141,6 @@ static uRoute_t *find_route(uWebServer_t *server, uHttpMethod_t method, const ch
  */
 static int32_t build_response(const uHttpResponse_t *response, char *buffer, size_t buffer_size, bool is_sse)
 {
-    printf("[WebServer] build_response: status=%d, body=%p, body_length=%d, content_type='%s'\n",
-           response->status_code, (void*)response->body, (int)response->body_length, response->content_type);
-    fflush(stdout);
-    
     const char *status_text = "OK";
     switch (response->status_code) {
         case 200: status_text = "OK"; break;
@@ -153,9 +154,6 @@ static int32_t build_response(const uHttpResponse_t *response, char *buffer, siz
     
     int32_t body_len = response->body_length >= 0 ? response->body_length : 
                        (response->body ? (int32_t)strlen(response->body) : 0);
-    
-    printf("[WebServer] build_response: body_len=%d, buffer_size=%llu\n", (int)body_len, (unsigned long long)buffer_size);
-    fflush(stdout);
     
     const char *connection_header = is_sse ? "keep-alive" : "close";
     
@@ -179,29 +177,23 @@ static int32_t build_response(const uHttpResponse_t *response, char *buffer, siz
         response->custom_headers[0] ? response->custom_headers : ""
     );
     
-    printf("[WebServer] build_response: snprintf returned %d\n", (int)written);
-    fflush(stdout);
-    
     if (written < 0 || (size_t)written >= buffer_size) {
-        printf("[WebServer] build_response: OVERFLOW! written=%d, buffer_size=%llu\n", (int)written, (unsigned long long)buffer_size);
-        fflush(stdout);
-        return -1;  // Buffer overflow
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Response overflow: written=%d, buf=%llu", 
+                      (int)written, (unsigned long long)buffer_size);
+        return -1;
     }
     
     // Append body
     if (response->body && body_len > 0) {
         if ((size_t)(written + body_len) >= buffer_size) {
-            printf("[WebServer] build_response: BODY OVERFLOW! written=%d, body_len=%d, buffer_size=%llu\n",
-                   (int)written, (int)body_len, (unsigned long long)buffer_size);
-            fflush(stdout);
-            return -1;  // Buffer overflow
+            U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Body overflow: hdr=%d, body=%d, buf=%llu",
+                          (int)written, (int)body_len, (unsigned long long)buffer_size);
+            return -1;
         }
         memcpy(buffer + written, response->body, (size_t)body_len);
         written += body_len;
     }
     
-    printf("[WebServer] build_response: SUCCESS, total=%d bytes\n", (int)written);
-    fflush(stdout);
     return written;
 }
 
@@ -233,13 +225,21 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     
     bool parsed = parse_request(client->rx_buffer, &request);
     
+    U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Request: %s %s", 
+                  request.method == 1 ? "GET" : request.method == 2 ? "POST" : "?", 
+                  request.path);
+    
     if (parsed) {
         // Find route handler
         uRoute_t *route = find_route(server, request.method, request.path);
         if (route) {
             // Call handler
             route->handler(&request, &response, route->user_data);
+        } else {
+            U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Route not found: %s", request.path);
         }
+    } else {
+        U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Failed to parse HTTP request");
     }
     
     // Check if this is an SSE connection (based on content-type)
@@ -250,35 +250,53 @@ static void handle_client_request(uWebServer_t *server, uWebServerClient_t *clie
     char tx_buffer[U_WEBSERVER_MAX_RESPONSE_SIZE];
     int32_t response_len = build_response(&response, tx_buffer, sizeof(tx_buffer), is_sse);
     
-    printf("[WebServer] Response: status=%d, len=%d\n", response.status_code, (int)response_len);
-    fflush(stdout);
+    U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Response: %d %s (%d bytes) socket=%d", 
+                  response.status_code, response.content_type, (int)response_len, (int)client->socket);
     
     if (response_len > 0) {
-        printf("[WebServer] Calling uCxSocketWrite(socket=%d, len=%d)...\n", 
-               (int)client->socket, (int)response_len);
-        printf("[WebServer] Response data (first 200 chars):\n%.200s\n", tx_buffer);
-        fflush(stdout);
-        int32_t result = uCxSocketWrite(server->ucx_handle, client->socket, 
-                                        (const uint8_t*)tx_buffer, response_len);
-        printf("[WebServer] uCxSocketWrite returned: %d\n", (int)result);
-        fflush(stdout);
-        if (result < 0) {
-            // Send failed, close connection
-            printf("[WebServer] Write failed, closing socket\n");
-            fflush(stdout);
-            uCxSocketClose(server->ucx_handle, client->socket);
+        // Send in chunks of max 1000 bytes (NORA-W36 AT command limit)
+        const int32_t CHUNK_SIZE = 1000;
+        int32_t offset = 0;
+        int32_t remaining = response_len;
+        bool send_failed = false;
+        
+        while (remaining > 0 && !send_failed) {
+            int32_t chunk_len = (remaining > CHUNK_SIZE) ? CHUNK_SIZE : remaining;
+            int32_t result = uCxSocketWrite(server->ucx_handle, client->socket, 
+                                            (const uint8_t*)(tx_buffer + offset), chunk_len);
+            if (result < 0) {
+                U_CX_LOG_LINE(U_CX_LOG_CH_ERROR, "Write failed at offset %d", (int)offset);
+                send_failed = true;
+            } else {
+                offset += result;
+                remaining -= result;
+            }
+        }
+        
+        if (send_failed) {
+            // Don't explicitly close - let the socket closed callback handle it
             client->active = false;
             return;
         }
-    } else {
-        printf("[WebServer] No response to send (response_len=%d)\n", (int)response_len);
-        fflush(stdout);
     }
     
     // Close connection unless it's SSE
     if (!is_sse) {
-        uCxSocketClose(server->ucx_handle, client->socket);
+        // Mark as closing BEFORE calling close to avoid race condition:
+        // If new connection arrives on same socket handle, we'll see closing=true
+        // and know to reset the client slot instead of processing stale data.
+        client->closing = true;
         client->active = false;
+        
+        // MUST close socket - NORA-W36 only has 6 sockets total!
+        // Socket 1: UDP Matter, Socket 2: TCP Matter, Socket 4: Listen
+        // That leaves only 2-3 sockets for web clients.
+        int32_t err = uCxSocketClose(server->ucx_handle, client->socket);
+        if (err < 0) {
+            // Socket may already be closed by peer, that's OK
+            U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Close socket %d returned %d (may be already closed)",
+                          (int)client->socket, (int)err);
+        }
     } else {
         // Reset for next message (SSE can receive multiple events)
         client->rx_length = 0;
@@ -330,16 +348,14 @@ static void on_incoming_connection(struct uCxHandle *puCxHandle, int32_t client_
  */
 static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int32_t bytes_available)
 {
-    printf("[WebServer] on_data_available: socket=%d, bytes=%d\n", (int)socket, (int)bytes_available);
+    (void)bytes_available;
     
     if (!g_server_instance) {
-        printf("[WebServer] ERROR: g_server_instance is NULL\n");
         return;
     }
     
     uWebServerClient_t *client = find_client_by_socket(g_server_instance, socket);
     if (!client) {
-        printf("[WebServer] ERROR: No client found for socket %d\n", (int)socket);
         return;
     }
     
@@ -348,34 +364,25 @@ static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int3
     if (rx_space > 1000) rx_space = 1000;  // NORA-W36 max read size
     if (rx_space <= 0) {
         // Buffer full, close connection
-        printf("[WebServer] Buffer full, closing connection\n");
         uCxSocketClose(puCxHandle, socket);
         client->active = false;
         return;
     }
     
     uint8_t *rx_ptr = (uint8_t*)(client->rx_buffer + client->rx_length);
-    printf("[WebServer] Calling uCxSocketRead(socket=%d, len=%d)...\n", (int)socket, (int)rx_space);
     int32_t result = uCxSocketRead(puCxHandle, socket, rx_space, rx_ptr);
-    printf("[WebServer] uCxSocketRead returned: %d\n", (int)result);
     
     if (result > 0) {
         client->rx_length += result;
         client->rx_buffer[client->rx_length] = '\0';
-        printf("[WebServer] Received %d bytes, total %d. Request so far:\n%s\n", 
-               (int)result, (int)client->rx_length, client->rx_buffer);
         
         // Check for complete HTTP request (ends with "\r\n\r\n")
         if (strstr(client->rx_buffer, "\r\n\r\n")) {
-            printf("[WebServer] Complete request received, processing...\n");
             client->request_complete = true;
             handle_client_request(g_server_instance, client);
-        } else {
-            printf("[WebServer] Request incomplete, waiting for more data...\n");
         }
     } else if (result < 0) {
         // Read error, close connection
-        printf("[WebServer] Read error (%d), closing connection\n", (int)result);
         uCxSocketClose(puCxHandle, socket);
         client->active = false;
     }
@@ -620,6 +627,9 @@ int32_t uWebServerGetQueryParam(const uHttpRequest_t *request, const char *param
  * SSE Implementation (Event-Driven)
  * ======================================== */
 
+/* Static buffer for SSE initial event - we need it to survive after handler returns */
+static char g_sse_initial_event[256];
+
 uSseClient_t uWebServerRegisterSSE(uWebServer_t *server, const uHttpRequest_t *request, uHttpResponse_t *response)
 {
     (void)request;  // Unused
@@ -634,14 +644,20 @@ uSseClient_t uWebServerRegisterSSE(uWebServer_t *server, const uHttpRequest_t *r
     snprintf(response->custom_headers, sizeof(response->custom_headers),
              "Cache-Control: no-cache\r\n"
              "Access-Control-Allow-Origin: *\r\n");
-    response->body = "\n";  // Initial keepalive
-    response->body_length = 1;
     
-    // Find which client slot this is (will be marked as SSE after response sent)
-    // Return the client index as the SSE client handle
+    // Build initial event as the body (sent with headers)
+    // Format: "event: connected\ndata: {\"message\":\"Event stream ready\"}\n\n"
+    snprintf(g_sse_initial_event, sizeof(g_sse_initial_event),
+             "event: connected\ndata: {\"message\":\"Event stream ready\"}\n\n");
+    response->body = g_sse_initial_event;
+    response->body_length = (int32_t)strlen(g_sse_initial_event);
+    
+    // Find which client slot this is and MARK AS SSE NOW
+    // (so is_sse is true before the handler returns)
     for (int32_t i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
         if (server->clients[i].active && !server->clients[i].is_sse) {
-            // This will be marked as SSE when response is sent
+            // Mark as SSE immediately so count is correct
+            server->clients[i].is_sse = true;
             return i;
         }
     }
@@ -761,7 +777,9 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
     (void)remoteIp;
     (void)listenSocket;
     
-    if (!server || !server->running) return;
+    if (!server || !server->running) {
+        return;
+    }
     
     // Find free client slot
     uWebServerClient_t *client = NULL;
@@ -774,6 +792,7 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
     
     if (!client) {
         // No free slots, reject connection
+        U_CX_LOG_LINE(U_CX_LOG_CH_WARN, "WebServer: no free client slots");
         uCxSocketClose(puCxHandle, clientSocket);
         return;
     }
@@ -785,25 +804,21 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
     client->rx_length = 0;
     client->request_complete = false;
     memset(client->rx_buffer, 0, sizeof(client->rx_buffer));
+    
+    U_CX_LOG_LINE(U_CX_LOG_CH_WEB, "Client connected: socket=%d", (int)clientSocket);
 }
 
 void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxHandle,
                                    int32_t socketHandle, int32_t bytesAvailable)
 {
-    printf("[WebServer] uWebServerHandleDataAvailable: socket=%d, bytes=%d\n", 
-           (int)socketHandle, (int)bytesAvailable);
-    fflush(stdout);
+    (void)bytesAvailable;
     
     if (!server || !server->running) {
-        printf("[WebServer] ERROR: server not running\n");
-        fflush(stdout);
         return;
     }
     
     uWebServerClient_t *client = find_client_by_socket(server, socketHandle);
     if (!client) {
-        printf("[WebServer] ERROR: No client found for socket %d\n", (int)socketHandle);
-        fflush(stdout);
         return;
     }
     
@@ -812,40 +827,25 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
     if (rx_space > 1000) rx_space = 1000;  // NORA-W36 max read size
     if (rx_space <= 0) {
         // Buffer full, close connection
-        printf("[WebServer] Buffer full, closing\n");
-        fflush(stdout);
         uCxSocketClose(puCxHandle, socketHandle);
         client->active = false;
         return;
     }
     
-    printf("[WebServer] Calling uCxSocketRead(socket=%d, len=%d)...\n", (int)socketHandle, (int)rx_space);
-    fflush(stdout);
-    
     uint8_t *rx_ptr = (uint8_t*)(client->rx_buffer + client->rx_length);
     int32_t result = uCxSocketRead(puCxHandle, socketHandle, rx_space, rx_ptr);
-    
-    printf("[WebServer] uCxSocketRead returned: %d\n", (int)result);
-    fflush(stdout);
     
     if (result > 0) {
         client->rx_length += result;
         client->rx_buffer[client->rx_length] = '\0';
         
-        printf("[WebServer] Total received: %d bytes\n", (int)client->rx_length);
-        fflush(stdout);
-        
         // Check for complete HTTP request (ends with "\r\n\r\n")
         if (strstr(client->rx_buffer, "\r\n\r\n")) {
-            printf("[WebServer] Complete request, calling handle_client_request()\n");
-            fflush(stdout);
             client->request_complete = true;
             handle_client_request(server, client);
         }
     } else if (result < 0) {
         // Read error, close connection
-        printf("[WebServer] Read error (%d), closing\n", (int)result);
-        fflush(stdout);
         uCxSocketClose(puCxHandle, socketHandle);
         client->active = false;
     }
@@ -858,10 +858,14 @@ void uWebServerHandleBinaryData(uWebServer_t *server, struct uCxHandle *puCxHand
 {
     (void)puCxHandle;  // Not needed - we have the data already
     
-    if (!server || !server->running) return;
+    if (!server || !server->running) {
+        return;
+    }
     
     uWebServerClient_t *client = find_client_by_socket(server, socketHandle);
-    if (!client) return;
+    if (!client) {
+        return;
+    }
     
     // Calculate how much we can copy
     int32_t rx_space = U_WEBSERVER_MAX_REQUEST_SIZE - client->rx_length - 1;
