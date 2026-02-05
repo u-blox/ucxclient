@@ -15,18 +15,16 @@
  */
 
 /** @file
- * @brief STM32F4 UART port implementation using HAL.
+ * @brief STM32F7 UART port implementation using HAL.
  *
- * This implementation uses STM32F4 HAL library and supports:
+ * This implementation uses STM32F7 HAL library and supports:
  * - Configurable UART instance (USART1-6, UART4-5)
  * - Hardware flow control (RTS/CTS)
  * - Interrupt-driven reception with circular buffer
  * - DMA support (optional, can be enabled via defines)
  *
  * Target boards:
- * - STM32F407G-DISC1
- * - STM32F429I-DISC1
- * - STM32F439 (ODIN-W2)
+ * - NUCLEO-F767ZI (USART3 for debug on PD8/PD9)
  */
 
 #include <stdint.h>
@@ -35,10 +33,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "stm32f4xx_hal.h"
-
+#include "stm32f7xx_hal.h"
 #include "u_port_uart.h"
-#include "u_port_uart_stm32f4.h"
+#include "u_port_uart_stm32f7.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -263,8 +260,8 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
 extern void ConsoleInput_ProcessByte(uint8_t byte);
 extern uint8_t* ConsoleInput_GetRxByteBuffer(void);
 
-// Debug UART handle - F4 uses USART2 on PA2/PA3
-extern UART_HandleTypeDef huart2;  // Debug UART from debug_uart.c
+// Debug UART handle - F7 Nucleo uses USART3 on PD8/PD9
+extern UART_HandleTypeDef huart3;  // Debug UART from debug_uart.c
 
 /**
  * @brief UART RX complete callback
@@ -274,7 +271,7 @@ extern UART_HandleTypeDef huart2;  // Debug UART from debug_uart.c
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    // NORA-W36 UART (USART3 on F4)
+    // NORA-W36 UART (USART6)
     if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
         // Store received byte in circular buffer
         uint32_t nextHead = (gpUartHandle->rxHead + 1) % U_PORT_UART_RX_BUFFER_SIZE;
@@ -289,13 +286,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         // Restart reception
         startRxInterrupt(gpUartHandle);
     }
-    // Debug UART (USART2 on F4) - for keyboard input
-    else if (huart->Instance == USART2) {
+    // Debug UART (USART3 on F7 Nucleo) - for keyboard input
+    else if (huart->Instance == USART3) {
         uint8_t* rxBuf = ConsoleInput_GetRxByteBuffer();
         if (rxBuf) {
             ConsoleInput_ProcessByte(*rxBuf);
             // Re-enable reception
-            HAL_UART_Receive_IT(&huart2, rxBuf, 1);
+            HAL_UART_Receive_IT(&huart3, rxBuf, 1);
         }
     }
 }
@@ -308,9 +305,9 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
  * @brief UART interrupt handler
  *
  * This function must be called from your UART IRQ handler in your
- * main application code (e.g., in stm32f4xx_it.c):
+ * main application code (e.g., in stm32f7xx_it.c):
  *
- * void USART3_IRQHandler(void)
+ * void USART6_IRQHandler(void)
  * {
  *     uPortUart_IRQHandler();
  * }
