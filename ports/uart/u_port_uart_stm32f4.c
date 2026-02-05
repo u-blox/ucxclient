@@ -253,14 +253,20 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
  * UART INTERRUPT CALLBACK
  * -------------------------------------------------------------- */
 
+// Forward declarations for debug UART console input
+extern void ConsoleInput_ProcessByte(uint8_t byte);
+extern uint8_t* ConsoleInput_GetRxByteBuffer(void);
+extern UART_HandleTypeDef huart2;  // Debug UART from debug_uart.c
+
 /**
  * @brief UART RX complete callback
  *
  * This function is called by HAL when a byte is received.
- * It stores the byte in the circular buffer and restarts reception.
+ * Handles both NORA-W36 UART (USART3) and Debug UART (USART2).
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+    // NORA-W36 UART (USART3)
     if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
         // Store received byte in circular buffer
         uint32_t nextHead = (gpUartHandle->rxHead + 1) % U_PORT_UART_RX_BUFFER_SIZE;
@@ -274,6 +280,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
         // Restart reception
         startRxInterrupt(gpUartHandle);
+    }
+    // Debug UART (USART2) - for keyboard input
+    else if (huart->Instance == USART2) {
+        uint8_t* rxBuf = ConsoleInput_GetRxByteBuffer();
+        if (rxBuf) {
+            ConsoleInput_ProcessByte(*rxBuf);
+            // Re-enable reception
+            HAL_UART_Receive_IT(&huart2, rxBuf, 1);
+        }
     }
 }
 
