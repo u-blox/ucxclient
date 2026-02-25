@@ -74,10 +74,12 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance,
                     "RX thread started");
 
-    while (!pCtx->terminateRxTask) {
-        if (uCxAtClientHandleRx(pCtx->pClient) < 0) {
-            printf("Error in RX handling thread\n");
-            exit(1);
+     while (!pCtx->terminateRxTask) {
+        int32_t result = uCxAtClientHandleRx(pCtx->pClient);
+        if (result < 0) {
+            // Don't exit on error - module may have changed baud rate or rebooted
+            // Just break the loop and let the thread terminate gracefully
+            break;
         }
         // Sleep for polling interval (10ms)
         Sleep(10);
