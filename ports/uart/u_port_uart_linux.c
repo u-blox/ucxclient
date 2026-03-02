@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <poll.h>
 
 #include "u_port_uart.h"
 
@@ -195,8 +196,27 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
 
     uPortUartHandle *pHandle = (uPortUartHandle *)handle;
 
-    // For zero timeout, check if data is available without blocking
-    if (timeoutMs == 0) {
+    // If pData is NULL, just return 0 (test case)
+    if (pData == NULL) {
+        return 0;
+    }
+
+    // Event-driven: use poll() to block until data is available
+    // or the timeout expires. This replaces busy-polling with
+    // a proper kernel wait – the thread sleeps until the UART
+    // has data, consuming zero CPU while idle.
+    if (timeoutMs != 0) {
+        struct pollfd pfd;
+        pfd.fd = pHandle->fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        int pollTimeout = (timeoutMs < 0) ? -1 : timeoutMs;
+        int ret = poll(&pfd, 1, pollTimeout);
+        if (ret <= 0) {
+            return (ret == 0) ? 0 : -1;  // timeout or error
+        }
+    } else {
+        // Zero timeout = non-blocking check
         int available = 0;
         ioctl(pHandle->fd, FIONREAD, &available);
         if (available == 0) {
@@ -204,14 +224,12 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         }
     }
 
-    // If pData is NULL, just return 0 (test case)
-    if (pData == NULL) {
-        return 0;
-    }
-
-    // Read data (blocking read handled by termios VTIME setting)
+    // Data is available – read as much as we can (bulk)
     ssize_t bytesRead = read(pHandle->fd, pData, length);
     if (bytesRead < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 0;
+        }
         return -1;
     }
 

@@ -260,6 +260,80 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
     }
 }
 
+/* ----------------------------------------------------------------
+ * Buffered read helpers: read from the read-ahead buffer first,
+ * refilling from UART in bulk when the buffer is empty.
+ * This eliminates the 1-byte-per-syscall bottleneck and allows
+ * the UART driver to return large chunks in a single ReadFile/read.
+ * -------------------------------------------------------------- */
+
+/**
+ * @brief Read exactly 1 byte via the read-ahead buffer.
+ *
+ * If the buffer has data, return it immediately (no syscall).
+ * Otherwise issue a bulk uPortUartRead to refill (up to 512 bytes).
+ */
+static int32_t bufferedReadByte(uCxAtClient_t *pClient, char *pCh, int32_t timeoutMs)
+{
+    if (pClient->rxReadAheadPos < pClient->rxReadAheadLen) {
+        /* Fast path – serve from buffer, zero syscalls */
+        *pCh = (char)pClient->rxReadAhead[pClient->rxReadAheadPos++];
+        return 1;
+    }
+
+    /* Buffer empty – refill with a bulk UART read */
+    int32_t n = uPortUartRead(pClient->uartHandle,
+                              pClient->rxReadAhead,
+                              sizeof(pClient->rxReadAhead),
+                              timeoutMs);
+    if (n <= 0) {
+        return n;   /* timeout or error */
+    }
+
+    pClient->rxReadAheadLen = (size_t)n;
+    pClient->rxReadAheadPos = 1;
+    *pCh = (char)pClient->rxReadAhead[0];
+    return 1;
+}
+
+/**
+ * @brief Read up to @p length bytes via the read-ahead buffer.
+ *
+ * First drains any bytes already sitting in the read-ahead buffer,
+ * then reads the remainder directly from the UART driver in bulk.
+ */
+static int32_t bufferedReadBulk(uCxAtClient_t *pClient, void *pData, size_t length,
+                                int32_t timeoutMs)
+{
+    uint8_t *pDest = (uint8_t *)pData;
+    size_t totalRead = 0;
+
+    /* 1. Drain the read-ahead buffer first */
+    size_t buffered = pClient->rxReadAheadLen - pClient->rxReadAheadPos;
+    if (buffered > 0) {
+        size_t take = (buffered < length) ? buffered : length;
+        memcpy(pDest, &pClient->rxReadAhead[pClient->rxReadAheadPos], take);
+        pClient->rxReadAheadPos += take;
+        totalRead += take;
+    }
+
+    /* 2. If we still need more, read directly from UART (no extra copy) */
+    if (totalRead < length) {
+        int32_t n = uPortUartRead(pClient->uartHandle,
+                                  pDest + totalRead,
+                                  length - totalRead,
+                                  timeoutMs);
+        if (n < 0 && totalRead == 0) {
+            return n;   /* propagate error only if nothing read yet */
+        }
+        if (n > 0) {
+            totalRead += (size_t)n;
+        }
+    }
+
+    return (int32_t)totalRead;
+}
+
 static int32_t handleBinaryRx(uCxAtClient_t *pClient)
 {
     int32_t ret = AT_PARSER_NOP;
@@ -271,9 +345,9 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
     static uint8_t lengthBuf[2];
     if (pBinRx->rxHeaderCount < 2) {
         size_t readLen = sizeof(lengthBuf) - pBinRx->rxHeaderCount;
-        readStatus = uPortUartRead(pClient->uartHandle,
-                                   &lengthBuf[pBinRx->rxHeaderCount], readLen,
-                                   pClient->pConfig->timeoutMs);
+        readStatus = bufferedReadBulk(pClient,
+                                      &lengthBuf[pBinRx->rxHeaderCount], readLen,
+                                      pClient->pConfig->timeoutMs);
         CHECK_READ_ERROR(pClient, readStatus);
         if (readStatus > 0) {
             pBinRx->rxHeaderCount += (uint8_t)readStatus;
@@ -296,9 +370,9 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
         if (remainingBuf > 0) {
             // There are buffer left, continue to read
             size_t readLen = U_MIN(remainingBuf, pBinRx->remainingDataBytes);
-            readStatus = uPortUartRead(pClient->uartHandle,
-                                       &pBinRx->pBuffer[pBinRx->bufferPos], readLen,
-                                       pClient->pConfig->timeoutMs);
+            readStatus = bufferedReadBulk(pClient,
+                                          &pBinRx->pBuffer[pBinRx->bufferPos], readLen,
+                                          pClient->pConfig->timeoutMs);
             CHECK_READ_ERROR(pClient, readStatus);
             if (readStatus > 0) {
                 pBinRx->bufferPos += (uint16_t)readStatus;
@@ -307,9 +381,9 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             // There are no buffer space - just throw away all data until binary transfer is done
             uint8_t buf[64];
             size_t readLen = U_MIN(sizeof(buf), pBinRx->remainingDataBytes);
-            readStatus = uPortUartRead(pClient->uartHandle,
-                                       &buf[0], readLen,
-                                       pClient->pConfig->timeoutMs);
+            readStatus = bufferedReadBulk(pClient,
+                                          &buf[0], readLen,
+                                          pClient->pConfig->timeoutMs);
             CHECK_READ_ERROR(pClient, readStatus);
         }
 
@@ -366,11 +440,11 @@ static int32_t handleRxData(uCxAtClient_t *pClient)
         int32_t readStatus;
 
         if (!pClient->isBinaryRx) {
-            // Loop for receiving string data
+            // Loop for receiving string data – use buffered reads
             do {
                 char ch;
-                readStatus = uPortUartRead(pClient->uartHandle, &ch, 1,
-                                           pClient->pConfig->timeoutMs);
+                readStatus = bufferedReadByte(pClient, &ch,
+                                              pClient->pConfig->timeoutMs);
                 CHECK_READ_ERROR(pClient, readStatus);
                 if (readStatus != 1) {
                     break;
@@ -548,13 +622,29 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
     bool binaryTransfer = false;
     char buf[U_IP_STRING_MAX_LENGTH_BYTES];
 
+    /* TX coalesce buffer – accumulate the entire text-mode AT command
+     * and write it in a single uPortUartWrite() call instead of many
+     * small writes (cmd, comma, each param, \\r separately). */
+    char txBuf[512];
+    size_t txPos = 0;
+
     U_CX_LOG_BEGIN_I(U_CX_LOG_CH_TX, pClient->instance);
 
-    writeAndLog(pClient, pCmd, strlen(pCmd));
+    /* Append command string */
+    {
+        size_t cmdLen = strlen(pCmd);
+        if (txPos + cmdLen <= sizeof(txBuf)) {
+            memcpy(&txBuf[txPos], pCmd, cmdLen);
+            txPos += cmdLen;
+        }
+        U_CX_LOG(U_CX_LOG_CH_TX, "%s", pCmd);
+    }
+
     const char *pCh = pParamFmt;
     while (*pCh != 0) {
         if ((pCh != pParamFmt) && (*pCh != 'B')) { // Don't add ',' for Binary transfer
-            writeAndLog(pClient, ",", 1);
+            if (txPos < sizeof(txBuf)) { txBuf[txPos++] = ','; }
+            U_CX_LOG(U_CX_LOG_CH_TX, ",");
         }
 
         memset(&buf, 0, sizeof(buf));
@@ -564,7 +654,11 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 int i = va_arg(args, int);
                 int32_t len = (size_t)snprintf(buf, sizeof(buf), "%d", i);
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeAndLog(pClient, buf, (size_t)len);
+                if (txPos + (size_t)len <= sizeof(txBuf)) {
+                    memcpy(&txBuf[txPos], buf, (size_t)len);
+                    txPos += (size_t)len;
+                }
+                U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
             }
             break;
             case 'l': {
@@ -573,16 +667,22 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 size_t len = va_arg(args, size_t);
 
                 if (len == 0) {
-                    writeAndLog(pClient, "[]", 2);
+                    if (txPos + 2 <= sizeof(txBuf)) { memcpy(&txBuf[txPos], "[]", 2); txPos += 2; }
+                    U_CX_LOG(U_CX_LOG_CH_TX, "[]");
                 } else {
                     buf[0] = '['; // reserve first char for `[` and `,`
 
                     for (size_t i = 0; i < len; i++) {
                         int32_t written = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
-                        writeAndLog(pClient, buf, (size_t)written);
+                        if (txPos + (size_t)written <= sizeof(txBuf)) {
+                            memcpy(&txBuf[txPos], buf, (size_t)written);
+                            txPos += (size_t)written;
+                        }
+                        U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
                         buf[0] = ',';
                     }
-                    writeAndLog(pClient, "]", 1);
+                    if (txPos < sizeof(txBuf)) { txBuf[txPos++] = ']'; }
+                    U_CX_LOG(U_CX_LOG_CH_TX, "]");
                 }
             }
             break;
@@ -591,12 +691,18 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 char *pStr = va_arg(args, char *);
                 size_t len = uCxAtUtilWriteEscString(pStr, strlen(pStr), buf, sizeof(buf));
                 if (len > 0) {
-                    writeAndLog(pClient, buf, len);
+                    if (txPos + len <= sizeof(txBuf)) {
+                        memcpy(&txBuf[txPos], buf, len);
+                        txPos += len;
+                    }
+                    U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
                 } else {
                     // Buffer too small, fall back to unescaped
-                    writeAndLog(pClient, "\"", 1);
-                    writeAndLog(pClient, pStr, strlen(pStr));
-                    writeAndLog(pClient, "\"", 1);
+                    size_t strLen = strlen(pStr);
+                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
+                    if (txPos + strLen <= sizeof(txBuf)) { memcpy(&txBuf[txPos], pStr, strLen); txPos += strLen; }
+                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
+                    U_CX_LOG(U_CX_LOG_CH_TX, "\"%s\"", pStr);
                 }
             }
             break;
@@ -606,12 +712,16 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 size_t strLen = va_arg(args, size_t);
                 size_t len = uCxAtUtilWriteEscString(pStr, strLen, buf, sizeof(buf));
                 if (len > 0) {
-                    writeAndLog(pClient, buf, len);
+                    if (txPos + len <= sizeof(txBuf)) {
+                        memcpy(&txBuf[txPos], buf, len);
+                        txPos += len;
+                    }
+                    U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
                 } else {
-                    // Buffer too small, fall back to unescaped
-                    writeAndLog(pClient, "\"", 1);
-                    writeAndLog(pClient, pStr, strLen);
-                    writeAndLog(pClient, "\"", 1);
+                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
+                    if (txPos + strLen <= sizeof(txBuf)) { memcpy(&txBuf[txPos], pStr, strLen); txPos += strLen; }
+                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
+                    U_CX_LOG(U_CX_LOG_CH_TX, "\"%s\"", pStr);
                 }
             }
             break;
@@ -620,7 +730,11 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 uSockIpAddress_t *pIpAddr = va_arg(args, uSockIpAddress_t *);
                 int32_t len = uCxIpAddressToString(pIpAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeAndLog(pClient, buf, (size_t)len);
+                if (txPos + (size_t)len <= sizeof(txBuf)) {
+                    memcpy(&txBuf[txPos], buf, (size_t)len);
+                    txPos += (size_t)len;
+                }
+                U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
             }
             break;
             case 'm': {
@@ -628,7 +742,11 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 uMacAddress_t *pMacAddr = va_arg(args, uMacAddress_t *);
                 int32_t len = uCxMacAddressToString(pMacAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeAndLog(pClient, buf, (size_t)len);
+                if (txPos + (size_t)len <= sizeof(txBuf)) {
+                    memcpy(&txBuf[txPos], buf, (size_t)len);
+                    txPos += (size_t)len;
+                }
+                U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
             }
             break;
             case 'b': {
@@ -636,11 +754,16 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 uBtLeAddress_t *pBtLeAddr = va_arg(args, uBtLeAddress_t *);
                 int32_t len = uCxBdAddressToString(pBtLeAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeAndLog(pClient, buf, (size_t)len);
+                if (txPos + (size_t)len <= sizeof(txBuf)) {
+                    memcpy(&txBuf[txPos], buf, (size_t)len);
+                    txPos += (size_t)len;
+                }
+                U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
             }
             break;
             case 'B': {
-                // Binary data transfer
+                // Binary data transfer – flush text buffer first, then write
+                // binary header + payload directly (can be large).
                 uint8_t *pData = va_arg(args, uint8_t *);
                 int32_t len = va_arg(args, int32_t);
                 char binHeader[3];
@@ -648,8 +771,14 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 binHeader[1] = (char)(len >> 8);
                 binHeader[2] = (char)(len & 0xFF);
                 U_CX_AT_PORT_ASSERT(len > 0);
-                writeNoLog(pClient, binHeader, sizeof(binHeader));
-                writeNoLog(pClient, pData, (size_t)len);
+
+                // Flush accumulated text first, then binary header + data
+                if (txPos > 0) {
+                    uPortUartWrite(pClient->uartHandle, txBuf, txPos);
+                    txPos = 0;
+                }
+                uPortUartWrite(pClient->uartHandle, binHeader, sizeof(binHeader));
+                uPortUartWrite(pClient->uartHandle, pData, (size_t)len);
                 U_CX_LOG(U_CX_LOG_CH_TX, "[%" PRId32 " bytes]", len);
 
                 // Binary transfer must always be last param
@@ -666,10 +795,22 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 while (len > 0) {
                     int32_t bytesToConvert = (int32_t)U_MIN((size_t)len, chunkSize);
                     if (!uCxAtUtilBinaryToHex(pData, (size_t)bytesToConvert, buf, sizeof(buf))) {
-                        U_CX_AT_PORT_ASSERT(false); // Should never happen - but to be on the safe side
+                        U_CX_AT_PORT_ASSERT(false);
                     }
                     size_t hexLen = (size_t)bytesToConvert * 2;
-                    writeAndLog(pClient, buf, hexLen);
+                    if (txPos + hexLen <= sizeof(txBuf)) {
+                        memcpy(&txBuf[txPos], buf, hexLen);
+                        txPos += hexLen;
+                    } else {
+                        // Buffer full – flush what we have, then continue
+                        if (txPos > 0) {
+                            uPortUartWrite(pClient->uartHandle, txBuf, txPos);
+                            txPos = 0;
+                        }
+                        memcpy(&txBuf[txPos], buf, hexLen);
+                        txPos += hexLen;
+                    }
+                    U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
                     len -= bytesToConvert;
                     pData += bytesToConvert;
                 }
@@ -680,8 +821,14 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
     }
 
     if (!binaryTransfer) {
-        uPortUartWrite(pClient->uartHandle, "\r", 1);
+        if (txPos < sizeof(txBuf)) { txBuf[txPos++] = '\r'; }
     }
+
+    /* Single UART write for the entire text-mode command */
+    if (txPos > 0) {
+        uPortUartWrite(pClient->uartHandle, txBuf, txPos);
+    }
+
     U_CX_LOG_END(U_CX_LOG_CH_TX);
 }
 

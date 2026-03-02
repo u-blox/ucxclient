@@ -81,8 +81,9 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
             // Just break the loop and let the thread terminate gracefully
             break;
         }
-        // Sleep for polling interval (10ms)
-        Sleep(10);
+        // No Sleep needed – uPortUartRead now blocks with
+        // ReadIntervalTimeout/ReadTotalTimeoutConstant,
+        // making this loop event-driven instead of polled.
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated");

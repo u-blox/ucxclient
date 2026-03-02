@@ -90,6 +90,12 @@ typedef struct uCxAtClient {
     uCxAtBinaryResponseBuf_t rspBinaryBuf;
     U_CX_MUTEX_HANDLE cmdMutex;
     int32_t instance;
+    /* Read-ahead buffer for bulk UART reads (performance optimization).
+     * Instead of reading 1 byte per syscall, we read chunks and serve
+     * bytes from this buffer. */
+    uint8_t rxReadAhead[512];
+    size_t  rxReadAheadPos;
+    size_t  rxReadAheadLen;
 } uCxAtClient_t;
 
 typedef struct uCxAtClientConfig {

@@ -120,10 +120,15 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
         return INVALID_HANDLE_VALUE;
     }
 
-    // Set timeouts
-    timeouts.ReadIntervalTimeout = 0;
+    // Set timeouts – optimized for event-driven bulk reads.
+    // ReadIntervalTimeout = 1: return as soon as there is a 1 ms gap
+    //   between characters (i.e. end of a burst / AT response line).
+    // ReadTotalTimeoutConstant = 50: max 50 ms wait for the FIRST byte;
+    //   this is what makes the RX thread "event-driven" – ReadFile
+    //   blocks here instead of a Sleep() poll loop.
+    timeouts.ReadIntervalTimeout = 1;
     timeouts.ReadTotalTimeoutMultiplier = 0;
-    timeouts.ReadTotalTimeoutConstant = 100;
+    timeouts.ReadTotalTimeoutConstant = 50;
     timeouts.WriteTotalTimeoutMultiplier = 0;
     timeouts.WriteTotalTimeoutConstant = 1000;
 

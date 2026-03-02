@@ -81,7 +81,8 @@ static void *rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
-        U_CX_PORT_SLEEP_MS(10);
+        // No sleep needed – uPortUartRead uses poll() which blocks
+        // until data arrives or timeout expires (event-driven).
         if (uCxAtClientHandleRx(pCtx->pClient) < 0) {
             printf("Error in RX handling thread\n");
             exit(1);
