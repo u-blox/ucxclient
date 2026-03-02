@@ -75,11 +75,17 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                     "RX thread started");
 
      while (!pCtx->terminateRxTask) {
+        if (!pCtx->pClient->opened) {
+            // UART is closed (e.g. during baud rate switch) – wait and retry
+            Sleep(50);
+            continue;
+        }
         int32_t result = uCxAtClientHandleRx(pCtx->pClient);
         if (result < 0) {
-            // Don't exit on error - module may have changed baud rate or rebooted
-            // Just break the loop and let the thread terminate gracefully
-            break;
+            // Read error – UART may have been closed for baud rate switch or reboot.
+            // Sleep and retry instead of exiting so the thread survives close/reopen cycles.
+            Sleep(100);
+            continue;
         }
 #if U_CX_EVENT_DRIVEN_IO == 1
         // No Sleep needed – uPortUartRead now blocks with

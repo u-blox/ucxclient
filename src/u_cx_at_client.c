@@ -617,6 +617,15 @@ int32_t uCxAtClientOpen(uCxAtClient_t *pClient, int32_t baudRate, bool flowContr
         return U_CX_ERROR_IO;
     }
 
+    // Reset parser state so stale data from a previous session cannot
+    // corrupt parsing after a close/reopen cycle (e.g. baud rate switch).
+    pClient->rxBufferPos = 0;
+    pClient->isBinaryRx = false;
+#if U_CX_EVENT_DRIVEN_IO == 1
+    pClient->rxReadAheadPos = 0;
+    pClient->rxReadAheadLen = 0;
+#endif
+
     pClient->opened = true;
     return 0;
 }
@@ -627,12 +636,14 @@ void uCxAtClientClose(uCxAtClient_t *pClient)
         return;
     }
 
+    // Set opened=false BEFORE closing the handle so the RX thread
+    // (which checks opened first) never dereferences a freed handle.
+    pClient->opened = false;
+
     if (pClient->uartHandle != NULL) {
         uPortUartClose(pClient->uartHandle);
         pClient->uartHandle = NULL;
     }
-
-    pClient->opened = false;
 }
 
 void uCxAtClientSetUrcCallback(uCxAtClient_t *pClient, uUrcCallback_t urcCallback, void *pTag)
