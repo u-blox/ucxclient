@@ -30,6 +30,7 @@
 #include <sys/ioctl.h>
 #include <poll.h>
 
+#include "u_cx_at_config.h"
 #include "u_port_uart.h"
 
 /* ----------------------------------------------------------------
@@ -201,6 +202,7 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         return 0;
     }
 
+#if U_CX_EVENT_DRIVEN_IO == 1
     // Event-driven: use poll() to block until data is available
     // or the timeout expires. This replaces busy-polling with
     // a proper kernel wait – the thread sleeps until the UART
@@ -232,6 +234,23 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         }
         return -1;
     }
+#else
+    // Original polled implementation
+    // For zero timeout, check if data is available without blocking
+    if (timeoutMs == 0) {
+        int available = 0;
+        ioctl(pHandle->fd, FIONREAD, &available);
+        if (available == 0) {
+            return 0;
+        }
+    }
+
+    // Read data (blocking read handled by termios VTIME setting)
+    ssize_t bytesRead = read(pHandle->fd, pData, length);
+    if (bytesRead < 0) {
+        return -1;
+    }
+#endif
 
     return (int32_t)bytesRead;
 }

@@ -48,6 +48,21 @@
 # define U_CX_USE_URC_QUEUE 1
 #endif
 
+/* Enable event-driven, buffered UART I/O for higher throughput.
+ *
+ * With "U_CX_EVENT_DRIVEN_IO 1" (default):
+ *   - AT client uses a 512-byte read-ahead buffer (bulk UART reads)
+ *   - AT TX commands are coalesced into a single UART write
+ *   - UART drivers block on data instead of polling
+ *   - RX threads do not sleep between iterations
+ *
+ * Set to 0 to revert to the original byte-per-byte/polled
+ * behaviour if any compatibility issues arise.
+ */
+#ifndef U_CX_EVENT_DRIVEN_IO
+# define U_CX_EVENT_DRIVEN_IO 1
+#endif
+
 /* Configuration for enabling logging of AT protocol.*/
 #ifndef U_CX_LOG_AT
 # define U_CX_LOG_AT 1
