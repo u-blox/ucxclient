@@ -661,8 +661,10 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
 #if U_CX_EVENT_DRIVEN_IO == 1
     /* TX coalesce buffer – accumulate the entire text-mode AT command
      * and write it in a single uPortUartWrite() call instead of many
-     * small writes (cmd, comma, each param, \\r separately). */
-    char txBuf[512];
+     * small writes (cmd, comma, each param, \\r separately).
+     * 2048 bytes is enough for the AT text header + SOH binary header
+     * so we can send them in one WriteFile() syscall. */
+    char txBuf[2048];
     size_t txPos = 0;
 #endif
 
@@ -866,12 +868,19 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 U_CX_AT_PORT_ASSERT(len > 0);
 
 #if U_CX_EVENT_DRIVEN_IO == 1
-                // Flush accumulated text first, then binary header + data
+                // Coalesce text header + SOH binary header into one write,
+                // then send the payload as a second write.
+                // This reduces 3 WriteFile() calls to 2.
+                if (txPos + sizeof(binHeader) <= sizeof(txBuf)) {
+                    memcpy(&txBuf[txPos], binHeader, sizeof(binHeader));
+                    txPos += sizeof(binHeader);
+                }
+                // Flush text + SOH header in one syscall
                 if (txPos > 0) {
                     uPortUartWrite(pClient->uartHandle, txBuf, txPos);
                     txPos = 0;
                 }
-                uPortUartWrite(pClient->uartHandle, binHeader, sizeof(binHeader));
+                // Payload as second write (no copy — it's already in caller's buffer)
                 uPortUartWrite(pClient->uartHandle, pData, (size_t)len);
 #else
                 writeNoLog(pClient, binHeader, sizeof(binHeader));

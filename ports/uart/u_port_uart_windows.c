@@ -53,6 +53,66 @@ typedef struct {
  * STATIC FUNCTIONS - COM PORT
  * -------------------------------------------------------------- */
 
+/**
+ * @brief Set the FTDI USB-serial Latency Timer to the given value (ms).
+ *
+ * FTDI chips buffer received bytes and deliver them to the host USB
+ * endpoint only when the buffer is full OR the Latency Timer fires.
+ * The factory default is 16 ms, which adds up to 16 ms of hidden
+ * latency on every short response from the module.
+ *
+ * This function finds the COM port's device node via SetupAPI and
+ * writes the LatencyTimer DWORD in the Device Parameters registry key.
+ * The FTDI driver picks up the new value on the next port open, so we
+ * call this *before* CreateFile().
+ *
+ * Non-FTDI ports simply won't have the key — that's fine, we ignore errors.
+ */
+static void setFtdiLatencyTimer(const char *pPortName, DWORD latencyMs)
+{
+    HDEVINFO devInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL,
+                                           DIGCF_PRESENT);
+    if (devInfo == INVALID_HANDLE_VALUE) return;
+
+    SP_DEVINFO_DATA devInfoData;
+    devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+
+    for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &devInfoData); i++) {
+        // Open Device Parameters key and check PortName value
+        HKEY hKey = SetupDiOpenDevRegKey(devInfo, &devInfoData, DICS_FLAG_GLOBAL,
+                                         0, DIREG_DEV, KEY_READ | KEY_WRITE);
+        if (hKey == INVALID_HANDLE_VALUE) continue;
+
+        char portName[32] = {0};
+        DWORD portNameSize = sizeof(portName);
+        DWORD regType = 0;
+        LONG rc = RegQueryValueExA(hKey, "PortName", NULL, &regType,
+                                   (LPBYTE)portName, &portNameSize);
+        if (rc == ERROR_SUCCESS && regType == REG_SZ &&
+            _stricmp(portName, pPortName) == 0) {
+            // Found the right port — set LatencyTimer
+            DWORD oldLatency = 0;
+            DWORD oldSize = sizeof(oldLatency);
+            DWORD oldType = 0;
+            RegQueryValueExA(hKey, "LatencyTimer", NULL, &oldType,
+                             (LPBYTE)&oldLatency, &oldSize);
+            if (oldLatency != latencyMs) {
+                rc = RegSetValueExA(hKey, "LatencyTimer", 0, REG_DWORD,
+                                    (const BYTE *)&latencyMs, sizeof(latencyMs));
+                if (rc == ERROR_SUCCESS) {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_DBG,
+                        "FTDI %s LatencyTimer: %lu -> %lu ms", pPortName,
+                        oldLatency, latencyMs);
+                }
+            }
+            RegCloseKey(hKey);
+            break;
+        }
+        RegCloseKey(hKey);
+    }
+    SetupDiDestroyDeviceInfoList(devInfo);
+}
+
 static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowControl)
 {
     char fullPortName[32];
@@ -66,6 +126,10 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
     } else {
         snprintf(fullPortName, sizeof(fullPortName), "%s", pDevName);
     }
+
+    // Set FTDI Latency Timer to 1ms for minimum USB polling latency.
+    // Must be done before CreateFile so the FTDI driver picks it up.
+    setFtdiLatencyTimer(pDevName, 1);
 
     // Open COM port
     hComPort = CreateFileA(fullPortName, GENERIC_READ | GENERIC_WRITE, 0, NULL,
@@ -122,14 +186,20 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
 
 #if U_CX_EVENT_DRIVEN_IO == 1
     // Set timeouts – optimized for event-driven bulk reads.
-    // ReadIntervalTimeout = 1: return as soon as there is a 1 ms gap
-    //   between characters (i.e. end of a burst / AT response line).
-    // ReadTotalTimeoutConstant = 50: max 50 ms wait for the FIRST byte;
-    //   this is what makes the RX thread "event-driven" – ReadFile
-    //   blocks here instead of a Sleep() poll loop.
-    timeouts.ReadIntervalTimeout = 1;
-    timeouts.ReadTotalTimeoutMultiplier = 0;
-    timeouts.ReadTotalTimeoutConstant = 50;
+    //
+    // Per MSDN, when ReadIntervalTimeout = MAXDWORD and both multiplier
+    // and constant are > 0, ReadFile behaves as:
+    //   "return immediately with bytes already in the driver buffer;
+    //    if the buffer is empty, wait up to ReadTotalTimeoutConstant ms
+    //    for the first byte, then return whatever has arrived."
+    //
+    // This gives us the best of both worlds:
+    //   - Zero-copy fast path when data is already buffered (no 1ms gap wait)
+    //   - Short 1ms blocking wait when idle (minimizes mutex contention)
+    //   - No Sleep() poll loop needed in the RX thread
+    timeouts.ReadIntervalTimeout = MAXDWORD;
+    timeouts.ReadTotalTimeoutMultiplier = MAXDWORD;
+    timeouts.ReadTotalTimeoutConstant = 1;
 #else
     // Original polled timeouts
     timeouts.ReadIntervalTimeout = 0;

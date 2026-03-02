@@ -118,20 +118,25 @@ int32_t uPortGetTickTimeMs(void)
  * PUBLIC FUNCTIONS - MUTEX API
  * -------------------------------------------------------------- */
 
-int32_t uPortMutexTryLock(HANDLE handle, int32_t timeoutMs)
+int32_t uPortMutexTryLock(CRITICAL_SECTION *pCs, int32_t timeoutMs)
 {
-    DWORD dwTimeout = (timeoutMs < 0) ? INFINITE : (DWORD)timeoutMs;
-    DWORD dwResult;
-
-    dwResult = WaitForSingleObject(handle, dwTimeout);
-
-    if (dwResult == WAIT_OBJECT_0) {
-        return 0;
-    } else if (dwResult == WAIT_TIMEOUT) {
-        return -2;  // Timeout
-    } else {
-        return -1;  // Error
+    if (TryEnterCriticalSection(pCs)) {
+        return 0;  // Acquired
     }
+
+    if (timeoutMs <= 0) {
+        return -2;  // Non-blocking try failed
+    }
+
+    // Spin-wait with Sleep(0) yield for the requested timeout
+    DWORD start = GetTickCount();
+    while ((GetTickCount() - start) < (DWORD)timeoutMs) {
+        SwitchToThread();
+        if (TryEnterCriticalSection(pCs)) {
+            return 0;
+        }
+    }
+    return -2;  // Timeout
 }
 
 /* ----------------------------------------------------------------

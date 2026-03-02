@@ -41,12 +41,12 @@
 # define U_PORT_WINDOWS
 #endif
 
-#define U_CX_MUTEX_HANDLE                     HANDLE
-#define U_CX_MUTEX_CREATE(mutex)              (mutex = CreateSemaphore(NULL, 1, 1, NULL))
-#define U_CX_MUTEX_DELETE(mutex)              do { if (mutex != NULL) { CloseHandle(mutex); mutex = NULL; } } while(0)
-#define U_CX_MUTEX_LOCK(mutex)                WaitForSingleObject(mutex, INFINITE)
-#define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(mutex, timeoutMs)
-#define U_CX_MUTEX_UNLOCK(mutex)              ReleaseSemaphore(mutex, 1, NULL)
+#define U_CX_MUTEX_HANDLE                     CRITICAL_SECTION
+#define U_CX_MUTEX_CREATE(mutex)              InitializeCriticalSectionAndSpinCount(&(mutex), 4000)
+#define U_CX_MUTEX_DELETE(mutex)              DeleteCriticalSection(&(mutex))
+#define U_CX_MUTEX_LOCK(mutex)                EnterCriticalSection(&(mutex))
+#define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(&(mutex), timeoutMs)
+#define U_CX_MUTEX_UNLOCK(mutex)              LeaveCriticalSection(&(mutex))
 
 #define U_CX_PORT_SLEEP_MS(ms)                Sleep(ms)
 
@@ -68,10 +68,10 @@ int32_t uPortGetTickTimeMs(void);
 /**
   * @brief Windows implementation of U_CX_MUTEX_TRY_LOCK()
   *
-  * @param mutex      The mutex handle to try to lock
-  * @param timeoutMs  Timeout in milliseconds
-  * @return           0 on success, negative value on timeout
+  * @param pCs        Pointer to the CRITICAL_SECTION to try to lock
+  * @param timeoutMs  Timeout in milliseconds (0 = non-blocking try)
+  * @return           0 on success, negative value on timeout/failure
   */
-int32_t uPortMutexTryLock(HANDLE mutex, int32_t timeoutMs);
+int32_t uPortMutexTryLock(CRITICAL_SECTION *pCs, int32_t timeoutMs);
 
 #endif /* U_PORT_WINDOWS_H */
