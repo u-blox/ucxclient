@@ -205,10 +205,11 @@ static HANDLE openComPort(const char *pDevName, int baudRate, bool useFlowContro
     timeouts.ReadTotalTimeoutMultiplier = MAXDWORD;
     timeouts.ReadTotalTimeoutConstant = 1;
 #else
-    // Original polled timeouts
+    // Polled timeouts — 10ms gives reasonable responsiveness
+    // without the complexity of event-driven IO.
     timeouts.ReadIntervalTimeout = 0;
     timeouts.ReadTotalTimeoutMultiplier = 0;
-    timeouts.ReadTotalTimeoutConstant = 100;
+    timeouts.ReadTotalTimeoutConstant = 10;
 #endif
     timeouts.WriteTotalTimeoutMultiplier = 0;
     timeouts.WriteTotalTimeoutConstant = 1000;
