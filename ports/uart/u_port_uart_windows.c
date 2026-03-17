@@ -103,6 +103,10 @@ static void setFtdiLatencyTimer(const char *pPortName, DWORD latencyMs)
                     U_CX_LOG_LINE(U_CX_LOG_CH_DBG,
                         "FTDI %s LatencyTimer: %lu -> %lu ms", pPortName,
                         oldLatency, latencyMs);
+                } else {
+                    U_CX_LOG_LINE(U_CX_LOG_CH_WARN,
+                        "FTDI %s LatencyTimer: failed to set %lu -> %lu ms (error %ld, try Device Manager)",
+                        pPortName, oldLatency, latencyMs, rc);
                 }
             }
             RegCloseKey(hKey);
@@ -256,7 +260,11 @@ int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int3
         return -1;
     }
 
-    (void)timeoutMs;  // Timeout handled by COM port configuration
+    // timeoutMs is not used per-call on Windows — the COM port timeout
+    // is set once at open time (1ms for event-driven, 100ms for polled).
+    // If per-call timeout control is needed in the future, SetCommTimeouts
+    // would need to be called here before ReadFile.
+    (void)timeoutMs;
 
     if (pData == NULL) {
         return 0;
@@ -307,4 +315,94 @@ void uPortUartClose(uPortUartHandle_t handle)
     }
 
     free(pHandle);
+}
+
+void uPortUartPrintDiagnostics(const char *pPortName)
+{
+    if (pPortName == NULL) return;
+
+    HDEVINFO devInfo = SetupDiGetClassDevs(&GUID_DEVCLASS_PORTS, NULL, NULL,
+                                           DIGCF_PRESENT);
+    if (devInfo == INVALID_HANDLE_VALUE) {
+        printf("  [UART] Cannot enumerate COM ports\n");
+        return;
+    }
+
+    SP_DEVINFO_DATA devInfoData;
+    devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
+    bool found = false;
+
+    for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfo, i, &devInfoData); i++) {
+        HKEY hKey = SetupDiOpenDevRegKey(devInfo, &devInfoData, DICS_FLAG_GLOBAL,
+                                         0, DIREG_DEV, KEY_READ);
+        if (hKey == INVALID_HANDLE_VALUE) continue;
+
+        char portName[32] = {0};
+        DWORD portNameSize = sizeof(portName);
+        DWORD regType = 0;
+        LONG rc = RegQueryValueExA(hKey, "PortName", NULL, &regType,
+                                   (LPBYTE)portName, &portNameSize);
+        if (rc != ERROR_SUCCESS || regType != REG_SZ ||
+            _stricmp(portName, pPortName) != 0) {
+            RegCloseKey(hKey);
+            continue;
+        }
+
+        found = true;
+
+        // Read FTDI LatencyTimer
+        DWORD latency = 0;
+        DWORD latencySize = sizeof(latency);
+        DWORD latencyType = 0;
+        rc = RegQueryValueExA(hKey, "LatencyTimer", NULL, &latencyType,
+                              (LPBYTE)&latency, &latencySize);
+        bool hasFtdi = (rc == ERROR_SUCCESS && latencyType == REG_DWORD);
+
+        RegCloseKey(hKey);
+
+        // Get device description (driver friendly name)
+        char desc[256] = {0};
+        SetupDiGetDeviceRegistryPropertyA(devInfo, &devInfoData,
+            SPDRP_FRIENDLYNAME, NULL, (PBYTE)desc, sizeof(desc), NULL);
+
+        char driver[256] = {0};
+        SetupDiGetDeviceRegistryPropertyA(devInfo, &devInfoData,
+            SPDRP_DRIVER, NULL, (PBYTE)driver, sizeof(driver), NULL);
+
+        char mfg[128] = {0};
+        SetupDiGetDeviceRegistryPropertyA(devInfo, &devInfoData,
+            SPDRP_MFG, NULL, (PBYTE)mfg, sizeof(mfg), NULL);
+
+        char hwId[256] = {0};
+        SetupDiGetDeviceRegistryPropertyA(devInfo, &devInfoData,
+            SPDRP_HARDWAREID, NULL, (PBYTE)hwId, sizeof(hwId), NULL);
+
+        printf("  [UART] Port: %s\n", pPortName);
+        printf("  [UART] Device: %s\n", desc[0] ? desc : "(unknown)");
+        printf("  [UART] Manufacturer: %s\n", mfg[0] ? mfg : "(unknown)");
+        printf("  [UART] Hardware ID: %s\n", hwId[0] ? hwId : "(unknown)");
+        if (hasFtdi) {
+            printf("  [UART] FTDI LatencyTimer: %lu ms\n", latency);
+            if (latency > 2) {
+                printf("  [UART] *** WARNING: FTDI LatencyTimer is %lu ms (should be 1 ms) ***\n", latency);
+                printf("  [UART] High latency adds ~%lu ms per short USB transfer.\n", latency);
+                printf("  [UART] Fix: Device Manager -> %s -> Properties ->\n", desc);
+                printf("  [UART]       Port Settings -> Advanced -> Latency Timer -> 1\n");
+            }
+        } else {
+            printf("  [UART] FTDI LatencyTimer: N/A (not FTDI)\n");
+        }
+#if U_CX_EVENT_DRIVEN_IO == 1
+        printf("  [UART] IO mode: event-driven (MAXDWORD/1ms)\n");
+#else
+        printf("  [UART] IO mode: polled (100ms timeout)\n");
+#endif
+        break;
+    }
+
+    if (!found) {
+        printf("  [UART] Port %s: not found in device list\n", pPortName);
+    }
+
+    SetupDiDestroyDeviceInfoList(devInfo);
 }

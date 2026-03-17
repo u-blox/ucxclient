@@ -14,7 +14,7 @@
 #include "u_cx_at_client.h"
 #include "u_cx_socket.h"
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
 #include <windows.h>
 /* Phase timing for uCxSocketWrite — accumulates across all calls,
  * printed by uCxSocketWriteDumpTiming(). */
@@ -131,7 +131,7 @@ int32_t uCxSocketWrite(uCxHandle_t * puCxHandle, int32_t socket_handle, const ui
     int32_t written_length;
     int32_t ret;
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
     LARGE_INTEGER t0, t1, t2, t3;
     if (gQpcFreq.QuadPart == 0) QueryPerformanceFrequency(&gQpcFreq);
     QueryPerformanceCounter(&t0);
@@ -139,13 +139,13 @@ int32_t uCxSocketWrite(uCxHandle_t * puCxHandle, int32_t socket_handle, const ui
 
     uCxAtClientCmdBeginF(pAtClient, "AT+USOWB=", "dB", socket_handle, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
     QueryPerformanceCounter(&t1);
 #endif
 
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOWB:", NULL, NULL, "-d", &written_length, U_CX_AT_UTIL_PARAM_LAST);
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
     QueryPerformanceCounter(&t2);
 #endif
 
@@ -157,7 +157,7 @@ int32_t uCxSocketWrite(uCxHandle_t * puCxHandle, int32_t socket_handle, const ui
         }
     }
 
-#ifdef _WIN32
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
     QueryPerformanceCounter(&t3);
     gPhase1Us += (double)(t1.QuadPart - t0.QuadPart) * 1e6 / gQpcFreq.QuadPart;
     gPhase2Us += (double)(t2.QuadPart - t1.QuadPart) * 1e6 / gQpcFreq.QuadPart;

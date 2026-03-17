@@ -137,7 +137,12 @@ uUrcEntry_t *uCxAtUrcQueueDequeueBegin(uCxAtUrcQueue_t *pUrcQueue)
     uUrcEntry_t *pEntry = NULL;
 
     if (U_CX_MUTEX_TRY_LOCK(pUrcQueue->dequeueMutex, 0) == 0) {
-        U_CX_AT_PORT_ASSERT(pUrcQueue->pDequeueEntry == NULL);
+        // If a dequeue is already in progress (reentrant call from URC callback
+        // that triggers an AT command which calls processUrcs again), skip gracefully
+        if (pUrcQueue->pDequeueEntry != NULL) {
+            U_CX_MUTEX_UNLOCK(pUrcQueue->dequeueMutex);
+            return NULL;
+        }
 
         U_CX_MUTEX_LOCK(pUrcQueue->queueMutex);
         if (pUrcQueue->bufferPos > 0) {

@@ -272,7 +272,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
  * @brief Read exactly 1 byte via the read-ahead buffer.
  *
  * If the buffer has data, return it immediately (no syscall).
- * Otherwise issue a bulk uPortUartRead to refill (up to 512 bytes).
+ * Otherwise issue a bulk uPortUartRead to refill (up to sizeof(rxReadAhead) bytes).
  */
 static int32_t bufferedReadByte(uCxAtClient_t *pClient, char *pCh, int32_t timeoutMs)
 {
@@ -344,7 +344,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
     uCxAtBinaryRx_t *pBinRx = &pClient->binaryRx;
     int32_t readStatus;
 
-    static uint8_t lengthBuf[2];
+    uint8_t lengthBuf[2];
     if (pBinRx->rxHeaderCount < 2) {
         size_t readLen = sizeof(lengthBuf) - pBinRx->rxHeaderCount;
 #if U_CX_EVENT_DRIVEN_IO == 1
@@ -638,6 +638,10 @@ void uCxAtClientClose(uCxAtClient_t *pClient)
 
     // Set opened=false BEFORE closing the handle so the RX thread
     // (which checks opened first) never dereferences a freed handle.
+    // Note: there is still a small TOCTOU window where the RX thread
+    // may have already checked opened==true and entered ReadFile.
+    // This is benign — ReadFile on a closing handle returns an error
+    // which the RX thread handles by sleeping and retrying.
     pClient->opened = false;
 
     if (pClient->uartHandle != NULL) {
@@ -666,6 +670,15 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
      * so we can send them in one WriteFile() syscall. */
     char txBuf[2048];
     size_t txPos = 0;
+
+    /* Helper: append data to txBuf with overflow assertion.
+     * Text-mode AT commands should always fit in 2048 bytes.
+     * Binary payload paths ('B', 'h') handle overflow separately. */
+    #define TX_APPEND(src, n) do {                              \
+        U_CX_AT_PORT_ASSERT(txPos + (n) <= sizeof(txBuf));     \
+        memcpy(&txBuf[txPos], (src), (n));                      \
+        txPos += (n);                                            \
+    } while (0)
 #endif
 
     U_CX_LOG_BEGIN_I(U_CX_LOG_CH_TX, pClient->instance);
@@ -674,10 +687,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
     /* Append command string */
     {
         size_t cmdLen = strlen(pCmd);
-        if (txPos + cmdLen <= sizeof(txBuf)) {
-            memcpy(&txBuf[txPos], pCmd, cmdLen);
-            txPos += cmdLen;
-        }
+        TX_APPEND(pCmd, cmdLen);
         U_CX_LOG(U_CX_LOG_CH_TX, "%s", pCmd);
     }
 #else
@@ -688,7 +698,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
     while (*pCh != 0) {
         if ((pCh != pParamFmt) && (*pCh != 'B')) { // Don't add ',' for Binary transfer
 #if U_CX_EVENT_DRIVEN_IO == 1
-            if (txPos < sizeof(txBuf)) { txBuf[txPos++] = ','; }
+            TX_APPEND(",", 1);
             U_CX_LOG(U_CX_LOG_CH_TX, ",");
 #else
             writeAndLog(pClient, ",", 1);
@@ -700,13 +710,10 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
             case 'd': {
                 // Digit (integer)
                 int i = va_arg(args, int);
-                int32_t len = (size_t)snprintf(buf, sizeof(buf), "%d", i);
+                int32_t len = snprintf(buf, sizeof(buf), "%d", i);
                 U_CX_AT_PORT_ASSERT(len > 0);
 #if U_CX_EVENT_DRIVEN_IO == 1
-                if (txPos + (size_t)len <= sizeof(txBuf)) {
-                    memcpy(&txBuf[txPos], buf, (size_t)len);
-                    txPos += (size_t)len;
-                }
+                TX_APPEND(buf, (size_t)len);
                 U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
 #else
                 writeAndLog(pClient, buf, (size_t)len);
@@ -720,7 +727,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
 
                 if (len == 0) {
 #if U_CX_EVENT_DRIVEN_IO == 1
-                    if (txPos + 2 <= sizeof(txBuf)) { memcpy(&txBuf[txPos], "[]", 2); txPos += 2; }
+                    TX_APPEND("[]", 2);
                     U_CX_LOG(U_CX_LOG_CH_TX, "[]");
 #else
                     writeAndLog(pClient, "[]", 2);
@@ -731,10 +738,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                     for (size_t i = 0; i < len; i++) {
                         int32_t written = snprintf(&buf[1], sizeof(buf) - 1, "%d", pValues[i]) + 1;
 #if U_CX_EVENT_DRIVEN_IO == 1
-                        if (txPos + (size_t)written <= sizeof(txBuf)) {
-                            memcpy(&txBuf[txPos], buf, (size_t)written);
-                            txPos += (size_t)written;
-                        }
+                        TX_APPEND(buf, (size_t)written);
                         U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
 #else
                         writeAndLog(pClient, buf, (size_t)written);
@@ -742,7 +746,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                         buf[0] = ',';
                     }
 #if U_CX_EVENT_DRIVEN_IO == 1
-                    if (txPos < sizeof(txBuf)) { txBuf[txPos++] = ']'; }
+                    TX_APPEND("]", 1);
                     U_CX_LOG(U_CX_LOG_CH_TX, "]");
 #else
                     writeAndLog(pClient, "]", 1);
@@ -756,10 +760,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 size_t len = uCxAtUtilWriteEscString(pStr, strlen(pStr), buf, sizeof(buf));
                 if (len > 0) {
 #if U_CX_EVENT_DRIVEN_IO == 1
-                    if (txPos + len <= sizeof(txBuf)) {
-                        memcpy(&txBuf[txPos], buf, len);
-                        txPos += len;
-                    }
+                    TX_APPEND(buf, len);
                     U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
 #else
                     writeAndLog(pClient, buf, len);
@@ -768,9 +769,9 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                     // Buffer too small, fall back to unescaped
 #if U_CX_EVENT_DRIVEN_IO == 1
                     size_t strLen = strlen(pStr);
-                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
-                    if (txPos + strLen <= sizeof(txBuf)) { memcpy(&txBuf[txPos], pStr, strLen); txPos += strLen; }
-                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
+                    TX_APPEND("\"", 1);
+                    TX_APPEND(pStr, strLen);
+                    TX_APPEND("\"", 1);
                     U_CX_LOG(U_CX_LOG_CH_TX, "\"%s\"", pStr);
 #else
                     writeAndLog(pClient, "\"", 1);
@@ -787,19 +788,16 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 size_t len = uCxAtUtilWriteEscString(pStr, strLen, buf, sizeof(buf));
                 if (len > 0) {
 #if U_CX_EVENT_DRIVEN_IO == 1
-                    if (txPos + len <= sizeof(txBuf)) {
-                        memcpy(&txBuf[txPos], buf, len);
-                        txPos += len;
-                    }
+                    TX_APPEND(buf, len);
                     U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
 #else
                     writeAndLog(pClient, buf, len);
 #endif
                 } else {
 #if U_CX_EVENT_DRIVEN_IO == 1
-                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
-                    if (txPos + strLen <= sizeof(txBuf)) { memcpy(&txBuf[txPos], pStr, strLen); txPos += strLen; }
-                    if (txPos + 1 <= sizeof(txBuf)) { txBuf[txPos++] = '"'; }
+                    TX_APPEND("\"", 1);
+                    TX_APPEND(pStr, strLen);
+                    TX_APPEND("\"", 1);
                     U_CX_LOG(U_CX_LOG_CH_TX, "\"%s\"", pStr);
 #else
                     writeAndLog(pClient, "\"", 1);
@@ -815,10 +813,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 int32_t len = uCxIpAddressToString(pIpAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
 #if U_CX_EVENT_DRIVEN_IO == 1
-                if (txPos + (size_t)len <= sizeof(txBuf)) {
-                    memcpy(&txBuf[txPos], buf, (size_t)len);
-                    txPos += (size_t)len;
-                }
+                TX_APPEND(buf, (size_t)len);
                 U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
 #else
                 writeAndLog(pClient, buf, (size_t)len);
@@ -831,10 +826,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 int32_t len = uCxMacAddressToString(pMacAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
 #if U_CX_EVENT_DRIVEN_IO == 1
-                if (txPos + (size_t)len <= sizeof(txBuf)) {
-                    memcpy(&txBuf[txPos], buf, (size_t)len);
-                    txPos += (size_t)len;
-                }
+                TX_APPEND(buf, (size_t)len);
                 U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
 #else
                 writeAndLog(pClient, buf, (size_t)len);
@@ -847,10 +839,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 int32_t len = uCxBdAddressToString(pBtLeAddr, buf, sizeof(buf));
                 U_CX_AT_PORT_ASSERT(len > 0);
 #if U_CX_EVENT_DRIVEN_IO == 1
-                if (txPos + (size_t)len <= sizeof(txBuf)) {
-                    memcpy(&txBuf[txPos], buf, (size_t)len);
-                    txPos += (size_t)len;
-                }
+                TX_APPEND(buf, (size_t)len);
                 U_CX_LOG(U_CX_LOG_CH_TX, "%s", buf);
 #else
                 writeAndLog(pClient, buf, (size_t)len);
@@ -868,20 +857,22 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                 U_CX_AT_PORT_ASSERT(len > 0);
 
 #if U_CX_EVENT_DRIVEN_IO == 1
-                // Coalesce text header + SOH binary header into one write,
-                // then send the payload as a second write.
-                // This reduces 3 WriteFile() calls to 2.
-                if (txPos + sizeof(binHeader) <= sizeof(txBuf)) {
-                    memcpy(&txBuf[txPos], binHeader, sizeof(binHeader));
-                    txPos += sizeof(binHeader);
+                // Coalesce text header + SOH binary header + payload into
+                // a single WriteFile() when everything fits in txBuf.
+                TX_APPEND(binHeader, sizeof(binHeader));
+                if (txPos + (size_t)len <= sizeof(txBuf)) {
+                    // Everything fits — copy payload into txBuf.
+                    // The final flush at end of function sends it all in 1 write.
+                    memcpy(&txBuf[txPos], pData, (size_t)len);
+                    txPos += (size_t)len;
+                } else {
+                    // Payload too large for txBuf — fall back to 2 writes
+                    if (txPos > 0) {
+                        uPortUartWrite(pClient->uartHandle, txBuf, txPos);
+                        txPos = 0;
+                    }
+                    uPortUartWrite(pClient->uartHandle, pData, (size_t)len);
                 }
-                // Flush text + SOH header in one syscall
-                if (txPos > 0) {
-                    uPortUartWrite(pClient->uartHandle, txBuf, txPos);
-                    txPos = 0;
-                }
-                // Payload as second write (no copy — it's already in caller's buffer)
-                uPortUartWrite(pClient->uartHandle, pData, (size_t)len);
 #else
                 writeNoLog(pClient, binHeader, sizeof(binHeader));
                 writeNoLog(pClient, pData, (size_t)len);
@@ -915,6 +906,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
                             uPortUartWrite(pClient->uartHandle, txBuf, txPos);
                             txPos = 0;
                         }
+                        U_CX_AT_PORT_ASSERT(hexLen <= sizeof(txBuf));
                         memcpy(&txBuf[txPos], buf, hexLen);
                         txPos += hexLen;
                     }
@@ -933,7 +925,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
 
     if (!binaryTransfer) {
 #if U_CX_EVENT_DRIVEN_IO == 1
-        if (txPos < sizeof(txBuf)) { txBuf[txPos++] = '\r'; }
+        TX_APPEND("\r", 1);
 #else
         uPortUartWrite(pClient->uartHandle, "\r", 1);
 #endif
@@ -944,6 +936,7 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
     if (txPos > 0) {
         uPortUartWrite(pClient->uartHandle, txBuf, txPos);
     }
+    #undef TX_APPEND
 #endif
 
     U_CX_LOG_END(U_CX_LOG_CH_TX);

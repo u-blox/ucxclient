@@ -128,10 +128,18 @@ int32_t uPortMutexTryLock(CRITICAL_SECTION *pCs, int32_t timeoutMs)
         return -2;  // Non-blocking try failed
     }
 
-    // Spin-wait with Sleep(0) yield for the requested timeout
+    // Spin-yield with Sleep(1) fallback to avoid busy-burning CPU.
+    // First few iterations use SwitchToThread() for low-latency acquisition,
+    // then fall back to Sleep(1) to avoid pegging a core on longer waits.
     DWORD start = GetTickCount();
+    int spins = 0;
     while ((GetTickCount() - start) < (DWORD)timeoutMs) {
-        SwitchToThread();
+        if (++spins < 100) {
+            SwitchToThread();
+        } else {
+            Sleep(1);
+            spins = 0;
+        }
         if (TryEnterCriticalSection(pCs)) {
             return 0;
         }

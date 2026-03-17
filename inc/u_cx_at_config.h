@@ -51,7 +51,7 @@
 /* Enable event-driven, buffered UART I/O for higher throughput.
  *
  * With "U_CX_EVENT_DRIVEN_IO 1" (default):
- *   - AT client uses a 512-byte read-ahead buffer (bulk UART reads)
+ *   - AT client uses a 2048-byte read-ahead buffer (bulk UART reads)
  *   - AT TX commands are coalesced into a single UART write
  *   - UART drivers block on data instead of polling
  *   - RX threads do not sleep between iterations
