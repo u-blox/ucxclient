@@ -14,6 +14,30 @@
 #include "u_cx_at_client.h"
 #include "u_cx_socket.h"
 
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
+#include <windows.h>
+/* Phase timing for uCxSocketWrite — accumulates across all calls,
+ * printed by uCxSocketWriteDumpTiming(). */
+static LARGE_INTEGER gQpcFreq = {0};
+static double gPhase1Us = 0;   /* cmdBeginF (TX) */
+static double gPhase2Us = 0;   /* cmdGetRspParamsF (wait for +USOWB response) */
+static double gPhase3Us = 0;   /* cmdEnd (wait for OK) */
+static uint32_t gWriteCount = 0;
+void uCxSocketWriteDumpTiming(void)
+{
+    if (gWriteCount == 0) return;
+    printf("  WRITE-PHASES (%u calls): begin=%.1fus  getRsp=%.1fus  cmdEnd=%.1fus  total=%.1fus\n",
+           gWriteCount,
+           gPhase1Us / gWriteCount,
+           gPhase2Us / gWriteCount,
+           gPhase3Us / gWriteCount,
+           (gPhase1Us + gPhase2Us + gPhase3Us) / gWriteCount);
+    fflush(stdout);
+    gPhase1Us = gPhase2Us = gPhase3Us = 0;
+    gWriteCount = 0;
+}
+#endif
+
 int32_t uCxSocketCreate1(uCxHandle_t * puCxHandle, uSocketProtocol_t protocol, int32_t * pSocketHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
@@ -106,8 +130,25 @@ int32_t uCxSocketWrite(uCxHandle_t * puCxHandle, int32_t socket_handle, const ui
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t written_length;
     int32_t ret;
+
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
+    LARGE_INTEGER t0, t1, t2, t3;
+    if (gQpcFreq.QuadPart == 0) QueryPerformanceFrequency(&gQpcFreq);
+    QueryPerformanceCounter(&t0);
+#endif
+
     uCxAtClientCmdBeginF(pAtClient, "AT+USOWB=", "dB", socket_handle, binary_data, binary_data_len, U_CX_AT_UTIL_PARAM_LAST);
+
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
+    QueryPerformanceCounter(&t1);
+#endif
+
     ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+USOWB:", NULL, NULL, "-d", &written_length, U_CX_AT_UTIL_PARAM_LAST);
+
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
+    QueryPerformanceCounter(&t2);
+#endif
+
     {
         // Always call uCxAtClientCmdEnd() even if any previous function failed
         int32_t endRet = uCxAtClientCmdEnd(pAtClient);
@@ -115,6 +156,15 @@ int32_t uCxSocketWrite(uCxHandle_t * puCxHandle, int32_t socket_handle, const ui
             ret = endRet;
         }
     }
+
+#if defined(_WIN32) && defined(U_CX_PROFILE_SOCKET_WRITE)
+    QueryPerformanceCounter(&t3);
+    gPhase1Us += (double)(t1.QuadPart - t0.QuadPart) * 1e6 / gQpcFreq.QuadPart;
+    gPhase2Us += (double)(t2.QuadPart - t1.QuadPart) * 1e6 / gQpcFreq.QuadPart;
+    gPhase3Us += (double)(t3.QuadPart - t2.QuadPart) * 1e6 / gQpcFreq.QuadPart;
+    gWriteCount++;
+#endif
+
     if (ret >= 0) {
         ret = written_length;
     }

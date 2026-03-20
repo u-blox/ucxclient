@@ -75,14 +75,26 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
                     "RX thread started");
 
     while (!pCtx->terminateRxTask) {
+        if (!pCtx->pClient->opened) {
+            // UART is closed (e.g. during baud rate switch) – wait and retry
+            Sleep(50);
+            continue;
+        }
         int32_t result = uCxAtClientHandleRx(pCtx->pClient);
         if (result < 0) {
-            // Don't exit on error - module may have changed baud rate or rebooted
-            // Just break the loop and let the thread terminate gracefully
-            break;
+            // Read error – UART may have been closed for baud rate switch or reboot.
+            // Sleep and retry instead of exiting so the thread survives close/reopen cycles.
+            Sleep(100);
+            continue;
         }
+#if U_CX_EVENT_DRIVEN_IO == 1
+        // No Sleep needed – uPortUartRead now blocks with
+        // ReadIntervalTimeout/ReadTotalTimeoutConstant,
+        // making this loop event-driven instead of polled.
+#else
         // Sleep for polling interval (10ms)
         Sleep(10);
+#endif
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX thread terminated");
@@ -106,20 +118,33 @@ int32_t uPortGetTickTimeMs(void)
  * PUBLIC FUNCTIONS - MUTEX API
  * -------------------------------------------------------------- */
 
-int32_t uPortMutexTryLock(HANDLE handle, int32_t timeoutMs)
+int32_t uPortMutexTryLock(CRITICAL_SECTION *pCs, int32_t timeoutMs)
 {
-    DWORD dwTimeout = (timeoutMs < 0) ? INFINITE : (DWORD)timeoutMs;
-    DWORD dwResult;
-
-    dwResult = WaitForSingleObject(handle, dwTimeout);
-
-    if (dwResult == WAIT_OBJECT_0) {
-        return 0;
-    } else if (dwResult == WAIT_TIMEOUT) {
-        return -2;  // Timeout
-    } else {
-        return -1;  // Error
+    if (TryEnterCriticalSection(pCs)) {
+        return 0;  // Acquired
     }
+
+    if (timeoutMs <= 0) {
+        return -2;  // Non-blocking try failed
+    }
+
+    // Spin-yield with Sleep(1) fallback to avoid busy-burning CPU.
+    // First few iterations use SwitchToThread() for low-latency acquisition,
+    // then fall back to Sleep(1) to avoid pegging a core on longer waits.
+    DWORD start = GetTickCount();
+    int spins = 0;
+    while ((GetTickCount() - start) < (DWORD)timeoutMs) {
+        if (++spins < 100) {
+            SwitchToThread();
+        } else {
+            Sleep(1);
+            spins = 0;
+        }
+        if (TryEnterCriticalSection(pCs)) {
+            return 0;
+        }
+    }
+    return -2;  // Timeout
 }
 
 /* ----------------------------------------------------------------

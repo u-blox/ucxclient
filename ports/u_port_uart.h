@@ -95,6 +95,7 @@ int32_t uPortUartWrite(uPortUartHandle_t handle, const void *pData, size_t lengt
 int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int32_t timeoutMs);
 
 /**
+/**
  * @brief Flush UART RX buffer
  *
  * Discards all data in the UART receive buffer.
@@ -111,6 +112,16 @@ void uPortUartFlushRx(uPortUartHandle_t handle);
  * @param[in]  handle  UART handle from uPortUartOpen()
  */
 void uPortUartFlushTx(uPortUartHandle_t handle);
+
+/**
+ * @brief Print UART port diagnostics
+ *
+ * Prints COM port driver info, FTDI latency timer, timeout settings,
+ * and buffer sizes. Windows only; no-op on other platforms.
+ *
+ * @param[in]  pPortName  COM port name (e.g. "COM37")
+ */
+void uPortUartPrintDiagnostics(const char *pPortName);
 
 #ifdef __cplusplus
 }

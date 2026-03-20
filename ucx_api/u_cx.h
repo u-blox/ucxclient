@@ -78,7 +78,6 @@ void uCxSessionLock(uCxHandle_t *puCxHandle);
   * @param[in]  puCxHandle:  the handle from uCxInit().
   */
 void uCxSessionUnlock(uCxHandle_t *puCxHandle);
-
 #ifdef __cplusplus
 }
 #endif
