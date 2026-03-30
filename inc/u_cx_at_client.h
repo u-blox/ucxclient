@@ -337,6 +337,20 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient);
 int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient);
 
 /**
+  * @brief  Process queued URCs without reading UART
+  *
+  * When a background RX thread calls uCxAtClientHandleRx(), the main thread
+  * only needs to dispatch queued URCs. This function does exactly that -
+  * it dequeues and dispatches pending URCs without acquiring cmdMutex or
+  * performing any UART reads, avoiding mutex contention with the RX thread.
+  *
+  * Only available when U_CX_USE_URC_QUEUE is enabled.
+  *
+  * @param[in]  pClient:   the AT client from uCxAtClientInit().
+  */
+void uCxAtClientProcessUrcs(uCxAtClient_t *pClient);
+
+/**
   * @brief  Get last I/O error code
   *
   * If the AT client returns U_CX_ERROR_IO you can call this

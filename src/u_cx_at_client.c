@@ -1020,6 +1020,15 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient)
     return cmdEnd(pClient);
 }
 
+void uCxAtClientProcessUrcs(uCxAtClient_t *pClient)
+{
+#if U_CX_USE_URC_QUEUE == 1
+    processUrcs(pClient);
+#else
+    (void)pClient;
+#endif
+}
+
 int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
 {
     if (!pClient->opened) {
