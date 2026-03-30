@@ -81,16 +81,24 @@ static void *rxTask(void *pArg)
     uPortRxContext_t *pCtx = (uPortRxContext_t *)pArg;
 
     while (!pCtx->terminateRxTask) {
+        if (!pCtx->pClient->opened) {
+            // UART is closed (e.g. during baud rate switch) – wait and retry
+            U_CX_PORT_SLEEP_MS(50);
+            continue;
+        }
+        int32_t result = uCxAtClientHandleRx(pCtx->pClient);
+        if (result < 0) {
+            // Read error – UART may have been closed for baud rate switch or reboot.
+            // Sleep and retry instead of exiting so the thread survives close/reopen cycles.
+            U_CX_PORT_SLEEP_MS(100);
+            continue;
+        }
 #if U_CX_EVENT_DRIVEN_IO == 1
         // No sleep needed – uPortUartRead uses poll() which blocks
         // until data arrives or timeout expires (event-driven).
 #else
         U_CX_PORT_SLEEP_MS(10);
 #endif
-        if (uCxAtClientHandleRx(pCtx->pClient) < 0) {
-            printf("Error in RX handling thread\n");
-            exit(1);
-        }
     }
 
     U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pCtx->pClient->instance, "RX task terminated");
