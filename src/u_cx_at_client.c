@@ -1036,7 +1036,17 @@ int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
     }
 
     int32_t ret = 0;
-    U_CX_MUTEX_LOCK(pClient->cmdMutex);
+
+    // TRY_LOCK instead of blocking LOCK:
+    // If the main thread holds cmdMutex (sending AT command), skip this
+    // iteration entirely. The main thread reads UART itself during cmdEnd(),
+    // so no data is lost. This eliminates lock starvation that caused
+    // 200-800ms main loop stalls when the RX thread's tight loop prevented
+    // the main thread from acquiring cmdMutex for sends.
+    if (U_CX_MUTEX_TRY_LOCK(pClient->cmdMutex, 0) != 0) {
+        // Could not acquire — main thread has it, just dispatch URCs
+        goto dispatch_urcs;
+    }
 
     if (!pClient->executingCmd) {
         int32_t parserRet = handleRxData(pClient);
@@ -1046,6 +1056,8 @@ int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
     }
 
     U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
+
+dispatch_urcs:
 
 #if U_CX_USE_URC_QUEUE == 1
     processUrcs(pClient);
