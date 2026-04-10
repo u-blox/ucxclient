@@ -69,9 +69,13 @@ typedef enum
 
 typedef enum
 {
-    U_BT_DISCOVERY_TYPE_ALL,                  /**< All with no filter. Displays all found devices; devices can be displayed multiple times. */
-    U_BT_DISCOVERY_TYPE_ALL_NO_DUPLICATES = 1 /**< General inquiry. Displays devices in General or Limited discoverability mode; each device
-                                                   is displayed only once. */
+    U_BT_DISCOVERY_TYPE_ALL,                          /**< Displays all found devices; devices can be displayed multiple times. */
+    U_BT_DISCOVERY_TYPE_ALL_NO_DUPLICATES = 1,        /**< Displays all found devices; each device is displayed only once. */
+    U_BT_DISCOVERY_TYPE_DATA_FILTER = 2,              /**< Filter discovery results using the configured data filters. Only devices matching a data
+                                                           filter configured with AT+UBTDFD will be reported. Devices can be displayed multiple
+                                                           times. */
+    U_BT_DISCOVERY_TYPE_DATA_FILTER_NO_DUPLICATES = 3 /**< Filter discovery results using the configured data filters. Only devices matching a data
+                                                           filter configured with AT+UBTDFD will be reported. Each device is displayed only once. */
 } uBtDiscoveryType_t;
 
 typedef enum
@@ -85,6 +89,18 @@ typedef enum
     U_BT_OUTPUT_EVENTS_DISABLED,   /**< Disable output events during background discovery */
     U_BT_OUTPUT_EVENTS_ENABLED = 1 /**< Enable output events during background discovery */
 } uBtOutputEvents_t;
+
+typedef enum
+{
+    U_BT_DISCOVERY_STATE_NOT_ACTIVE, /**< Background discovery is not active */
+    U_BT_DISCOVERY_STATE_ACTIVE = 1  /**< Background discovery is active */
+} uBtDiscoveryState_t;
+
+typedef enum
+{
+    U_BT_CONNECT_TO_DIRECTED_ADVERTISEMENTS_DISABLED,   /**< Connect to directed advertisements during background discovery disabled */
+    U_BT_CONNECT_TO_DIRECTED_ADVERTISEMENTS_ENABLED = 1 /**< Connect to directed advertisements during background discovery enabled */
+} uBtConnectToDirectedAdvertisements_t;
 
 typedef enum
 {
@@ -120,6 +136,19 @@ typedef enum
     U_BT_DIRECTED_ADV_DISABLED,   /**< Directed Advertisement Not Running */
     U_BT_DIRECTED_ADV_ENABLED = 1 /**< Directed Advertisement Running */
 } uBtDirectedAdv_t;
+
+typedef enum
+{
+    U_BT_ADV_TYPE_CONNECTABLE_SCANNABLE,            /**< Connectable and Scannable */
+    U_BT_ADV_TYPE_NON_CONNECTABLE_SCANNABLE = 1,    /**< Non-Connectable Scannable */
+    U_BT_ADV_TYPE_NON_CONNECTABLE_NON_SCANNABLE = 2 /**< Non-Connectable Non-Scannable */
+} uBtAdvType_t;
+
+typedef enum
+{
+    U_BT_EXT_ADV_TYPE_CONNECTABLE,        /**< Connectable */
+    U_BT_EXT_ADV_TYPE_NON_CONNECTABLE = 1 /**< Non-Connectable */
+} uBtExtAdvType_t;
 
 typedef enum
 {
@@ -232,6 +261,24 @@ typedef enum
 
 typedef enum
 {
+    U_BT_CHANNEL_SOUNDING_EVENT_CAPABILITY_EXCHANGE,   /**< CS capability exchange completed. */
+    U_BT_CHANNEL_SOUNDING_EVENT_SECURITY_ENABLED = 1,  /**< CS security enabled. */
+    U_BT_CHANNEL_SOUNDING_EVENT_PROCEDURE_ENABLED = 2, /**< CS procedure enabled. */
+    U_BT_CHANNEL_SOUNDING_EVENT_PROCEDURE_DISABLED = 3 /**< CS procedure disabled. */
+} uBtChannelSoundingEvent_t;
+
+typedef enum
+{
+    U_BT_HCI_STATUS_SUCCESS,                       /**< Operation successful. */
+    U_BT_HCI_STATUS_UNKNOWN_CONN_ID = 2,           /**< Unknown connection identifier. */
+    U_BT_HCI_STATUS_CMD_DISALLOWED = 12,           /**< Command disallowed in current state. */
+    U_BT_HCI_STATUS_UNSUPP_FEATURE_PARAM_VAL = 17, /**< Unsupported feature or parameter value. */
+    U_BT_HCI_STATUS_UNSUPP_REMOTE_FEATURE = 26,    /**< Unsupported remote feature. */
+    U_BT_HCI_STATUS_UNSPECIFIED = 31               /**< Unspecified error. */
+} uBtHciStatus_t;
+
+typedef enum
+{
     U_GATT_SERVER_OPTIONS_WRITE_WITH_OUT_RESPONSE, /**< Write without Response performed */
     U_GATT_SERVER_OPTIONS_WRITE_WITH_RESPONSE = 1, /**< Write with Response performed */
     U_GATT_SERVER_OPTIONS_WRITE_LONG = 2           /**< Write long performed */
@@ -251,6 +298,7 @@ typedef void (*uUEBTUPD_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr
 typedef void (*uUEBTUPE_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr);
 typedef void (*uUEBTPHYU_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t phy_status, int32_t tx_phy, int32_t rx_phy);
 typedef void (*uUEBTBGD_t)(struct uCxHandle *puCxHandle, uBtLeAddress_t *bd_addr, int32_t rssi, const char * device_name, uBtDataType_t data_type, uByteArray_t *data);
+typedef void (*uUEBTCSS_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, uBtChannelSoundingEvent_t channel_sounding_event, uBtHciStatus_t hci_status);
 typedef void (*uUEBTGCN_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
 typedef void (*uUEBTGCI_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *hex_data);
 typedef void (*uUEBTGCW_t)(struct uCxHandle *puCxHandle, int32_t conn_handle, int32_t value_handle, uByteArray_t *value, uGattServerOptions_t options);
@@ -277,6 +325,7 @@ typedef struct
     uUEBTUPE_t UEBTUPE;
     uUEBTPHYU_t UEBTPHYU;
     uUEBTBGD_t UEBTBGD;
+    uUEBTCSS_t UEBTCSS;
     uUEBTGCN_t UEBTGCN;
     uUEBTGCI_t UEBTGCI;
     uUEBTGCW_t UEBTGCW;
