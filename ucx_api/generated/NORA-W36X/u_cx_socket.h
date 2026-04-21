@@ -418,6 +418,28 @@ int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uSoc
 int32_t uCxSocketGetHostByName(uCxHandle_t * puCxHandle, const char * host_name, uSockIpAddress_t * pHostIp);
 
 /**
+ * Join or leave a multicast group for the specified socket.
+ * This command is used to subscribe to multicast addresses for
+ * receiving multicast datagrams.
+ * Example: 224.0.0.251 (IPv4) or [ff02:0000:0000:0000:0000:0000:0000:00fb] (IPv6).
+ * 
+ * 
+ * Notes:
+ * The socket must be created and bound before joining a multicast group.
+ * 
+ * Output AT command:
+ * > AT+USOMG=<socket_handle>,<group_action>,<multicast_addr>
+ *
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param      socket_handle:  Socket identifier be used for any operation on that socket.
+ * @param      group_action:   Join or leave the multicast group.
+ * @param      multicast_addr: The multicast IP address to join or leave (e.g. 224.0.0.251 for IPv4,
+ *                             [ff02:0000:0000:0000:0000:0000:0000:00fb] for IPv6).
+ * @return                     0 on success, negative value on error.
+ */
+int32_t uCxSocketMulticastGroup(uCxHandle_t * puCxHandle, int32_t socket_handle, uSocketGroupAction_t group_action, uSockIpAddress_t * multicast_addr);
+
+/**
  * Register Connect event callback
  * 
  * Event is sent out after a successful connection to a remote peer.
