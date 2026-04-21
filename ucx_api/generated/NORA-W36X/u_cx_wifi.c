@@ -193,6 +193,40 @@ int32_t uCxWifiStationGetIpConfig(uCxHandle_t * puCxHandle, int32_t wlan_handle,
     return ret;
 }
 
+int32_t uCxWifiAccessPointSetIpConfigStatic3(uCxHandle_t * puCxHandle, uSockIpAddress_t * ip_addr, uSockIpAddress_t * subnet_mask, uSockIpAddress_t * gateway)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWAPIPS=", "iii", ip_addr, subnet_mask, gateway, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiAccessPointSetIpConfigStatic4(uCxHandle_t * puCxHandle, uSockIpAddress_t * ip_addr, uSockIpAddress_t * subnet_mask, uSockIpAddress_t * gateway, uSockIpAddress_t * prim_dns)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWAPIPS=", "iiii", ip_addr, subnet_mask, gateway, prim_dns, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiAccessPointSetIpConfigStatic5(uCxHandle_t * puCxHandle, uSockIpAddress_t * ip_addr, uSockIpAddress_t * subnet_mask, uSockIpAddress_t * gateway, uSockIpAddress_t * prim_dns, uSockIpAddress_t * sec_dns)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UWAPIPS=", "iiiii", ip_addr, subnet_mask, gateway, prim_dns, sec_dns, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxWifiAccessPointGetIpConfigStatic(uCxHandle_t * puCxHandle, uCxWifiAccessPointGetIpConfigStatic_t * pWifiAccessPointGetIpConfigStaticRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UWAPIP?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UWAPIP:", NULL, NULL, "diiiii", &pWifiAccessPointGetIpConfigStaticRsp->ip_mode, &pWifiAccessPointGetIpConfigStaticRsp->ip_addr, &pWifiAccessPointGetIpConfigStaticRsp->subnet_mask, &pWifiAccessPointGetIpConfigStaticRsp->gateway, &pWifiAccessPointGetIpConfigStaticRsp->prim_dns, &pWifiAccessPointGetIpConfigStaticRsp->sec_dns, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
 int32_t uCxWifiStationConnect(uCxHandle_t * puCxHandle, int32_t wlan_handle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;

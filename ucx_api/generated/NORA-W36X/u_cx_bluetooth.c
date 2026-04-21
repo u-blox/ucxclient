@@ -143,10 +143,79 @@ int32_t uCxBluetoothBgDiscoveryStart3(uCxHandle_t * puCxHandle, uBtDiscoveryType
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTBGD=", "ddd", discovery_type, discovery_mode, output_events, U_CX_AT_UTIL_PARAM_LAST);
 }
 
+int32_t uCxBluetoothBgDiscoveryGet(uCxHandle_t * puCxHandle, uCxBtBgDiscoveryGet_t * pBtBgDiscoveryGetRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    char *pParamsLine;
+    int32_t rspSyntaxVal;
+    size_t  paramsLen;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTBGD?", "", U_CX_AT_UTIL_PARAM_LAST);
+    pParamsLine = uCxAtClientCmdGetRspParamLine(pAtClient, "+UBTBGD:", NULL, NULL);
+    if (pParamsLine == NULL) {
+        return false;
+    }
+    paramsLen = strlen(pParamsLine);
+    if (uCxAtUtilParseParamsF(pParamsLine, "d", &rspSyntaxVal) != 1) {
+        return false;
+    }
+    uCxAtUtilReplaceChar(pParamsLine, paramsLen, 0, ',');
+    switch (rspSyntaxVal)
+    {
+        case 0:
+            pBtBgDiscoveryGetRsp->type = U_CX_BLUETOOTH_BG_DISCOVERY_GET_RSP_TYPE_DISCOVERY_STATE;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "d", &pBtBgDiscoveryGetRsp->rsp.DiscoveryState.discovery_state, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        case 1:
+            pBtBgDiscoveryGetRsp->type = U_CX_BLUETOOTH_BG_DISCOVERY_GET_RSP_TYPE_DISCOVERY_STATE_DISCOVERY_TYPE_DISCOVERY_MODE_OUTPUT_EVENTS_CONNECT_TO_DIRECTED_ADVERTISEMENTS;
+            ret = uCxAtUtilParseParamsF(pParamsLine, "ddddd", &pBtBgDiscoveryGetRsp->rsp.DiscoveryStateDiscoveryTypeDiscoveryModeOutputEventsConnectToDirectedAdvertisements.discovery_state, &pBtBgDiscoveryGetRsp->rsp.DiscoveryStateDiscoveryTypeDiscoveryModeOutputEventsConnectToDirectedAdvertisements.discovery_type, &pBtBgDiscoveryGetRsp->rsp.DiscoveryStateDiscoveryTypeDiscoveryModeOutputEventsConnectToDirectedAdvertisements.discovery_mode, &pBtBgDiscoveryGetRsp->rsp.DiscoveryStateDiscoveryTypeDiscoveryModeOutputEventsConnectToDirectedAdvertisements.output_events, &pBtBgDiscoveryGetRsp->rsp.DiscoveryStateDiscoveryTypeDiscoveryModeOutputEventsConnectToDirectedAdvertisements.connect_to_directed_advertisements, U_CX_AT_UTIL_PARAM_LAST);
+            break;
+        default:
+            return false;
+    } /* ~switch (rspSyntaxVal) */
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
 int32_t uCxBluetoothBgDiscoveryStop(uCxHandle_t * puCxHandle)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTBGDS", "", U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxBluetoothSetDiscoveryDataFilter(uCxHandle_t * puCxHandle, int32_t data_filter_index, int32_t ad_type, const uint8_t * data_filter, int32_t data_filter_len)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTDFD=", "ddh", data_filter_index, ad_type, data_filter, data_filter_len, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+bool uCxBluetoothGetDiscoveryDataFilterBegin(uCxHandle_t * puCxHandle, int32_t data_filter_index, uCxBtGetDiscoveryDataFilter_t * pBtGetDiscoveryDataFilterRsp)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTDFD=", "d", data_filter_index, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTDFD:", NULL, NULL, "-dh", &pBtGetDiscoveryDataFilterRsp->ad_type, &pBtGetDiscoveryDataFilterRsp->data_filter, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
+}
+
+void uCxBluetoothListDiscoveryDataFiltersBegin(uCxHandle_t * puCxHandle)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UBTDFD?", "", U_CX_AT_UTIL_PARAM_LAST);
+}
+
+bool uCxBluetoothListDiscoveryDataFiltersGetNext(uCxHandle_t * puCxHandle, uCxBtListDiscoveryDataFilters_t * pBtListDiscoveryDataFiltersRsp)
+{
+    int32_t ret;
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTDFD:", NULL, NULL, "ddh", &pBtListDiscoveryDataFiltersRsp->data_filter_index, &pBtListDiscoveryDataFiltersRsp->ad_type, &pBtListDiscoveryDataFiltersRsp->data_filter, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
 }
 
 int32_t uCxBluetoothGetRssi(uCxHandle_t * puCxHandle, int32_t conn_handle, int32_t * pRssi)
@@ -225,18 +294,24 @@ int32_t uCxBluetoothGetAdvertiseInformation(uCxHandle_t * puCxHandle, uCxBtGetAd
     return ret;
 }
 
-int32_t uCxBluetoothSetLegacyAdvertiseData(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len)
+int32_t uCxBluetoothSetLegacyAdvertiseDataAndType1(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTADL=", "h", adv_data, adv_data_len, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-bool uCxBluetoothGetLegacyAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * pAdvData)
+int32_t uCxBluetoothSetLegacyAdvertiseDataAndType2(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len, uBtAdvType_t adv_type)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UBTADL=", "hd", adv_data, adv_data_len, adv_type, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+bool uCxBluetoothGetLegacyAdvertiseDataAndTypeBegin(uCxHandle_t * puCxHandle, uCxBtGetLegacyAdvertiseDataAndType_t * pBtGetLegacyAdvertiseDataAndTypeRsp)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
     uCxAtClientCmdBeginF(pAtClient, "AT+UBTADL?", "", U_CX_AT_UTIL_PARAM_LAST);
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTADL:", NULL, NULL, "h", pAdvData, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UBTADL:", NULL, NULL, "hd", &pBtGetLegacyAdvertiseDataAndTypeRsp->adv_data, &pBtGetLegacyAdvertiseDataAndTypeRsp->adv_type, U_CX_AT_UTIL_PARAM_LAST);
     return ret >= 0;
 }
 
