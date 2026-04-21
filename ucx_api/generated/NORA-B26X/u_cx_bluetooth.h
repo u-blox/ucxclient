@@ -26,6 +26,30 @@ extern "C" {
 /* ------------------------------------------------------------
  * RESPONSES
  * ---------------------------------------------------------- */
+typedef enum
+{
+    U_CX_BLUETOOTH_BG_DISCOVERY_GET_RSP_TYPE_DISCOVERY_STATE,
+    U_CX_BLUETOOTH_BG_DISCOVERY_GET_RSP_TYPE_DISCOVERY_STATE_DISCOVERY_TYPE_DISCOVERY_MODE_OUTPUT_EVENTS_CONNECT_TO_DIRECTED_ADVERTISEMENTS
+} uCxBluetoothBgDiscoveryGetRspType_t;
+
+typedef struct {
+    uCxBluetoothBgDiscoveryGetRspType_t type;
+    union {
+        struct
+        {
+            int32_t discovery_state;
+        } DiscoveryState;
+        struct
+        {
+            int32_t discovery_state;
+            int32_t discovery_type;
+            int32_t discovery_mode;
+            int32_t output_events;
+            int32_t connect_to_directed_advertisements;
+        } DiscoveryStateDiscoveryTypeDiscoveryModeOutputEventsConnectToDirectedAdvertisements;
+    } rsp;
+} uCxBtBgDiscoveryGet_t;
+
 
 typedef struct
 {
@@ -44,6 +68,19 @@ typedef struct
     int32_t data_type;        /**< Type of advertising data received. */
     uByteArray_t data;        /**< Complete advertise/scan response data received from the remote device. */
 } uCxBtDiscovery_t;
+
+typedef struct
+{
+    int32_t ad_type;          /**< Advertising Data type to filter on (e.g. 0x09 for Complete Local Name). */
+    uByteArray_t data_filter; /**< Data pattern to match within the advertising data of the specified AD type. */
+} uCxBtGetDiscoveryDataFilter_t;
+
+typedef struct
+{
+    int32_t data_filter_index; /**< Index of the data filter entry (0-based). */
+    int32_t ad_type;           /**< Advertising Data type to filter on (e.g. 0x09 for Complete Local Name). */
+    uByteArray_t data_filter;  /**< Data pattern to match within the advertising data of the specified AD type. */
+} uCxBtListDiscoveryDataFilters_t;
 
 typedef struct
 {
@@ -66,9 +103,27 @@ typedef struct
 
 typedef struct
 {
+    uByteArray_t adv_data;
+    int32_t adv_type;      /**< type of legacy advertisement */
+} uCxBtGetLegacyAdvertiseDataAndType_t;
+
+typedef struct
+{
     int32_t index;
     uByteArray_t adv_data;
+    int32_t ext_adv_type;  /**< type of extended advertisement */
 } uCxBtGetExtendedAdvertiseData_t;
+
+typedef struct
+{
+    int32_t index;
+    int32_t advertisement_interval_minimum; /**< Advertising interval minimum (must be <= Advertising interval maximum. 
+                                                  Default: 1600.
+                                                  Calculation: advertisement_interval_minimum * 0.625 ms) */
+    int32_t advertisement_interval_maximum; /**< Advertising interval maximum (must be >= Advertising interval minimum. 
+                                                  Default: 2000.
+                                                  Calculation: advertisement_interval_maximum * 0.625 ms) */
+} uCxBtGetExtendedAdvertisementConfig_t;
 
 typedef struct
 {
@@ -346,6 +401,18 @@ int32_t uCxBluetoothBgDiscoveryStart2(uCxHandle_t * puCxHandle, uBtDiscoveryType
 int32_t uCxBluetoothBgDiscoveryStart3(uCxHandle_t * puCxHandle, uBtDiscoveryType_t discovery_type, uBtDiscoveryMode_t discovery_mode, uBtOutputEvents_t output_events);
 
 /**
+ * Read background discovery configuration.
+ * 
+ * Output AT command:
+ * > AT+UBTBGD?
+ *
+ * @param[in]  puCxHandle:           uCX API handle
+ * @param[out] pBtBgDiscoveryGetRsp: Please see \ref uCxBtBgDiscoveryGet_t
+ * @return                           0 on success, negative value on error.
+ */
+int32_t uCxBluetoothBgDiscoveryGet(uCxHandle_t * puCxHandle, uCxBtBgDiscoveryGet_t * pBtBgDiscoveryGetRsp);
+
+/**
  * Stop background discovery
  * 
  * Output AT command:
@@ -355,6 +422,64 @@ int32_t uCxBluetoothBgDiscoveryStart3(uCxHandle_t * puCxHandle, uBtDiscoveryType
  * @return                 0 on success, negative value on error.
  */
 int32_t uCxBluetoothBgDiscoveryStop(uCxHandle_t * puCxHandle);
+
+/**
+ * Set a data filter entry at the specified index.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UBTDFD=<data_filter_index>,<ad_type>,<data_filter>,<data_filter_len>
+ *
+ * @param[in]  puCxHandle:        uCX API handle
+ * @param      data_filter_index: Index of the data filter entry (0-based).
+ * @param      ad_type:           Advertising Data type to filter on (e.g. 0x09 for Complete Local Name).
+ * @param      data_filter:       Data pattern to match within the advertising data of the specified AD type.
+ * @param      data_filter_len:   length of data_filter
+ * @return                        0 on success, negative value on error.
+ */
+int32_t uCxBluetoothSetDiscoveryDataFilter(uCxHandle_t * puCxHandle, int32_t data_filter_index, int32_t ad_type, const uint8_t * data_filter, int32_t data_filter_len);
+
+/**
+ * Read the data filter entry at the specified index.
+ * 
+ * Output AT command:
+ * > AT+UBTDFD=<data_filter_index>
+ *
+ * @param[in]  puCxHandle:                   uCX API handle
+ * @param      data_filter_index:            Index of the data filter entry (0-based).
+ * @param[out] pBtGetDiscoveryDataFilterRsp: Please see \ref uCxBtGetDiscoveryDataFilter_t
+ * @return                                   true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+bool uCxBluetoothGetDiscoveryDataFilterBegin(uCxHandle_t * puCxHandle, int32_t data_filter_index, uCxBtGetDiscoveryDataFilter_t * pBtGetDiscoveryDataFilterRsp);
+
+/**
+ * Read all configured data filter entries.
+ * 
+ * Output AT command:
+ * > AT+UBTDFD?
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+void uCxBluetoothListDiscoveryDataFiltersBegin(uCxHandle_t * puCxHandle);
+
+/**
+ * 
+ *
+ * @param[in]  puCxHandle:                     uCX API handle
+ * @param[out] pBtListDiscoveryDataFiltersRsp: Please see \ref uCxBtListDiscoveryDataFilters_t
+ * @return                                     true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                             error code in this case).
+ */
+bool uCxBluetoothListDiscoveryDataFiltersGetNext(uCxHandle_t * puCxHandle, uCxBtListDiscoveryDataFilters_t * pBtListDiscoveryDataFiltersRsp);
 
 /**
  * Returns the current RSSI for a specified Bluetooth connection.
@@ -445,7 +570,7 @@ int32_t uCxBluetoothGetConnectionStatus(uCxHandle_t * puCxHandle, int32_t conn_h
 int32_t uCxBluetoothGetAdvertiseInformation(uCxHandle_t * puCxHandle, uCxBtGetAdvertiseInformation_t * pBtGetAdvertiseInformationRsp);
 
 /**
- * Write custom advertising data.
+ * Write custom advertising data and advertiser type.
  * 
  * Notes:
  * Can be stored using AT&W.
@@ -458,22 +583,39 @@ int32_t uCxBluetoothGetAdvertiseInformation(uCxHandle_t * puCxHandle, uCxBtGetAd
  * @param      adv_data_len: length of adv_data
  * @return                   0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetLegacyAdvertiseData(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len);
+int32_t uCxBluetoothSetLegacyAdvertiseDataAndType1(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len);
 
 /**
- * Read custom advertising data.
+ * Write custom advertising data and advertiser type.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UBTADL=<adv_data>,<adv_data_len>,<adv_type>
+ *
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param      adv_data:     
+ * @param      adv_data_len: length of adv_data
+ * @param      adv_type:     type of legacy advertisement
+ * @return                   0 on success, negative value on error.
+ */
+int32_t uCxBluetoothSetLegacyAdvertiseDataAndType2(uCxHandle_t * puCxHandle, const uint8_t * adv_data, int32_t adv_data_len, uBtAdvType_t adv_type);
+
+/**
+ * Read custom advertising data and advertiser type.
  * 
  * Output AT command:
  * > AT+UBTADL?
  *
- * @param[in]  puCxHandle: uCX API handle
- * @param[out] pAdvData:   
- * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ * @param[in]  puCxHandle:                          uCX API handle
+ * @param[out] pBtGetLegacyAdvertiseDataAndTypeRsp: Please see \ref uCxBtGetLegacyAdvertiseDataAndType_t
+ * @return                                          true on success, false on error (error code will be returned by uCxEnd()).
  *
  * NOTES:
  * Must be terminated by calling uCxEnd()
  */
-bool uCxBluetoothGetLegacyAdvertiseDataBegin(uCxHandle_t * puCxHandle, uByteArray_t * pAdvData);
+bool uCxBluetoothGetLegacyAdvertiseDataAndTypeBegin(uCxHandle_t * puCxHandle, uCxBtGetLegacyAdvertiseDataAndType_t * pBtGetLegacyAdvertiseDataAndTypeRsp);
 
 /**
  * Clear the custom legacy advertise data.
@@ -501,7 +643,25 @@ int32_t uCxBluetoothClearLegacyAdvertiseData(uCxHandle_t * puCxHandle);
  * @param      adv_data_len: length of adv_data
  * @return                   0 on success, negative value on error.
  */
-int32_t uCxBluetoothSetExtendedAdvertiseData(uCxHandle_t * puCxHandle, int32_t index, const uint8_t * adv_data, int32_t adv_data_len);
+int32_t uCxBluetoothSetExtendedAdvertiseData2(uCxHandle_t * puCxHandle, int32_t index, const uint8_t * adv_data, int32_t adv_data_len);
+
+/**
+ * Write custom advertising data for configuration index.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UBTADE=<index>,<adv_data>,<adv_data_len>,<ext_adv_type>
+ *
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param      index:        
+ * @param      adv_data:     
+ * @param      adv_data_len: length of adv_data
+ * @param      ext_adv_type: type of extended advertisement
+ * @return                   0 on success, negative value on error.
+ */
+int32_t uCxBluetoothSetExtendedAdvertiseData3(uCxHandle_t * puCxHandle, int32_t index, const uint8_t * adv_data, int32_t adv_data_len, uBtExtAdvType_t ext_adv_type);
 
 /**
  * Read custom advertising data for configuration index.
@@ -530,6 +690,40 @@ bool uCxBluetoothGetExtendedAdvertiseDataBegin(uCxHandle_t * puCxHandle, int32_t
  * @return                 0 on success, negative value on error.
  */
 int32_t uCxBluetoothClearExtendedAdvertiseData(uCxHandle_t * puCxHandle, int32_t index);
+
+/**
+ * Configure advertisement parameters for extended advertisements on the specified index.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UBTAES=<index>,<advertisement_interval_minimum>,<advertisement_interval_maximum>
+ *
+ * @param[in]  puCxHandle:                     uCX API handle
+ * @param      index:                          
+ * @param      advertisement_interval_minimum: Advertising interval minimum (must be <= Advertising interval maximum. 
+ *                                              Default: 1600.
+ *                                              Calculation: advertisement_interval_minimum * 0.625 ms)
+ * @param      advertisement_interval_maximum: Advertising interval maximum (must be >= Advertising interval minimum. 
+ *                                              Default: 2000.
+ *                                              Calculation: advertisement_interval_maximum * 0.625 ms)
+ * @return                                     0 on success, negative value on error.
+ */
+int32_t uCxBluetoothSetExtendedAdvertisementConfig(uCxHandle_t * puCxHandle, int32_t index, int32_t advertisement_interval_minimum, int32_t advertisement_interval_maximum);
+
+/**
+ * Read advertisement parameters for extended advertisements on the specified index.
+ * 
+ * Output AT command:
+ * > AT+UBTAES=<index>
+ *
+ * @param[in]  puCxHandle:                           uCX API handle
+ * @param      index:                                
+ * @param[out] pBtGetExtendedAdvertisementConfigRsp: Please see \ref uCxBtGetExtendedAdvertisementConfig_t
+ * @return                                           0 on success, negative value on error.
+ */
+int32_t uCxBluetoothGetExtendedAdvertisementConfig(uCxHandle_t * puCxHandle, int32_t index, uCxBtGetExtendedAdvertisementConfig_t * pBtGetExtendedAdvertisementConfigRsp);
 
 /**
  * Start advertisements for the specified index(es).
@@ -625,6 +819,21 @@ int32_t uCxBluetoothClearScanResponseData(uCxHandle_t * puCxHandle);
  * @return                 0 on success, negative value on error.
  */
 int32_t uCxBluetoothLegacyAdvertisementStart(uCxHandle_t * puCxHandle);
+
+/**
+ * Start legacy advertisement if not started with setting the maximum peripheral connections.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UBTAL=<max_connection>
+ *
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param      max_connection: 
+ * @return                     0 on success, negative value on error.
+ */
+int32_t uCxBluetoothLegacyAdvertisementStartWithMaxConnection(uCxHandle_t * puCxHandle, int32_t max_connection);
 
 /**
  * Stop legacy advertisement if started.
