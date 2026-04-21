@@ -22,9 +22,9 @@ extern "C" {
  * ---------------------------------------------------------- */
 
 #define U_CX_VERSION_MAJOR 3
-#define U_CX_VERSION_MINOR 2
+#define U_CX_VERSION_MINOR 4
 #define U_CX_VERSION_PATCH 0
-#define U_CX_VERSION_STR "3.2.0"
+#define U_CX_VERSION_STR "3.4.0"
 
 #ifdef __cplusplus
 }

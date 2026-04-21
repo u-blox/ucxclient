@@ -127,6 +127,19 @@ static int32_t parseUEBTBGD(uCxHandle_t * puCxHandle, char * pParams, size_t par
     return ret;
 }
 
+static int32_t parseUEBTCSS(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t conn_handle;
+    int32_t channel_sounding_event;
+    int32_t hci_status;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "ddd", &conn_handle, &channel_sounding_event, &hci_status, U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEBTCSS) {
+        puCxHandle->callbacks.UEBTCSS(puCxHandle, conn_handle, channel_sounding_event, hci_status);
+    }
+    return ret;
+}
+
 static int32_t parseUEBTGCN(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
     (void)paramsLength;
@@ -279,6 +292,9 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
     }
     if (strcmp(pUrcName, "+UEBTBGD") == 0) {
         return parseUEBTBGD(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEBTCSS") == 0) {
+        return parseUEBTCSS(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UEBTGCN") == 0) {
         return parseUEBTGCN(puCxHandle, pParams, paramsLength);
