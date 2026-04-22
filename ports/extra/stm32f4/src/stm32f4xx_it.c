@@ -133,9 +133,18 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
-  * @brief This function handles USART3 global interrupt.
+  * @brief NORA-W36 UART interrupt handler
+  * - ODIN-W26/F439 (ODIN-W2): USART1 on PA9/PA10
+  * - F407/F429: USART3 on PB10/PB11
   */
+#if defined(ODIN_W26) || defined(STM32F439xx)
+void USART1_IRQHandler(void)
+{
+  uPortUart_IRQHandler();
+}
+#else
 void USART3_IRQHandler(void)
 {
   uPortUart_IRQHandler();
 }
+#endif

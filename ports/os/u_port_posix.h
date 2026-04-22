@@ -35,7 +35,9 @@
 #endif
 
 #define U_CX_MUTEX_HANDLE                     pthread_mutex_t
-#define U_CX_MUTEX_CREATE(mutex)              pthread_mutex_init(&mutex, NULL)
+#define U_CX_MUTEX_CREATE(mutex)              do { pthread_mutexattr_t attr; pthread_mutexattr_init(&attr); \
+                                                   pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE); \
+                                                   pthread_mutex_init(&mutex, &attr); pthread_mutexattr_destroy(&attr); } while(0)
 #define U_CX_MUTEX_DELETE(mutex)              pthread_mutex_destroy(&mutex)
 #define U_CX_MUTEX_LOCK(mutex)                pthread_mutex_lock(&mutex)
 #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(&mutex, timeoutMs)

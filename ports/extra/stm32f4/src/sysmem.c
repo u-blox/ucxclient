@@ -41,22 +41,36 @@ static uint8_t *__sbrk_heap_end = NULL;
  * ^-- RAM start      ^-- _end                             _estack, RAM end --^
  * @endverbatim
  *
- * This implementation starts allocating at the '_end' linker symbol
- * The '_Min_Stack_Size' linker symbol reserves a memory for the MSP stack
- * The implementation considers '_estack' linker symbol to be RAM end
- * NOTE: If the MSP stack, at any point during execution, grows larger than the
- * reserved size, please increase the '_Min_Stack_Size'.
+ * This implementation starts allocating at the '_end' linker symbol.
+ * 
+ * ODIN-W26 NOTE: Stack is in CCM (separate from RAM), so we use _heap_end
+ * instead of calculating from _estack. The _heap_end symbol is defined in
+ * the linker script as the top of RAM.
  *
  * @param incr Memory size
  * @return Pointer to allocated memory
  */
 void *_sbrk(ptrdiff_t incr)
 {
-  extern uint8_t _end; /* Symbol defined in the linker script */
+  extern uint8_t _end; /* Symbol defined in the linker script - start of heap */
   extern uint8_t _estack; /* Symbol defined in the linker script */
   extern uint32_t _Min_Stack_Size; /* Symbol defined in the linker script */
-  const uint32_t stack_limit = (uint32_t)&_estack - (uint32_t)&_Min_Stack_Size;
-  const uint8_t *max_heap = (uint8_t *)stack_limit;
+  
+  const uint8_t *max_heap;
+  
+  /* Check if stack is in CCM (0x10000000 range) vs RAM (0x20000000 range) */
+  /* ODIN-W26: Stack in CCM, heap uses all of RAM */
+  /* Standard: Stack in RAM, heap must leave space for stack */
+  if ((uint32_t)&_estack < 0x20000000) {
+    /* Stack is in CCM (0x1000xxxx), heap can use all of RAM */
+    /* RAM ends at 0x20000000 + 192KB = 0x20030000 */
+    max_heap = (uint8_t *)0x20030000;
+  } else {
+    /* Standard layout: Stack is in RAM, leave space for it */
+    const uint32_t stack_limit = (uint32_t)&_estack - (uint32_t)&_Min_Stack_Size;
+    max_heap = (uint8_t *)stack_limit;
+  }
+  
   uint8_t *prev_heap_end;
 
   /* Initialize heap end at first call */

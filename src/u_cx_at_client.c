@@ -43,12 +43,20 @@
 /* Special character sent for entering binary mode */
 #define U_CX_SOH_CHAR    0x01
 
+/* Log a UART read failure only when transitioning from "OK" to "failing"
+ * (i.e. the first error after the last successful read). This avoids log
+ * spam when the device is unplugged and the RX thread keeps polling. The
+ * lastIoError field is cleared to 0 in bufferedReadByte/bufferedReadBulk
+ * on each successful read, so a subsequent disconnect will log again. */
 #define CHECK_READ_ERROR(CLIENT, READ_RET)  \
     if (READ_RET < 0) {                     \
+        bool _wasOk = (CLIENT->lastIoError == 0); \
         CLIENT->lastIoError = READ_RET;     \
         CLIENT->status = U_CX_ERROR_IO;     \
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, CLIENT->instance, \
-                        "read() failed with return value: %" PRId32, READ_RET); \
+        if (_wasOk) {                       \
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, CLIENT->instance, \
+                            "read() failed with return value: %" PRId32 " (further errors suppressed until recovery)", READ_RET); \
+        }                                   \
         return AT_PARSER_ERROR;             \
     }
 
@@ -291,6 +299,14 @@ static int32_t bufferedReadByte(uCxAtClient_t *pClient, char *pCh, int32_t timeo
         return n;   /* timeout or error */
     }
 
+    /* Successful read – clear sticky IO error so a future disconnect logs again
+     * (and emit a one-shot recovery message if we were previously in error state). */
+    if (pClient->lastIoError != 0) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                        "read() recovered after IO error %" PRId32, pClient->lastIoError);
+        pClient->lastIoError = 0;
+    }
+
     pClient->rxReadAheadLen = (size_t)n;
     pClient->rxReadAheadPos = 1;
     *pCh = (char)pClient->rxReadAhead[0];
@@ -329,6 +345,12 @@ static int32_t bufferedReadBulk(uCxAtClient_t *pClient, void *pData, size_t leng
         }
         if (n > 0) {
             totalRead += (size_t)n;
+            /* Successful read – clear sticky IO error (see bufferedReadByte) */
+            if (pClient->lastIoError != 0) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                                "read() recovered after IO error %" PRId32, pClient->lastIoError);
+                pClient->lastIoError = 0;
+            }
         }
     }
 

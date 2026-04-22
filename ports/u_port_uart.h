@@ -95,7 +95,6 @@ int32_t uPortUartWrite(uPortUartHandle_t handle, const void *pData, size_t lengt
 int32_t uPortUartRead(uPortUartHandle_t handle, void *pData, size_t length, int32_t timeoutMs);
 
 /**
-/**
  * @brief Flush UART RX buffer
  *
  * Discards all data in the UART receive buffer.

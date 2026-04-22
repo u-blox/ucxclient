@@ -34,11 +34,11 @@
  * -------------------------------------------------------------- */
 
 #define U_CX_MUTEX_HANDLE                     SemaphoreHandle_t
-#define U_CX_MUTEX_CREATE(mutex)              do { mutex = xSemaphoreCreateBinary(); xSemaphoreGive(mutex); } while(0)
+#define U_CX_MUTEX_CREATE(mutex)              do { mutex = xSemaphoreCreateRecursiveMutex(); } while(0)
 #define U_CX_MUTEX_DELETE(mutex)              vSemaphoreDelete(mutex)
-#define U_CX_MUTEX_LOCK(mutex)                xSemaphoreTake(mutex, portMAX_DELAY)
+#define U_CX_MUTEX_LOCK(mutex)                xSemaphoreTakeRecursive(mutex, portMAX_DELAY)
 #define U_CX_MUTEX_TRY_LOCK(mutex, timeoutMs) uPortMutexTryLock(mutex, timeoutMs)
-#define U_CX_MUTEX_UNLOCK(mutex)              xSemaphoreGive(mutex)
+#define U_CX_MUTEX_UNLOCK(mutex)              xSemaphoreGiveRecursive(mutex)
 
 #define U_CX_PORT_SLEEP_MS(ms)                vTaskDelay(pdMS_TO_TICKS(ms))
 

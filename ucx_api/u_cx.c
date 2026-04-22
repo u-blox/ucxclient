@@ -83,14 +83,17 @@ int32_t uCxEnd(uCxHandle_t *puCxHandle)
 
 void uCxSessionLock(uCxHandle_t *puCxHandle)
 {
-    if (puCxHandle != NULL) {
-        U_CX_MUTEX_LOCK(puCxHandle->sessionMutex);
+    if (puCxHandle != NULL && puCxHandle->pAtClient != NULL) {
+        // CRITICAL FIX: Lock cmdMutex (used by AT commands), not sessionMutex.
+        // This prevents inter-command delays by holding the lock across multiple
+        // AT commands, eliminating 300-850ms gaps caused by URC/polling interleaving.
+        U_CX_MUTEX_LOCK(puCxHandle->pAtClient->cmdMutex);
     }
 }
 
 void uCxSessionUnlock(uCxHandle_t *puCxHandle)
 {
-    if (puCxHandle != NULL) {
-        U_CX_MUTEX_UNLOCK(puCxHandle->sessionMutex);
+    if (puCxHandle != NULL && puCxHandle->pAtClient != NULL) {
+        U_CX_MUTEX_UNLOCK(puCxHandle->pAtClient->cmdMutex);
     }
 }

@@ -101,24 +101,61 @@ static void startRxInterrupt(uPortUartHandle *pHandle)
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
 
+#include <stdio.h>  // For debug printf
+
 uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useFlowControl)
 {
     (void)pDevice;  // Device name not used on embedded systems
 
+    printf("[UART] Open: %ld baud, flow=%d\r\n", (long)baudRate, useFlowControl);
+
     if (gpUartHandle != NULL) {
-        // Only one UART instance supported
+        printf("[UART] ERROR: Already open!\r\n");
         return NULL;
     }
 
     uPortUartHandle *pHandle = (uPortUartHandle *)malloc(sizeof(uPortUartHandle));
     if (pHandle == NULL) {
+        printf("[UART] ERROR: malloc failed!\r\n");
         return NULL;
     }
 
     memset(pHandle, 0, sizeof(uPortUartHandle));
 
-    // Enable UART clock
+    // Enable GPIO and UART clocks
+#if defined(NUCLEO_F439ZI)
+    // NUCLEO-F439ZI: USART1 on PB6/PB7 (same as H753 Nucleo)
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+#elif defined(ODIN_W26) || defined(STM32F439xx)
+    // ODIN-W26/ODIN-W2: USART1 on PA9/PA10 (SPA UART)
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+#else
+    // F407/F429: USART3 on PB10/PB11
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+#endif
     U_PORT_UART_CLK_ENABLE();
+
+    // Configure GPIO pins for UART
+    // Use NOPULL and LOW speed to match original ODIN-W26 firmware settings
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    GPIO_InitStruct.Pin = U_PORT_UART_TX_PIN | U_PORT_UART_RX_PIN;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;           // Match original firmware
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;  // Match original firmware
+    GPIO_InitStruct.Alternate = U_PORT_UART_GPIO_AF;
+    HAL_GPIO_Init(U_PORT_UART_TX_PORT, &GPIO_InitStruct);
+
+    // Configure flow control pins if enabled
+#if defined(U_PORT_UART_CTS_PORT) && defined(U_PORT_UART_RTS_PORT)
+    if (useFlowControl) {
+        GPIO_InitStruct.Pin = U_PORT_UART_CTS_PIN;
+        HAL_GPIO_Init(U_PORT_UART_CTS_PORT, &GPIO_InitStruct);
+        GPIO_InitStruct.Pin = U_PORT_UART_RTS_PIN;
+        HAL_GPIO_Init(U_PORT_UART_RTS_PORT, &GPIO_InitStruct);
+    }
+#else
+    (void)useFlowControl;
+#endif
 
     // Configure UART
     pHandle->huart.Instance = U_PORT_UART_INSTANCE;
@@ -128,22 +165,28 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     pHandle->huart.Init.Parity = UART_PARITY_NONE;
     pHandle->huart.Init.Mode = UART_MODE_TX_RX;
 
+#if defined(U_PORT_UART_CTS_PORT) && defined(U_PORT_UART_RTS_PORT)
     if (useFlowControl) {
         pHandle->huart.Init.HwFlowCtl = UART_HWCONTROL_RTS_CTS;
     } else {
         pHandle->huart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
     }
+#else
+    pHandle->huart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+#endif
 
     pHandle->huart.Init.OverSampling = UART_OVERSAMPLING_16;
 
-    if (HAL_UART_Init(&pHandle->huart) != HAL_OK) {
+    HAL_StatusTypeDef halStatus = HAL_UART_Init(&pHandle->huart);
+    if (halStatus != HAL_OK) {
+        printf("[UART] ERROR: HAL_UART_Init failed: %d\r\n", halStatus);
         free(pHandle);
         return NULL;
     }
+    printf("[UART] Init OK\r\n");
 
     // Enable UART interrupt
     // Priority must be >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY (5) for FreeRTOS compatibility
-    // Using priority 6 to ensure it's lower priority than FreeRTOS syscalls
     HAL_NVIC_SetPriority(U_PORT_UART_IRQn, 6, 0);
     HAL_NVIC_EnableIRQ(U_PORT_UART_IRQn);
 
@@ -263,18 +306,32 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
 extern void ConsoleInput_ProcessByte(uint8_t byte);
 extern uint8_t* ConsoleInput_GetRxByteBuffer(void);
 
-// Debug UART handle - F4 uses USART2 on PA2/PA3
-extern UART_HandleTypeDef huart2;  // Debug UART from debug_uart.c
+// Debug UART handle from debug_uart.c
+// - ODIN-W26/F439 (ODIN-W2): USART3 on PD8/PD9
+// - F407/F429: USART2 on PA2/PA3
+#if defined(ODIN_W26) || defined(STM32F439xx)
+extern UART_HandleTypeDef huart3;  // ODIN-W26/ODIN-W2: Debug on USART3
+#define DEBUG_UART_INSTANCE USART3
+#define DEBUG_UART_HANDLE huart3
+#else
+extern UART_HandleTypeDef huart2;  // F407/F429: Debug on USART2
+#define DEBUG_UART_INSTANCE USART2
+#define DEBUG_UART_HANDLE huart2
+#endif
 
 /**
  * @brief UART RX complete callback
  *
  * This function is called by HAL when a byte is received.
  * Handles both NORA-W36 UART and Debug UART.
+ * 
+ * UART assignments:
+ * - ODIN-W26/F439 (ODIN-W2): USART1=NORA-W36, USART3=Debug
+ * - F407/F429: USART3=NORA-W36, USART2=Debug
  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    // NORA-W36 UART (USART3 on F4)
+    // NORA-W36 UART (USART1 on ODIN-W26/F439, USART3 on F407/F429)
     if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
         // Store received byte in circular buffer
         uint32_t nextHead = (gpUartHandle->rxHead + 1) % U_PORT_UART_RX_BUFFER_SIZE;
@@ -289,13 +346,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
         // Restart reception
         startRxInterrupt(gpUartHandle);
     }
-    // Debug UART (USART2 on F4) - for keyboard input
-    else if (huart->Instance == USART2) {
+    // Debug UART - for keyboard input
+    else if (huart->Instance == DEBUG_UART_INSTANCE) {
         uint8_t* rxBuf = ConsoleInput_GetRxByteBuffer();
         if (rxBuf) {
             ConsoleInput_ProcessByte(*rxBuf);
             // Re-enable reception
-            HAL_UART_Receive_IT(&huart2, rxBuf, 1);
+            HAL_UART_Receive_IT(&DEBUG_UART_HANDLE, rxBuf, 1);
         }
     }
 }
@@ -320,4 +377,27 @@ void uPortUart_IRQHandler(void)
     if (gpUartHandle != NULL) {
         HAL_UART_IRQHandler(&gpUartHandle->huart);
     }
+}
+
+/* ----------------------------------------------------------------
+ * UART FLUSH FUNCTIONS
+ * -------------------------------------------------------------- */
+
+void uPortUartFlushRx(uPortUartHandle_t handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+
+    if (!pHandle->isOpen) {
+        return;
+    }
+
+    // Disable UART RX interrupt while resetting buffer
+    __HAL_UART_DISABLE_IT(&pHandle->huart, UART_IT_RXNE);
+    pHandle->rxHead = 0;
+    pHandle->rxTail = 0;
+    __HAL_UART_ENABLE_IT(&pHandle->huart, UART_IT_RXNE);
 }

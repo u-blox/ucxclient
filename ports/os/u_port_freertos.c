@@ -111,7 +111,7 @@ int32_t uPortMutexTryLock(SemaphoreHandle_t mutex, uint32_t timeoutMs)
         ticks = pdMS_TO_TICKS(timeoutMs);
     }
 
-    BaseType_t ret = xSemaphoreTake(mutex, ticks);
+    BaseType_t ret = xSemaphoreTakeRecursive(mutex, ticks);
     return (ret == pdTRUE) ? 0 : -1;
 }
 

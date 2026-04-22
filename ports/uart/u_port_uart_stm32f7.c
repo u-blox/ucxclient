@@ -253,6 +253,24 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
 }
 
 /* ----------------------------------------------------------------
+ * UART FLUSH
+ * -------------------------------------------------------------- */
+
+void uPortUartFlushRx(uPortUartHandle_t handle)
+{
+    (void)handle;
+    if (gpUartHandle != NULL) {
+        gpUartHandle->rxTail = gpUartHandle->rxHead;
+    }
+}
+
+void uPortUartFlushTx(uPortUartHandle_t handle)
+{
+    (void)handle;
+    // TX is synchronous via HAL_UART_Transmit, nothing to flush
+}
+
+/* ----------------------------------------------------------------
  * UART INTERRUPT CALLBACK
  * -------------------------------------------------------------- */
 

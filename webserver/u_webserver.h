@@ -47,13 +47,26 @@ extern "C" {
  * To reduce RAM on constrained devices:
  *   - U_WEBSERVER_MAX_CLIENTS to 2:       saves ~4 KB (minimum for SSE + API)
  *   - U_WEBSERVER_MAX_REQUEST_SIZE to 1024: saves ~2 KB
- *   - U_WEBSERVER_MAX_RESPONSE_SIZE to 8192: saves 8 KB (dashboard won't fit)
+ *   - U_WEBSERVER_MAX_RESPONSE_SIZE to 8192: saves 24 KB (dashboard won't fit)
  */
 
-#define U_WEBSERVER_MAX_CLIENTS         2      /**< 2 clients: 1 SSE + 1 API calls */
+/**
+ * Max simultaneous client connections.
+ *
+ * Steady-state usage by the dashboard is 2 (1 SSE + 1 sequential API call),
+ * but browsers transiently open extra connections we cannot serialize from JS:
+ *   - /favicon.ico (fired by the browser, bypasses our apiCall queue)
+ *   - speculative preconnect / parallel HEAD requests
+ *
+ * Sizing for 4 gives headroom (1 SSE + 1 API + 2 transient) and avoids mid-
+ * response eviction during normal browsing. RAM cost is ~2 KB per slot.
+ */
+#define U_WEBSERVER_MAX_CLIENTS         4      /**< 4: 1 SSE + 1 API + 2 transient (favicon/preconnect) */
 #define U_WEBSERVER_MAX_REQUEST_SIZE    2048   /**< Maximum HTTP request size */
-#define U_WEBSERVER_MAX_RESPONSE_SIZE   16384  /**< Maximum HTTP response size (16KB for dashboard HTML) */
-#define U_WEBSERVER_MAX_ROUTES          16     /**< Maximum route handlers */
+#ifndef U_WEBSERVER_MAX_RESPONSE_SIZE
+#define U_WEBSERVER_MAX_RESPONSE_SIZE   40960  /**< Maximum HTTP response size (40KB for dashboard HTML+CSS+JS) */
+#endif
+#define U_WEBSERVER_MAX_ROUTES          24     /**< Maximum route handlers */
 #define U_WEBSERVER_SSE_EVENT_SIZE      512    /**< Maximum SSE event size */
 
 /* ========================================

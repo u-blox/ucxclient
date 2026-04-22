@@ -75,6 +75,7 @@ if(STM32_HAL_PATH)
         ${STM32_HAL_PATH}/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr_ex.c
         ${STM32_HAL_PATH}/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c
         ${STM32_HAL_PATH}/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c
+        ${STM32_HAL_PATH}/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rng.c
     )
 
     # =============================================================================
@@ -104,9 +105,9 @@ endif()
 # =============================================================================
 # Startup and Linker Script
 # =============================================================================
-# These are in platform/stm32/h7/ directory
+# These are in platform/stm32/h743/ directory (chip-specific)
 
-set(STM32_PORT_H7_DIR "${CMAKE_CURRENT_LIST_DIR}/../../platform/stm32/h7")
+set(STM32_PORT_H7_DIR "${CMAKE_CURRENT_LIST_DIR}/../../platform/stm32/h743")
 
 set(STM32_STARTUP_FILE "${STM32_PORT_H7_DIR}/startup_stm32h743xx.s")
 set(STM32_LINKER_SCRIPT "${STM32_PORT_H7_DIR}/STM32H743ZITx_FLASH.ld")

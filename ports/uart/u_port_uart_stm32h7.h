@@ -52,57 +52,44 @@ extern "C" {
 
 /**
  * UART instance for NORA-W36 module communication.
- * 
+ *
  * STM32H743/H753 Nucleo-144 board:
  *   - USART3 (PD8/PD9): ST-Link VCP (debug console) - DO NOT USE for NORA!
- *   - UART4 (PA0/PA1): Available for NORA-W36 module
- * 
- * UART4 Pins:
- *   - PA0: UART4_TX (CN11 pin 28)
- *   - PA1: UART4_RX (CN11 pin 30)
+ *   - USART1 (PB6/PB7): Arduino D0/D1 pins - used for NORA-W36
+ *
+ * USART1 Pins (Arduino header, no soldering needed):
+ *   - PB6: USART1_TX → D1 (CN10)
+ *   - PB7: USART1_RX → D0 (CN10)
  */
-#define U_PORT_UART_INSTANCE    UART4
-#define U_PORT_UART_IRQn        UART4_IRQn
-#define U_PORT_UART_IRQHandler  UART4_IRQHandler
-#define U_PORT_UART_CLK_ENABLE()  __HAL_RCC_UART4_CLK_ENABLE()
-#define U_PORT_UART_CLK_DISABLE() __HAL_RCC_UART4_CLK_DISABLE()
+#define U_PORT_UART_INSTANCE    USART1
+#define U_PORT_UART_IRQn        USART1_IRQn
+#define U_PORT_UART_IRQHandler  USART1_IRQHandler
+#define U_PORT_UART_CLK_ENABLE()  __HAL_RCC_USART1_CLK_ENABLE()
+#define U_PORT_UART_CLK_DISABLE() __HAL_RCC_USART1_CLK_DISABLE()
 
 /**
- * UART GPIO configuration for UART4 on PA0/PA1.
+ * UART GPIO configuration for USART1 on PB6/PB7 (Arduino D1/D0).
  */
 #ifndef U_PORT_UART_TX_PORT
-#define U_PORT_UART_TX_PORT     GPIOA
-#define U_PORT_UART_TX_PIN      GPIO_PIN_0
+#define U_PORT_UART_TX_PORT     GPIOB
+#define U_PORT_UART_TX_PIN      GPIO_PIN_6
 #endif
 
 #ifndef U_PORT_UART_RX_PORT
-#define U_PORT_UART_RX_PORT     GPIOA
-#define U_PORT_UART_RX_PIN      GPIO_PIN_1
+#define U_PORT_UART_RX_PORT     GPIOB
+#define U_PORT_UART_RX_PIN      GPIO_PIN_7
 #endif
 
 #ifndef U_PORT_UART_AF
-#define U_PORT_UART_AF          GPIO_AF8_UART4  // AF8 for UART4 on PA0/PA1
+#define U_PORT_UART_AF          GPIO_AF7_USART1  // AF7 for USART1 on PB6/PB7
 #endif
 
-// Hardware flow control is not used for UART4 <-> NORA-W36
-// Define empty macros to allow conditional compilation
+// Hardware flow control not used
 #ifndef U_PORT_UART_USE_HW_FLOW_CONTROL
 #define U_PORT_UART_USE_HW_FLOW_CONTROL 0
 #endif
 
-#if U_PORT_UART_USE_HW_FLOW_CONTROL
-#ifndef U_PORT_UART_CTS_PORT
-#define U_PORT_UART_CTS_PORT    GPIOB
-#define U_PORT_UART_CTS_PIN     GPIO_PIN_15  // UART4_CTS (if needed)
-#endif
-
-#ifndef U_PORT_UART_RTS_PORT
-#define U_PORT_UART_RTS_PORT    GPIOA
-#define U_PORT_UART_RTS_PIN     GPIO_PIN_15  // UART4_RTS (if needed)
-#endif
-#endif
-
-#define U_PORT_UART_GPIO_AF     GPIO_AF8_UART4
+#define U_PORT_UART_GPIO_AF     GPIO_AF7_USART1
 
 /**
  * Receive buffer size.
