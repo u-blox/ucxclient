@@ -8,12 +8,12 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-#include "u_cx_at_client.h"
-#include "u_cx_types.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include "u_cx_at_client.h"
+#include "u_cx_types.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS

@@ -30,7 +30,7 @@ extern "C" {
 typedef struct
 {
     int32_t baud_rate;    /**< Baudrate */
-    int32_t flow_control; /**< 0: No flow control
+    int32_t flow_control; /**< 0: (Factory default) No flow control
                                1: Use CTS/RTS flow control */
 } uCxSysGetUartSettings_t;
 
@@ -237,7 +237,7 @@ int32_t uCxSystemSetUartSettings1(uCxHandle_t * puCxHandle, int32_t baud_rate);
  *
  * @param[in]  puCxHandle:   uCX API handle
  * @param      baud_rate:    Baudrate
- * @param      flow_control: 0: No flow control
+ * @param      flow_control: 0: (Factory default) No flow control
  *                           1: Use CTS/RTS flow control
  * @return                   0 on success, negative value on error.
  */
@@ -256,7 +256,7 @@ int32_t uCxSystemSetUartSettings2(uCxHandle_t * puCxHandle, int32_t baud_rate, i
  *
  * @param[in]  puCxHandle:           uCX API handle
  * @param      baud_rate:            Baudrate
- * @param      flow_control:         0: No flow control
+ * @param      flow_control:         0: (Factory default) No flow control
  *                                   1: Use CTS/RTS flow control
  * @param      change_after_confirm: 0: Switch baudrate after reboot. When set AT&W must be called.
  *                                   1: Switch baudrate directly after status OK have been sent.

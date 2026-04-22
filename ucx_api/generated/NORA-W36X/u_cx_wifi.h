@@ -158,6 +158,16 @@ typedef struct {
 
 typedef struct
 {
+    int32_t ip_mode;              /**< IP assignment */
+    uSockIpAddress_t ip_addr;     /**< Static IPv4 address */
+    uSockIpAddress_t subnet_mask; /**< Subnet mask */
+    uSockIpAddress_t gateway;     /**< IPv4 gateway address */
+    uSockIpAddress_t prim_dns;    /**< IPv4 primary dns address */
+    uSockIpAddress_t sec_dns;     /**< IPv4 secondary dns address */
+} uCxWifiAccessPointGetIpConfigStatic_t;
+
+typedef struct
+{
     int32_t net_status_id;
     uSockIpAddress_t net_status_val; /**< IP address */
 } uCxWifiStationListNetworkStatus_t;
@@ -475,6 +485,72 @@ int32_t uCxWifiStationSetIpConfigDhcp(uCxHandle_t * puCxHandle, int32_t wlan_han
  * @return                                 0 on success, negative value on error.
  */
 int32_t uCxWifiStationGetIpConfig(uCxHandle_t * puCxHandle, int32_t wlan_handle, uCxWifiStationGetIpConfig_t * pWifiStationGetIpConfigRsp);
+
+/**
+ * Configure static ip for Access Point mode
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UWAPIPS=<ip_addr>,<subnet_mask>,<gateway>
+ *
+ * @param[in]  puCxHandle:  uCX API handle
+ * @param      ip_addr:     Static IPv4 address
+ * @param      subnet_mask: Subnet mask
+ * @param      gateway:     IPv4 gateway address
+ * @return                  0 on success, negative value on error.
+ */
+int32_t uCxWifiAccessPointSetIpConfigStatic3(uCxHandle_t * puCxHandle, uSockIpAddress_t * ip_addr, uSockIpAddress_t * subnet_mask, uSockIpAddress_t * gateway);
+
+/**
+ * Configure static ip for Access Point mode
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UWAPIPS=<ip_addr>,<subnet_mask>,<gateway>,<prim_dns>
+ *
+ * @param[in]  puCxHandle:  uCX API handle
+ * @param      ip_addr:     Static IPv4 address
+ * @param      subnet_mask: Subnet mask
+ * @param      gateway:     IPv4 gateway address
+ * @param      prim_dns:    IPv4 primary dns address
+ * @return                  0 on success, negative value on error.
+ */
+int32_t uCxWifiAccessPointSetIpConfigStatic4(uCxHandle_t * puCxHandle, uSockIpAddress_t * ip_addr, uSockIpAddress_t * subnet_mask, uSockIpAddress_t * gateway, uSockIpAddress_t * prim_dns);
+
+/**
+ * Configure static ip for Access Point mode
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UWAPIPS=<ip_addr>,<subnet_mask>,<gateway>,<prim_dns>,<sec_dns>
+ *
+ * @param[in]  puCxHandle:  uCX API handle
+ * @param      ip_addr:     Static IPv4 address
+ * @param      subnet_mask: Subnet mask
+ * @param      gateway:     IPv4 gateway address
+ * @param      prim_dns:    IPv4 primary dns address
+ * @param      sec_dns:     IPv4 secondary dns address
+ * @return                  0 on success, negative value on error.
+ */
+int32_t uCxWifiAccessPointSetIpConfigStatic5(uCxHandle_t * puCxHandle, uSockIpAddress_t * ip_addr, uSockIpAddress_t * subnet_mask, uSockIpAddress_t * gateway, uSockIpAddress_t * prim_dns, uSockIpAddress_t * sec_dns);
+
+/**
+ * Read the current configuration for IP address assignment
+ * 
+ * Output AT command:
+ * > AT+UWAPIP?
+ *
+ * @param[in]  puCxHandle:                           uCX API handle
+ * @param[out] pWifiAccessPointGetIpConfigStaticRsp: Please see \ref uCxWifiAccessPointGetIpConfigStatic_t
+ * @return                                           0 on success, negative value on error.
+ */
+int32_t uCxWifiAccessPointGetIpConfigStatic(uCxHandle_t * puCxHandle, uCxWifiAccessPointGetIpConfigStatic_t * pWifiAccessPointGetIpConfigStaticRsp);
 
 /**
  * Initiate connection to Wi-Fi network

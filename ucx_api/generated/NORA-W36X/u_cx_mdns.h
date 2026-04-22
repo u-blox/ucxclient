@@ -1,22 +1,15 @@
 /*
- * NORA-W36 mDNS ucxclient API — firmware v3.4.0+
- *
- * Official mDNS AT commands (chapter 13):
- *   AT+UMDNSE=<0|1>                              - Enable/disable responder
- *   AT+UMDNSHN=<hostname>                         - Set hostname (.local auto-appended)
- *   AT+UMDNSIP=<0|1|2>                            - IP version (v4/v6/dual)
- *   AT+UMDNSSA=<type>,<proto>,<port>[,<instance>] - Add service → returns <service_id>
- *   AT+UMDNSSR=<service_id>                       - Remove service
- *   AT+UMDNSSL?                                   - List services
- *   AT+UMDNSTRA=<service_id>,<key>,<value>        - Add TXT record
- *   AT+UMDNSTRR=<service_id>,<key>                - Remove TXT record
- *   AT+UMDNSTRL=<service_id>                      - List TXT records
- *   AT+UMDNSTRC=<service_id>                      - Clear all TXT records
- *
- * URCs:
- *   +UEMDNSU                                      - mDNS service up
- *   +UEMDNSD                                      - mDNS service down
- */
+* This file was automatically generated using csnake v0.3.5.
+*
+* This file should not be edited directly, any changes will be
+* overwritten next time the script is run.
+*
+* Source code for csnake is available at:
+* https://gitlab.com/andrejr/csnake
+*
+* csnake is also available on PyPI, at :
+* https://pypi.org/project/csnake
+*/
 #ifndef _U_CX_MDNS_H_
 #define _U_CX_MDNS_H_
 
@@ -31,135 +24,245 @@ extern "C" {
 #endif /* __cplusplus */
 
 /* ------------------------------------------------------------
- * ENUMERATORS
+ * RESPONSES
  * ---------------------------------------------------------- */
 
-/** Transport protocol for AT+UMDNSSA */
-typedef enum
+typedef struct
 {
-    U_MDNS_PROTOCOL_TCP = 0,
-    U_MDNS_PROTOCOL_UDP = 1,
-} uCxMdnsProtocol_t;
+    int32_t service_id;         /**< Service handle returned by AT+UMDSA. Used to identify a registered service. */
+    const char * service_type;  /**< Service type string, for example matterc, matterd or http.
+                                     The leading underscore is part of the name as per RFC 6763 and must be included. */
+    int32_t protocol;           /**< Transport protocol for the service. */
+    int32_t port;               /**< Port number the service listens on. */
+    const char * instance_name; /**< Instance name for the service. If omitted, the mDNS hostname is used.
+                                     Maximum 63 characters per RFC 6763. */
+} uCxMdnsServiceList_t;
 
-/** IP version for AT+UMDNSIP */
-typedef enum
+typedef struct
 {
-    U_MDNS_IP_V4_ONLY   = 0,
-    U_MDNS_IP_V6_ONLY   = 1,
-    U_MDNS_IP_DUAL_STACK = 2,
-} uCxMdnsIpVersion_t;
+    int32_t service_id;     /**< Service handle returned by AT+UMDSA. Used to identify a registered service. */
+    const char * txt_key;   /**< TXT record key (e.g. "VP", "D", "SII"). */
+    const char * txt_value; /**< TXT record value. */
+} uCxMdnsTxtRecordList_t;
+
 
 /* ------------------------------------------------------------
- * PUBLIC FUNCTIONS — responder control
+ * PUBLIC FUNCTIONS
  * ---------------------------------------------------------- */
 
 /**
  * Enable or disable the mDNS responder.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UMDE=<enabled>
  *
- * AT command: AT+UMDNSE=<enabled>
- *
- * @param[in]  puCxHandle  uCX API handle
- * @param[in]  enable      true = enable, false = disable
- * @return                 0 on success, negative on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      enabled:    
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxMdnsEnable(uCxHandle_t * puCxHandle, bool enable);
+int32_t uCxMdnsSetEnabled(uCxHandle_t * puCxHandle, uEnabled_t enabled);
 
 /**
- * Set the mDNS hostname (".local" appended automatically by firmware).
+ * Read the current mDNS responder state.
+ * 
+ * Output AT command:
+ * > AT+UMDE?
  *
- * AT command: AT+UMDNSHN=<hostname>
- *
- * @param[in]  puCxHandle  uCX API handle
- * @param[in]  hostname    Hostname string (1..63 chars, no ".local" suffix)
- * @return                 0 on success, negative on error.
+ * @param[in]  puCxHandle: uCX API handle
+ * @param[out] pEnabled:   
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxMdnsSetHostname(uCxHandle_t * puCxHandle, const char * hostname);
+int32_t uCxMdnsGetEnabled(uCxHandle_t * puCxHandle, uEnabled_t * pEnabled);
 
 /**
- * Set IP version for the mDNS responder.
+ * Set the mDNS hostname.
+ * 
+ * Notes:
+ * Can be stored using AT&W.
+ * 
+ * Output AT command:
+ * > AT+UMDHN=<mdns_hostname>
  *
- * AT command: AT+UMDNSIP=<ip_version>
- *
- * @param[in]  puCxHandle  uCX API handle
- * @param[in]  ipVersion   0=IPv4, 1=IPv6, 2=dual-stack (default)
- * @return                 0 on success, negative on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      mdns_hostname: Hostname advertised via mDNS. The ".local" suffix is appended automatically.
+ *                            If not set, defaults to the Wi-Fi hostname.
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxMdnsSetIpVersion(uCxHandle_t * puCxHandle, uCxMdnsIpVersion_t ipVersion);
-
-/* ------------------------------------------------------------
- * PUBLIC FUNCTIONS — service management
- * ---------------------------------------------------------- */
+int32_t uCxMdnsSetHostname(uCxHandle_t * puCxHandle, const char * mdns_hostname);
 
 /**
- * Add an mDNS/DNS-SD service. Returns the firmware-assigned service handle.
+ * Read the current mDNS hostname.
+ * 
+ * Output AT command:
+ * > AT+UMDHN?
  *
- * AT command: AT+UMDNSSA=<service_type>,<protocol>,<port>[,<instance_name>]
- * Response:   +UMDNSSA:<service_id>
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param[out] ppMdnsHostname: Hostname advertised via mDNS. The ".local" suffix is appended automatically.
+ *                             If not set, defaults to the Wi-Fi hostname.
+ * @return                     true on success, false on error (error code will be returned by uCxEnd()).
  *
- * @param[in]  puCxHandle    uCX API handle
- * @param[in]  serviceType   Service type (e.g. "_matterc"), leading underscore required
- * @param[in]  protocol      U_MDNS_PROTOCOL_TCP or U_MDNS_PROTOCOL_UDP
- * @param[in]  port          Port number (1-65535)
- * @param[in]  instanceName  Instance name (NULL to use hostname)
- * @param[out] pServiceId    Receives the firmware-assigned service handle (0..3)
- * @return                   0 on success, negative on error.
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-int32_t uCxMdnsServiceAdd(uCxHandle_t * puCxHandle, const char * serviceType,
-                           uCxMdnsProtocol_t protocol, int32_t port,
-                           const char * instanceName, int32_t * pServiceId);
+bool uCxMdnsGetHostnameBegin(uCxHandle_t * puCxHandle, const char ** ppMdnsHostname);
 
 /**
- * Remove a registered mDNS service.
+ * Add a service to the mDNS responder.
+ * 
+ * Output AT command:
+ * > AT+UMDSA=<service_type>,<protocol>,<port>
  *
- * AT command: AT+UMDNSSR=<service_id>
- *
- * @param[in]  puCxHandle  uCX API handle
- * @param[in]  serviceId   Service handle from uCxMdnsServiceAdd()
- * @return                 0 on success, negative on error.
+ * @param[in]  puCxHandle:   uCX API handle
+ * @param      service_type: Service type string, for example matterc, matterd or http.
+ *                           The leading underscore is part of the name as per RFC 6763 and must be included.
+ * @param      protocol:     Transport protocol for the service.
+ * @param      port:         Port number the service listens on.
+ * @param[out] pServiceId:   Service handle returned by AT+UMDSA. Used to identify a registered service.
+ * @return                   0 on success, negative value on error.
  */
-int32_t uCxMdnsServiceRemove(uCxHandle_t * puCxHandle, int32_t serviceId);
-
-/* ------------------------------------------------------------
- * PUBLIC FUNCTIONS — TXT record management
- * ---------------------------------------------------------- */
+int32_t uCxMdnsServiceAdd3(uCxHandle_t * puCxHandle, const char * service_type, uMdnsProtocol_t protocol, int32_t port, int32_t * pServiceId);
 
 /**
- * Add or update a TXT key=value record on a service.
+ * Add a service to the mDNS responder.
+ * 
+ * Output AT command:
+ * > AT+UMDSA=<service_type>,<protocol>,<port>,<instance_name>
  *
- * AT command: AT+UMDNSTRA=<service_id>,<key>,<value>
- *
- * @param[in]  puCxHandle  uCX API handle
- * @param[in]  serviceId   Service handle from uCxMdnsServiceAdd()
- * @param[in]  key         TXT key (e.g. "VP", "D", "SII") — max 64 chars
- * @param[in]  value       TXT value — max 64 chars (empty string for flags)
- * @return                 0 on success, negative on error.
+ * @param[in]  puCxHandle:    uCX API handle
+ * @param      service_type:  Service type string, for example matterc, matterd or http.
+ *                            The leading underscore is part of the name as per RFC 6763 and must be included.
+ * @param      protocol:      Transport protocol for the service.
+ * @param      port:          Port number the service listens on.
+ * @param      instance_name: Instance name for the service. If omitted, the mDNS hostname is used.
+ *                            Maximum 63 characters per RFC 6763.
+ * @param[out] pServiceId:    Service handle returned by AT+UMDSA. Used to identify a registered service.
+ * @return                    0 on success, negative value on error.
  */
-int32_t uCxMdnsTxtRecordAdd(uCxHandle_t * puCxHandle, int32_t serviceId,
-                             const char * key, const char * value);
+int32_t uCxMdnsServiceAdd4(uCxHandle_t * puCxHandle, const char * service_type, uMdnsProtocol_t protocol, int32_t port, const char * instance_name, int32_t * pServiceId);
 
 /**
- * Remove a specific TXT record from a service.
+ * Remove the specified service.
+ * 
+ * Output AT command:
+ * > AT+UMDSR=<service_id>
  *
- * AT command: AT+UMDNSTRR=<service_id>,<key>
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      service_id: Service handle returned by AT+UMDSA. Used to identify a registered service.
+ * @return                 0 on success, negative value on error.
  */
-int32_t uCxMdnsTxtRecordRemove(uCxHandle_t * puCxHandle, int32_t serviceId,
-                                const char * key);
+int32_t uCxMdnsServiceRemove(uCxHandle_t * puCxHandle, int32_t service_id);
 
 /**
- * Clear all TXT records from a service.
+ * List all registered mDNS services.
+ * 
+ * Output AT command:
+ * > AT+UMDSL?
  *
- * AT command: AT+UMDNSTRC=<service_id>
+ * @param[in]  puCxHandle: uCX API handle
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
  */
-int32_t uCxMdnsTxtRecordClear(uCxHandle_t * puCxHandle, int32_t serviceId);
+void uCxMdnsServiceListBegin(uCxHandle_t * puCxHandle);
 
-/* ------------------------------------------------------------
- * BACKWARD COMPATIBILITY — old API wrappers (deprecated)
- * ---------------------------------------------------------- */
+/**
+ * 
+ *
+ * @param[in]  puCxHandle:          uCX API handle
+ * @param[out] pMdnsServiceListRsp: Please see \ref uCxMdnsServiceList_t
+ * @return                          true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                  error code in this case).
+ */
+bool uCxMdnsServiceListGetNext(uCxHandle_t * puCxHandle, uCxMdnsServiceList_t * pMdnsServiceListRsp);
 
-/** @deprecated Use uCxMdnsEnable(handle, true) */
-static inline int32_t uCxMdnsStart(uCxHandle_t * h) { return uCxMdnsEnable(h, true); }
-/** @deprecated Use uCxMdnsEnable(handle, false) */
-static inline int32_t uCxMdnsStop(uCxHandle_t * h) { return uCxMdnsEnable(h, false); }
+/**
+ * Add or update a TXT record on the specified service.
+ * 
+ * Output AT command:
+ * > AT+UMDTRA=<service_id>,<txt_key>,<txt_value>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      service_id: Service handle returned by AT+UMDSA. Used to identify a registered service.
+ * @param      txt_key:    TXT record key (e.g. "VP", "D", "SII").
+ * @param      txt_value:  TXT record value.
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxMdnsTxtRecordAdd(uCxHandle_t * puCxHandle, int32_t service_id, const char * txt_key, const char * txt_value);
+
+/**
+ * Remove the TXT record with the specified key.
+ * 
+ * Output AT command:
+ * > AT+UMDTRR=<service_id>,<txt_key>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      service_id: Service handle returned by AT+UMDSA. Used to identify a registered service.
+ * @param      txt_key:    TXT record key (e.g. "VP", "D", "SII").
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxMdnsTxtRecordRemove(uCxHandle_t * puCxHandle, int32_t service_id, const char * txt_key);
+
+/**
+ * List all TXT records for the specified service.
+ * 
+ * Output AT command:
+ * > AT+UMDTRL=<service_id>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      service_id: Service handle returned by AT+UMDSA. Used to identify a registered service.
+ * @return                 true on success, false on error (error code will be returned by uCxEnd()).
+ *
+ * NOTES:
+ * Must be terminated by calling uCxEnd()
+ */
+void uCxMdnsTxtRecordListBegin(uCxHandle_t * puCxHandle, int32_t service_id);
+
+/**
+ * 
+ *
+ * @param[in]  puCxHandle:            uCX API handle
+ * @param[out] pMdnsTxtRecordListRsp: Please see \ref uCxMdnsTxtRecordList_t
+ * @return                            true on success, false when there are no more entries or on error (uCxEnd() will return
+ *                                    error code in this case).
+ */
+bool uCxMdnsTxtRecordListGetNext(uCxHandle_t * puCxHandle, uCxMdnsTxtRecordList_t * pMdnsTxtRecordListRsp);
+
+/**
+ * Clear all TXT records from the specified service.
+ * 
+ * Output AT command:
+ * > AT+UMDTRC=<service_id>
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      service_id: Service handle returned by AT+UMDSA. Used to identify a registered service.
+ * @return                 0 on success, negative value on error.
+ */
+int32_t uCxMdnsTxtRecordClear(uCxHandle_t * puCxHandle, int32_t service_id);
+
+/**
+ * Register MdnsUp event callback
+ * 
+ * Emitted when the mDNS responder has started.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxMdnsRegisterMdnsUp(uCxHandle_t * puCxHandle, uUEMDU_t callback);
+
+/**
+ * Register MdnsDown event callback
+ * 
+ * Emitted when the mDNS responder has stopped.
+ *
+ * @param[in]  puCxHandle: uCX API handle
+ * @param      callback:   callback to register. Set to NULL to unregister.
+ */
+void uCxMdnsRegisterMdnsDown(uCxHandle_t * puCxHandle, uUEMDD_t callback);
+
 
 #ifdef __cplusplus
 }

@@ -1,108 +1,146 @@
 /*
- * NORA-W36 mDNS ucxclient API — firmware v3.4.0+
- *
- * Official mDNS AT commands (chapter 13 of AT command manual).
- * Replaces the previous proprietary AT+UWMDNS* commands.
- */
+* This file was automatically generated using csnake v0.3.5.
+*
+* This file should not be edited directly, any changes will be
+* overwritten next time the script is run.
+*
+* Source code for csnake is available at:
+* https://gitlab.com/andrejr/csnake
+*
+* csnake is also available on PyPI, at :
+* https://pypi.org/project/csnake
+*/
 #include <string.h>
 #include "u_cx_at_client.h"
 #include "u_cx_mdns.h"
 
-/* ---- responder control ---- */
-
-int32_t uCxMdnsEnable(uCxHandle_t * puCxHandle, bool enable)
+int32_t uCxMdnsSetEnabled(uCxHandle_t * puCxHandle, uEnabled_t enabled)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDNSE=", "d",
-                                      (int32_t)(enable ? 1 : 0),
-                                      U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDE=", "d", enabled, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-int32_t uCxMdnsSetHostname(uCxHandle_t * puCxHandle, const char * hostname)
-{
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDNSHN=", "s",
-                                      hostname, U_CX_AT_UTIL_PARAM_LAST);
-}
-
-int32_t uCxMdnsSetIpVersion(uCxHandle_t * puCxHandle, uCxMdnsIpVersion_t ipVersion)
-{
-    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDNSIP=", "d",
-                                      (int32_t)ipVersion,
-                                      U_CX_AT_UTIL_PARAM_LAST);
-}
-
-/* ---- service management ---- */
-
-int32_t uCxMdnsServiceAdd(uCxHandle_t * puCxHandle, const char * serviceType,
-                           uCxMdnsProtocol_t protocol, int32_t port,
-                           const char * instanceName, int32_t * pServiceId)
+int32_t uCxMdnsGetEnabled(uCxHandle_t * puCxHandle, uEnabled_t * pEnabled)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
     int32_t ret;
-
-    /* AT+UMDNSSA=<service_type>,<protocol>,<port>[,<instance_name>] */
-    if (instanceName && instanceName[0] != '\0')
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMDE?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMDE:", NULL, NULL, "d", pEnabled, U_CX_AT_UTIL_PARAM_LAST);
     {
-        uCxAtClientCmdBeginF(pAtClient, "AT+UMDNSSA=", "sdds",
-                             serviceType, (int32_t)protocol, port, instanceName,
-                             U_CX_AT_UTIL_PARAM_LAST);
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
     }
-    else
-    {
-        uCxAtClientCmdBeginF(pAtClient, "AT+UMDNSSA=", "sdd",
-                             serviceType, (int32_t)protocol, port,
-                             U_CX_AT_UTIL_PARAM_LAST);
-    }
-
-    /* Response: +UMDNSSA:<service_id> */
-    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMDNSSA:", NULL, NULL,
-                                       "d", pServiceId,
-                                       U_CX_AT_UTIL_PARAM_LAST);
-    if (ret >= 0)
-    {
-        ret = uCxAtClientCmdEnd(pAtClient);
-    }
-    else
-    {
-        (void)uCxAtClientCmdEnd(pAtClient);
-    }
-
     return ret;
 }
 
-int32_t uCxMdnsServiceRemove(uCxHandle_t * puCxHandle, int32_t serviceId)
+int32_t uCxMdnsSetHostname(uCxHandle_t * puCxHandle, const char * mdns_hostname)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDNSSR=", "d",
-                                      serviceId, U_CX_AT_UTIL_PARAM_LAST);
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDHN=", "s", mdns_hostname, U_CX_AT_UTIL_PARAM_LAST);
 }
 
-/* ---- TXT record management ---- */
-
-int32_t uCxMdnsTxtRecordAdd(uCxHandle_t * puCxHandle, int32_t serviceId,
-                             const char * key, const char * value)
+bool uCxMdnsGetHostnameBegin(uCxHandle_t * puCxHandle, const char ** ppMdnsHostname)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    /* AT+UMDNSTRA=<service_id>,<txt_key>,<txt_value> */
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDNSTRA=", "dss",
-                                      serviceId, key, value ? value : "",
-                                      U_CX_AT_UTIL_PARAM_LAST);
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMDHN?", "", U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMDHN:", NULL, NULL, "s", ppMdnsHostname, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
 }
 
-int32_t uCxMdnsTxtRecordRemove(uCxHandle_t * puCxHandle, int32_t serviceId,
-                                const char * key)
+int32_t uCxMdnsServiceAdd3(uCxHandle_t * puCxHandle, const char * service_type, uMdnsProtocol_t protocol, int32_t port, int32_t * pServiceId)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDNSTRR=", "ds",
-                                      serviceId, key,
-                                      U_CX_AT_UTIL_PARAM_LAST);
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMDSA=", "sdd", service_type, protocol, port, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMDSA:", NULL, NULL, "d", pServiceId, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
 }
 
-int32_t uCxMdnsTxtRecordClear(uCxHandle_t * puCxHandle, int32_t serviceId)
+int32_t uCxMdnsServiceAdd4(uCxHandle_t * puCxHandle, const char * service_type, uMdnsProtocol_t protocol, int32_t port, const char * instance_name, int32_t * pServiceId)
 {
     uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
-    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDNSTRC=", "d",
-                                      serviceId, U_CX_AT_UTIL_PARAM_LAST);
+    int32_t ret;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMDSA=", "sdds", service_type, protocol, port, instance_name, U_CX_AT_UTIL_PARAM_LAST);
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMDSA:", NULL, NULL, "d", pServiceId, U_CX_AT_UTIL_PARAM_LAST);
+    {
+        // Always call uCxAtClientCmdEnd() even if any previous function failed
+        int32_t endRet = uCxAtClientCmdEnd(pAtClient);
+        if (ret >= 0) {
+            ret = endRet;
+        }
+    }
+    return ret;
+}
+
+int32_t uCxMdnsServiceRemove(uCxHandle_t * puCxHandle, int32_t service_id)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDSR=", "d", service_id, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+void uCxMdnsServiceListBegin(uCxHandle_t * puCxHandle)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMDSL?", "", U_CX_AT_UTIL_PARAM_LAST);
+}
+
+bool uCxMdnsServiceListGetNext(uCxHandle_t * puCxHandle, uCxMdnsServiceList_t * pMdnsServiceListRsp)
+{
+    int32_t ret;
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMDSL:", NULL, NULL, "dsdds", &pMdnsServiceListRsp->service_id, &pMdnsServiceListRsp->service_type, &pMdnsServiceListRsp->protocol, &pMdnsServiceListRsp->port, &pMdnsServiceListRsp->instance_name, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
+}
+
+int32_t uCxMdnsTxtRecordAdd(uCxHandle_t * puCxHandle, int32_t service_id, const char * txt_key, const char * txt_value)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDTRA=", "dss", service_id, txt_key, txt_value, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+int32_t uCxMdnsTxtRecordRemove(uCxHandle_t * puCxHandle, int32_t service_id, const char * txt_key)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDTRR=", "ds", service_id, txt_key, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+void uCxMdnsTxtRecordListBegin(uCxHandle_t * puCxHandle, int32_t service_id)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    uCxAtClientCmdBeginF(pAtClient, "AT+UMDTRL=", "d", service_id, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+bool uCxMdnsTxtRecordListGetNext(uCxHandle_t * puCxHandle, uCxMdnsTxtRecordList_t * pMdnsTxtRecordListRsp)
+{
+    int32_t ret;
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    ret = uCxAtClientCmdGetRspParamsF(pAtClient, "+UMDTRL:", NULL, NULL, "dss", &pMdnsTxtRecordListRsp->service_id, &pMdnsTxtRecordListRsp->txt_key, &pMdnsTxtRecordListRsp->txt_value, U_CX_AT_UTIL_PARAM_LAST);
+    return ret >= 0;
+}
+
+int32_t uCxMdnsTxtRecordClear(uCxHandle_t * puCxHandle, int32_t service_id)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+UMDTRC=", "d", service_id, U_CX_AT_UTIL_PARAM_LAST);
+}
+
+void uCxMdnsRegisterMdnsUp(uCxHandle_t * puCxHandle, uUEMDU_t callback)
+{
+    puCxHandle->callbacks.UEMDU = callback;
+}
+
+void uCxMdnsRegisterMdnsDown(uCxHandle_t * puCxHandle, uUEMDD_t callback)
+{
+    puCxHandle->callbacks.UEMDD = callback;
 }

@@ -418,35 +418,26 @@ int32_t uCxSocketGetOption(uCxHandle_t * puCxHandle, int32_t socket_handle, uSoc
 int32_t uCxSocketGetHostByName(uCxHandle_t * puCxHandle, const char * host_name, uSockIpAddress_t * pHostIp);
 
 /**
- * Join a multicast group on a socket.
+ * Join or leave a multicast group for the specified socket.
+ * This command is used to subscribe to multicast addresses for
+ * receiving multicast datagrams.
+ * Example: 224.0.0.251 (IPv4) or [ff02:0000:0000:0000:0000:0000:0000:00fb] (IPv6).
  * 
- * Output AT command:
- * > AT+USOMG=<socket_handle>,1,<multicast_addr>
- *
- * @param[in]  puCxHandle:      uCX API handle
- * @param      socket_handle:   Socket identifier to join multicast group on.
- * @param      multicast_addr:  IPv4 or IPv6 multicast address (e.g., "224.0.0.251" or "ff02::fb").
- * @return                      0 on success, negative value on error.
- *
+ * 
  * Notes:
- * - Socket must be bound to a port before joining multicast group
- * - For mDNS: Use "224.0.0.251" (IPv4) or "ff02::fb" (IPv6)
- * - Only valid for UDP sockets (protocol 17)
- */
-int32_t uCxSocketJoinMulticastGroup(uCxHandle_t * puCxHandle, int32_t socket_handle, const char * multicast_addr);
-
-/**
- * Leave a multicast group on a socket.
+ * The socket must be created and bound before joining a multicast group.
  * 
  * Output AT command:
- * > AT+USOMG=<socket_handle>,0,<multicast_addr>
+ * > AT+USOMG=<socket_handle>,<group_action>,<multicast_addr>
  *
- * @param[in]  puCxHandle:      uCX API handle
- * @param      socket_handle:   Socket identifier to leave multicast group on.
- * @param      multicast_addr:  IPv4 or IPv6 multicast address to leave.
- * @return                      0 on success, negative value on error.
+ * @param[in]  puCxHandle:     uCX API handle
+ * @param      socket_handle:  Socket identifier be used for any operation on that socket.
+ * @param      group_action:   Join or leave the multicast group.
+ * @param      multicast_addr: The multicast IP address to join or leave (e.g. 224.0.0.251 for IPv4,
+ *                             [ff02:0000:0000:0000:0000:0000:0000:00fb] for IPv6).
+ * @return                     0 on success, negative value on error.
  */
-int32_t uCxSocketLeaveMulticastGroup(uCxHandle_t * puCxHandle, int32_t socket_handle, const char * multicast_addr);
+int32_t uCxSocketMulticastGroup(uCxHandle_t * puCxHandle, int32_t socket_handle, uSocketGroupAction_t group_action, uSockIpAddress_t * multicast_addr);
 
 /**
  * Register Connect event callback
@@ -489,17 +480,6 @@ void uCxSocketRegisterClosed(uCxHandle_t * puCxHandle, uUESOCL_t callback);
  * @param      callback:   callback to register. Set to NULL to unregister.
  */
 void uCxSocketRegisterIncomingConnection(uCxHandle_t * puCxHandle, uUESOIC_t callback);
-
-/**
- * Register DirectBinaryDataFrom event callback
- * 
- * Data received in direct binary mode with source address info.
- * Used when read mode is set to U_READ_MODE_DIRECT_BINARY.
- *
- * @param[in]  puCxHandle: uCX API handle
- * @param      callback:   callback to register. Set to NULL to unregister.
- */
-void uCxSocketRegisterDirectBinaryDataFrom(uCxHandle_t * puCxHandle, uUESODBF_t callback);
 
 
 #ifdef __cplusplus

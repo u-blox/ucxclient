@@ -583,6 +583,26 @@ static int32_t parseUEHTCRS(uCxHandle_t * puCxHandle, char * pParams, size_t par
     return ret;
 }
 
+static int32_t parseUEMDU(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEMDU) {
+        puCxHandle->callbacks.UEMDU(puCxHandle);
+    }
+    return ret;
+}
+
+static int32_t parseUEMDD(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
+{
+    (void)paramsLength;
+    int32_t ret = uCxAtUtilParseParamsF(pParams, "", U_CX_AT_UTIL_PARAM_LAST);
+    if ((ret >= 0) && puCxHandle->callbacks.UEMDD) {
+        puCxHandle->callbacks.UEMDD(puCxHandle);
+    }
+    return ret;
+}
+
 static int32_t parseUEDGPC(uCxHandle_t * puCxHandle, char * pParams, size_t paramsLength)
 {
     (void)paramsLength;
@@ -769,6 +789,12 @@ int32_t uCxUrcParse(uCxHandle_t * puCxHandle, const char * pUrcName, char * pPar
     }
     if (strcmp(pUrcName, "+UEHTCRS") == 0) {
         return parseUEHTCRS(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEMDU") == 0) {
+        return parseUEMDU(puCxHandle, pParams, paramsLength);
+    }
+    if (strcmp(pUrcName, "+UEMDD") == 0) {
+        return parseUEMDD(puCxHandle, pParams, paramsLength);
     }
     if (strcmp(pUrcName, "+UEDGPC") == 0) {
         return parseUEDGPC(puCxHandle, pParams, paramsLength);
