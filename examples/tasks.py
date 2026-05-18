@@ -40,6 +40,7 @@ EXAMPLES_TASKS = [
     ('wifi-scan', 'wifi_scan_example', False),
     ('wifi-ap', 'wifi_ap_example', False),
     ('socket', 'socket_example', True),
+    ('ble-mqtt-gateway', 'ble_mqtt_gateway_example', False),
 ]
 
 

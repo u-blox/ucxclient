@@ -177,5 +177,18 @@ else()
     if(PORT_LIBS)
       target_link_libraries(socket_example PRIVATE ${PORT_LIBS})
     endif()
+
+    # BLE -> MQTT Gateway Example (OS-based)
+    add_executable(ble_mqtt_gateway_example
+      ble_mqtt_gateway_example.c
+      ${PORT_OS_SRC}
+      ${PORT_UART_SRC}
+      ${EXAMPLE_COMMON_SRC}
+    )
+    target_compile_options(ble_mqtt_gateway_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
+    target_include_directories(ble_mqtt_gateway_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    if(PORT_LIBS)
+      target_link_libraries(ble_mqtt_gateway_example PRIVATE ${PORT_LIBS})
+    endif()
 endif()
 
