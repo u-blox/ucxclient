@@ -7,3 +7,7 @@ filesystem.bin
 examples/config.local.h
 examples/.ucx_module
 settings.json
+personal/
+
+examples/run.log
+examples/run.err
