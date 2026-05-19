@@ -86,6 +86,8 @@ typedef struct uCxAtClient {
     uCxAtUrcQueue_t urcQueue;
 #endif
     bool isBinaryRx;
+    uint8_t stallCount;          // Consecutive binary read stalls (reset on success/abort)
+    int32_t stallStartMs;        // Timestamp of first stall in current run (0 = not stalling)
     uCxAtBinaryRx_t binaryRx;
     uCxAtBinaryResponseBuf_t rspBinaryBuf;
     U_CX_MUTEX_HANDLE cmdMutex;

@@ -254,3 +254,11 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
 
     return (int32_t)bytesRead;
 }
+
+void uPortUartFlushRx(uPortUartHandle_t handle)
+{
+    if (handle != NULL) {
+        uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+        tcflush(pHandle->fd, TCIFLUSH);
+    }
+}

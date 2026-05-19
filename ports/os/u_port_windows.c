@@ -97,6 +97,22 @@ static DWORD WINAPI rxThread(LPVOID lpParam)
         // No Sleep needed – uPortUartRead now blocks with
         // ReadIntervalTimeout/ReadTotalTimeoutConstant,
         // making this loop event-driven instead of polled.
+        //
+        // BUT: Windows CRITICAL_SECTION is unfair under contention. After we
+        // release cmdMutex inside uCxAtClientHandleRx() and immediately loop
+        // back to re-acquire it, the same thread tends to win the race even
+        // when another thread (e.g. the main thread doing uCxSocketSendTo)
+        // has been blocked waiting on it. The result is 150–750 ms TX stalls
+        // during commissioning bursts (visible in logs as [TXQ-SLOW] /
+        // [ProcessUrcs] SLOW), which causes Apple Home subscription
+        // ReportData to miss the controller's MRP retry window → pairing
+        // "Unable to add accessory" failures.
+        //
+        // SwitchToThread() yields the rest of the current quantum to any
+        // ready thread on the same processor. Zero-cost when nothing is
+        // waiting (returns immediately). When the main thread is blocked on
+        // cmdMutex it now gets a clear shot at it before we re-acquire.
+        SwitchToThread();
 #else
         // Sleep for polling interval (10ms)
         Sleep(10);

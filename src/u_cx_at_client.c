@@ -183,6 +183,9 @@ static int32_t parseIncomingChar(uCxAtClient_t *pClient, char ch)
 
     if (ch == U_CX_SOH_CHAR) {
         pRxBuffer[pClient->rxBufferPos] = 0;
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
+                        "SOH detected after %lu text chars: \"%s\"",
+                        (unsigned long)pClient->rxBufferPos, pRxBuffer);
         ret = AT_PARSER_START_BINARY;
     } else if ((ch == '\r') || (ch == '\n')) {
         pRxBuffer[pClient->rxBufferPos] = 0;
@@ -388,6 +391,52 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             // The two length bytes have now been received
             int32_t parse_code;
             uint16_t length = (uint16_t)(lengthBuf[0] << 8) | lengthBuf[1];
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
+                            "BIN header: raw=[0x%02X,0x%02X] length=%u",
+                            lengthBuf[0], lengthBuf[1], length);
+            if (length > 1460) {
+                // Binary length exceeds UDP MTU — header is corrupt (framing desync).
+                // Abort: clear binary state and flush UART to resynchronize.
+                // Without flush, the actual binary payload bytes still in the UART
+                // buffer get re-parsed as AT text → cascading garbage/desync.
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                                "BIN length %u exceeds UDP MTU (1460) - ABORTING (framing desync)",
+                                length);
+                pBinRx->remainingDataBytes = 0;
+                pBinRx->bufferPos = 0;
+                pBinRx->state = U_CX_BIN_STATE_BINARY_FLUSH;
+                pBinRx->rxHeaderCount = 0;
+                pClient->isBinaryRx = false;
+                pClient->rxBufferPos = 0;
+                pClient->stallCount = 0;
+                pClient->stallStartMs = 0;
+#if U_CX_EVENT_DRIVEN_IO == 1
+                // Clear the read-ahead buffer so stale bytes aren't re-parsed
+                pClient->rxReadAheadPos = 0;
+                pClient->rxReadAheadLen = 0;
+#endif
+                // Flush hardware UART RX FIFO — discard all pending bytes
+                uPortUartFlushRx(pClient->uartHandle);
+                // Drain any bytes that arrive during flush (give NORA-W36 time
+                // to finish transmitting the response we're discarding)
+                {
+                    uint8_t drainBuf[128];
+                    int32_t drained;
+                    int drainRounds = 0;
+                    do {
+                        drained = uPortUartRead(pClient->uartHandle,
+                                                drainBuf, sizeof(drainBuf), 20);
+                        if (drained > 0) {
+                            drainRounds++;
+                        }
+                    } while (drained > 0 && drainRounds < 20);
+                    U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                                    "UART resync: flushed %d drain rounds", drainRounds);
+                }
+                return AT_PARSER_NOP;
+            }
+            pClient->stallCount = 0;
+            pClient->stallStartMs = 0;
             char *pRxBuffer = (char *)pClient->pConfig->pRxBuffer;
             parse_code = parseLine(pClient, pRxBuffer, pClient->rxBufferPos);
             setupBinaryTransfer(pClient, parse_code, length);
@@ -415,6 +464,9 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             }
         } else {
             // There are no buffer space - just throw away all data until binary transfer is done
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                            "BIN overflow: flushing %u remaining bytes (buf=%u, pos=%u)",
+                            pBinRx->remainingDataBytes, pBinRx->bufferSize, pBinRx->bufferPos);
             uint8_t buf[64];
             size_t readLen = U_MIN(sizeof(buf), pBinRx->remainingDataBytes);
 #if U_CX_EVENT_DRIVEN_IO == 1
@@ -431,7 +483,45 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
 
         if (readStatus > 0) {
             pBinRx->remainingDataBytes -= (uint16_t)readStatus;
+            pClient->stallCount = 0;
+            pClient->stallStartMs = 0;
         } else {
+            // Stall = no bytes available right now. In event-driven IO mode,
+            // uPortUartRead returns immediately when nothing is buffered, so a
+            // simple iteration count fires within microseconds and aborts before
+            // the wire has had time to deliver bytes that are actually in flight.
+            // Use a TIME-based threshold instead: tolerate up to 100 ms with no
+            // progress before declaring the transfer dead. At 1 Mbit/s, 100 ms
+            // is enough wire time for ~10 KB - well above any single UDP packet.
+            int32_t nowMs = U_CX_PORT_GET_TIME_MS();
+            if (pClient->stallCount == 0) {
+                pClient->stallStartMs = nowMs;
+            }
+            pClient->stallCount++;
+            int32_t stallElapsedMs = nowMs - pClient->stallStartMs;
+            if (stallElapsedMs >= 100) {
+                // No progress for 100 ms - abort to prevent infinite re-entry.
+                // The module's underlying transport (e.g. NORA-W36 +UESODA URC for
+                // sockets) will re-notify the data, so this self-recovers.
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
+                                "BIN read stall %dms (%u tries) - ABORTING (remaining=%u, bufPos=%u)",
+                                (int)stallElapsedMs, pClient->stallCount,
+                                pBinRx->remainingDataBytes, pBinRx->bufferPos);
+                pBinRx->remainingDataBytes = 0;
+                pBinRx->state = U_CX_BIN_STATE_BINARY_FLUSH;
+                pBinRx->rxHeaderCount = 0;
+                pClient->isBinaryRx = false;
+                pClient->stallCount = 0;
+                pClient->stallStartMs = 0;
+                pClient->rxBufferPos = 0;
+#if U_CX_EVENT_DRIVEN_IO == 1
+                pClient->rxReadAheadPos = 0;
+                pClient->rxReadAheadLen = 0;
+#endif
+                uPortUartFlushRx(pClient->uartHandle);
+            }
+            // Don't log every iteration - spammy and uninformative.
+            // Only the final abort line is useful.
             break;
         }
     }
@@ -643,6 +733,8 @@ int32_t uCxAtClientOpen(uCxAtClient_t *pClient, int32_t baudRate, bool flowContr
     // corrupt parsing after a close/reopen cycle (e.g. baud rate switch).
     pClient->rxBufferPos = 0;
     pClient->isBinaryRx = false;
+    pClient->stallCount = 0;
+    pClient->stallStartMs = 0;
 #if U_CX_EVENT_DRIVEN_IO == 1
     pClient->rxReadAheadPos = 0;
     pClient->rxReadAheadLen = 0;

@@ -19,6 +19,7 @@
 #include "u_webserver.h"
 #include "u_cx_socket.h"
 #include "u_cx_log.h"
+#include "u_cx_at_client.h"   /* uCxAtClientProcessUrcs() — defensive close-URC drain */
 #include "u_port.h"
 #include <string.h>
 #include <stdio.h>
@@ -277,6 +278,20 @@ static int32_t client_drain_tx(uWebServer_t *server, uWebServerClient_t *client)
     }
 
     int32_t chunk_len = (remaining > U_WEBSERVER_TX_CHUNK_SIZE) ? U_WEBSERVER_TX_CHUNK_SIZE : remaining;
+
+    /* DEFENSIVE: drain any pending URCs FIRST. If a +UESOCL for our socket is
+     * sitting in the URC queue, processing it now will set active=false and
+     * release the TX buffer below — avoiding an AT+USOWB=N to a socket that
+     * NORA-W36 has already torn down (which has crashed in the past). Cheap:
+     * lock-free dispatch, returns immediately when the queue is empty. */
+    if (server->ucx_handle && server->ucx_handle->pAtClient) {
+        uCxAtClientProcessUrcs(server->ucx_handle->pAtClient);
+    }
+    if (!client->active || !client->tx_buffer) {
+        /* The URC drain above invalidated this client — abort safely. */
+        return 0;
+    }
+
     int32_t result = uCxSocketWrite(server->ucx_handle, client->socket,
                                     (const uint8_t *)(client->tx_buffer + client->tx_offset),
                                     chunk_len);
@@ -631,13 +646,33 @@ int32_t uWebServerProcess(uWebServer_t *server)
         return -1;
     }
 
-    // Drain pending response/SSE chunks first — one chunk per client per call.
-    // This is the deferred half of handle_client_request(): URC callbacks queue
-    // bytes here, the main loop sends them. Keeps URC dispatch fast and avoids
-    // multi-second AT command storms blocking Matter UDP traffic.
-    for (int32_t i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
-        if (server->clients[i].active && server->clients[i].tx_buffer) {
-            (void)client_drain_tx(server, &server->clients[i]);
+    // Drain pending response/SSE chunks. Send multiple chunks per Process()
+    // call but bounded by a wall-time budget so we don't starve the main loop
+    // (Matter MRP, BLE indications, timer service). Empirically each
+    // AT+USOWB=1000 round-trip takes 50-200ms, so a 150ms budget normally
+    // sends 1-3 chunks per call — enough to make page loads 2-3x faster
+    // without breaking MRP timing (300-500ms tolerance).
+    //
+    // Round-robin across clients (one chunk each) so a single big response
+    // doesn't starve a parallel SSE keepalive.
+    {
+        const int32_t kBudgetMs   = 150;
+        const int32_t kMaxRounds  = 4;          /* hard cap on chunks per call */
+        int32_t       startMs     = U_CX_PORT_GET_TIME_MS();
+        for (int32_t round = 0; round < kMaxRounds; round++) {
+            bool any_drained = false;
+            for (int32_t i = 0; i < U_WEBSERVER_MAX_CLIENTS; i++) {
+                if (server->clients[i].active && server->clients[i].tx_buffer) {
+                    (void)client_drain_tx(server, &server->clients[i]);
+                    any_drained = true;
+                }
+            }
+            if (!any_drained) {
+                break;  /* nothing left to send */
+            }
+            if ((U_CX_PORT_GET_TIME_MS() - startMs) >= kBudgetMs) {
+                break;  /* time budget consumed — yield to main loop */
+            }
         }
     }
 
