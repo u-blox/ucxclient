@@ -1,5 +1,7 @@
 # ucxclient
 
+![Repo rename note](images/important_msg.svg)
+
 This repo contains a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
 
 * NORA-W36
