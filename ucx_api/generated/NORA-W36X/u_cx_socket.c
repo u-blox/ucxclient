@@ -357,6 +357,12 @@ int32_t uCxSocketGetHostByName(uCxHandle_t * puCxHandle, const char * host_name,
     return ret;
 }
 
+int32_t uCxSocketMulticastGroup(uCxHandle_t * puCxHandle, int32_t socket_handle, uSocketGroupAction_t group_action, uSockIpAddress_t * multicast_addr)
+{
+    uCxAtClient_t *pAtClient = puCxHandle->pAtClient;
+    return uCxAtClientExecSimpleCmdF(pAtClient, "AT+USOMG=", "ddi", socket_handle, group_action, multicast_addr, U_CX_AT_UTIL_PARAM_LAST);
+}
+
 void uCxSocketRegisterConnect(uCxHandle_t * puCxHandle, uUESOC_t callback)
 {
     puCxHandle->callbacks.UESOC = callback;

@@ -70,9 +70,13 @@ typedef enum
 
 typedef enum
 {
-    U_BT_DISCOVERY_TYPE_ALL,                  /**< All with no filter. Displays all found devices; devices can be displayed multiple times. */
-    U_BT_DISCOVERY_TYPE_ALL_NO_DUPLICATES = 1 /**< General inquiry. Displays devices in General or Limited discoverability mode; each device
-                                                   is displayed only once. */
+    U_BT_DISCOVERY_TYPE_ALL,                          /**< Displays all found devices; devices can be displayed multiple times. */
+    U_BT_DISCOVERY_TYPE_ALL_NO_DUPLICATES = 1,        /**< Displays all found devices; each device is displayed only once. */
+    U_BT_DISCOVERY_TYPE_DATA_FILTER = 2,              /**< Filter discovery results using the configured data filters. Only devices matching a data
+                                                           filter configured with AT+UBTDFD will be reported. Devices can be displayed multiple
+                                                           times. */
+    U_BT_DISCOVERY_TYPE_DATA_FILTER_NO_DUPLICATES = 3 /**< Filter discovery results using the configured data filters. Only devices matching a data
+                                                           filter configured with AT+UBTDFD will be reported. Each device is displayed only once. */
 } uBtDiscoveryType_t;
 
 typedef enum
@@ -86,6 +90,18 @@ typedef enum
     U_BT_OUTPUT_EVENTS_DISABLED,   /**< Disable output events during background discovery */
     U_BT_OUTPUT_EVENTS_ENABLED = 1 /**< Enable output events during background discovery */
 } uBtOutputEvents_t;
+
+typedef enum
+{
+    U_BT_DISCOVERY_STATE_NOT_ACTIVE, /**< Background discovery is not active */
+    U_BT_DISCOVERY_STATE_ACTIVE = 1  /**< Background discovery is active */
+} uBtDiscoveryState_t;
+
+typedef enum
+{
+    U_BT_CONNECT_TO_DIRECTED_ADVERTISEMENTS_DISABLED,   /**< Connect to directed advertisements during background discovery disabled */
+    U_BT_CONNECT_TO_DIRECTED_ADVERTISEMENTS_ENABLED = 1 /**< Connect to directed advertisements during background discovery enabled */
+} uBtConnectToDirectedAdvertisements_t;
 
 typedef enum
 {
@@ -121,6 +137,13 @@ typedef enum
     U_BT_DIRECTED_ADV_DISABLED,   /**< Directed Advertisement Not Running */
     U_BT_DIRECTED_ADV_ENABLED = 1 /**< Directed Advertisement Running */
 } uBtDirectedAdv_t;
+
+typedef enum
+{
+    U_BT_ADV_TYPE_CONNECTABLE_SCANNABLE,            /**< Connectable and Scannable */
+    U_BT_ADV_TYPE_NON_CONNECTABLE_SCANNABLE = 1,    /**< Non-Connectable Scannable */
+    U_BT_ADV_TYPE_NON_CONNECTABLE_NON_SCANNABLE = 2 /**< Non-Connectable Non-Scannable */
+} uBtAdvType_t;
 
 typedef enum
 {
@@ -453,6 +476,12 @@ typedef enum
 
 typedef enum
 {
+    U_SOCKET_GROUP_ACTION_LEAVE,   /**< Leave the multicast group. */
+    U_SOCKET_GROUP_ACTION_JOIN = 1 /**< Join the multicast group. */
+} uSocketGroupAction_t;
+
+typedef enum
+{
     U_MQTT_QOS_AT_MOST_ONCE,      /**< At most once */
     U_MQTT_QOS_AT_LEAST_ONCE = 1, /**< At least once */
     U_MQTT_QOS_EXACTLY_ONCE = 2   /**< Exactly once */
@@ -469,6 +498,18 @@ typedef enum
     U_MQTT_SUBSCRIBE_ACTION_SUBSCRIBE,      /**< Subscribe to topic */
     U_MQTT_SUBSCRIBE_ACTION_UNSUBSCRIBE = 1 /**< Unsubscribe from topic */
 } uMqttSubscribeAction_t;
+
+typedef enum
+{
+    U_ENABLED_NO,     /**< Disabled */
+    U_ENABLED_YES = 1 /**< Enabled */
+} uEnabled_t;
+
+typedef enum
+{
+    U_MDNS_PROTOCOL_TCP,    /**< TCP */
+    U_MDNS_PROTOCOL_UDP = 1 /**< UDP */
+} uMdnsProtocol_t;
 
 typedef enum
 {
@@ -504,12 +545,6 @@ typedef enum
     U_SEC_EXTENSION_SNI,              /**< Server Name Extension */
     U_SEC_EXTENSION_FRAGMENTATION = 1 /**< Handshake fragmentation */
 } uSecExtension_t;
-
-typedef enum
-{
-    U_ENABLED_NO,     /**< Disabled */
-    U_ENABLED_YES = 1 /**< Enabled */
-} uEnabled_t;
 
 typedef enum
 {
@@ -622,6 +657,8 @@ typedef void (*uUEMQPC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, int32_t
 typedef void (*uUEMQSC_t)(struct uCxHandle *puCxHandle, int32_t mqtt_id, uMqttSubscribeAction_t subscribe_action);
 typedef void (*uUEHTCDC_t)(struct uCxHandle *puCxHandle, int32_t session_id);
 typedef void (*uUEHTCRS_t)(struct uCxHandle *puCxHandle, int32_t session_id, int32_t status_code, const char * description);
+typedef void (*uUEMDU_t)(struct uCxHandle *puCxHandle);
+typedef void (*uUEMDD_t)(struct uCxHandle *puCxHandle);
 typedef void (*uUEDGPC_t)(struct uCxHandle *puCxHandle, int32_t transmitted_packets, int32_t received_packets, int32_t packet_loss_rate, int32_t avg_response_time);
 typedef void (*uUEDGP_t)(struct uCxHandle *puCxHandle, uDiagPingResponse_t ping_response, int32_t response_time);
 typedef void (*uUEDGI_t)(struct uCxHandle *puCxHandle, const char * iperf_output);
@@ -680,6 +717,8 @@ typedef struct
     uUEMQSC_t UEMQSC;
     uUEHTCDC_t UEHTCDC;
     uUEHTCRS_t UEHTCRS;
+    uUEMDU_t UEMDU;
+    uUEMDD_t UEMDD;
     uUEDGPC_t UEDGPC;
     uUEDGP_t UEDGP;
     uUEDGI_t UEDGI;
