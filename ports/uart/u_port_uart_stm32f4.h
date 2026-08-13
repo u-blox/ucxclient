@@ -58,6 +58,17 @@ extern "C" {
 #define U_PORT_UART_CLK_ENABLE  __HAL_RCC_USART3_CLK_ENABLE
 #define U_PORT_UART_CLK_DISABLE __HAL_RCC_USART3_CLK_DISABLE
 
+/**
+ * RX DMA configuration (USART3_RX = DMA1 Stream 1, Channel 4 on STM32F4).
+ * RX uses circular DMA into a ring buffer so that no per-byte interrupts
+ * are needed - required for reliable operation at high baud rates (2 Mbaud+).
+ */
+#define U_PORT_UART_DMA_CLK_ENABLE    __HAL_RCC_DMA1_CLK_ENABLE
+#define U_PORT_UART_RX_DMA_STREAM     DMA1_Stream1
+#define U_PORT_UART_RX_DMA_CHANNEL    DMA_CHANNEL_4
+#define U_PORT_UART_RX_DMA_IRQn       DMA1_Stream1_IRQn
+#define U_PORT_UART_RX_DMA_IRQHandler DMA1_Stream1_IRQHandler
+
 #ifdef __cplusplus
 }
 #endif

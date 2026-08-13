@@ -26,6 +26,7 @@
 
 /* Forward declarations */
 extern void uPortUart_IRQHandler(void);
+extern void uPortUartDma_IRQHandler(void);
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -138,4 +139,12 @@ void SysTick_Handler(void)
 void USART3_IRQHandler(void)
 {
   uPortUart_IRQHandler();
+}
+
+/**
+  * @brief This function handles DMA1 Stream 1 global interrupt (USART3 RX DMA).
+  */
+void DMA1_Stream1_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
 }
