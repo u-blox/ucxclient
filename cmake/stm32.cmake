@@ -10,8 +10,17 @@ if(NOT CMAKE_CROSSCOMPILING)
     message(FATAL_ERROR "STM32 builds require cross-compilation. Set CMAKE_TOOLCHAIN_FILE to cmake/arm-none-eabi-gcc.cmake")
 endif()
 
-# Include STM32F407VG specific settings
-include(${CMAKE_CURRENT_LIST_DIR}/stm32f407vg.cmake)
+# Select board configuration (default: STM32F407G-DISC1)
+# Pass -DSTM32_BOARD=nucleo_f439zi for the NUCLEO-F439ZI board.
+if(NOT DEFINED STM32_BOARD)
+    set(STM32_BOARD "f407_disc" CACHE STRING "STM32 board: f407_disc or nucleo_f439zi")
+endif()
+
+if(STM32_BOARD STREQUAL "nucleo_f439zi")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f439zi.cmake)
+else()
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f407vg.cmake)
+endif()
 
 # STM32 port directory
 set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f4)

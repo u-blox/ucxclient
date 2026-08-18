@@ -47,6 +47,32 @@ extern "C" {
  * COMPILE-TIME MACROS
  * -------------------------------------------------------------- */
 
+#if defined(NUCLEO_F439ZI)
+
+/**
+ * NUCLEO-F439ZI: u-blox module on USART1, PB6 (TX) / PB7 (RX), AF7.
+ * Same Morpho connector pins as the NUCLEO-H753ZI wiring convention.
+ * Console/printf uses USART3 PD8/PD9 (ST-LINK VCP) - see main_stm32.c.
+ */
+#define U_PORT_UART_INSTANCE    USART1
+#define U_PORT_UART_IRQn        USART1_IRQn
+#define U_PORT_UART_IRQHandler  USART1_IRQHandler
+#define U_PORT_UART_CLK_ENABLE  __HAL_RCC_USART1_CLK_ENABLE
+#define U_PORT_UART_CLK_DISABLE __HAL_RCC_USART1_CLK_DISABLE
+
+/**
+ * RX DMA configuration (USART1_RX = DMA2 Stream 2, Channel 4 on STM32F4).
+ * RX uses circular DMA into a ring buffer so that no per-byte interrupts
+ * are needed - required for reliable operation at high baud rates (2 Mbaud+).
+ */
+#define U_PORT_UART_DMA_CLK_ENABLE    __HAL_RCC_DMA2_CLK_ENABLE
+#define U_PORT_UART_RX_DMA_STREAM     DMA2_Stream2
+#define U_PORT_UART_RX_DMA_CHANNEL    DMA_CHANNEL_4
+#define U_PORT_UART_RX_DMA_IRQn       DMA2_Stream2_IRQn
+#define U_PORT_UART_RX_DMA_IRQHandler DMA2_Stream2_IRQHandler
+
+#else /* STM32F407G-DISC1 (default) */
+
 /**
  * UART instance for u-blox module communication
  * Hardcoded to USART3 for STM32F407G-DISC1 board compatibility.
@@ -68,6 +94,8 @@ extern "C" {
 #define U_PORT_UART_RX_DMA_CHANNEL    DMA_CHANNEL_4
 #define U_PORT_UART_RX_DMA_IRQn       DMA1_Stream1_IRQn
 #define U_PORT_UART_RX_DMA_IRQHandler DMA1_Stream1_IRQHandler
+
+#endif /* NUCLEO_F439ZI */
 
 #ifdef __cplusplus
 }

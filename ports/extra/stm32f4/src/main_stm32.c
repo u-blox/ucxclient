@@ -16,6 +16,7 @@
 /* Forward declarations */
 static void SystemClock_Config(void);
 static void GPIO_Init(void);
+void Error_Handler(void);
 
 /* External application main function from examples */
 extern int app_main(int argc, char *argv[]);
@@ -50,7 +51,11 @@ int main(void)
 
     /* Send early test message */
     printf("\r\n===========================================\r\n");
+#if defined(NUCLEO_F439ZI)
+    printf("NUCLEO-F439ZI ucxclient - Starting...\r\n");
+#else
     printf("STM32F407 ucxclient - Starting...\r\n");
+#endif
     printf("===========================================\r\n");
     printf("Creating FreeRTOS task...\r\n");
 
@@ -110,6 +115,18 @@ static void SystemClock_Config(void)
      regarding system frequency refer to product datasheet.  */
   __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
+#if defined(NUCLEO_F439ZI)
+  /* NUCLEO-F439ZI: 8 MHz clock from ST-LINK MCO on HSE input (bypass mode).
+   * PLL: 8 MHz / M=8 * N=336 / P=2 = 168 MHz SYSCLK, Q=7 -> 48 MHz. */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
+#else
   /* Enable HSE Oscillator and activate PLL with HSE as source */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
@@ -119,6 +136,7 @@ static void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLN = 336;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
+#endif
   HAL_RCC_OscConfig(&RCC_OscInitStruct);
 
   /* Select PLL as system clock source and configure the HCLK, PCLK1 and PCLK2
@@ -139,8 +157,44 @@ static void SystemClock_Config(void)
 }
 
 /* UART handle for console output (printf) */
-static UART_HandleTypeDef huart2;
+static UART_HandleTypeDef gConsoleUart;
 
+#if defined(NUCLEO_F439ZI)
+/**
+ * @brief  Initialize USART3 for console output (ST-LINK VCP)
+ * USART3 TX: PD8, RX: PD9 (AF7)
+ * Baud: 115200, 8N1
+ */
+static void Console_UART_Init(void)
+{
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    /* Enable clocks */
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+    __HAL_RCC_USART3_CLK_ENABLE();
+
+    /* Configure USART3 GPIO pins (PD8 = TX, PD9 = RX) */
+    GPIO_InitStruct.Pin = GPIO_PIN_8 | GPIO_PIN_9;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF7_USART3;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    gConsoleUart.Instance = USART3;
+    gConsoleUart.Init.BaudRate = 115200;
+    gConsoleUart.Init.WordLength = UART_WORDLENGTH_8B;
+    gConsoleUart.Init.StopBits = UART_STOPBITS_1;
+    gConsoleUart.Init.Parity = UART_PARITY_NONE;
+    gConsoleUart.Init.Mode = UART_MODE_TX_RX;
+    gConsoleUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    gConsoleUart.Init.OverSampling = UART_OVERSAMPLING_16;
+
+    if (HAL_UART_Init(&gConsoleUart) != HAL_OK) {
+        Error_Handler();
+    }
+}
+#else
 /**
  * @brief  Initialize UART2 for console output
  * UART2 TX: PA2, RX: PA3
@@ -163,16 +217,16 @@ static void Console_UART_Init(void)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
     /* Configure UART2 - with HSI clock (16MHz), APB1 should be 16MHz */
-    huart2.Instance = USART2;
-    huart2.Init.BaudRate = 115200;
-    huart2.Init.WordLength = UART_WORDLENGTH_8B;
-    huart2.Init.StopBits = UART_STOPBITS_1;
-    huart2.Init.Parity = UART_PARITY_NONE;
-    huart2.Init.Mode = UART_MODE_TX_RX;
-    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+    gConsoleUart.Instance = USART2;
+    gConsoleUart.Init.BaudRate = 115200;
+    gConsoleUart.Init.WordLength = UART_WORDLENGTH_8B;
+    gConsoleUart.Init.StopBits = UART_STOPBITS_1;
+    gConsoleUart.Init.Parity = UART_PARITY_NONE;
+    gConsoleUart.Init.Mode = UART_MODE_TX_RX;
+    gConsoleUart.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+    gConsoleUart.Init.OverSampling = UART_OVERSAMPLING_16;
 
-    if (HAL_UART_Init(&huart2) != HAL_OK) {
+    if (HAL_UART_Init(&gConsoleUart) != HAL_OK) {
         /* If HAL init fails, manually set baud rate for 16MHz APB1 clock */
         /* BRR = APB1_Clock / BaudRate = 16000000 / 115200 = 138.88 ≈ 139 (0x8B) */
         USART2->BRR = 139;
@@ -180,6 +234,7 @@ static void Console_UART_Init(void)
         USART2->CR1 |= USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
     }
 }
+#endif /* NUCLEO_F439ZI */
 
 /**
  * @brief  Legacy GPIO init kept for compatibility
@@ -200,11 +255,44 @@ void HAL_MspInit(void)
     HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
 }
 
-/* HAL UART MSP Init for USART3 (u-blox module) - STM32F407G-DISC1 compatible */
+/* HAL UART MSP Init for the u-blox module UART */
 void HAL_UART_MspInit(UART_HandleTypeDef* huart)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
 
+#if defined(NUCLEO_F439ZI)
+    if (huart->Instance == USART1)
+    {
+        /* USART1 GPIO Configuration on NUCLEO-F439ZI:
+         * PB6: USART1_TX
+         * PB7: USART1_RX
+         * (same Morpho pins as the NUCLEO-H753ZI wiring convention)
+         */
+        __HAL_RCC_GPIOB_CLK_ENABLE();
+        __HAL_RCC_USART1_CLK_ENABLE();
+
+        GPIO_InitStruct.Pin = GPIO_PIN_6 | GPIO_PIN_7;
+        GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+        GPIO_InitStruct.Pull = GPIO_NOPULL;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+        GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+        HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+        /* Configure CTS/RTS if hardware flow control is enabled
+         * (USART1 CTS = PA11, RTS = PA12) */
+        if (huart->Init.HwFlowCtl == UART_HWCONTROL_RTS_CTS)
+        {
+            __HAL_RCC_GPIOA_CLK_ENABLE();
+            GPIO_InitStruct.Pin = GPIO_PIN_11 | GPIO_PIN_12;
+            GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+            HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+        }
+    }
+    else if (huart->Instance == USART3)
+    {
+        /* USART3 (console) already initialized in Console_UART_Init */
+    }
+#else
     if (huart->Instance == USART3)
     {
         /* USART3 GPIO Configuration on STM32F407G-DISC1:
@@ -239,6 +327,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     {
         /* USART2 already initialized in Console_UART_Init */
     }
+#endif /* NUCLEO_F439ZI */
 }
 
 /* FreeRTOS Hooks */
@@ -274,12 +363,12 @@ void assert_failed(uint8_t* file, uint32_t line)
     while (1);
 }
 
-/* Retarget printf to UART2 via __io_putchar (used by syscalls.c _write) */
+/* Retarget printf to the console UART via __io_putchar (used by syscalls.c _write) */
 int __io_putchar(int ch)
 {
     /* Use HAL_UART_Transmit with a reasonable timeout */
     uint8_t c = (uint8_t)ch;
-    if (HAL_UART_Transmit(&huart2, &c, 1, 1000) == HAL_OK) {
+    if (HAL_UART_Transmit(&gConsoleUart, &c, 1, 1000) == HAL_OK) {
         return ch;
     }
     return -1;

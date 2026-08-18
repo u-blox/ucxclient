@@ -133,6 +133,26 @@ void SysTick_Handler(void)
 /*  file (startup_stm32f4xx.s).                                               */
 /******************************************************************************/
 
+#if defined(NUCLEO_F439ZI)
+
+/**
+  * @brief This function handles USART1 global interrupt (u-blox module).
+  */
+void USART1_IRQHandler(void)
+{
+  uPortUart_IRQHandler();
+}
+
+/**
+  * @brief This function handles DMA2 Stream 2 global interrupt (USART1 RX DMA).
+  */
+void DMA2_Stream2_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
+#else /* STM32F407G-DISC1 (default) */
+
 /**
   * @brief This function handles USART3 global interrupt.
   */
@@ -148,3 +168,5 @@ void DMA1_Stream1_IRQHandler(void)
 {
   uPortUartDma_IRQHandler();
 }
+
+#endif /* NUCLEO_F439ZI */
