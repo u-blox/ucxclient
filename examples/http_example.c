@@ -210,8 +210,8 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     } while (headerRsp.more_to_read);
     printf("\n");
 
-    // Read response body
-    uint8_t rxData[512];
+    // Read response body (1000 bytes = module max per AT+UHTCGBB read)
+    uint8_t rxData[1001];
     int32_t moreToRead;
     do {
         ret = uCxHttpGetBody(&ucxHandle, sessionId, sizeof(rxData) - 1, rxData, &moreToRead);
