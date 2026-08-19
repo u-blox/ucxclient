@@ -136,7 +136,7 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
         U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "No response from device at 115200 baud - try 921600 baud");
         uCxAtClientClose(pClient);
         currentBaud = 921600;
-        uCxAtClientOpen(pClient, currentBaud, true);
+        uCxAtClientOpen(pClient, currentBaud, false);
         if (uCxGeneralAttention(&ucxHandle) != 0) {
             U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "No response from device");
             goto fail;
@@ -154,13 +154,14 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
         U_CX_PORT_SLEEP_MS(200);
         uCxAtClientClose(pClient);
         currentBaud = 115200;
-        uCxAtClientOpen(pClient, currentBaud, true);
+        uCxAtClientOpen(pClient, currentBaud, false);
     }
     U_CX_PORT_SLEEP_MS(4000);
     uCxSystemSetEchoOff(&ucxHandle);
 
     // Increase UART speed for better throughput
-    ret = uCxSystemSetUartSettings3(&ucxHandle, 921600, 1, 1);
+    // No flow control: RTS/CTS are not wired on the Nucleo setups (module param 0)
+    ret = uCxSystemSetUartSettings3(&ucxHandle, 921600, 0, 1);
     if (ret < 0) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "uCxSystemSetUartSettings3() failed");
         goto fail;
@@ -168,7 +169,7 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     // Re-open AT client at new speed
     uCxAtClientClose(pClient);
     U_CX_PORT_SLEEP_MS(200);
-    uCxAtClientOpen(pClient, 921600, true);
+    uCxAtClientOpen(pClient, 921600, false);
     if (uCxGeneralAttention(&ucxHandle) != 0) {
         U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "No response from device at 921600 baud");
         goto fail;
