@@ -66,7 +66,9 @@ extern "C" {
 #ifndef U_WEBSERVER_MAX_RESPONSE_SIZE
 #define U_WEBSERVER_MAX_RESPONSE_SIZE   40960  /**< Maximum HTTP response size (40KB for dashboard HTML+CSS+JS) */
 #endif
-#define U_WEBSERVER_MAX_ROUTES          24     /**< Maximum route handlers */
+#ifndef U_WEBSERVER_MAX_ROUTES
+#define U_WEBSERVER_MAX_ROUTES          32     /**< Maximum route handlers (u-connect-matter registers ~30 in dev builds) */
+#endif
 #define U_WEBSERVER_SSE_EVENT_SIZE      512    /**< Maximum SSE event size */
 
 /* ========================================

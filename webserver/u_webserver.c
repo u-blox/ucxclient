@@ -494,8 +494,6 @@ static void on_incoming_connection(struct uCxHandle *puCxHandle, int32_t client_
  */
 static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int32_t bytes_available)
 {
-    (void)bytes_available;
-    
     if (!g_server_instance) {
         return;
     }
@@ -505,9 +503,17 @@ static void on_data_available(struct uCxHandle *puCxHandle, int32_t socket, int3
         return;
     }
     
-    // Read available data (max 1000 bytes per NORA-W36 AT command limit)
+    // Read available data. Cap by:
+    //   1) free space in our request buffer
+    //   2) NORA-W36 AT+USORB hard limit (1000 bytes)
+    //   3) bytes_available from +UESODA URC — asking for more makes NORA-W36
+    //      stall the AT response while it figures out it has less, hurting
+    //      throughput on slow links. The URC count is authoritative.
     int32_t rx_space = U_WEBSERVER_MAX_REQUEST_SIZE - client->rx_length - 1;
-    if (rx_space > 1000) rx_space = 1000;  // NORA-W36 max read size
+    if (rx_space > 1000) rx_space = 1000;  // NORA-W36 AT+USORB max
+    if (bytes_available > 0 && rx_space > bytes_available) {
+        rx_space = bytes_available;
+    }
     if (rx_space <= 0) {
         // Buffer full — defer close to Process()
         client->closing = true;
@@ -1068,8 +1074,6 @@ void uWebServerHandleIncomingConnection(uWebServer_t *server, struct uCxHandle *
 void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxHandle,
                                    int32_t socketHandle, int32_t bytesAvailable)
 {
-    (void)bytesAvailable;
-    
     if (!server || !server->running) {
         return;
     }
@@ -1079,9 +1083,17 @@ void uWebServerHandleDataAvailable(uWebServer_t *server, struct uCxHandle *puCxH
         return;
     }
     
-    // Read available data (max 1000 bytes per NORA-W36 AT command limit)
+    // Read available data. Cap by:
+    //   1) free space in our request buffer
+    //   2) NORA-W36 AT+USORB hard limit (1000 bytes)
+    //   3) bytesAvailable from +UESODA URC — asking for more makes NORA-W36
+    //      stall the AT response while it figures out it has less, hurting
+    //      throughput on slow links. The URC count is authoritative.
     int32_t rx_space = U_WEBSERVER_MAX_REQUEST_SIZE - client->rx_length - 1;
-    if (rx_space > 1000) rx_space = 1000;  // NORA-W36 max read size
+    if (rx_space > 1000) rx_space = 1000;  // NORA-W36 AT+USORB max
+    if (bytesAvailable > 0 && rx_space > bytesAvailable) {
+        rx_space = bytesAvailable;
+    }
     if (rx_space <= 0) {
         // Buffer full — defer close to Process()
         client->closing = true;
