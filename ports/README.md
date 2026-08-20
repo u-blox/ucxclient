@@ -30,7 +30,9 @@ See also: [STM32F4 port](extra/stm32f4/README.md) for embedded ARM Cortex-M4 wit
 | uart/u_port_uart_linux    | Linux termios-based UART implementation. Used by both POSIX and no-OS ports. |
 | uart/u_port_uart_windows  | Windows COM port UART implementation using Windows API. |
 | uart/u_port_uart_zephyr   | Zephyr interrupt-driven UART with ring buffer. |
-| uart/u_port_uart_stm32f4  | STM32F4 HAL-based UART implementation with DMA support. |
+| uart/u_port_uart_stm32f4_irq | STM32F4 HAL-based UART, interrupt-driven RX (default, proven). |
+| uart/u_port_uart_stm32f4_dma | STM32F4 HAL-based UART, circular-DMA RX (opt-in via `STM32_UART_USE_DMA=ON`, needed for 2 Mbaud+). |
+| uart/u_port_uart_stm32h7  | STM32H7 HAL-based UART implementation with DMA support. |
 
 ## Background RX Task
 
@@ -95,4 +97,29 @@ void uPortBgRxTaskDestroy(uCxAtClient_t *);     // Destroy background RX task (o
 U_CX_AT_PORT_ASSERT(COND)  // Assert macro (default: assert())
 U_CX_PORT_PRINTF           // Printf function (default: printf)
 ```
+
+## Performance & Latency Tuning
+
+Projects with high-throughput/low-latency requirements (e.g. Matter/Thread
+controllers) should review these compile-time settings:
+
+| Flag | Where | Default | Effect |
+| ---- | ----- | ------- | ------ |
+| `U_CX_EVENT_DRIVEN_IO` | inc/u_cx_at_config.h | `1` | Bulk, blocking UART reads via a 2048-byte read-ahead buffer instead of byte-per-byte polling; TX commands coalesced into one write. Set to `0` only to fall back to the original byte-per-byte/polled behaviour if a port has compatibility issues. |
+| `U_CX_USE_URC_QUEUE` | inc/u_cx_at_config.h | `1` | Lets you issue AT commands from inside a URC callback. Costs one extra copy per URC (rxBuffer -> URC queue buffer). Leave enabled unless memory-constrained and URC-in-callback usage isn't needed. |
+| `U_CX_LOG_DEBUG` | inc/u_cx_at_config.h | `0` | Debug logging is off by default; every enabled log line adds UART-blocking `printf()` time on the calling thread. Keep `0` in latency-sensitive builds. |
+| `STM32_UART_USE_DMA` | cmake/stm32.cmake (STM32F4 only) | `OFF` | Selects `u_port_uart_stm32f4_dma.c` (circular DMA RX, higher throughput, required for 2 Mbaud+) instead of the default `u_port_uart_stm32f4_irq.c` (interrupt-driven, proven, sufficient up to ~1 Mbaud). Pass `-DSTM32_UART_USE_DMA=ON` when high baud rate is required. STM32H7 only has the DMA implementation (no switch). |
+
+Additional latency-relevant behavior (not compile flags, but good to know):
+
+* **Windows port**: automatically sets the FTDI USB-serial `LatencyTimer` registry
+  value to 1 ms on port open (factory default is 16 ms) to remove hidden USB
+  buffering delay. Only affects FTDI-based adapters; other USB-UART chips are
+  unaffected (registry key won't exist, error is ignored).
+* **Windows port read timeouts**: with `U_CX_EVENT_DRIVEN_IO=1`, `ReadFile()` is
+  configured to return immediately when data is already buffered and to wait
+  at most 1 ms when idle (vs. a 10 ms poll interval when `U_CX_EVENT_DRIVEN_IO=0`).
+* **RX buffer sizing**: `u_port_uart_stm32f4_irq.c` / `_dma.c` use
+  `U_PORT_UART_RX_BUFFER_SIZE` (default 2048 / 8192 bytes respectively);
+  override via compile definition if a board needs a different size.
 

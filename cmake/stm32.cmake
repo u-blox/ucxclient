@@ -30,6 +30,11 @@ if(NOT DEFINED STM32_FAMILY_SHORT)
     set(STM32_FAMILY_SHORT "F4")
 endif()
 
+# STM32F4 UART implementation: interrupt-driven (default, proven) vs circular
+# DMA (higher throughput, needed for 2 Mbaud+, but newer/less proven).
+# Pass -DSTM32_UART_USE_DMA=ON to opt into the DMA implementation.
+option(STM32_UART_USE_DMA "Use circular-DMA UART RX instead of the interrupt-driven implementation (STM32F4 only)" OFF)
+
 # STM32 port directory and family-specific sources
 if(STM32_FAMILY_SHORT STREQUAL "H7")
     set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32h7)
@@ -63,9 +68,15 @@ else()
         ${FREERTOS_SOURCES}
     )
 
+    if(STM32_UART_USE_DMA)
+        set(STM32_UART_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4_dma.c)
+    else()
+        set(STM32_UART_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4_irq.c)
+    endif()
+
     set(STM32_PORT_SOURCES
         ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4.c
+        ${STM32_UART_SRC}
     )
 endif()
 
