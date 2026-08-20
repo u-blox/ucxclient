@@ -10,29 +10,64 @@ if(NOT CMAKE_CROSSCOMPILING)
     message(FATAL_ERROR "STM32 builds require cross-compilation. Set CMAKE_TOOLCHAIN_FILE to cmake/arm-none-eabi-gcc.cmake")
 endif()
 
-# Include STM32F407VG specific settings
-include(${CMAKE_CURRENT_LIST_DIR}/stm32f407vg.cmake)
+# Select board configuration (default: STM32F407G-DISC1)
+# Pass -DSTM32_BOARD=nucleo_f439zi for the NUCLEO-F439ZI board.
+# Pass -DSTM32_BOARD=nucleo_h753zi for the NUCLEO-H743ZI/H753ZI boards.
+if(NOT DEFINED STM32_BOARD)
+    set(STM32_BOARD "f407_disc" CACHE STRING "STM32 board: f407_disc, nucleo_f439zi or nucleo_h753zi")
+endif()
 
-# STM32 port directory
-set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f4)
+if(STM32_BOARD STREQUAL "nucleo_h753zi")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32h753zi.cmake)
+elseif(STM32_BOARD STREQUAL "nucleo_f439zi")
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f439zi.cmake)
+else()
+    include(${CMAKE_CURRENT_LIST_DIR}/stm32f407vg.cmake)
+endif()
 
-# STM32-specific common sources
-set(STM32_COMMON_SRC
-    ${STM32_PORT_EXTRA_DIR}/src/system_stm32f4xx.c
-    ${STM32_PORT_EXTRA_DIR}/src/stm32f4xx_it.c
-    ${STM32_PORT_EXTRA_DIR}/src/stm32f4xx_hal_timebase_tim.c
-    ${STM32_PORT_EXTRA_DIR}/src/sysmem.c
-    ${STM32_PORT_EXTRA_DIR}/src/syscalls.c
-    ${STM32_STARTUP_FILE}
-    ${STM32_HAL_SOURCES}
-    ${FREERTOS_SOURCES}
-)
+# Default family for board files that predate STM32_FAMILY_SHORT
+if(NOT DEFINED STM32_FAMILY_SHORT)
+    set(STM32_FAMILY_SHORT "F4")
+endif()
 
-# STM32 port layer sources
-set(STM32_PORT_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4.c
-)
+# STM32 port directory and family-specific sources
+if(STM32_FAMILY_SHORT STREQUAL "H7")
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32h7)
+
+    set(STM32_COMMON_SRC
+        ${STM32_PORT_EXTRA_DIR}/src/system_stm32h7xx.c
+        ${STM32_PORT_EXTRA_DIR}/src/stm32h7xx_it.c
+        ${STM32_PORT_EXTRA_DIR}/src/stm32h7xx_hal_timebase_tim.c
+        ${STM32_PORT_EXTRA_DIR}/src/sysmem.c
+        ${STM32_PORT_EXTRA_DIR}/src/syscalls.c
+        ${STM32_STARTUP_FILE}
+        ${STM32_HAL_SOURCES}
+        ${FREERTOS_SOURCES}
+    )
+
+    set(STM32_PORT_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32h7.c
+    )
+else()
+    set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f4)
+
+    set(STM32_COMMON_SRC
+        ${STM32_PORT_EXTRA_DIR}/src/system_stm32f4xx.c
+        ${STM32_PORT_EXTRA_DIR}/src/stm32f4xx_it.c
+        ${STM32_PORT_EXTRA_DIR}/src/stm32f4xx_hal_timebase_tim.c
+        ${STM32_PORT_EXTRA_DIR}/src/sysmem.c
+        ${STM32_PORT_EXTRA_DIR}/src/syscalls.c
+        ${STM32_STARTUP_FILE}
+        ${STM32_HAL_SOURCES}
+        ${FREERTOS_SOURCES}
+    )
+
+    set(STM32_PORT_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32f4.c
+    )
+endif()
 
 # STM32 include directories
 set(STM32_INCLUDE_DIRS
@@ -43,17 +78,21 @@ set(STM32_INCLUDE_DIRS
 
 # STM32 compile definitions
 # WiFi credentials (U_EXAMPLE_SSID, U_EXAMPLE_WPA_PSK) come from config.local.h
+if(STM32_FAMILY_SHORT STREQUAL "H7")
+    set(STM32_EXAMPLE_UART "USART1")
+else()
+    set(STM32_EXAMPLE_UART "USART3")
+endif()
 set(STM32_COMPILE_DEFINITIONS
     U_PORT_FREERTOS
-    U_EXAMPLE_UART="USART3"
+    U_EXAMPLE_UART="${STM32_EXAMPLE_UART}"
     U_CX_LOG_DEBUG=1
 )
 
-# STM32 compile options
+# STM32 compile options (CPU flags come from the board file)
+separate_arguments(STM32_CPU_FLAGS_LIST NATIVE_COMMAND "${CPU_FLAGS}")
 set(STM32_COMPILE_OPTIONS
-    -march=armv7e-m
-    -mthumb
-    -mfloat-abi=soft
+    ${STM32_CPU_FLAGS_LIST}
     -Wall
     -Wextra
     -Og
@@ -115,7 +154,7 @@ function(add_stm32_example)
 
     # Ensure assembly files use the same CPU flags
     set_source_files_properties(${STM32_STARTUP_FILE} PROPERTIES
-        COMPILE_FLAGS "-march=armv7e-m -mthumb -mfloat-abi=soft"
+        COMPILE_FLAGS "${CPU_FLAGS}"
     )
 
     # Find ARM toolchain utilities

@@ -26,6 +26,7 @@
 
 /* Forward declarations */
 extern void uPortUart_IRQHandler(void);
+extern void uPortUartDma_IRQHandler(void);
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -134,17 +135,43 @@ void SysTick_Handler(void)
 
 /**
   * @brief NORA-W36 UART interrupt handler
-  * - ODIN-W26/F439 (ODIN-W2): USART1 on PA9/PA10
+  * - ODIN-W26/F439/NUCLEO-F439ZI: USART1 on PA9/PA10 (all define STM32F439xx)
   * - F407/F429: USART3 on PB10/PB11
   */
 #if defined(ODIN_W26) || defined(STM32F439xx)
+
+/**
+  * @brief This function handles USART1 global interrupt (u-blox module).
+  */
 void USART1_IRQHandler(void)
 {
   uPortUart_IRQHandler();
 }
-#else
+
+/**
+  * @brief This function handles DMA2 Stream 2 global interrupt (USART1 RX DMA).
+  */
+void DMA2_Stream2_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
+#else /* STM32F407G-DISC1 (default) */
+
+/**
+  * @brief This function handles USART3 global interrupt.
+  */
 void USART3_IRQHandler(void)
 {
   uPortUart_IRQHandler();
 }
+
+/**
+  * @brief This function handles DMA1 Stream 1 global interrupt (USART3 RX DMA).
+  */
+void DMA1_Stream1_IRQHandler(void)
+{
+  uPortUartDma_IRQHandler();
+}
+
 #endif

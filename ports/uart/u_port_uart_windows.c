@@ -427,7 +427,7 @@ void uPortUartPrintDiagnostics(const char *pPortName)
 #if U_CX_EVENT_DRIVEN_IO == 1
         printf("  [UART] IO mode: event-driven (MAXDWORD/1ms)\n");
 #else
-        printf("  [UART] IO mode: polled (100ms timeout)\n");
+        printf("  [UART] IO mode: polled (10ms timeout)\n");
 #endif
         break;
     }

@@ -18,4 +18,15 @@
 /* WiFi WPA-PSK password (leave empty for open networks) */
 #define U_EXAMPLE_WPA_PSK "your-wifi-password"
 
+/* HTTP example: download target. Uncomment to override the defaults: */
+// #define U_EXAMPLE_HTTP_URL  "https://staging.ampnet.autometer.com"
+// #define U_EXAMPLE_HTTP_PATH "/uploads/firmware_app_load_mod/bct_468/bct_468_firmware_app_load_mod_2.05-alpha.fw"
+// #define U_EXAMPLE_HTTP_OUT_FILE "http_download.bin"
+
+/* HTTP example: UART speed after handshake + CTS/RTS flow control.
+ * Flow control requires RTS/CTS wiring (NOT available on the plain
+ * PB6/PB7 Nucleo hookup). E.g. Windows FTDI setup: 3000000 + true. */
+// #define U_EXAMPLE_UART_BAUD 921600
+// #define U_EXAMPLE_UART_FLOW false
+
 #endif // CONFIG_LOCAL_H

@@ -619,6 +619,73 @@ def stm32_cleanup(c):
         _stm32_cleanup_containers(c)
 
 
+@task(help={
+    'port': 'Serial port (e.g. COM43 or /dev/ttyACM0). Default: auto-detect ST-LINK VCP',
+    'baud': 'Baud rate (default: 115200, the console UART is fixed regardless of module baud)',
+    'reset': 'Reset the target via ST-LINK before streaming (needs STM32_Programmer_CLI or st-flash)',
+    'seconds': 'Stop after this many seconds (default: 0 = stream until Ctrl+C)',
+})
+def stm32_log(c, port=None, baud=115200, reset=False, seconds=0):
+    """Stream the STM32 console UART (ST-LINK VCP), auto-detecting the port."""
+    try:
+        import serial
+        from serial.tools import list_ports
+    except ImportError:
+        print("Error: pyserial not installed. Install with:")
+        print("  pip install pyserial")
+        sys.exit(1)
+
+    if port is None:
+        candidates = [p for p in list_ports.comports()
+                      if 'stlink' in (p.description or '').lower()
+                      or 'st-link' in (p.description or '').lower()
+                      or (p.vid == 0x0483 and p.pid in (0x374B, 0x374E, 0x3752, 0x3754))]
+        if not candidates:
+            print("Error: no ST-LINK VCP found. Pass --port explicitly.")
+            print("Available ports:")
+            for p in list_ports.comports():
+                print(f"  {p.device}: {p.description}")
+            sys.exit(1)
+        if len(candidates) > 1:
+            print("Multiple ST-LINK VCPs found, using the first one:")
+            for p in candidates:
+                print(f"  {p.device}: {p.description}")
+        port = candidates[0].device
+        print(f"[log] Auto-detected ST-LINK VCP: {port}")
+
+    if reset:
+        reset_tools = ['STM32_Programmer_CLI', 'st-flash']
+        cube_default = r'C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe'
+        if _is_windows() and os.path.exists(cube_default):
+            reset_tools.insert(0, f'"{cube_default}"')
+        for tool in reset_tools:
+            if 'st-flash' in tool:
+                result = c.run(f'{tool} reset', warn=True, hide=True)
+            else:
+                result = c.run(f'{tool} -c port=SWD -rst', warn=True, hide=True)
+            if result.ok:
+                print("[log] Target reset via ST-LINK")
+                break
+        else:
+            print("Warning: could not reset target (no STM32_Programmer_CLI or st-flash found)")
+
+    print(f"[log] Streaming {port} at {baud} baud - press Ctrl+C to stop")
+    endTime = time.time() + int(seconds) if int(seconds) > 0 else None
+    try:
+        with serial.Serial(port, int(baud), timeout=0.2) as ser:
+            while endTime is None or time.time() < endTime:
+                data = ser.read(4096)
+                if data:
+                    sys.stdout.write(data.decode('utf-8', errors='replace'))
+                    sys.stdout.flush()
+        print("\n[log] Stopped (time limit)")
+    except KeyboardInterrupt:
+        print("\n[log] Stopped")
+    except serial.SerialException as e:
+        print(f"\nError: {e}")
+        sys.exit(1)
+
+
 # Windows/Linux platform tasks
 @task(help={
     'clean': 'Clean build directory before building',
@@ -768,6 +835,7 @@ stm32_ns = Collection('stm32')
 stm32_ns.add_task(stm32_all, 'build-all')
 stm32_ns.add_task(stm32_clean, 'clean')
 stm32_ns.add_task(stm32_cleanup, 'cleanup')
+stm32_ns.add_task(stm32_log, 'log')
 
 for task_name, target_base, supports_emulation in EXAMPLES_TASKS:
     example_ns = Collection(task_name)

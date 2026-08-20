@@ -20,13 +20,14 @@
  * This implementation uses STM32F4 HAL library and supports:
  * - Configurable UART instance (USART1-6, UART4-5)
  * - Hardware flow control (RTS/CTS)
- * - Interrupt-driven reception with circular buffer
- * - DMA support (optional, can be enabled via defines)
+ * - Circular DMA reception directly into a ring buffer (no per-byte
+ *   interrupts, required for high baud rates such as 2 Mbaud+)
+ * - Automatic recovery from UART errors (overrun, framing, noise)
  *
  * Target boards:
  * - STM32F407G-DISC1
  * - STM32F429I-DISC1
- * - STM32F439 (ODIN-W2)
+ * - STM32F439 (ODIN-W2 / NUCLEO-F439ZI)
  */
 
 #include <stdint.h>
@@ -45,7 +46,7 @@
  * -------------------------------------------------------------- */
 
 #ifndef U_PORT_UART_RX_BUFFER_SIZE
-#define U_PORT_UART_RX_BUFFER_SIZE  (2048)
+#define U_PORT_UART_RX_BUFFER_SIZE  (8192)
 #endif
 
 /* ----------------------------------------------------------------
@@ -56,10 +57,13 @@
  */
 typedef struct {
     UART_HandleTypeDef huart;
+    DMA_HandleTypeDef hdmaRx;
     uint8_t rxBuffer[U_PORT_UART_RX_BUFFER_SIZE];
-    volatile uint32_t rxHead;
-    volatile uint32_t rxTail;
-    uint8_t rxByte;  // Single byte for interrupt RX
+    uint32_t rxTotalRead;            // Total bytes consumed by reader (mod 2^32)
+    volatile uint32_t rxWraps;       // DMA buffer wrap count (incremented in ISR)
+    volatile bool rxResync;          // Set by error callback, handled by reader
+    volatile uint32_t errorCount;    // UART errors (overrun/framing/noise)
+    volatile uint32_t overflowCount; // Ring buffer overflows (reader too slow)
     bool isOpen;
 } uPortUartHandle;
 
@@ -73,28 +77,58 @@ static uPortUartHandle *gpUartHandle = NULL;
  * STATIC FUNCTION PROTOTYPES
  * -------------------------------------------------------------- */
 
+static uint32_t getDmaWriteCount(uPortUartHandle *pHandle);
 static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle);
-static void startRxInterrupt(uPortUartHandle *pHandle);
+static void startRxDma(uPortUartHandle *pHandle);
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
  * -------------------------------------------------------------- */
 
-static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
+/** Total bytes written to the ring buffer by DMA (mod 2^32).
+ *  Reads wrap counter and DMA NDTR consistently (retries if a
+ *  buffer wrap happens between the two reads).
+ */
+static uint32_t getDmaWriteCount(uPortUartHandle *pHandle)
 {
-    uint32_t head = pHandle->rxHead;
-    uint32_t tail = pHandle->rxTail;
+    uint32_t wraps;
+    uint32_t ndtr;
 
-    if (head >= tail) {
-        return head - tail;
-    } else {
-        return U_PORT_UART_RX_BUFFER_SIZE - tail + head;
-    }
+    do {
+        wraps = pHandle->rxWraps;
+        ndtr = __HAL_DMA_GET_COUNTER(pHandle->huart.hdmarx);
+    } while (wraps != pHandle->rxWraps);
+
+    return (wraps * U_PORT_UART_RX_BUFFER_SIZE) +
+           (U_PORT_UART_RX_BUFFER_SIZE - ndtr);
 }
 
-static void startRxInterrupt(uPortUartHandle *pHandle)
+static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
 {
-    HAL_UART_Receive_IT(&pHandle->huart, &pHandle->rxByte, 1);
+    if (pHandle->rxResync) {
+        // UART error occurred and DMA reception was restarted:
+        // discard everything received before the error.
+        pHandle->rxResync = false;
+        pHandle->rxTotalRead = getDmaWriteCount(pHandle);
+        return 0;
+    }
+
+    uint32_t available = getDmaWriteCount(pHandle) - pHandle->rxTotalRead;
+    if (available > U_PORT_UART_RX_BUFFER_SIZE) {
+        // DMA has lapped the reader - buffer content is no longer coherent.
+        // Drop it all rather than deliver corrupt data.
+        pHandle->overflowCount++;
+        pHandle->rxTotalRead = getDmaWriteCount(pHandle);
+        return 0;
+    }
+    return available;
+}
+
+static void startRxDma(uPortUartHandle *pHandle)
+{
+    pHandle->rxWraps = 0;
+    HAL_UART_Receive_DMA(&pHandle->huart, pHandle->rxBuffer,
+                         U_PORT_UART_RX_BUFFER_SIZE);
 }
 
 /* ----------------------------------------------------------------
@@ -185,16 +219,38 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
     }
     printf("[UART] Init OK\r\n");
 
-    // Enable UART interrupt
+    // Configure circular DMA for RX (writes directly into the ring buffer)
+    U_PORT_UART_DMA_CLK_ENABLE();
+    pHandle->hdmaRx.Instance = U_PORT_UART_RX_DMA_STREAM;
+    pHandle->hdmaRx.Init.Channel = U_PORT_UART_RX_DMA_CHANNEL;
+    pHandle->hdmaRx.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    pHandle->hdmaRx.Init.PeriphInc = DMA_PINC_DISABLE;
+    pHandle->hdmaRx.Init.MemInc = DMA_MINC_ENABLE;
+    pHandle->hdmaRx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    pHandle->hdmaRx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    pHandle->hdmaRx.Init.Mode = DMA_CIRCULAR;
+    pHandle->hdmaRx.Init.Priority = DMA_PRIORITY_HIGH;
+    pHandle->hdmaRx.Init.FIFOMode = DMA_FIFOMODE_DISABLE;
+
+    if (HAL_DMA_Init(&pHandle->hdmaRx) != HAL_OK) {
+        HAL_UART_DeInit(&pHandle->huart);
+        free(pHandle);
+        return NULL;
+    }
+    __HAL_LINKDMA(&pHandle->huart, hdmarx, pHandle->hdmaRx);
+
+    // Enable UART + DMA interrupts
     // Priority must be >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY (5) for FreeRTOS compatibility
     HAL_NVIC_SetPriority(U_PORT_UART_IRQn, 6, 0);
     HAL_NVIC_EnableIRQ(U_PORT_UART_IRQn);
+    HAL_NVIC_SetPriority(U_PORT_UART_RX_DMA_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(U_PORT_UART_RX_DMA_IRQn);
 
     pHandle->isOpen = true;
     gpUartHandle = pHandle;
 
     // Start receiving
-    startRxInterrupt(pHandle);
+    startRxDma(pHandle);
 
     return (uPortUartHandle_t)pHandle;
 }
@@ -205,7 +261,10 @@ void uPortUartClose(uPortUartHandle_t handle)
         uPortUartHandle *pHandle = (uPortUartHandle *)handle;
 
         if (pHandle->isOpen) {
+            HAL_UART_DMAStop(&pHandle->huart);
+            HAL_NVIC_DisableIRQ(U_PORT_UART_RX_DMA_IRQn);
             HAL_NVIC_DisableIRQ(U_PORT_UART_IRQn);
+            HAL_DMA_DeInit(&pHandle->hdmaRx);
             HAL_UART_DeInit(&pHandle->huart);
             U_PORT_UART_CLK_DISABLE();
             pHandle->isOpen = false;
@@ -283,23 +342,26 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         }
     }
 
-    // Read data from circular buffer
+    // Read data from circular buffer (may need two copies at wrap point)
     uint32_t bytesToRead = (length < available) ? length : available;
-    uint8_t *pBytes = (uint8_t *)pData;
-    uint32_t tail = pHandle->rxTail;
-
-    for (uint32_t i = 0; i < bytesToRead; i++) {
-        pBytes[i] = pHandle->rxBuffer[tail];
-        tail = (tail + 1) % U_PORT_UART_RX_BUFFER_SIZE;
+    uint32_t tailIdx = pHandle->rxTotalRead % U_PORT_UART_RX_BUFFER_SIZE;
+    uint32_t firstChunk = U_PORT_UART_RX_BUFFER_SIZE - tailIdx;
+    if (firstChunk > bytesToRead) {
+        firstChunk = bytesToRead;
+    }
+    memcpy(pData, &pHandle->rxBuffer[tailIdx], firstChunk);
+    if (bytesToRead > firstChunk) {
+        memcpy((uint8_t *)pData + firstChunk, &pHandle->rxBuffer[0],
+               bytesToRead - firstChunk);
     }
 
-    pHandle->rxTail = tail;
+    pHandle->rxTotalRead += bytesToRead;
 
     return (int32_t)bytesToRead;
 }
 
 /* ----------------------------------------------------------------
- * UART INTERRUPT CALLBACK
+ * UART INTERRUPT CALLBACKS
  * -------------------------------------------------------------- */
 
 // Forward declarations for debug UART console input
@@ -320,11 +382,9 @@ extern UART_HandleTypeDef huart2;  // F407/F429: Debug on USART2
 #endif
 
 /**
- * @brief UART RX complete callback
+/**
+ * @brief DMA transfer complete callback (circular mode = buffer wrap)
  *
- * This function is called by HAL when a byte is received.
- * Handles both NORA-W36 UART and Debug UART.
- * 
  * UART assignments:
  * - ODIN-W26/F439 (ODIN-W2): USART1=NORA-W36, USART3=Debug
  * - F407/F429: USART3=NORA-W36, USART2=Debug
@@ -333,18 +393,29 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     // NORA-W36 UART (USART1 on ODIN-W26/F439, USART3 on F407/F429)
     if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
-        // Store received byte in circular buffer
-        uint32_t nextHead = (gpUartHandle->rxHead + 1) % U_PORT_UART_RX_BUFFER_SIZE;
+        gpUartHandle->rxWraps++;
+    }
+}
 
-        if (nextHead != gpUartHandle->rxTail) {
-            // Buffer not full
-            gpUartHandle->rxBuffer[gpUartHandle->rxHead] = gpUartHandle->rxByte;
-            gpUartHandle->rxHead = nextHead;
-        }
-        // If buffer full, drop the byte (could add overflow handling here)
-
-        // Restart reception
-        startRxInterrupt(gpUartHandle);
+/**
+ * @brief UART error callback (overrun, framing, noise, DMA error)
+ *
+ * Without this callback a single overrun error would abort DMA reception
+ * permanently and the UART would go silently deaf. Restart reception and
+ * let the reader resynchronize.
+ */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
+        gpUartHandle->errorCount++;
+        gpUartHandle->rxResync = true;
+        // HAL has already aborted the transfer at this point; clear any
+        // remaining error flags and restart circular DMA reception.
+        __HAL_UART_CLEAR_OREFLAG(huart);
+        __HAL_UART_CLEAR_NEFLAG(huart);
+        __HAL_UART_CLEAR_FEFLAG(huart);
+        HAL_UART_DMAStop(huart);
+        startRxDma(gpUartHandle);
     }
     // Debug UART - for keyboard input
     else if (huart->Instance == DEBUG_UART_INSTANCE) {
@@ -358,7 +429,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 }
 
 /* ----------------------------------------------------------------
- * UART INTERRUPT HANDLER
+ * UART INTERRUPT HANDLERS
  * -------------------------------------------------------------- */
 
 /**
@@ -379,6 +450,24 @@ void uPortUart_IRQHandler(void)
     }
 }
 
+/**
+ * @brief RX DMA stream interrupt handler
+ *
+ * This function must be called from the RX DMA stream IRQ handler in your
+ * main application code (e.g., in stm32f4xx_it.c):
+ *
+ * void DMA1_Stream1_IRQHandler(void)
+ * {
+ *     uPortUartDma_IRQHandler();
+ * }
+ */
+void uPortUartDma_IRQHandler(void)
+{
+    if (gpUartHandle != NULL) {
+        HAL_DMA_IRQHandler(&gpUartHandle->hdmaRx);
+    }
+}
+
 /* ----------------------------------------------------------------
  * UART FLUSH FUNCTIONS
  * -------------------------------------------------------------- */
@@ -395,9 +484,7 @@ void uPortUartFlushRx(uPortUartHandle_t handle)
         return;
     }
 
-    // Disable UART RX interrupt while resetting buffer
-    __HAL_UART_DISABLE_IT(&pHandle->huart, UART_IT_RXNE);
-    pHandle->rxHead = 0;
-    pHandle->rxTail = 0;
-    __HAL_UART_ENABLE_IT(&pHandle->huart, UART_IT_RXNE);
+    // Discard anything currently sitting in the DMA ring buffer by
+    // fast-forwarding the read position to the current DMA write count.
+    pHandle->rxTotalRead = getDmaWriteCount(pHandle);
 }

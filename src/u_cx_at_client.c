@@ -690,6 +690,10 @@ void uCxAtClientInit(const uCxAtClientConfig_t *pConfig, uCxAtClient_t *pClient)
     pClient->cmdTimeoutLastPerm = U_CX_DEFAULT_CMD_TIMEOUT_MS;
     pClient->cmdTimeout = pClient->cmdTimeoutLastPerm;
     pClient->instance = gNextInstance++;
+#if U_CX_EVENT_DRIVEN_IO == 1
+    pClient->rxReadAheadPos = 0;
+    pClient->rxReadAheadLen = 0;
+#endif
 
 #if U_CX_USE_URC_QUEUE == 1
     uCxAtUrcQueueInit(&pClient->urcQueue, pConfig->pUrcBuffer, pConfig->urcBufferLen);
@@ -785,10 +789,14 @@ void uCxAtClientSendCmdVaList(uCxAtClient_t *pClient, const char *pCmd, const ch
     char txBuf[2048];
     size_t txPos = 0;
 
-    /* Helper: append data to txBuf with overflow assertion.
-     * Text-mode AT commands should always fit in 2048 bytes.
-     * Binary payload paths ('B', 'h') handle overflow separately. */
+    /* Helper: append data to txBuf, flushing first if it would overflow.
+     * Text-mode AT commands should always fit in 2048 bytes, but we
+     * flush defensively so a release build can never silently overflow. */
     #define TX_APPEND(src, n) do {                              \
+        if (txPos + (n) > sizeof(txBuf)) {                      \
+            uPortUartWrite(pClient->uartHandle, txBuf, txPos);  \
+            txPos = 0;                                           \
+        }                                                        \
         U_CX_AT_PORT_ASSERT(txPos + (n) <= sizeof(txBuf));     \
         memcpy(&txBuf[txPos], (src), (n));                      \
         txPos += (n);                                            \

@@ -1,11 +1,8 @@
-# STM32F439ZI specific settings (ODIN-W2 module)
-# Cortex-M4 @ 180MHz, 2MB Flash, 320KB RAM (256KB SRAM + 64KB CCM)
-
+# NUCLEO-F439ZI specific settings
 set(STM32_CHIP "STM32F439xx")
 set(STM32_FAMILY "STM32F4xx")
 
 # CPU specific flags - Using march=armv7e-m for proper multilib matching
-# F439 has FPU but we use soft-float for nano.specs compatibility
 set(CPU_FLAGS "-march=armv7e-m -mthumb -mfloat-abi=soft")
 
 # Compiler flags
@@ -21,7 +18,7 @@ if(NOT DEFINED STM32_HAL_PATH)
     set(STM32_HAL_PATH "${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4/STM32CubeF4" CACHE PATH "Path to STM32CubeF4")
 endif()
 
-# FreeRTOS path (now from STM32CubeF4 middleware)
+# FreeRTOS path (from STM32CubeF4 middleware)
 if(NOT DEFINED FREERTOS_PATH)
     set(FREERTOS_PATH "${STM32_HAL_PATH}/Middlewares/Third_Party/FreeRTOS/Source" CACHE PATH "Path to FreeRTOS Source")
 endif()
@@ -65,15 +62,17 @@ set(FREERTOS_SOURCES
     ${FREERTOS_PATH}/CMSIS_RTOS/cmsis_os.c
 )
 
-# Startup file - Using F439xx startup from STM32CubeF4
+# Startup file - CMSIS device template from STM32CubeF4
 set(STM32_STARTUP_FILE "${STM32_HAL_PATH}/Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/gcc/startup_stm32f439xx.s")
 
-# Linker script - Using STM32F439ZIY6 linker script (ODIN-W2)
-set(STM32_LINKER_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4/scripts/STM32F439ZIY6_FLASH.ld")
+# Linker script - STM32F439ZITx (2MB flash, 192KB RAM)
+set(STM32_LINKER_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/../ports/extra/stm32f4/scripts/STM32F439ZITX_FLASH.ld")
 
 # Compile definitions
+# NUCLEO-F439ZI: 8 MHz HSE from ST-LINK MCO (bypass mode)
 add_compile_definitions(
     ${STM32_CHIP}
+    NUCLEO_F439ZI
     USE_HAL_DRIVER
     HSE_VALUE=8000000
 )
