@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(ucxclient_examples C ASM)
+project(u_connect_client_examples C ASM)
 string(TOLOWER ${CMAKE_SYSTEM_NAME} OS_NAME)
 
 # Enable ccache if available
@@ -10,8 +10,8 @@ if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
 endif()
 
-# Include ucxclient library definitions
-include(../ucxclient.cmake)
+# Include u-connectClient library definitions
+include(../u-connectClient.cmake)
 
 # Set binary output directory to bin/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/bin)
@@ -21,8 +21,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_CURRENT_SOURCE_DIR}/bin)
 # Common source files for examples
 set(EXAMPLE_COMMON_SRC
   example_utils.c
-  ${UCXCLIENT_UCX_API_SRC}
-  ${UCXCLIENT_AT_API_SRC}
+  ${U_CONNECT_CLIENT_UCX_API_SRC}
+  ${U_CONNECT_CLIENT_AT_API_SRC}
 )
 
 # Option to build STM32 examples
@@ -73,7 +73,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(http_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
-    target_include_directories(http_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(http_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(http_example PRIVATE ${PORT_LIBS})
     endif()
@@ -86,7 +86,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(http_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS)
-    target_include_directories(http_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(http_example_no_os PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
 
     # Firmware Upgrade Example (OS-based)
     add_executable(fw_upgrade_example
@@ -97,7 +97,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(fw_upgrade_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_CX_XMODEM_FILE_SUPPORT=1)
-    target_include_directories(fw_upgrade_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(fw_upgrade_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(fw_upgrade_example PRIVATE ${PORT_LIBS})
     endif()
@@ -111,7 +111,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(fw_upgrade_example_no_os PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES} -DU_PORT_NO_OS -DU_CX_XMODEM_FILE_SUPPORT=1)
-    target_include_directories(fw_upgrade_example_no_os PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(fw_upgrade_example_no_os PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
 
     # BLE Scan Example (OS-based)
     add_executable(ble_scan_example
@@ -121,7 +121,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(ble_scan_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
-    target_include_directories(ble_scan_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(ble_scan_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(ble_scan_example PRIVATE ${PORT_LIBS})
     endif()
@@ -134,7 +134,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(ble_advertise_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
-    target_include_directories(ble_advertise_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(ble_advertise_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(ble_advertise_example PRIVATE ${PORT_LIBS})
     endif()
@@ -147,7 +147,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(wifi_scan_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
-    target_include_directories(wifi_scan_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(wifi_scan_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(wifi_scan_example PRIVATE ${PORT_LIBS})
     endif()
@@ -160,7 +160,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(wifi_ap_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
-    target_include_directories(wifi_ap_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(wifi_ap_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(wifi_ap_example PRIVATE ${PORT_LIBS})
     endif()
@@ -173,7 +173,7 @@ else()
       ${EXAMPLE_COMMON_SRC}
     )
     target_compile_options(socket_example PRIVATE ${EXAMPLE_COMPILE_OPTIONS} ${PORT_DEFINES})
-    target_include_directories(socket_example PUBLIC ${UCXCLIENT_INC} ${UCXCLIENT_PORT_DIR})
+    target_include_directories(socket_example PUBLIC ${U_CONNECT_CLIENT_INC} ${U_CONNECT_CLIENT_PORT_DIR})
     if(PORT_LIBS)
       target_link_libraries(socket_example PRIVATE ${PORT_LIBS})
     endif()

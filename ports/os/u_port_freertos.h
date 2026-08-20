@@ -17,7 +17,7 @@
 /** @file
  * @brief FreeRTOS port layer
  *
- * This port provides ucxclient support for FreeRTOS-based systems.
+ * This port provides u-connectClient support for FreeRTOS-based systems.
  */
 
 #ifndef U_PORT_FREERTOS_H

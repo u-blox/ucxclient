@@ -17,7 +17,7 @@
 /** @file
  * @brief "No OS" port layer example
  *
- * This port shows you how you can run ucxclient on a system without
+ * This port shows you how you can run u-connectClient on a system without
  * mutex- and thread support.
  *
  * This example port uses Linux implementation for U_CX_PORT_GET_TIME_MS()

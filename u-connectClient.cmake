@@ -17,14 +17,14 @@ endif()
 
 message(STATUS "Using UCX_MODULE: ${UCX_MODULE}")
 
-file(GLOB UCXCLIENT_UCX_API_SRC
+file(GLOB U_CONNECT_CLIENT_UCX_API_SRC
     ${REPO_DIR}/ucx_api/*.c
     ${UCX_MODULE_DIR}/*.c
 )
-file(GLOB UCXCLIENT_AT_API_SRC ${REPO_DIR}/src/*.c)
-set(UCXCLIENT_INC ${REPO_DIR}/inc
+file(GLOB U_CONNECT_CLIENT_AT_API_SRC ${REPO_DIR}/src/*.c)
+set(U_CONNECT_CLIENT_INC ${REPO_DIR}/inc
     ${REPO_DIR}/ucx_api
     ${UCX_MODULE_DIR}
     ${REPO_DIR}/ports
 )
-set(UCXCLIENT_PORT_DIR ${REPO_DIR}/ports)
+set(U_CONNECT_CLIENT_PORT_DIR ${REPO_DIR}/ports)

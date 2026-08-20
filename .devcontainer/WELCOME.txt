@@ -1,5 +1,5 @@
 ================================================================================
-     Welcome to ucxclient Codespace!
+    Welcome to u-connectClient Codespace!
 ================================================================================
 
 This Codespace is pre-configured to build and debug the HTTP example running
@@ -19,7 +19,7 @@ QUICK START
 
 1. Run the Demo
    -------------
-   The fastest way to see ucxclient in action is to start the debug session
+  The fastest way to see u-connectClient in action is to start the debug session
    by pressing F5.
 
    This will automatically:
@@ -54,14 +54,14 @@ PROJECT STRUCTURE
 -----------------
   examples/               Example applications
   examples/http_example.c HTTP GET example source
-  src/                    ucxclient library source
+  src/                    u-connectClient library source
   ucx_api/                u-connectXpress API
   ports/                  Platform porting layer
 
 
 USEFUL LINKS
 ------------
-  * ucxclient README:     See README.md in the root directory
+  * u-connectClient README: See README.md in the root directory
   * Examples README:      See examples/README.md
 
 

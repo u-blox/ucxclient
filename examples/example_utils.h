@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief Example utility functions for ucxclient examples
+ * @brief Example utility functions for u-connectClient examples
  *
  * This module provides common utility functions that work with both
  * OS-based and no-OS implementations. It automatically detects the
