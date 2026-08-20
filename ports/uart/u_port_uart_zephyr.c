@@ -79,7 +79,8 @@ static void uartIsr(const struct device *dev, void *user_data)
     int ret = 1;
     bool signalRxWorker = false;
 
-    while (uart_irq_update(dev) && uart_irq_rx_ready(dev) && (ret > 0)) {
+    uart_irq_update(dev);
+    while (uart_irq_rx_ready(dev) && (ret > 0)) {
         uint8_t *pData;
         signalRxWorker = true;
         ret = ring_buf_put_claim(&pHandle->rxRingBuf, &pData, UINT32_MAX);
@@ -91,6 +92,7 @@ static void uartIsr(const struct device *dev, void *user_data)
             ret = uart_fifo_read(dev, pData, ret);
         }
         ring_buf_put_finish(&pHandle->rxRingBuf, (ret > 0) ? ret : 0);
+        uart_irq_update(dev);
     }
 
     if (signalRxWorker) {
@@ -111,7 +113,7 @@ uPortUartHandle_t uPortUartOpen(const char *pDevName, int32_t baudRate, bool use
 
     // Use static handle - only supports one UART instance
     uPortUartHandle *pHandle = &gUartHandle;
-    
+
     // Check if already in use
     if (pHandle->pUartDev != NULL) {
         return NULL;
@@ -197,7 +199,7 @@ int32_t uPortUartRead(uPortUartHandle_t handle,
         uint8_t *pDataBytes = (uint8_t *)pData;
         uint32_t startTimeMs = k_uptime_get_32();
         int32_t timePassedMs = 0;
-        
+
         while (bytesRead < (int32_t)length) {
             if (ring_buf_is_empty(&pHandle->rxRingBuf)) {
                 if (timePassedMs > timeoutMs) {
