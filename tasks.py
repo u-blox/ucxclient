@@ -1,5 +1,5 @@
 """
-PyInvoke tasks for ucxclient project.
+PyInvoke tasks for u-connectClient project.
 
 """
 
@@ -37,7 +37,7 @@ def init_west_workspace(c):
         west_yml = os.path.join(WEST_WORKSPACE, "west.yml")
         c.run(f"cp {zephyr_manifest} {west_yml}")
 
-        # Create a minimal ucxclient directory with just the manifest
+        # Create a minimal u-connectClient directory with just the manifest
         project_dir = os.path.join(WEST_WORKSPACE, "manifest")
         os.makedirs(project_dir, exist_ok=True)
         c.run(f"cp {west_yml} {project_dir}/")

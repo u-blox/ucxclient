@@ -1,10 +1,10 @@
 {
-    "name": "ucxclient STM32 Development",
+    "name": "u-connectClient STM32 Development",
     "build": {
         "dockerfile": "../docker/stm32f4/Dockerfile",
         "context": ".."
     },
-    "workspaceFolder": "/workspaces/ucxclient",
+    "workspaceFolder": "/workspaces/u-connectClient",
     "customizations": {
         "vscode": {
             "extensions": [

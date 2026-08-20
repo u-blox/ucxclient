@@ -1,6 +1,4 @@
-# ucxclient
-
-![Repo rename note](images/important_msg.svg)
+# u-connectClient
 
 This repo contains a small footprint AT command client for talking to the following u-blox u-connectXpress short-range modules:
 
@@ -12,8 +10,8 @@ The client can run on both bare-metal and OS systems using a tiny porting layer 
 There are two levels of APIs included in this repo; the lower [uAtClient API](#uatclient-api) and the upper [u-connectXpress API](#u-connectxpress-api).
 
 See the [examples/](examples/README.md) directory for small, working examples that run on Windows, Linux and STM32F4. If you want a Windows desktop example that integrates the
-`ucxclient`, check out the [ucx-windows-app](https://github.com/u-blox/ucx-windows-app)
-project which demonstrates using the ucxclient on Windows with a TUI front-end.
+`u-connectClient`, check out the [ucx-windows-app](https://github.com/u-blox/ucx-windows-app)
+project which demonstrates using u-connectClient on Windows with a TUI front-end.
 
 **Please note: The code in this repo is in experimental status and changes to the APIs are to be expected.**
 
@@ -168,9 +166,9 @@ invoke test.zephyr.clean-west  # Remove west workspace
 
 ## Try it in GitHub Codespaces
 
-The easiest way to try ucxclient is using GitHub Codespaces. Click the button below to open a fully configured development environment in your browser:
+The easiest way to try u-connectClient is using GitHub Codespaces. Click the button below to open a fully configured development environment in your browser:
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/u-blox/ucxclient)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/u-blox/u-connectClient)
 
 The Codespace includes:
 

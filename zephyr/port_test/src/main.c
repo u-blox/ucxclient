@@ -48,7 +48,7 @@
  * TYPES
  * -------------------------------------------------------------- */
 
-struct ucxclient_port_fixture {
+struct u_connect_client_port_fixture {
     const struct device *pDev;
     uint8_t testData[TEST_DATA_SIZE];
     uCxAtClient_t client;
@@ -66,9 +66,9 @@ extern bool gDisableRxWorker;
  * TEST SETUP
  * -------------------------------------------------------------- */
 
-static void *ucxclient_port_setup(void)
+static void *u_connect_client_port_setup(void)
 {
-    static struct ucxclient_port_fixture fixture = {
+    static struct u_connect_client_port_fixture fixture = {
         .pDev = DEVICE_DT_GET(EMUL_UART_NODE)
     };
 
@@ -87,9 +87,9 @@ static void *ucxclient_port_setup(void)
     return &fixture;
 }
 
-static void ucxclient_port_before(void *f)
+static void u_connect_client_port_before(void *f)
 {
-    struct ucxclient_port_fixture *fixture = f;
+    struct u_connect_client_port_fixture *fixture = f;
 
     uart_irq_tx_disable(fixture->pDev);
     uart_irq_rx_disable(fixture->pDev);
@@ -108,9 +108,9 @@ static void ucxclient_port_before(void *f)
     zassert_equal(result, 0, "uCxAtClientOpen failed: %d", result);
 }
 
-static void ucxclient_port_after(void *f)
+static void u_connect_client_port_after(void *f)
 {
-    struct ucxclient_port_fixture *fixture = f;
+    struct u_connect_client_port_fixture *fixture = f;
 
     uCxAtClientClose(&fixture->client);
 }
@@ -119,7 +119,7 @@ static void ucxclient_port_after(void *f)
  * TESTS
  * -------------------------------------------------------------- */
 
-ZTEST_F(ucxclient_port, test_rx_no_data)
+ZTEST_F(u_connect_client_port, test_rx_no_data)
 {
     TIMESTAMP_CREATE();
     int32_t rc = uPortUartRead(fixture->client.uartHandle, NULL, 1, 0);
@@ -127,7 +127,7 @@ ZTEST_F(ucxclient_port, test_rx_no_data)
     zassert_equal(rc, 0, "read() returned: %d", rc);
 }
 
-ZTEST_F(ucxclient_port, test_rx_no_data_timeout)
+ZTEST_F(u_connect_client_port, test_rx_no_data_timeout)
 {
     TIMESTAMP_CREATE();
     int32_t rc = uPortUartRead(fixture->client.uartHandle, NULL, 1, 100);
@@ -135,7 +135,7 @@ ZTEST_F(ucxclient_port, test_rx_no_data_timeout)
     zassert_equal(rc, 0, "read() returned: %d", rc);
 }
 
-ZTEST_F(ucxclient_port, test_rx_some_data_timeout)
+ZTEST_F(u_connect_client_port, test_rx_some_data_timeout)
 {
     uart_emul_put_rx_data(fixture->pDev, &fixture->testData[0], 3);
 
@@ -147,7 +147,7 @@ ZTEST_F(ucxclient_port, test_rx_some_data_timeout)
     zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, 3);
 }
 
-ZTEST_F(ucxclient_port, test_rx_read_some_data_timeout)
+ZTEST_F(u_connect_client_port, test_rx_read_some_data_timeout)
 {
     uart_emul_put_rx_data(fixture->pDev, &fixture->testData[0], 3);
 
@@ -159,7 +159,7 @@ ZTEST_F(ucxclient_port, test_rx_read_some_data_timeout)
     zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, 2);
 }
 
-ZTEST_F(ucxclient_port, test_rx_read_some_data_no_timeout)
+ZTEST_F(u_connect_client_port, test_rx_read_some_data_no_timeout)
 {
     uart_emul_put_rx_data(fixture->pDev, &fixture->testData[0], 3);
     // Need a little sleep here so that the ISR receives all the data before next step
@@ -173,7 +173,7 @@ ZTEST_F(ucxclient_port, test_rx_read_some_data_no_timeout)
     zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, 2);
 }
 
-ZTEST_F(ucxclient_port, test_rx_all_data)
+ZTEST_F(u_connect_client_port, test_rx_all_data)
 {
     uart_emul_put_rx_data(fixture->pDev, &fixture->testData[0], 3);
 
@@ -185,7 +185,7 @@ ZTEST_F(ucxclient_port, test_rx_all_data)
     zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, 3);
 }
 
-ZTEST_F(ucxclient_port, test_rx_ringbuf_full)
+ZTEST_F(u_connect_client_port, test_rx_ringbuf_full)
 {
     // Receive a little more data than can be fitted into the ring buffer
     uart_emul_put_rx_data(fixture->pDev, &fixture->testData[0], U_RINGBUFFER_SIZE + 8);
@@ -210,7 +210,7 @@ ZTEST_F(ucxclient_port, test_rx_ringbuf_full)
     zassert_equal(rc, 0, "read() returned: %d", rc);
 }
 
-ZTEST_F(ucxclient_port, test_tx_fifo_full)
+ZTEST_F(u_connect_client_port, test_tx_fifo_full)
 {
     int32_t rc = uPortUartWrite(fixture->client.uartHandle,
                                 &fixture->testData[0], EMUL_UART_TX_FIFO_SIZE + 8);
@@ -221,4 +221,4 @@ ZTEST_F(ucxclient_port, test_tx_fifo_full)
     zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, U_RINGBUFFER_SIZE);
 }
 
-ZTEST_SUITE(ucxclient_port, NULL, ucxclient_port_setup, ucxclient_port_before, ucxclient_port_after, NULL);
+ZTEST_SUITE(u_connect_client_port, NULL, u_connect_client_port_setup, u_connect_client_port_before, u_connect_client_port_after, NULL);
