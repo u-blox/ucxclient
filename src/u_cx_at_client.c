@@ -495,9 +495,10 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             // uPortUartRead returns immediately when nothing is buffered, so a
             // simple iteration count fires within microseconds and aborts before
             // the wire has had time to deliver bytes that are actually in flight.
-            // Use a TIME-based threshold instead: tolerate up to 100 ms with no
-            // progress before declaring the transfer dead. At 1 Mbit/s, 100 ms
-            // is enough wire time for ~10 KB - well above any single UDP packet.
+            // Use a TIME-based threshold instead: tolerate up to
+            // U_CX_BINARY_RX_STALL_TIMEOUT_MS with no progress before
+            // declaring the transfer dead. At 1 Mbit/s that's still enough
+            // wire time for tens of KB - well above any single UDP packet.
             int32_t nowMs = U_CX_PORT_GET_TIME_MS();
             if (pClient->stallCount == 0) {
                 pClient->stallStartMs = nowMs;

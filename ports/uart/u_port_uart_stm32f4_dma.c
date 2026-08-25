@@ -115,8 +115,21 @@ static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
 
     uint32_t available = getDmaWriteCount(pHandle) - pHandle->rxTotalRead;
     if (available > U_PORT_UART_RX_BUFFER_SIZE) {
-        // DMA has lapped the reader - buffer content is no longer coherent.
-        // Drop it all rather than deliver corrupt data.
+        // Hardware reloads NDTR to full the instant a circular wrap
+        // completes, but rxWraps is only incremented later inside the DMA
+        // transfer-complete ISR. Sampling in that gap makes the computed
+        // write count undershoot by one full buffer, which looks like a
+        // huge unsigned "overflow" here but is not a real one. A genuine
+        // reader-too-slow overflow persists; this race self-heals within
+        // microseconds once the pending ISR runs, so retry first.
+        for (int retry = 0; retry < 100 && available > U_PORT_UART_RX_BUFFER_SIZE; retry++) {
+            available = getDmaWriteCount(pHandle) - pHandle->rxTotalRead;
+        }
+    }
+    if (available > U_PORT_UART_RX_BUFFER_SIZE) {
+        // Still bad after retries - DMA has genuinely lapped the reader and
+        // buffer content is no longer coherent. Drop it all rather than
+        // deliver corrupt data.
         pHandle->overflowCount++;
         pHandle->rxTotalRead = getDmaWriteCount(pHandle);
         return 0;

@@ -157,7 +157,9 @@ static UART_HandleTypeDef gConsoleUart;
 /**
  * @brief  Initialize USART3 for console output (ST-LINK VCP)
  * USART3 TX: PD8, RX: PD9 (AF7)
- * Baud: 115200, 8N1
+ * Baud: 115200, 8N1 (921600 was tried but produced consistently garbled
+ * bytes on this board's USART3 kernel clock config - reverted. See
+ * u_cx_at_client.c U_CX_BINARY_RX_STALL_TIMEOUT_MS for the actual mitigation.)
  */
 static void Console_UART_Init(void)
 {
