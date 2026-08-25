@@ -33,6 +33,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "stm32h7xx_hal.h"
 #include "u_port_uart.h"
@@ -112,9 +113,27 @@ static uint32_t getRxBufferAvailable(uPortUartHandle *pHandle)
 
     uint32_t available = getDmaWriteCount(pHandle) - pHandle->rxTotalRead;
     if (available > U_PORT_UART_RX_BUFFER_SIZE) {
-        // DMA has lapped the reader - buffer content is no longer coherent.
-        // Drop it all rather than deliver corrupt data.
+        // Hardware reloads NDTR to full the instant a circular wrap
+        // completes, but rxWraps is only incremented later inside the DMA
+        // transfer-complete ISR. Sampling in that gap makes the computed
+        // write count undershoot by one full buffer, which looks like a
+        // huge unsigned "overflow" here but is not a real one. A genuine
+        // reader-too-slow overflow persists; this race self-heals within
+        // microseconds once the pending ISR runs, so retry first.
+        for (int retry = 0; retry < 100 && available > U_PORT_UART_RX_BUFFER_SIZE; retry++) {
+            available = getDmaWriteCount(pHandle) - pHandle->rxTotalRead;
+        }
+    }
+    if (available > U_PORT_UART_RX_BUFFER_SIZE) {
+        // Still bad after retries - DMA has genuinely lapped the reader and
+        // buffer content is no longer coherent. Drop it all rather than
+        // deliver corrupt data.
         pHandle->overflowCount++;
+        // Diagnostic only - this is a SILENT discard path distinct from
+        // HAL_UART_ErrorCallback; confirms/refutes reader-too-slow as root cause.
+        printf("[UART] RX OVERFLOW #%lu: reader lapped by DMA (available=%lu > bufsize=%u) - discarding\r\n",
+               (unsigned long)pHandle->overflowCount, (unsigned long)available,
+               (unsigned)U_PORT_UART_RX_BUFFER_SIZE);
         pHandle->rxTotalRead = getDmaWriteCount(pHandle);
         return 0;
     }
@@ -343,6 +362,11 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     if (gpUartHandle != NULL && huart->Instance == gpUartHandle->huart.Instance) {
         gpUartHandle->errorCount++;
         gpUartHandle->rxResync = true;
+        // Diagnostic only - confirms real electrical RX errors vs software desync.
+        printf("[UART] RX error #%lu ErrorCode=0x%02lX (ORE=%d FE=%d NE=%d PE=%d) - DMA restarted\r\n",
+               (unsigned long)gpUartHandle->errorCount, (unsigned long)huart->ErrorCode,
+               (huart->ErrorCode & HAL_UART_ERROR_ORE) != 0, (huart->ErrorCode & HAL_UART_ERROR_FE) != 0,
+               (huart->ErrorCode & HAL_UART_ERROR_NE) != 0, (huart->ErrorCode & HAL_UART_ERROR_PE) != 0);
         // HAL has already aborted the transfer at this point; clear any
         // remaining error flags and restart circular DMA reception.
         __HAL_UART_CLEAR_FLAG(huart, UART_CLEAR_OREF | UART_CLEAR_NEF | UART_CLEAR_FEF);

@@ -676,8 +676,12 @@ def stm32_log(c, port=None, baud=115200, reset=False, seconds=0):
             while endTime is None or time.time() < endTime:
                 data = ser.read(4096)
                 if data:
-                    sys.stdout.write(data.decode('utf-8', errors='replace'))
-                    sys.stdout.flush()
+                    # Write raw bytes directly - avoids UnicodeEncodeError when the
+                    # console codepage (e.g. cp1252) can't represent a decode('utf-8',
+                    # errors='replace') replacement char, and avoids losing/garbling
+                    # any genuinely non-UTF8 byte that arrived on the wire.
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.buffer.flush()
         print("\n[log] Stopped (time limit)")
     except KeyboardInterrupt:
         print("\n[log] Stopped")

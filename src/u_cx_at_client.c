@@ -43,6 +43,11 @@
 /* Special character sent for entering binary mode */
 #define U_CX_SOH_CHAR    0x01
 
+/* Max time with no RX progress mid-binary-transfer before aborting/resyncing */
+#ifndef U_CX_BINARY_RX_STALL_TIMEOUT_MS
+#define U_CX_BINARY_RX_STALL_TIMEOUT_MS  300
+#endif
+
 /* Log a UART read failure only when transitioning from "OK" to "failing"
  * (i.e. the first error after the last successful read). This avoids log
  * spam when the device is unplugged and the RX thread keeps polling. The
@@ -499,8 +504,8 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
             }
             pClient->stallCount++;
             int32_t stallElapsedMs = nowMs - pClient->stallStartMs;
-            if (stallElapsedMs >= 100) {
-                // No progress for 100 ms - abort to prevent infinite re-entry.
+            if (stallElapsedMs >= U_CX_BINARY_RX_STALL_TIMEOUT_MS) {
+                // No progress for U_CX_BINARY_RX_STALL_TIMEOUT_MS - abort to prevent infinite re-entry.
                 // The module's underlying transport (e.g. NORA-W36 +UESODA URC for
                 // sockets) will re-notify the data, so this self-recovers.
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,
