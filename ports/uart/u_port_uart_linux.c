@@ -108,6 +108,18 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
         case 921600:
             speed = B921600;
             break;
+        case 1000000:
+            speed = B1000000;
+            break;
+        case 1500000:
+            speed = B1500000;
+            break;
+        case 2000000:
+            speed = B2000000;
+            break;
+        case 3000000:
+            speed = B3000000;
+            break;
         default:
             close(pHandle->fd);
             free(pHandle);
