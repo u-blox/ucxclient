@@ -55,6 +55,12 @@ extern "C" {
 #define U_PORT_UART_IRQHandler  USART1_IRQHandler
 #define U_PORT_UART_CLK_ENABLE  __HAL_RCC_USART1_CLK_ENABLE
 #define U_PORT_UART_CLK_DISABLE __HAL_RCC_USART1_CLK_DISABLE
+// GPIO: PB6=TX, PB7=RX (AF7) - same as H753 Nucleo
+#define U_PORT_UART_TX_PORT     GPIOB
+#define U_PORT_UART_TX_PIN      GPIO_PIN_6
+#define U_PORT_UART_RX_PORT     GPIOB
+#define U_PORT_UART_RX_PIN      GPIO_PIN_7
+#define U_PORT_UART_GPIO_AF     GPIO_AF7_USART1
 
 /**
  * RX DMA configuration (USART1_RX = DMA2 Stream 2, Channel 4 on STM32F4).
