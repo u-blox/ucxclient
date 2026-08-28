@@ -133,7 +133,8 @@ uPortUartHandle_t uPortUartOpen(const char *pDevice, int32_t baudRate, bool useF
 
     // Raw mode
     tty.c_lflag &= (unsigned int)~(ICANON | ECHO | ECHOE | ISIG);
-    tty.c_iflag &= (unsigned int)~(IXON | IXOFF | IXANY);
+    // Also disable CR/NL translation, otherwise 0x0D/0x0A bytes inside binary payloads get corrupted
+    tty.c_iflag &= (unsigned int)~(IXON | IXOFF | IXANY | ICRNL | INLCR | IGNCR | ISTRIP);
     tty.c_oflag &= (unsigned int)~OPOST;
 
     // Non-blocking reads with timeout handled by poll
