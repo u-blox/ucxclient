@@ -234,11 +234,12 @@ def _configure_cmake(c, build_dir, cmake_args=""):
     # Only configure if CMakeCache doesn't exist
     if not os.path.exists(os.path.join(build_path, 'CMakeCache.txt')):
         print("Configuring CMake project...")
+        is_cross = 'CMAKE_TOOLCHAIN_FILE' in cmake_args
         with c.cd(build_path):
-            if _is_windows() and not cmake_args:
+            if _is_windows() and not is_cross:
                 # Native Windows host build: use default generator (auto-detects Visual Studio version)
                 c.run(f'cmake {EXAMPLES_DIR} -A Win32 {cmake_args}')
-            elif _is_windows() and cmake_args:
+            elif _is_windows() and is_cross:
                 # Cross-compiling (e.g. STM32 toolchain file): CMake's bare
                 # default generator on Windows is Visual Studio/MSVC regardless
                 # of the toolchain file, which can't target ARM. Force Ninja.
@@ -792,9 +793,12 @@ def _make_stm32_emulate_task(target_base):
 
 def _make_win32_build_task(target_base):
     """Create a Windows build task for a specific example."""
-    def task_func(c, clean=False, jobs=None):
+    def task_func(c, clean=False, jobs=None, no_at_log=False, no_dbg_log=False):
         _require_windows()
-        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+        # NOTE: cmake_args only take effect on first configure (or after --clean) -
+        # see _configure_cmake(), which skips reconfiguring if CMakeCache.txt exists.
+        cmake_args = f'-DDISABLE_AT_LOG={"ON" if no_at_log else "OFF"} -DDISABLE_DBG_LOG={"ON" if no_dbg_log else "OFF"}'
+        _build_target(c, target=target_base, clean=clean, build_dir='build', cmake_args=cmake_args, jobs=jobs)
     return task_func
 
 
@@ -816,11 +820,12 @@ def _enable_windows_ansi():
 
 def _make_win32_run_task(target_base):
     """Create a Windows run task for a specific example."""
-    def task_func(c, clean=False, jobs=None):
+    def task_func(c, clean=False, jobs=None, no_at_log=False, no_dbg_log=False):
         import subprocess
         _require_windows()
         _enable_windows_ansi()
-        _build_target(c, target=target_base, clean=clean, build_dir='build', jobs=jobs)
+        cmake_args = f'-DDISABLE_AT_LOG={"ON" if no_at_log else "OFF"} -DDISABLE_DBG_LOG={"ON" if no_dbg_log else "OFF"}'
+        _build_target(c, target=target_base, clean=clean, build_dir='build', cmake_args=cmake_args, jobs=jobs)
         exe_path = os.path.join(EXAMPLES_DIR, f'bin/{target_base}.exe')
         print(f"\n[Run] Running {exe_path}...")
         # Run directly with subprocess, inheriting stdio for proper terminal handling

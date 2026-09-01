@@ -374,16 +374,18 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
     uCxAtBinaryRx_t *pBinRx = &pClient->binaryRx;
     int32_t readStatus;
 
-    uint8_t lengthBuf[2];
+    // NOTE: header bytes are accumulated in pBinRx->lengthBuf (persistent state), NOT a
+    // local variable — the 2-byte header can arrive split across separate calls to this
+    // function, and a local buffer would lose the first byte(s) between calls.
     if (pBinRx->rxHeaderCount < 2) {
-        size_t readLen = sizeof(lengthBuf) - pBinRx->rxHeaderCount;
+        size_t readLen = sizeof(pBinRx->lengthBuf) - pBinRx->rxHeaderCount;
 #if U_CX_EVENT_DRIVEN_IO == 1
         readStatus = bufferedReadBulk(pClient,
-                                      &lengthBuf[pBinRx->rxHeaderCount], readLen,
+                                      &pBinRx->lengthBuf[pBinRx->rxHeaderCount], readLen,
                                       pClient->pConfig->timeoutMs);
 #else
         readStatus = uPortUartRead(pClient->uartHandle,
-                                   &lengthBuf[pBinRx->rxHeaderCount], readLen,
+                                   &pBinRx->lengthBuf[pBinRx->rxHeaderCount], readLen,
                                    pClient->pConfig->timeoutMs);
 #endif
         CHECK_READ_ERROR(pClient, readStatus);
@@ -395,10 +397,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
         } else {
             // The two length bytes have now been received
             int32_t parse_code;
-            uint16_t length = (uint16_t)(lengthBuf[0] << 8) | lengthBuf[1];
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
-                            "BIN header: raw=[0x%02X,0x%02X] length=%u",
-                            lengthBuf[0], lengthBuf[1], length);
+            uint16_t length = (uint16_t)(pBinRx->lengthBuf[0] << 8) | pBinRx->lengthBuf[1];
             if (length > 1460) {
                 // Binary length exceeds UDP MTU — header is corrupt (framing desync).
                 // Abort: clear binary state and flush UART to resynchronize.

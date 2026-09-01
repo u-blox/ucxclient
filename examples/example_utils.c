@@ -26,6 +26,7 @@
 #include "example_utils.h"
 #include "u_cx_log.h"
 #include "u_cx_at_client.h"
+#include "u_port_uart.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -70,6 +71,9 @@ uCxAtClient_t *exampleInit(const char *pUartDevice,
         fprintf(stderr, "Failed to open UART: %s\n", pUartDevice);
         return NULL;
     }
+
+    // Surface FTDI latency timer / IO mode so silent misconfiguration is visible
+    uPortUartPrintDiagnostics(pUartDevice);
 
     // Store client pointer for use in other functions
     gpClient = &gClient;

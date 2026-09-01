@@ -160,14 +160,21 @@ static bool hexEqualsIgnoreCase(const char *pA, const char *pB)
     return (*pA == 0) && (*pB == 0);
 }
 
-/* Print bitsPerSec as "X.XX Mbit/s" or "X.X kbit/s", whichever is more readable */
-static void printSpeed(int64_t bitsPerSec)
+/* Format bitsPerSec as "X.XX Mbit/s" or "X.X kbit/s", whichever is more readable */
+static void formatSpeed(int64_t bitsPerSec, char *pBuf, size_t bufLen)
 {
     if (bitsPerSec >= 1000000) {
-        printf("Speed: %.2f Mbit/s\n", (double)bitsPerSec / 1000000.0);
+        snprintf(pBuf, bufLen, "%.2f Mbit/s", (double)bitsPerSec / 1000000.0);
     } else {
-        printf("Speed: %.1f kbit/s\n", (double)bitsPerSec / 1000.0);
+        snprintf(pBuf, bufLen, "%.1f kbit/s", (double)bitsPerSec / 1000.0);
     }
+}
+
+static void printSpeed(int64_t bitsPerSec)
+{
+    char speedBuf[24];
+    formatSpeed(bitsPerSec, speedBuf, sizeof(speedBuf));
+    printf("Speed: %s\n", speedBuf);
 }
 
 /* Download one file over the already-connected HTTP session, verifying its
@@ -241,7 +248,8 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
     int32_t moreToRead = 0;
     int32_t totalBytes = 0;
     int32_t stallCount = 0;
-    int32_t nextProgress = 100 * 1024;
+    int32_t lastProgressMs = 0;
+    int32_t lastProgressBytes = 0;
     int32_t startTimeMs = uPortGetTickTimeMs();
     while (true) {
         ret = uCxHttpGetBody(pUcxHandle, sessionId, sizeof(rxData), rxData, &moreToRead);
@@ -256,11 +264,23 @@ static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int
             md5Update(&md5Ctx, rxData, (size_t)ret);
             totalBytes += ret;
             stallCount = 0;
-            if (totalBytes >= nextProgress) {
-                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Downloaded %" PRId32 " of %" PRId32 " bytes",
-                                totalBytes, contentLength);
-                nextProgress += 100 * 1024;
+        }
+        // Unconditional printf (not gated by log channel) so long transfers always show
+        // liveness + current throughput, once every 30 seconds.
+        int32_t nowMs = uPortGetTickTimeMs() - startTimeMs;
+        if ((nowMs - lastProgressMs) >= 30000) {
+            int32_t windowMs = nowMs - lastProgressMs;
+            int64_t windowBits = ((int64_t)(totalBytes - lastProgressBytes) * 8 * 1000) / (windowMs < 1 ? 1 : windowMs);
+            char speedBuf[24];
+            formatSpeed(windowBits, speedBuf, sizeof(speedBuf));
+            if (contentLength >= 0) {
+                printf("Progress: %" PRId32 " / %" PRId32 " bytes (%.1f%%), %s\n",
+                       totalBytes, contentLength, (100.0 * (double)totalBytes) / (double)contentLength, speedBuf);
+            } else {
+                printf("Progress: %" PRId32 " bytes, %s\n", totalBytes, speedBuf);
             }
+            lastProgressMs = nowMs;
+            lastProgressBytes = totalBytes;
         }
         // Complete once we've received the full Content-Length.
         if ((contentLength >= 0) && (totalBytes >= contentLength)) {
