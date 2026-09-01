@@ -14,6 +14,7 @@
 /* Forward declarations */
 extern void uPortUart_IRQHandler(void);
 extern void uPortUartDma_IRQHandler(void);
+extern void exampleConsoleUart_IRQHandler(void);
 extern TIM_HandleTypeDef htim6;
 
 /******************************************************************************/
@@ -87,6 +88,12 @@ void DebugMon_Handler(void)
   */
 void SysTick_Handler(void)
 {
+  /* osSystickHandler() only feeds FreeRTOS's tick once the scheduler is
+   * running, so HAL_IncTick() must be called unconditionally here or
+   * HAL_GetTick()/HAL-internal timeouts stay frozen at 0 for all of main()
+   * before vTaskStartScheduler(), including SystemClock_Config()'s HSE/PLL
+   * ready waits - turning a bounded timeout into an infinite hang. */
+  HAL_IncTick();
   osSystickHandler();
 }
 
@@ -108,6 +115,18 @@ void USART1_IRQHandler(void)
 void DMA1_Stream0_IRQHandler(void)
 {
   uPortUartDma_IRQHandler();
+}
+
+/**
+  * @brief This function handles USART3 global interrupt (console/ST-LINK VCP).
+  *
+  * Feeds the interrupt-driven RX ring buffer in main_stm32.c so
+  * exampleConsoleUartRead() never overruns during sustained/binary transfers
+  * (e.g. XMODEM via uart_bridge_example).
+  */
+void USART3_IRQHandler(void)
+{
+  exampleConsoleUart_IRQHandler();
 }
 
 /**

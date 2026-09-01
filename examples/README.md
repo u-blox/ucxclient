@@ -13,6 +13,7 @@ All examples are designed to work with both OS and no-OS configurations by using
 | wifi_scan_example.c | Example of scanning for nearby WiFi access points. Lists available networks with signal strength and security information. |
 | wifi_ap_example.c   | Example of starting a WiFi access point (AP mode). Demonstrates AP configuration and handling station connect/disconnect events via URCs. |
 | socket_example.c    | Example of raw TCP socket communication. Demonstrates socket creation, connection, data transfer, and URC-driven event handling. |
+| uart_bridge_example.c | STM32-only: transparent UART bridge between the module and the ST-Link VCP console UART. Lets a PC talk to the module directly (AT commands, XMODEM firmware update) over the single ST-Link USB cable, with no AT parsing on the MCU. |
 | example_utils.c/h   | Common utility functions that work with both OS and no-OS configurations, providing AT client initialization, event handling, and sleep functionality. |
 
 ## Configuration
@@ -368,3 +369,38 @@ The example will:
 4. Send an HTTP GET request
 5. Receive and display the response using URC-driven data availability events
 6. Close the socket and disconnect from WiFi
+
+### uart_bridge_example (STM32 only)
+
+Turns an STM32 board into a transparent passthrough between a PC and the u-blox
+module, reusing the ST-Link's own USB-serial (VCP) connection - no separate
+USB-serial adapter wired to the module is required. Bytes are copied
+byte-for-byte in both directions; no AT parsing happens on the MCU, so it works
+with any AT command or binary protocol the module supports.
+
+This is useful for:
+
+- **Interactive AT debugging**: open the ST-Link VCP port in a terminal
+  (TeraTerm, PuTTY, `invoke stm32.log`, etc.) and type AT commands directly to
+  the module.
+- **Local firmware updates**: send `AT+USYFWUS=<baud>,1` through the bridge,
+  then use the terminal's own XMODEM sender (e.g. TeraTerm's
+  File > Transfer > XMODEM > Send) to flash new module firmware - all over
+  the single ST-Link USB cable, without unplugging anything.
+
+Build and flash:
+
+```sh
+invoke stm32.uart-bridge.build            # Build for STM32 (add --docker if no local ARM toolchain)
+invoke stm32.uart-bridge.flash --build    # Build and flash to the target
+invoke stm32.log --reset                  # Stream the console/module traffic
+```
+
+The module UART baud rate is fixed at build time via `U_EXAMPLE_BRIDGE_BAUD`
+(default 115200, matching the `AT+USYFWUS` bootloader default). If you change
+the module's baud rate through the bridge, update this macro and rebuild -
+the bridge does not follow runtime baud changes.
+
+Note: unlike the other examples, `uart_bridge_example` has no Linux/Windows
+variant and does not support Renode emulation - it is meaningful only on real
+STM32 hardware wired to a module.

@@ -154,6 +154,25 @@ static void SystemClock_Config(void)
 /* UART handle for console output (printf) */
 static UART_HandleTypeDef gConsoleUart;
 
+#ifndef U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE
+#define U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE (2048)
+#endif
+
+/* Interrupt-driven RX ring buffer for the console UART.
+ *
+ * uart_bridge_example.c polls exampleConsoleUartRead() from a task-context
+ * loop, which can be delayed (FreeRTOS preemption, time spent blocked on
+ * the module UART write) for longer than one byte period at 115200 baud
+ * (~87us). The console USART's RDR is only a single byte deep, so a plain
+ * blocking HAL_UART_Receive() poll silently drops bytes under sustained
+ * continuous streaming (e.g. an XMODEM firmware transfer over TeraTerm) -
+ * this is what made large/binary transfers get stuck. Feeding this ring
+ * buffer directly from the RXNE interrupt means no byte is ever lost
+ * between polls, regardless of how promptly the bridge loop drains it. */
+static volatile uint8_t gConsoleRxBuffer[U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE];
+static volatile uint32_t gConsoleRxHead = 0;
+static volatile uint32_t gConsoleRxTail = 0;
+
 /**
  * @brief  Initialize USART3 for console output (ST-LINK VCP)
  * USART3 TX: PD8, RX: PD9 (AF7)
@@ -192,6 +211,13 @@ static void Console_UART_Init(void)
     if (HAL_UART_Init(&gConsoleUart) != HAL_OK) {
         Error_Handler();
     }
+
+    /* Interrupt-driven RX (see gConsoleRxBuffer comment above) so large or
+     * binary transfers relayed by uart_bridge_example don't overrun the
+     * single-byte RDR between polls. */
+    HAL_NVIC_SetPriority(USART3_IRQn, 6, 0);
+    HAL_NVIC_EnableIRQ(USART3_IRQn);
+    __HAL_UART_ENABLE_IT(&gConsoleUart, UART_IT_RXNE);
 }
 
 /**
@@ -288,6 +314,64 @@ int __io_putchar(int ch)
     uint8_t c = (uint8_t)ch;
     if (HAL_UART_Transmit(&gConsoleUart, &c, 1, 1000) == HAL_OK) {
         return ch;
+    }
+    return -1;
+}
+
+/**
+ * @brief Console UART RX interrupt handler - called from USART3_IRQHandler
+ * (see stm32h7xx_it.c). Reads the raw data register directly instead of
+ * going through HAL_UART_IRQHandler()/HAL_UART_RxCpltCallback(), since that
+ * callback name is already defined (for the module UART instance) by the
+ * generic port driver in u_port_uart_stm32h7.c and cannot be redefined here.
+ */
+void exampleConsoleUart_IRQHandler(void)
+{
+    if (__HAL_UART_GET_FLAG(&gConsoleUart, UART_FLAG_RXNE)) {
+        uint8_t byte = (uint8_t)gConsoleUart.Instance->RDR;
+        uint32_t nextHead = (gConsoleRxHead + 1) % U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE;
+        if (nextHead != gConsoleRxTail) {
+            gConsoleRxBuffer[gConsoleRxHead] = byte;
+            gConsoleRxHead = nextHead;
+        }
+        /* else: buffer full, drop the byte (reader too slow) */
+    }
+    if (__HAL_UART_GET_FLAG(&gConsoleUart, UART_FLAG_ORE)) {
+        /* Overrun can only happen if RXNE wasn't serviced for >1 byte time;
+         * clear it so reception keeps going. */
+        __HAL_UART_CLEAR_OREFLAG(&gConsoleUart);
+    }
+}
+
+/*
+ * Raw console UART access for uart_bridge_example. Bypasses the printf
+ * retarget above so the example can both read and write the ST-Link VCP
+ * UART directly (needed to bridge it with the u-blox module UART).
+ *
+ * exampleConsoleUartRead() pops from the interrupt-fed ring buffer above
+ * instead of calling HAL_UART_Receive() directly - see gConsoleRxBuffer
+ * comment for why.
+ */
+int32_t exampleConsoleUartRead(uint8_t *pByte, int32_t timeoutMs)
+{
+    uint32_t startTime = HAL_GetTick();
+
+    do {
+        uint32_t tail = gConsoleRxTail;
+        if (gConsoleRxHead != tail) {
+            *pByte = gConsoleRxBuffer[tail];
+            gConsoleRxTail = (tail + 1) % U_EXAMPLE_CONSOLE_RX_BUFFER_SIZE;
+            return 1;
+        }
+    } while ((timeoutMs > 0) && ((int32_t)(HAL_GetTick() - startTime) < timeoutMs));
+
+    return 0;
+}
+
+int32_t exampleConsoleUartWrite(const void *pData, size_t length)
+{
+    if (HAL_UART_Transmit(&gConsoleUart, (uint8_t *)pData, (uint16_t)length, 1000) == HAL_OK) {
+        return (int32_t)length;
     }
     return -1;
 }

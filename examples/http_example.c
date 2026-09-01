@@ -15,13 +15,14 @@
  */
 
 /** @file
- * @brief Example of how to do a HTTP GET request using the uCx API
+ * @brief Example of how to do HTTP GET requests using the uCx API
  *
  * This example will:
  * - Setup WiFi
- * - Create a TCP socket and connect to EXAMPLE_URL
- * - Send "GET /"
- * - Print server response output
+ * - Download each file in gDownloadFiles from U_EXAMPLE_HTTP_URL, reporting
+ *   per-file throughput (kbit/s or Mbit/s)
+ * - Verify each download's size and MD5 hash (data is written to disk only
+ *   on hosts with a filesystem; embedded targets hash on the fly and discard it)
  *
  * This example works with both OS and no-OS configurations.
  * The build system creates two executables from this same source:
@@ -48,6 +49,7 @@
 #include "u_cx_system.h"
 #include "u_cx_general.h"
 #include "example_utils.h"
+#include "md5.h"
 
 /* ----------------------------------------------------------------
  * COMPILE-TIME MACROS
@@ -56,9 +58,6 @@
 /* HTTP download target - override in config.local.h to change */
 #ifndef U_EXAMPLE_HTTP_URL
 # define U_EXAMPLE_HTTP_URL  "https://staging.ampnet.autometer.com"
-#endif
-#ifndef U_EXAMPLE_HTTP_PATH
-# define U_EXAMPLE_HTTP_PATH "/uploads/firmware_app_load_mod/bct_468/bct_468_firmware_app_load_mod_2.05-alpha.fw"
 #endif
 
 /* UART speed used after the initial 115200 handshake, and whether to use
@@ -72,17 +71,20 @@
 # define U_EXAMPLE_UART_FLOW false
 #endif
 
-/* Output file for the downloaded body (hosts with a filesystem only) */
-#ifndef U_EXAMPLE_HTTP_OUT_FILE
-# define U_EXAMPLE_HTTP_OUT_FILE "http_download.bin"
-#endif
-
 #define URC_FLAG_NETWORK_UP         (1 << 0)
 #define URC_FLAG_HTTP_RESPONSE      (1 << 1)
 
 /* ----------------------------------------------------------------
  * TYPES
  * -------------------------------------------------------------- */
+
+/* Files downloaded from U_EXAMPLE_HTTP_URL each run. expectedSize/pExpectedMd5
+ * are checked against the download (MD5 only on hosts with a filesystem). */
+typedef struct {
+    const char *pPath;
+    int32_t     expectedSize;
+    const char *pExpectedMd5;  // 32 lowercase hex chars
+} DownloadFile_t;
 
 /* ----------------------------------------------------------------
  * STATIC PROTOTYPES
@@ -91,6 +93,15 @@
 /* ----------------------------------------------------------------
  * STATIC VARIABLES
  * -------------------------------------------------------------- */
+
+static const DownloadFile_t gDownloadFiles[] = {
+    { "/uploads/firmware_app_load_mod/bct_468/bct_468_firmware_app_load_mod_2.05-alpha.fw",
+      213552, "cc9be17b288e72f775ca170989138c5e" },
+    { "/uploads/firmware_mcu/bva_360/bva_360_firmware_mcu_2.0408-alpha.bin",
+      1048576, "9d83c123715c4393902e20d4116be916" },
+    { "/uploads/firmware_qspi/bva_360/bva_360_firmware_qspi_2.0408-alpha.bin",
+      22368256, "dcbf43ea1484714997b7d9255a735921" },
+};
 
 /* ----------------------------------------------------------------
  * STATIC FUNCTIONS
@@ -128,6 +139,187 @@ static int32_t parseContentLength(const char *pHeaders)
     return -1;
 }
 
+#if !defined(U_PORT_FREERTOS)
+/* Part of pPath after the last '/', used as the local output filename */
+static const char *fileBasename(const char *pPath)
+{
+    const char *pSlash = strrchr(pPath, '/');
+    return (pSlash != NULL) ? (pSlash + 1) : pPath;
+}
+#endif
+
+static bool hexEqualsIgnoreCase(const char *pA, const char *pB)
+{
+    while ((*pA != 0) && (*pB != 0)) {
+        if (tolower((unsigned char)*pA) != tolower((unsigned char)*pB)) {
+            return false;
+        }
+        pA++;
+        pB++;
+    }
+    return (*pA == 0) && (*pB == 0);
+}
+
+/* Print bitsPerSec as "X.XX Mbit/s" or "X.X kbit/s", whichever is more readable */
+static void printSpeed(int64_t bitsPerSec)
+{
+    if (bitsPerSec >= 1000000) {
+        printf("Speed: %.2f Mbit/s\n", (double)bitsPerSec / 1000000.0);
+    } else {
+        printf("Speed: %.1f kbit/s\n", (double)bitsPerSec / 1000.0);
+    }
+}
+
+/* Download one file over the already-connected HTTP session, verifying its
+ * size and (on hosts with a filesystem) its MD5 hash. Returns true on success. */
+static bool downloadOneFile(uCxHandle_t *pUcxHandle, uCxAtClient_t *pClient, int32_t sessionId,
+                             const DownloadFile_t *pFile)
+{
+    int32_t ret;
+
+    ret = uCxHttpSetConnectionParams2(pUcxHandle, sessionId, U_EXAMPLE_HTTP_URL);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %" PRId32, ret);
+
+    ret = uCxHttpSetRequestPath(pUcxHandle, sessionId, pFile->pPath);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetRequestPath() returned %" PRId32, ret);
+
+    ret = uCxHttpGetRequest(pUcxHandle, sessionId);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpGetRequest() returned %" PRId32, ret);
+
+    exampleWaitEvent(URC_FLAG_HTTP_RESPONSE, 10);
+
+    // Read response headers in chunks, capturing them so we can find Content-Length
+    // (static: too large for embedded task stacks - 8 KB on STM32)
+    static char headerBuf[4096];
+    size_t headerLen = 0;
+    uCxHttpGetHeader_t headerRsp;
+    printf("\nHTTP Headers for %s:\n", pFile->pPath);
+    do {
+        if (uCxHttpGetHeader2Begin(pUcxHandle, sessionId, 512, &headerRsp)) {
+            int chunk = (int)headerRsp.byte_array_data.length;
+            printf("%.*s", chunk, headerRsp.byte_array_data.pData);
+            if ((chunk > 0) && (headerLen + (size_t)chunk < sizeof(headerBuf))) {
+                memcpy(&headerBuf[headerLen], headerRsp.byte_array_data.pData, (size_t)chunk);
+                headerLen += (size_t)chunk;
+            }
+            uCxEnd(pUcxHandle);
+        } else {
+            break;
+        }
+    } while (headerRsp.more_to_read);
+    headerBuf[headerLen] = 0;
+    printf("\n");
+
+    // The module streams the body from the network as we read it, so more_to_read
+    // only means "nothing buffered right now" - NOT "download complete". Use the
+    // Content-Length header to know how many bytes to expect.
+    int32_t contentLength = parseContentLength(headerBuf);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Content-Length: %" PRId32, contentLength);
+
+    // Read response body in 1460-byte chunks - the module's generic binary-AT-response
+    // cap (max per AT+UHTCGBB read as of fw 3.5.0). This download is HTTPS (TLS/TCP),
+    // not UDP; 1460 is just the fixed chunk size the AT framing uses for ALL binary
+    // reads (sockets, HTTP body, etc.), inherited from the classic 1500-byte Ethernet
+    // MTU minus header overhead - it has no bearing on the actual transport here.
+    // The body may be binary (e.g. a firmware image) so it must NOT be treated
+    // as a C string. On hosts with a filesystem the exact bytes are also written to
+    // a local file; every target hashes the stream with MD5 as it arrives.
+    Md5Ctx_t md5Ctx;
+    md5Init(&md5Ctx);
+#if !defined(U_PORT_FREERTOS)
+    const char *pBaseName = fileBasename(pFile->pPath);
+    FILE *pOut = fopen(pBaseName, "wb");
+    if (pOut == NULL) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to open output file %s", pBaseName);
+        return false;
+    }
+    const char *pOutFile = pBaseName;
+#else
+    const char *pOutFile = "(discarded - no filesystem)";
+#endif
+    static uint8_t rxData[1460];  // static: keep off the embedded task stack
+    int32_t moreToRead = 0;
+    int32_t totalBytes = 0;
+    int32_t stallCount = 0;
+    int32_t nextProgress = 100 * 1024;
+    int32_t startTimeMs = uPortGetTickTimeMs();
+    while (true) {
+        ret = uCxHttpGetBody(pUcxHandle, sessionId, sizeof(rxData), rxData, &moreToRead);
+        if (ret < 0) {
+            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "uCxHttpGetBody() failed: %" PRId32, ret);
+            break;
+        }
+        if (ret > 0) {
+#if !defined(U_PORT_FREERTOS)
+            fwrite(rxData, 1, (size_t)ret, pOut);
+#endif
+            md5Update(&md5Ctx, rxData, (size_t)ret);
+            totalBytes += ret;
+            stallCount = 0;
+            if (totalBytes >= nextProgress) {
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Downloaded %" PRId32 " of %" PRId32 " bytes",
+                                totalBytes, contentLength);
+                nextProgress += 100 * 1024;
+            }
+        }
+        // Complete once we've received the full Content-Length.
+        if ((contentLength >= 0) && (totalBytes >= contentLength)) {
+            break;
+        }
+        // Nothing buffered right now: if the length is unknown assume we're done,
+        // otherwise the rest is still streaming in - wait briefly and retry.
+        if ((ret == 0) && !moreToRead) {
+            if (contentLength < 0) {
+                break;
+            }
+            if (++stallCount > 500) {  // ~10s with no progress => give up
+                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Body download stalled");
+                break;
+            }
+            U_CX_PORT_SLEEP_MS(20);
+        }
+    }
+    int32_t elapsedMs = uPortGetTickTimeMs() - startTimeMs;
+    if (elapsedMs < 1) {
+        elapsedMs = 1;
+    }
+
+#if !defined(U_PORT_FREERTOS)
+    fclose(pOut);
+#endif
+    uint8_t digest[16];
+    md5Final(&md5Ctx, digest);
+    char digestHex[33];
+    for (int i = 0; i < 16; i++) {
+        snprintf(&digestHex[(size_t)i * 2], 3, "%02x", digest[i]);
+    }
+
+    printSpeed(((int64_t)totalBytes * 8 * 1000) / elapsedMs);
+    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
+                    "Downloaded %" PRId32 " of %" PRId32 " bytes to %s in %" PRId32 " ms",
+                    totalBytes, contentLength, pOutFile, elapsedMs);
+
+    bool ok = true;
+    if ((contentLength >= 0) && (totalBytes != contentLength)) {
+        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Incomplete download!");
+        ok = false;
+    }
+    if ((pFile->expectedSize >= 0) && (totalBytes != pFile->expectedSize)) {
+        printf("Size MISMATCH: got %" PRId32 ", expected %" PRId32 "\n", totalBytes, pFile->expectedSize);
+        ok = false;
+    }
+    if (pFile->pExpectedMd5 != NULL) {
+        bool md5Match = hexEqualsIgnoreCase(digestHex, pFile->pExpectedMd5);
+        printf("MD5: %s (expected %s) -> %s\n", digestHex, pFile->pExpectedMd5, md5Match ? "MATCH" : "MISMATCH");
+        if (!md5Match) {
+            ok = false;
+        }
+    }
+
+    uCxHttpDisconnect(pUcxHandle, sessionId);
+    return ok;
+}
+
 /* ----------------------------------------------------------------
  * PUBLIC FUNCTIONS
  * -------------------------------------------------------------- */
@@ -135,9 +327,10 @@ static int32_t parseContentLength(const char *pHeaders)
 int U_EXAMPLE_MAIN(int argc, char **argv)
 {
     exampleCheckHelp(argc, argv, "http_example",
-        "Example of how to do a HTTP GET request using the uCx API.\n"
-        "Connects to WiFi, downloads U_EXAMPLE_HTTP_URL + U_EXAMPLE_HTTP_PATH\n"
-        "(binary-safe, saved to a file on hosts with a filesystem).\n"
+        "Example of how to do HTTP GET requests using the uCx API.\n"
+        "Connects to WiFi and downloads each file in gDownloadFiles from\n"
+        "U_EXAMPLE_HTTP_URL (binary-safe, saved to a file on hosts with a\n"
+        "filesystem and verified against its expected size/MD5 hash).\n"
         "This example will also illustrate how to change UART baud rate on the module.",
         "[uart_device] [wifi_ssid] [wifi_psk]");
 
@@ -224,115 +417,13 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
 
     const int32_t sessionId = 0;
 
-    // Configure HTTP connection
-    ret = uCxHttpSetConnectionParams2(&ucxHandle, sessionId, U_EXAMPLE_HTTP_URL);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetConnectionParams2() returned %" PRId32, ret);
-
-    // Set request path
-    ret = uCxHttpSetRequestPath(&ucxHandle, sessionId, U_EXAMPLE_HTTP_PATH);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpSetRequestPath() returned %" PRId32, ret);
-
-    // Send GET request
-    ret = uCxHttpGetRequest(&ucxHandle, sessionId);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "uCxHttpGetRequest() returned %" PRId32, ret);
-
-    // Wait for response
-    exampleWaitEvent(URC_FLAG_HTTP_RESPONSE, 10);
-
-    // Read response headers in chunks, capturing them so we can find Content-Length
-    // (static: too large for embedded task stacks - 8 KB on STM32)
-    static char headerBuf[4096];
-    size_t headerLen = 0;
-    uCxHttpGetHeader_t headerRsp;
-    printf("HTTP Headers:\n");
-    do {
-        if (uCxHttpGetHeader2Begin(&ucxHandle, sessionId, 512, &headerRsp)) {
-            int chunk = (int)headerRsp.byte_array_data.length;
-            printf("%.*s", chunk, headerRsp.byte_array_data.pData);
-            if ((chunk > 0) && (headerLen + (size_t)chunk < sizeof(headerBuf))) {
-                memcpy(&headerBuf[headerLen], headerRsp.byte_array_data.pData, (size_t)chunk);
-                headerLen += (size_t)chunk;
-            }
-            uCxEnd(&ucxHandle);
-        } else {
-            break;
-        }
-    } while (headerRsp.more_to_read);
-    headerBuf[headerLen] = 0;
-    printf("\n");
-
-    // The module streams the body from the network as we read it, so more_to_read
-    // only means "nothing buffered right now" - NOT "download complete". Use the
-    // Content-Length header to know how many bytes to expect.
-    int32_t contentLength = parseContentLength(headerBuf);
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Content-Length: %" PRId32, contentLength);
-
-    // Read response body (1000 bytes = module max per AT+UHTCGBB read).
-    // The body may be binary (e.g. a firmware image) so it must NOT be treated
-    // as a C string. On hosts with a filesystem the exact bytes are written to
-    // U_EXAMPLE_HTTP_OUT_FILE; embedded targets just count and verify length.
-#if !defined(U_PORT_FREERTOS)
-    const char *pOutFile = U_EXAMPLE_HTTP_OUT_FILE;
-    FILE *pOut = fopen(pOutFile, "wb");
-    if (pOut == NULL) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "Failed to open output file %s", pOutFile);
-        goto fail;
-    }
-#else
-    const char *pOutFile = "(discarded - no filesystem)";
-#endif
-    static uint8_t rxData[1000];  // static: keep off the embedded task stack
-    int32_t moreToRead = 0;
-    int32_t totalBytes = 0;
-    int32_t stallCount = 0;
-    int32_t nextProgress = 100 * 1024;
-    while (true) {
-        ret = uCxHttpGetBody(&ucxHandle, sessionId, sizeof(rxData), rxData, &moreToRead);
-        if (ret < 0) {
-            U_CX_LOG_LINE_I(U_CX_LOG_CH_ERROR, pClient->instance, "uCxHttpGetBody() failed: %" PRId32, ret);
-            break;
-        }
-        if (ret > 0) {
-#if !defined(U_PORT_FREERTOS)
-            fwrite(rxData, 1, (size_t)ret, pOut);
-#endif
-            totalBytes += ret;
-            stallCount = 0;
-            if (totalBytes >= nextProgress) {
-                U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance, "Downloaded %" PRId32 " of %" PRId32 " bytes",
-                                totalBytes, contentLength);
-                nextProgress += 100 * 1024;
-            }
-        }
-        // Complete once we've received the full Content-Length.
-        if ((contentLength >= 0) && (totalBytes >= contentLength)) {
-            break;
-        }
-        // Nothing buffered right now: if the length is unknown assume we're done,
-        // otherwise the rest is still streaming in - wait briefly and retry.
-        if ((ret == 0) && !moreToRead) {
-            if (contentLength < 0) {
-                break;
-            }
-            if (++stallCount > 500) {  // ~10s with no progress => give up
-                U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Body download stalled");
-                break;
-            }
-            U_CX_PORT_SLEEP_MS(20);
+    // Download and verify each file in gDownloadFiles over the same HTTP session
+    bool allOk = true;
+    for (size_t i = 0; i < sizeof(gDownloadFiles) / sizeof(gDownloadFiles[0]); i++) {
+        if (!downloadOneFile(&ucxHandle, pClient, sessionId, &gDownloadFiles[i])) {
+            allOk = false;
         }
     }
-#if !defined(U_PORT_FREERTOS)
-    fclose(pOut);
-#endif
-    U_CX_LOG_LINE_I(U_CX_LOG_CH_DBG, pClient->instance,
-                    "Downloaded %" PRId32 " of %" PRId32 " bytes to %s",
-                    totalBytes, contentLength, pOutFile);
-    if ((contentLength >= 0) && (totalBytes != contentLength)) {
-        U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "Incomplete download!");
-    }
-
-    // Disconnect HTTP session
-    uCxHttpDisconnect(&ucxHandle, sessionId);
 
     // Reboot module to restore default UART settings
     uCxSystemReboot(&ucxHandle);
@@ -342,7 +433,7 @@ int U_EXAMPLE_MAIN(int argc, char **argv)
     uCxAtClientDeinit(pClient);
     uPortDeinit();
 
-    return 0;
+    return allOk ? 0 : 1;
 
 fail:
     if (pClient != NULL) {

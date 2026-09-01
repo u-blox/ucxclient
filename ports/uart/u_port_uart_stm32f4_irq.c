@@ -308,3 +308,27 @@ void uPortUart_IRQHandler(void)
 void uPortUartDma_IRQHandler(void)
 {
 }
+
+/* ----------------------------------------------------------------
+ * UART FLUSH FUNCTIONS
+ * -------------------------------------------------------------- */
+
+void uPortUartFlushRx(uPortUartHandle_t handle)
+{
+    if (handle == NULL) {
+        return;
+    }
+
+    uPortUartHandle *pHandle = (uPortUartHandle *)handle;
+
+    if (!pHandle->isOpen) {
+        return;
+    }
+
+    // Discard anything currently sitting in the ring buffer. Disable the
+    // UART interrupt briefly so rxHead can't move under us while we snapshot
+    // it into rxTail (HAL_UART_RxCpltCallback above writes both).
+    HAL_NVIC_DisableIRQ(U_PORT_UART_IRQn);
+    pHandle->rxTail = pHandle->rxHead;
+    HAL_NVIC_EnableIRQ(U_PORT_UART_IRQn);
+}

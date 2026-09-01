@@ -27,6 +27,7 @@
 /* Forward declarations */
 extern void uPortUart_IRQHandler(void);
 extern void uPortUartDma_IRQHandler(void);
+extern void exampleConsoleUart_IRQHandler(void);
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -123,6 +124,12 @@ void DebugMon_Handler(void)
   */
 void SysTick_Handler(void)
 {
+  /* osSystickHandler() only feeds FreeRTOS's tick once the scheduler is
+   * running, so HAL_IncTick() must be called unconditionally here or
+   * HAL_GetTick()/HAL-internal timeouts stay frozen at 0 for all of main()
+   * before vTaskStartScheduler() - turning bounded timeouts into infinite
+   * hangs (e.g. SystemClock_Config()'s HSE/PLL ready waits). */
+  HAL_IncTick();
   osSystickHandler();
 }
 
@@ -175,3 +182,26 @@ void DMA1_Stream1_IRQHandler(void)
 }
 
 #endif
+
+/**
+  * @brief Console UART interrupt handler (ST-LINK VCP).
+  * - NUCLEO-F439ZI: USART3 (console) - module is on USART1, so USART3 is
+  *   free to use for the console here.
+  * - STM32F407G-DISC1: USART2 (console) - module is on USART3, so USART2 is
+  *   free to use for the console here.
+  *
+  * Feeds the interrupt-driven RX ring buffer in main_stm32.c so
+  * exampleConsoleUartRead() never overruns during sustained/binary transfers
+  * (e.g. XMODEM via uart_bridge_example).
+  */
+#if defined(NUCLEO_F439ZI)
+void USART3_IRQHandler(void)
+{
+  exampleConsoleUart_IRQHandler();
+}
+#else
+void USART2_IRQHandler(void)
+{
+  exampleConsoleUart_IRQHandler();
+}
+#endif /* NUCLEO_F439ZI */

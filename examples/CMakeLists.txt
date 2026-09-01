@@ -28,18 +28,25 @@ set(EXAMPLE_COMMON_SRC
 # Option to build STM32 examples
 option(BUILD_STM32_EXAMPLES "Build examples for STM32" OFF)
 
+# Option to silence the AT command TX/RX trace (kept separate from U_CX_LOG_DEBUG)
+option(DISABLE_AT_LOG "Disable AT command TX/RX logging" OFF)
+
+# Option to silence [DBG] channel logging (app progress messages, BIN headers, etc.)
+option(DISABLE_DBG_LOG "Disable DBG channel logging" OFF)
+
 if(BUILD_STM32_EXAMPLES)
     # STM32 build path - requires cross-compilation toolchain
     include(../cmake/stm32.cmake)
 
     # Add STM32 examples
-    add_stm32_example(NAME http_example_stm32 SOURCES http_example.c)
+    add_stm32_example(NAME http_example_stm32 SOURCES http_example.c md5.c)
     add_stm32_example(NAME fw_upgrade_example_stm32 SOURCES fw_upgrade_example.c ../src/u_cx_xmodem.c)
     add_stm32_example(NAME ble_scan_example_stm32 SOURCES ble_scan_example.c)
     add_stm32_example(NAME ble_advertise_example_stm32 SOURCES ble_advertise_example.c)
     add_stm32_example(NAME wifi_scan_example_stm32 SOURCES wifi_scan_example.c)
     add_stm32_example(NAME wifi_ap_example_stm32 SOURCES wifi_ap_example.c)
     add_stm32_example(NAME socket_example_stm32 SOURCES socket_example.c)
+    add_stm32_example(NAME uart_bridge_example_stm32 SOURCES uart_bridge_example.c)
 
     # Set U_CX_XMODEM_FILE_SUPPORT for firmware upgrade
     target_compile_definitions(fw_upgrade_example_stm32.elf PRIVATE U_CX_XMODEM_FILE_SUPPORT=1)
@@ -53,7 +60,7 @@ else()
       set(PORT_OS_SRC ../ports/os/u_port_windows.c)
       set(PORT_UART_SRC ../ports/uart/u_port_uart_windows.c)
       set(PORT_DEFINES -DU_PORT_WINDOWS)
-      set(PORT_LIBS "")
+      set(PORT_LIBS setupapi)  # u_port_uart_windows.c uses SetupDi* for FTDI latency timer / diagnostics
       set(EXAMPLE_COMPILE_OPTIONS /J /WX /wd4200 /wd4996)
     else()
       set(PORT_OS_SRC ../ports/os/u_port_posix.c)
@@ -63,11 +70,20 @@ else()
       set(EXAMPLE_COMPILE_OPTIONS -Wall -Wextra -Werror -Wconversion -Wsign-conversion -Wshadow -pedantic)
     endif()
 
-    list(APPEND EXAMPLE_COMPILE_OPTIONS -DU_CX_LOG_DEBUG=1)
+    if(DISABLE_DBG_LOG)
+      list(APPEND EXAMPLE_COMPILE_OPTIONS -DU_CX_LOG_DEBUG=0)
+    else()
+      list(APPEND EXAMPLE_COMPILE_OPTIONS -DU_CX_LOG_DEBUG=1)
+    endif()
+    if(DISABLE_AT_LOG)
+      list(APPEND EXAMPLE_COMPILE_OPTIONS -DU_CX_LOG_AT=0)
+    endif()
 
     # HTTP Example (OS-based)
+    # md5.c: MD5 verification of downloaded files - native hosts only, not built for STM32
     add_executable(http_example
       http_example.c
+      md5.c
       ${PORT_OS_SRC}
       ${PORT_UART_SRC}
       ${EXAMPLE_COMMON_SRC}
@@ -81,6 +97,7 @@ else()
     # HTTP Example No-OS
     add_executable(http_example_no_os
       http_example.c
+      md5.c
       ../ports/os/u_port_no_os.c
       ${PORT_UART_SRC}
       ${EXAMPLE_COMMON_SRC}

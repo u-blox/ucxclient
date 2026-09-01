@@ -236,8 +236,17 @@ def _configure_cmake(c, build_dir, cmake_args=""):
         print("Configuring CMake project...")
         with c.cd(build_path):
             if _is_windows() and not cmake_args:
-                # Use default generator on Windows (auto-detects Visual Studio version)
+                # Native Windows host build: use default generator (auto-detects Visual Studio version)
                 c.run(f'cmake {EXAMPLES_DIR} -A Win32 {cmake_args}')
+            elif _is_windows() and cmake_args:
+                # Cross-compiling (e.g. STM32 toolchain file): CMake's bare
+                # default generator on Windows is Visual Studio/MSVC regardless
+                # of the toolchain file, which can't target ARM. Force Ninja.
+                if shutil.which('ninja') is None:
+                    print("Error: Ninja not found in PATH (required to cross-compile on Windows)")
+                    print("Install from https://ninja-build.org/ or 'pip install ninja'")
+                    sys.exit(1)
+                c.run(f'cmake {EXAMPLES_DIR} -G Ninja {cmake_args}')
             else:
                 c.run(f'cmake {EXAMPLES_DIR} {cmake_args}')
 
@@ -306,9 +315,8 @@ def _stm32_build_target(c, target=None, clean=False, docker=False, jobs=None):
         _reinvoke_inside_docker(c, 'stm32 build')
         return
 
-    # Check if ARM toolchain is available
-    result = c.run('which arm-none-eabi-gcc', warn=True, hide=True)
-    if result.exited != 0:
+    # Check if ARM toolchain is available ('which' doesn't exist on native Windows)
+    if shutil.which('arm-none-eabi-gcc') is None:
         print("Error: ARM toolchain (arm-none-eabi-gcc) not found in PATH")
         print("\nTo build STM32 examples, either:")
         print("  1. Install ARM GCC toolchain locally, or")
@@ -563,10 +571,12 @@ def all(c, clean=False, jobs=None):
 @task(help={
     'clean': 'Clean build directory before building',
     'jobs': 'Number of parallel jobs (default: CPU cores)',
+    'no_at_log': 'Disable the [AT TX]/[AT RX] console trace',
 })
-def http(c, clean=False, jobs=None):
+def http(c, clean=False, jobs=None, no_at_log=False):
     """Build http_example."""
-    _build_target(c, target='http_example', clean=clean, jobs=jobs)
+    cmake_args = f'-DDISABLE_AT_LOG={"ON" if no_at_log else "OFF"}'
+    _build_target(c, target='http_example', clean=clean, jobs=jobs, cmake_args=cmake_args)
 
 
 @task(help={
@@ -654,18 +664,15 @@ def stm32_log(c, port=None, baud=115200, reset=False, seconds=0):
         print(f"[log] Auto-detected ST-LINK VCP: {port}")
 
     if reset:
-        reset_tools = ['STM32_Programmer_CLI', 'st-flash']
-        cube_default = r'C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe'
-        if _is_windows() and os.path.exists(cube_default):
-            reset_tools.insert(0, f'"{cube_default}"')
-        for tool in reset_tools:
-            if 'st-flash' in tool:
-                result = c.run(f'{tool} reset', warn=True, hide=True)
-            else:
-                result = c.run(f'{tool} -c port=SWD -rst', warn=True, hide=True)
-            if result.ok:
-                print("[log] Target reset via ST-LINK")
-                break
+        tool_kind, tool_cmd = _find_stm32_flash_tool()
+        if tool_kind == 'cube':
+            result = c.run(f'{tool_cmd} -c port=SWD -rst', warn=True, hide=True)
+        elif tool_kind == 'st-flash':
+            result = c.run(f'{tool_cmd} reset', warn=True, hide=True)
+        else:
+            result = None
+        if result is not None and result.ok:
+            print("[log] Target reset via ST-LINK")
         else:
             print("Warning: could not reset target (no STM32_Programmer_CLI or st-flash found)")
 
@@ -719,6 +726,18 @@ def _make_stm32_build_task(target_base):
     return task_func
 
 
+def _find_stm32_flash_tool():
+    """Locate a usable STM32 flash tool. Returns ('cube', path) or ('st-flash', 'st-flash') or (None, None)."""
+    cube_default = r'C:\Program Files\STMicroelectronics\STM32Cube\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe'
+    if shutil.which('STM32_Programmer_CLI') is not None:
+        return 'cube', 'STM32_Programmer_CLI'
+    if _is_windows() and os.path.exists(cube_default):
+        return 'cube', f'"{cube_default}"'
+    if shutil.which('st-flash') is not None:
+        return 'st-flash', 'st-flash'
+    return None, None
+
+
 def _make_stm32_flash_task(target_base):
     """Create an STM32 flash task for a specific example."""
     def task_func(c, build=False, docker=False):
@@ -728,17 +747,17 @@ def _make_stm32_flash_task(target_base):
             print("The ST-Link programmer is connected to the host machine")
             sys.exit(1)
 
-        # Check if st-flash is installed
-        result = c.run('which st-flash', warn=True, hide=True)
-        if result.exited != 0:
-            print("Error: st-flash not found in PATH")
-            print("\nTo install stlink tools:")
+        tool_kind, tool_cmd = _find_stm32_flash_tool()
+        if tool_kind is None:
+            print("Error: no flash tool found (st-flash or STM32CubeProgrammer)")
+            print("\nTo install one:")
             if _is_linux():
                 print("  Ubuntu/Debian: sudo apt install stlink-tools")
                 print("  Arch Linux:    sudo pacman -S stlink")
                 print("  Fedora:        sudo dnf install stlink")
             else:
-                print("  See: https://github.com/stlink-org/stlink")
+                print("  st-flash: https://github.com/stlink-org/stlink")
+                print("  STM32CubeProgrammer: https://www.st.com/en/development-tools/stm32cubeprog.html")
             sys.exit(1)
 
         elf_path = os.path.join(EXAMPLES_DIR, f'bin/{target_base}_stm32.elf')
@@ -751,8 +770,11 @@ def _make_stm32_flash_task(target_base):
             print("Build first with --build flag or run the build task")
             sys.exit(1)
 
-        print(f"\n[Flash] Flashing {elf_path} to target...")
-        c.run(f'st-flash --reset write {elf_path} 0x8000000')
+        print(f"\n[Flash] Flashing {elf_path} to target via {tool_kind}...")
+        if tool_kind == 'cube':
+            c.run(f'{tool_cmd} -c port=SWD -w {elf_path} -rst')
+        else:
+            c.run(f'{tool_cmd} --reset write {elf_path} 0x8000000')
     return task_func
 
 
@@ -881,6 +903,34 @@ for task_name, target_base, supports_emulation in EXAMPLES_TASKS:
         example_ns.add_task(emulate_task, 'emulate')
 
     stm32_ns.add_collection(example_ns)
+
+# UART bridge example is STM32-only (bridges the module UART with the
+# ST-Link VCP console UART) - no Linux/Windows equivalent, so it is
+# registered directly instead of via EXAMPLES_TASKS.
+bridge_ns = Collection('uart-bridge')
+
+bridge_build_task = task(
+    _make_stm32_build_task('uart_bridge_example'),
+    help={
+        'clean': 'Clean build directory before building',
+        'docker': 'Build inside Docker container (no local ARM toolchain required)',
+        'jobs': 'Number of parallel jobs (default: CPU cores)',
+    }
+)
+bridge_build_task.__doc__ = "Build uart_bridge_example for STM32."
+bridge_ns.add_task(bridge_build_task, 'build')
+
+bridge_flash_task = task(
+    _make_stm32_flash_task('uart_bridge_example'),
+    help={
+        'build': 'Build before flashing',
+        'docker': 'Use Docker for building (only with --build)',
+    }
+)
+bridge_flash_task.__doc__ = "Flash uart_bridge_example to STM32 target."
+bridge_ns.add_task(bridge_flash_task, 'flash')
+
+stm32_ns.add_collection(bridge_ns)
 
 ns.add_collection(stm32_ns)
 
