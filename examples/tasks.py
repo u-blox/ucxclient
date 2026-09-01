@@ -1,5 +1,5 @@
 """
-PyInvoke tasks for ucxclient examples.
+PyInvoke tasks for u-connectClient examples.
 
 """
 
@@ -116,7 +116,7 @@ def _init_stm32cubef4_submodule(c):
     """Initialize STM32CubeF4 submodule if needed.
 
     Must be called BEFORE Docker reinvoke since Docker won't have access
-    to parent repo's .git/modules when ucxclient is used as a submodule.
+    to parent repo's .git/modules when u-connectClient is used as a submodule.
     """
     cube_path = os.path.join(REPO_ROOT, 'ports/extra/stm32f4/STM32CubeF4')
     if not os.path.exists(os.path.join(cube_path, 'Drivers/CMSIS')):

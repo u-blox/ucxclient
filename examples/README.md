@@ -1,8 +1,8 @@
 # Examples
 
-This directory contains application examples of how to use ucxclient. The examples make use of the [example ports](../ports/README.md).
+This directory contains application examples of how to use u-connectClient. The examples make use of the [example ports](../ports/README.md).
 
-All examples are designed to work with both OS and no-OS configurations by using the shared utilities in `example_utils.c/h`. This demonstrates the portability of ucxclient across different execution environments.
+All examples are designed to work with both OS and no-OS configurations by using the shared utilities in `example_utils.c/h`. This demonstrates the portability of u-connectClient across different execution environments.
 
 | Files               | Description |
 | ------------------- | ----------- |
@@ -184,7 +184,7 @@ Then build and run:
 > bin/http_example_no_os
 ```
 
-Note: Both http_example and http_example_no_os are compiled from the same http_example.c source file, demonstrating how ucxclient examples can work seamlessly in both OS and no-OS environments.
+Note: Both http_example and http_example_no_os are compiled from the same http_example.c source file, demonstrating how u-connectClient examples can work seamlessly in both OS and no-OS environments.
 
 ### fw_upgrade_example
 
@@ -283,7 +283,7 @@ The example will:
 
 1. Initialize the AT client and u-connectXpress API
 2. Query and display the module's Bluetooth MAC address
-3. Set custom advertising data (Flags + Complete Local Name "ucxclient")
+3. Set custom advertising data (Flags + Complete Local Name "u-connectClient")
 4. Start BLE advertising
 5. Stop advertising after the specified duration
 

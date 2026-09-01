@@ -10,7 +10,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/stm32f4-builder
+  IMAGE_NAME: u-blox/u-connectclient/stm32f4-builder
 
 jobs:
   build-and-test-stm32:
@@ -81,7 +81,7 @@ jobs:
       run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
     - name: Tag image for local use
-      run: docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest ucxclient-stm32f4:latest
+      run: docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest u-connect-client-stm32f4:latest
 
     - name: Build STM32F407VG firmware
       working-directory: ./examples

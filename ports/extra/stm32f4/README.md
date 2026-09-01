@@ -1,6 +1,6 @@
 # STM32F4 Example Implementation
 
-This directory contains the STM32F407 example application and build infrastructure for running ucxclient with FreeRTOS.
+This directory contains the STM32F407 example application and build infrastructure for running u-connectClient with FreeRTOS.
 
 The actual port layer implementations are:
 
@@ -9,7 +9,7 @@ The actual port layer implementations are:
 
 ## What This Directory Provides
 
-This directory provides the complete build infrastructure and application code needed to run ucxclient examples on STM32F407 hardware:
+This directory provides the complete build infrastructure and application code needed to run u-connectClient examples on STM32F407 hardware:
 
 - Example application entry point with FreeRTOS task setup
 - STM32 HAL initialization and interrupt handlers
@@ -97,7 +97,7 @@ Connect STM32F407G-DISC1 via ST-Link and use VS Code debug configuration: **"STM
 
 ## Integration
 
-This port is integrated into the ucxclient build system:
+This port is integrated into the u-connectClient build system:
 
 - Build via `-DBUILD_STM32_EXAMPLES=ON` in CMake
 - Configured in `cmake/stm32.cmake` and `cmake/stm32f407vg.cmake`

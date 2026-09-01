@@ -17,7 +17,7 @@
 /** @file
  * @brief Windows port example
  *
- * This port shows how to run ucxclient on Windows using Win32 API.
+ * This port shows how to run u-connectClient on Windows using Win32 API.
  * It provides COM port access, Windows threading, and synchronization.
  */
 

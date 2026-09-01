@@ -1,6 +1,6 @@
 # Port Examples
 
-This directory contains the port layer abstraction that enables ucxclient to run on different platforms.
+This directory contains the port layer abstraction that enables u-connectClient to run on different platforms.
 
 ## Port Structure
 
@@ -48,7 +48,7 @@ These functions are called automatically by `uCxAtClientInit()` and `uCxAtClient
 
 ## Using an Example Port
 
-You can tell ucxclient which port to use by using the following defines during build:
+You can tell u-connectClient which port to use by using the following defines during build:
 
 | Port           | Define            |
 | -------------- | ----------------- |
@@ -56,7 +56,7 @@ You can tell ucxclient which port to use by using the following defines during b
 | u_port_windows | `U_PORT_WINDOWS`  |
 | u_port_no_os   | `U_PORT_NO_OS`    |
 | u_port_freertos | `U_PORT_FREERTOS` |
-| u_port_zephyr  | No define needed; it will be selected automatically if you use ucxclient as a Zephyr module (see [/zephyr/README.md](/zephyr/README.md)). |
+| u_port_zephyr  | No define needed; it will be selected automatically if you use u-connectClient as a Zephyr module (see [/zephyr/README.md](/zephyr/README.md)). |
 
 You will also need to add corresponding .c files to your build (not needed for Zephyr).
 

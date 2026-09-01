@@ -1,4 +1,4 @@
-# Copilot Instructions for ucxclient
+# Copilot Instructions for u-connectClient
 
 ## Critical Rules
 

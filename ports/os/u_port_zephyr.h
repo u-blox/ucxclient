@@ -42,7 +42,7 @@
 #define U_CX_PORT_GET_TIME_MS()               (int32_t)k_uptime_get_32()
 #define U_CX_PORT_SLEEP_MS(ms)                k_sleep(K_MSEC(ms))
 
-#ifdef CONFIG_UCXCLIENT_URC_QUEUE
+#ifdef CONFIG_U_CONNECT_CLIENT_URC_QUEUE
 # define U_CX_USE_URC_QUEUE  1
 #else
 # define U_CX_USE_URC_QUEUE  0

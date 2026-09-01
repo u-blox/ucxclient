@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: stm32f4/Dockerfile
       network: host # use host network during build to fix DNS resolution
-    image: ucxclient-stm32f4:latest
+    image: u-connect-client-stm32f4:latest
     network_mode: host  # share host networking for Renode runs
     volumes:
       - ../:/project

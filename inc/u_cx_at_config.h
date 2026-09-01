@@ -15,7 +15,7 @@
  */
 
 /** @file
- * @brief Configuration file for ucxclient
+ * @brief Configuration file for u-connectClient
  */
 #ifndef U_CX_AT_CONFIG_H
 #define U_CX_AT_CONFIG_H

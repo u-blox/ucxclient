@@ -165,8 +165,8 @@ function(add_stm32_example)
     # Set include directories
     target_include_directories(${ARG_NAME}.elf PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${UCXCLIENT_INC}
-        ${UCXCLIENT_PORT_DIR}
+        ${U_CONNECT_CLIENT_INC}
+        ${U_CONNECT_CLIENT_PORT_DIR}
         ${STM32_INCLUDE_DIRS}
     )
 

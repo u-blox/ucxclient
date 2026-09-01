@@ -17,7 +17,7 @@
 /** @file
  * @brief Main port layer header
  *
- * This header provides the platform abstraction layer for ucxclient.
+ * This header provides the platform abstraction layer for u-connectClient.
  * It includes mutex, time, and UART abstractions.
  * Platform-specific implementations should be included based on the
  * build configuration.
@@ -43,7 +43,7 @@ extern "C" {
  * -------------------------------------------------------------- */
 
 /* Include platform-specific port implementation first to define macros */
-#if defined(__ZEPHYR__) && defined(CONFIG_UCXCLIENT)
+#if defined(__ZEPHYR__) && defined(CONFIG_U_CONNECT_CLIENT)
 # include "os/u_port_zephyr.h"
 #elif defined(U_PORT_FREERTOS)
 # include "os/u_port_freertos.h"

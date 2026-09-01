@@ -1,7 +1,7 @@
 /*
  * Copyright 2025 u-blox
  *
- * Main application for STM32F407VG running ucxclient examples
+ * Main application for STM32F407VG running u-connectClient examples
  */
 
 #include <stdio.h>
@@ -52,9 +52,9 @@ int main(void)
     /* Send early test message */
     printf("\r\n===========================================\r\n");
 #if defined(NUCLEO_F439ZI)
-    printf("NUCLEO-F439ZI ucxclient - Starting...\r\n");
+    printf("NUCLEO-F439ZI u-connectClient - Starting...\r\n");
 #else
-    printf("STM32F407 ucxclient - Starting...\r\n");
+    printf("STM32F407 u-connectClient - Starting...\r\n");
 #endif
     printf("===========================================\r\n");
     printf("Creating FreeRTOS task...\r\n");
