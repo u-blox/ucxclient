@@ -72,8 +72,10 @@ uCxAtClient_t *exampleInit(const char *pUartDevice,
         return NULL;
     }
 
+#if defined(U_PORT_WINDOWS)
     // Surface FTDI latency timer / IO mode so silent misconfiguration is visible
     uPortUartPrintDiagnostics(pUartDevice);
+#endif
 
     // Store client pointer for use in other functions
     gpClient = &gClient;
