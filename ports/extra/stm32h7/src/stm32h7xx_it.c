@@ -103,18 +103,28 @@ void SysTick_Handler(void)
 
 /**
   * @brief This function handles USART1 global interrupt (u-blox module).
+  *
+  * Not used in SPI transport mode (UCX_SPI_TRANSPORT) - USART1 is not
+  * initialized there, the u-blox module is polled over SPI1/DRDY instead -
+  * but the vector table still needs this symbol to exist.
   */
 void USART1_IRQHandler(void)
 {
+#if !defined(UCX_SPI_TRANSPORT)
   uPortUart_IRQHandler();
+#endif
 }
 
 /**
   * @brief This function handles DMA1 Stream 0 global interrupt (USART1 RX DMA).
+  *
+  * Not used in SPI transport mode (UCX_SPI_TRANSPORT) - see USART1_IRQHandler.
   */
 void DMA1_Stream0_IRQHandler(void)
 {
+#if !defined(UCX_SPI_TRANSPORT)
   uPortUartDma_IRQHandler();
+#endif
 }
 
 /**

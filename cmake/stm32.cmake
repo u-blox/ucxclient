@@ -35,9 +35,20 @@ endif()
 # Pass -DSTM32_UART_USE_DMA=ON to opt into the DMA implementation.
 option(STM32_UART_USE_DMA "Use circular-DMA UART RX instead of the interrupt-driven implementation (STM32F4 only)" OFF)
 
+# AT command transport: "uart" (default, proven) or "spi" (uCX2 SPI transport,
+# EXPERIMENTAL / not hardware-validated yet, STM32H7 only for now).
+# Pass -DSTM32_TRANSPORT=spi to opt into the SPI transport.
+if(NOT DEFINED STM32_TRANSPORT)
+    set(STM32_TRANSPORT "uart" CACHE STRING "AT command transport: uart or spi (spi is STM32H7-only, experimental)")
+endif()
+
 # STM32 port directory and family-specific sources
 if(STM32_FAMILY_SHORT STREQUAL "H7")
     set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32h7)
+
+    if(STM32_TRANSPORT STREQUAL "spi")
+        list(APPEND STM32_HAL_SOURCES ${STM32_HAL_PATH}/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c)
+    endif()
 
     set(STM32_COMMON_SRC
         ${STM32_PORT_EXTRA_DIR}/src/system_stm32h7xx.c
@@ -50,10 +61,19 @@ if(STM32_FAMILY_SHORT STREQUAL "H7")
         ${FREERTOS_SOURCES}
     )
 
-    set(STM32_PORT_SOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32h7.c
-    )
+    if(STM32_TRANSPORT STREQUAL "spi")
+        set(STM32_PORT_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/spi/u_port_spi_stm32h7.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/spi/u_cx_spi_transport_master.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_spi_transport.c
+        )
+    else()
+        set(STM32_PORT_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/os/u_port_freertos.c
+            ${CMAKE_CURRENT_SOURCE_DIR}/../ports/uart/u_port_uart_stm32h7.c
+        )
+    endif()
 else()
     set(STM32_PORT_EXTRA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ports/extra/stm32f4)
 
@@ -87,6 +107,13 @@ set(STM32_INCLUDE_DIRS
     ${FREERTOS_INCLUDE_DIRS}
 )
 
+# ports/spi is not on the default U_CONNECT_CLIENT_INC path (only ports/ itself
+# is) - needed so ports/uart/u_port_uart_spi_transport.c can #include
+# "u_port_spi.h" / "u_cx_spi_transport_master.h" from the sibling ports/spi/ dir.
+if((STM32_FAMILY_SHORT STREQUAL "H7") AND (STM32_TRANSPORT STREQUAL "spi"))
+    list(APPEND STM32_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../ports/spi)
+endif()
+
 # STM32 compile definitions
 # WiFi credentials (U_EXAMPLE_SSID, U_EXAMPLE_WPA_PSK) come from config.local.h
 if(STM32_FAMILY_SHORT STREQUAL "H7")
@@ -98,6 +125,13 @@ set(STM32_COMPILE_DEFINITIONS
     U_PORT_FREERTOS
     U_EXAMPLE_UART="${STM32_EXAMPLE_UART}"
 )
+# stm32h7xx_hal_conf.h only turns on HAL_SPI_MODULE_ENABLED for UCM_ENABLE_SD_CARD
+# (SD-card-via-SPI) by default; the uCX2 SPI transport needs the SPI HAL too, so
+# ask for it explicitly via its own define rather than piggy-backing on the
+# unrelated SD-card feature flag.
+if((STM32_FAMILY_SHORT STREQUAL "H7") AND (STM32_TRANSPORT STREQUAL "spi"))
+    list(APPEND STM32_COMPILE_DEFINITIONS UCX_SPI_TRANSPORT)
+endif()
 if(DISABLE_DBG_LOG)
     list(APPEND STM32_COMPILE_DEFINITIONS U_CX_LOG_DEBUG=0)
 else()
