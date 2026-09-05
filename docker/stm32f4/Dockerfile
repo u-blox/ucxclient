@@ -6,16 +6,18 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     wget \
     xz-utils \
-    make \
+    build-essential \
     cmake \
     ccache \
     git \
     mono-complete \
+    ruby ruby-dev \
     python3 python3-pip python-is-python3 python3-dev python3-wheel \
     netcat-openbsd \
     sudo \
     gdb-multiarch \
-    && pip3 install invoke \
+    && gem install ceedling --version 1.0.1 --no-document \
+    && pip3 install gcovr==8.6 invoke \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
