@@ -35,6 +35,8 @@
 #define U_RINGBUFFER_SIZE       128
 
 #define TEST_DATA_SIZE          (U_RINGBUFFER_SIZE * 2)
+#define MODEM_THREAD_STACK_SIZE 4096
+#define MODEM_THREAD_PRIORITY   5
 
 #define TIMESTAMP_CREATE()      int64_t __timestamp = k_uptime_get();
 
@@ -57,11 +59,90 @@ struct u_connect_client_port_fixture {
     uint8_t urcBuffer[TEST_DATA_SIZE];
 };
 
+struct modem_response {
+    const struct device *pDev;
+    const uint8_t *pChunks[5];
+    size_t chunkLengths[5];
+    size_t chunkCount;
+    size_t chunksSent;
+    int32_t error;
+};
+
+struct urc_capture {
+    uCxAtClient_t *pClient;
+    char line[32];
+    size_t lineLength;
+    uint8_t binaryData[16];
+    size_t binaryDataLength;
+};
+
 /* ----------------------------------------------------------------
  * VARIABLES
  * -------------------------------------------------------------- */
 
 extern bool gDisableRxWorker;
+
+K_SEM_DEFINE(gModemRequest, 0, 1);
+K_SEM_DEFINE(gModemDone, 0, 1);
+K_SEM_DEFINE(gUrcReceived, 0, 1);
+static struct modem_response *gpModemResponse;
+static struct urc_capture gUrcCapture;
+
+static void urcCallback(uCxAtClient_t *pClient, void *pTag, char *pLine,
+                        size_t lineLength, uint8_t *pBinaryData,
+                        size_t binaryDataLength)
+{
+    ARG_UNUSED(pTag);
+
+    gUrcCapture.pClient = pClient;
+    gUrcCapture.lineLength = MIN(lineLength, sizeof(gUrcCapture.line) - 1);
+    memcpy(gUrcCapture.line, pLine, gUrcCapture.lineLength);
+    gUrcCapture.line[gUrcCapture.lineLength] = '\0';
+    gUrcCapture.binaryDataLength = MIN(binaryDataLength,
+                                       sizeof(gUrcCapture.binaryData));
+    memcpy(gUrcCapture.binaryData, pBinaryData,
+           gUrcCapture.binaryDataLength);
+    k_sem_give(&gUrcReceived);
+}
+
+static void modemResponseThread(void *p1, void *p2, void *p3)
+{
+    ARG_UNUSED(p1);
+    ARG_UNUSED(p2);
+    ARG_UNUSED(p3);
+
+    while (true) {
+        k_sem_take(&gModemRequest, K_FOREVER);
+        struct modem_response *pResponse = gpModemResponse;
+
+        for (size_t i = 0; i < pResponse->chunkCount; i++) {
+            k_sleep(K_MSEC(5));
+            int32_t sent = uart_emul_put_rx_data(pResponse->pDev,
+                                                 pResponse->pChunks[i],
+                                                 pResponse->chunkLengths[i]);
+            if (sent != pResponse->chunkLengths[i]) {
+                pResponse->error = sent;
+                break;
+            }
+            pResponse->chunksSent++;
+        }
+        k_sem_give(&gModemDone);
+    }
+}
+
+K_THREAD_DEFINE(gModemThread, MODEM_THREAD_STACK_SIZE, modemResponseThread,
+                NULL, NULL, NULL, MODEM_THREAD_PRIORITY, 0, 0);
+
+static void startModemResponse(struct modem_response *pResponse)
+{
+    gpModemResponse = pResponse;
+    k_sem_give(&gModemRequest);
+}
+
+static void waitForModemResponse(void)
+{
+    zassert_equal(k_sem_take(&gModemDone, K_SECONDS(1)), 0);
+}
 
 /* ----------------------------------------------------------------
  * TEST SETUP
@@ -85,6 +166,7 @@ static void *u_connect_client_port_setup(void)
     fixture.config.pUrcBuffer = fixture.urcBuffer;
     fixture.config.urcBufferLen = sizeof(fixture.urcBuffer);
     fixture.config.pUartDevName = fixture.pDev->name;
+    fixture.config.timeoutMs = 10;
 
     // Initialize AT client
     uCxAtClientInit(&fixture.config, &fixture.client);
@@ -106,6 +188,8 @@ static void u_connect_client_port_before(void *f)
 
     memset(&fixture->rxBuffer, 0, sizeof(fixture->rxBuffer));
     memset(&fixture->urcBuffer, 0, sizeof(fixture->urcBuffer));
+    memset(&gUrcCapture, 0, sizeof(gUrcCapture));
+    k_sem_reset(&gUrcReceived);
 
     gDisableRxWorker = true;
 
@@ -282,6 +366,130 @@ ZTEST_F(u_connect_client_port, test_os_port_and_rx_worker)
     uPortBgRxTaskDestroy(&fixture->client);
     uPortBgRxTaskCreate(&fixture->client);
     uPortDeinit();
+}
+
+ZTEST_F(u_connect_client_port, test_fragmented_command_response)
+{
+    static const uint8_t responseStart[] = "\r\nO";
+    static const uint8_t responseEnd[] = "K\r\n";
+    struct modem_response response = {
+        .pDev = fixture->pDev,
+        .pChunks = {responseStart, responseEnd},
+        .chunkLengths = {sizeof(responseStart) - 1, sizeof(responseEnd) - 1},
+        .chunkCount = 2
+    };
+
+    gDisableRxWorker = false;
+    startModemResponse(&response);
+    int32_t result = uCxAtClientExecSimpleCmd(&fixture->client, "AT");
+    waitForModemResponse();
+    gDisableRxWorker = true;
+    zassert_equal(response.error, 0);
+    zassert_equal(response.chunksSent, response.chunkCount);
+    zassert_equal(result, 0);
+
+    uint8_t txData[3];
+    zassert_equal(uart_emul_get_tx_data(fixture->pDev, txData, sizeof(txData)),
+                  sizeof(txData));
+    zassert_mem_equal__(txData, "AT\r", sizeof(txData));
+}
+
+ZTEST_F(u_connect_client_port, test_fragmented_binary_response)
+{
+    static const uint8_t responseLine[] = {'+', 'F', 'O', 'O', ':', 0x01};
+    static const uint8_t lengthHigh[] = {0x00};
+    static const uint8_t lengthLowAndData[] = {0x04, 0x00, 0x11};
+    static const uint8_t remainingData[] = {0x22, 0xff};
+    static const uint8_t responseStatus[] = "\r\nOK\r\n";
+    static const uint8_t expectedData[] = {0x00, 0x11, 0x22, 0xff};
+    struct modem_response response = {
+        .pDev = fixture->pDev,
+        .pChunks = {responseLine, lengthHigh, lengthLowAndData,
+                    remainingData, responseStatus},
+        .chunkLengths = {sizeof(responseLine), sizeof(lengthHigh),
+                         sizeof(lengthLowAndData), sizeof(remainingData),
+                         sizeof(responseStatus) - 1},
+        .chunkCount = 5
+    };
+    uint8_t binaryData[sizeof(expectedData)] = {0};
+    uint16_t binaryLength = sizeof(binaryData);
+
+    startModemResponse(&response);
+    uCxAtClientCmdBeginF(&fixture->client, "AT+FOO", "",
+                         U_CX_AT_UTIL_PARAM_LAST);
+    char *pParams = uCxAtClientCmdGetRspParamLine(&fixture->client, "+FOO:",
+                                                  binaryData, &binaryLength);
+    waitForModemResponse();
+    zassert_equal(response.error, 0);
+    zassert_equal(response.chunksSent, response.chunkCount);
+    zassert_not_null(pParams);
+    zassert_equal(pParams[0], '\0');
+    zassert_equal(binaryLength, sizeof(expectedData));
+    zassert_mem_equal__(binaryData, expectedData, sizeof(expectedData));
+    zassert_equal(uCxAtClientCmdEnd(&fixture->client), 0);
+
+    uint8_t txData[7];
+    zassert_equal(uart_emul_get_tx_data(fixture->pDev, txData, sizeof(txData)),
+                  sizeof(txData));
+    zassert_mem_equal__(txData, "AT+FOO\r", sizeof(txData));
+}
+
+ZTEST_F(u_connect_client_port, test_fragmented_binary_urc)
+{
+    static const uint8_t urcLine[] = "\r\n+MYURC:123";
+    static const uint8_t lengthHigh[] = {0x01, 0x00};
+    static const uint8_t lengthLowAndData[] = {0x04, 0x00, 0x11};
+    static const uint8_t remainingData[] = {0x22, 0xff};
+    static const uint8_t expectedData[] = {0x00, 0x11, 0x22, 0xff};
+    struct modem_response response = {
+        .pDev = fixture->pDev,
+        .pChunks = {urcLine, lengthHigh, lengthLowAndData, remainingData},
+        .chunkLengths = {sizeof(urcLine) - 1, sizeof(lengthHigh),
+                         sizeof(lengthLowAndData), sizeof(remainingData)},
+        .chunkCount = 4
+    };
+
+    uCxAtClientSetUrcCallback(&fixture->client, urcCallback, NULL);
+    gDisableRxWorker = false;
+    startModemResponse(&response);
+    waitForModemResponse();
+    zassert_equal(k_sem_take(&gUrcReceived, K_SECONDS(1)), 0);
+    gDisableRxWorker = true;
+
+    zassert_equal(response.error, 0);
+    zassert_equal(response.chunksSent, response.chunkCount);
+    zassert_equal(gUrcCapture.pClient, &fixture->client);
+    zassert_equal(gUrcCapture.lineLength, strlen("+MYURC:123"));
+    zassert_equal(strcmp(gUrcCapture.line, "+MYURC:123"), 0);
+    zassert_equal(gUrcCapture.binaryDataLength, sizeof(expectedData));
+    zassert_mem_equal__(gUrcCapture.binaryData, expectedData,
+                        sizeof(expectedData));
+}
+
+ZTEST_F(u_connect_client_port, test_command_recovers_after_timeout)
+{
+    static const uint8_t response[] = "\r\nOK\r\n";
+    struct modem_response modemResponse = {
+        .pDev = fixture->pDev,
+        .pChunks = {response},
+        .chunkLengths = {sizeof(response) - 1},
+        .chunkCount = 1
+    };
+
+    uCxAtClientSetCommandTimeout(&fixture->client, 25, false);
+    zassert_equal(uCxAtClientExecSimpleCmd(&fixture->client, "AT"),
+                  U_CX_ERROR_CMD_TIMEOUT);
+
+    startModemResponse(&modemResponse);
+    zassert_equal(uCxAtClientExecSimpleCmd(&fixture->client, "AT"), 0);
+    waitForModemResponse();
+    zassert_equal(modemResponse.error, 0);
+    zassert_equal(modemResponse.chunksSent, modemResponse.chunkCount);
+
+    uint8_t txData[6];
+    zassert_equal(uart_emul_get_tx_data(fixture->pDev, txData, sizeof(txData)),
+                  sizeof(txData));
+    zassert_mem_equal__(txData, "AT\rAT\r", sizeof(txData));
 }
 
 ZTEST_SUITE(u_connect_client_port, NULL, u_connect_client_port_setup, u_connect_client_port_before, u_connect_client_port_after, NULL);
