@@ -529,16 +529,20 @@ int32_t uCxAtClientOpen(uCxAtClient_t *pClient, int32_t baudRate, bool flowContr
 
 void uCxAtClientClose(uCxAtClient_t *pClient)
 {
+    U_CX_MUTEX_LOCK(pClient->cmdMutex);
+
     if (!pClient->opened) {
+        U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
         return;
     }
 
+    pClient->opened = false;
     if (pClient->uartHandle != NULL) {
         uPortUartClose(pClient->uartHandle);
         pClient->uartHandle = NULL;
     }
 
-    pClient->opened = false;
+    U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
 }
 
 void uCxAtClientSetUrcCallback(uCxAtClient_t *pClient, uUrcCallback_t urcCallback, void *pTag)
@@ -770,14 +774,10 @@ int32_t uCxAtClientCmdEnd(uCxAtClient_t *pClient)
 
 int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
 {
-    if (!pClient->opened) {
-        return 0;
-    }
-
     int32_t ret = 0;
     U_CX_MUTEX_LOCK(pClient->cmdMutex);
 
-    if (!pClient->executingCmd) {
+    if (pClient->opened && !pClient->executingCmd) {
         int32_t parserRet = handleRxData(pClient);
         if (parserRet == AT_PARSER_ERROR && pClient->status == U_CX_ERROR_IO) {
             ret = pClient->lastIoError;

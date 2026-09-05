@@ -201,6 +201,10 @@ void setUp(void)
 
 void tearDown(void)
 {
+    if (gClient.executingCmd) {
+        gClient.executingCmd = false;
+        U_CX_MUTEX_UNLOCK(gClient.cmdMutex);
+    }
     uCxAtClientClose(&gClient);
     uCxAtClientDeinit(&gClient);
 }
