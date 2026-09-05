@@ -152,11 +152,7 @@ static int32_t parseLine(uCxAtClient_t *pClient, char *pLine, size_t lineLength)
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance, "URC queue full - dropping URC");
             }
 #else
-            const struct uCxAtClientConfig *pConfig = pClient->pConfig;
-            if (pClient->urcCallback) {
-                pClient->urcCallback(pClient, pClient->pUrcCallbackTag, pConfig->pRxBuffer,
-                                     pClient->rxBufferPos, NULL, 0);
-            }
+            ret = AT_PARSER_GOT_URC;
 #endif
         } else {
             // Received unexpected data
@@ -187,6 +183,15 @@ static int32_t parseIncomingChar(uCxAtClient_t *pClient, char ch)
             uCxAtUrcQueueEnqueueEnd(&pClient->urcQueue, 0);
             // Make sure we continue calling parseIncomingChar() as the
             // URC will be handled after the command has completed
+            ret = AT_PARSER_NOP;
+        }
+#else
+        if (ret == AT_PARSER_GOT_URC) {
+            const struct uCxAtClientConfig *pConfig = pClient->pConfig;
+            if (pClient->urcCallback) {
+                pClient->urcCallback(pClient, pClient->pUrcCallbackTag, pConfig->pRxBuffer,
+                                     strlen(pConfig->pRxBuffer), NULL, 0);
+            }
             ret = AT_PARSER_NOP;
         }
 #endif
@@ -344,7 +349,7 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
                 const struct uCxAtClientConfig *pConfig = pClient->pConfig;
                 if (pClient->urcCallback) {
                     pClient->urcCallback(pClient, pClient->pUrcCallbackTag, pConfig->pRxBuffer,
-                                         pClient->rxBufferPos, pClient->binaryRx.pBuffer,
+                                         strlen(pConfig->pRxBuffer), pClient->binaryRx.pBuffer,
                                          pClient->binaryRx.bufferPos);
                 }
 #endif
