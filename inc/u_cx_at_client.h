@@ -54,6 +54,7 @@ typedef struct {
 
     uCxAtBinaryState_t state;
     uint8_t rxHeaderCount;
+    uint8_t lengthBuf[2];
     uint16_t remainingDataBytes;
     uint8_t *pBuffer;
     uint16_t bufferSize;

@@ -273,11 +273,10 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
     uCxAtBinaryRx_t *pBinRx = &pClient->binaryRx;
     int32_t readStatus;
 
-    static uint8_t lengthBuf[2];
     if (pBinRx->rxHeaderCount < 2) {
-        size_t readLen = sizeof(lengthBuf) - pBinRx->rxHeaderCount;
+        size_t readLen = sizeof(pBinRx->lengthBuf) - pBinRx->rxHeaderCount;
         readStatus = uPortUartRead(pClient->uartHandle,
-                                   &lengthBuf[pBinRx->rxHeaderCount], readLen,
+                                   &pBinRx->lengthBuf[pBinRx->rxHeaderCount], readLen,
                                    pClient->pConfig->timeoutMs);
         CHECK_READ_ERROR(pClient, readStatus);
         if (readStatus > 0) {
@@ -288,7 +287,8 @@ static int32_t handleBinaryRx(uCxAtClient_t *pClient)
         } else {
             // The two length bytes have now been received
             int32_t parse_code;
-            uint16_t length = (uint16_t)(lengthBuf[0] << 8) | lengthBuf[1];
+            uint16_t length = (uint16_t)(pBinRx->lengthBuf[0] << 8) |
+                              pBinRx->lengthBuf[1];
             char *pRxBuffer = (char *)pClient->pConfig->pRxBuffer;
             parse_code = parseLine(pClient, pRxBuffer, pClient->rxBufferPos);
             setupBinaryTransfer(pClient, parse_code, length);
