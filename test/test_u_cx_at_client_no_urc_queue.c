@@ -233,3 +233,65 @@ void test_uCxAtClientHandleRx_withFragmentedBinUrc_expectUrcCallback(void)
     TEST_ASSERT_FALSE(gClient.isBinaryRx);
     TEST_ASSERT_EQUAL(0, gRxDataLen);
 }
+
+void test_uCxAtClientHandleRx_withInterleavedBinaryHeaders_expectPerClientLength(void)
+{
+    uint8_t secondRxBuffer[1024];
+    uCxAtClientConfig_t secondConfig = gClientConfig;
+    uCxAtClient_t secondClient;
+    char strData[] = { "\r\n" TEST_URC };
+    uint8_t firstHeader[strlen(strData) + 2];
+    uint8_t secondHeader[strlen(strData) + 2];
+    uint8_t firstTail[258];
+    int callbackCount = 0;
+
+    secondConfig.pRxBuffer = secondRxBuffer;
+    uCxAtClientInit(&secondConfig, &secondClient);
+    TEST_ASSERT_EQUAL(0, uCxAtClientOpen(&secondClient, 115200, true));
+
+    memcpy(firstHeader, strData, strlen(strData));
+    firstHeader[strlen(strData)] = 0x01;
+    firstHeader[strlen(strData) + 1] = 0x01;
+    memcpy(secondHeader, strData, strlen(strData));
+    secondHeader[strlen(strData)] = 0x01;
+    secondHeader[strlen(strData) + 1] = 0x02;
+    firstTail[0] = 0x01;
+    for (size_t index = 0; index < sizeof(firstTail) - 1; index++) {
+        firstTail[index + 1] = (uint8_t)index;
+    }
+
+    void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
+                     size_t lineLength, uint8_t *pBinaryData, size_t binaryDataLen)
+    {
+        TEST_ASSERT_EQUAL(&gClient, pClient);
+        TEST_ASSERT_NULL(pTag);
+        TEST_ASSERT_EQUAL_STRING(TEST_URC, pLine);
+        TEST_ASSERT_EQUAL(strlen(TEST_URC), lineLength);
+        TEST_ASSERT_EQUAL(257, binaryDataLen);
+        for (size_t index = 0; index < binaryDataLen; index++) {
+            TEST_ASSERT_EQUAL_UINT8((uint8_t)index, pBinaryData[index]);
+        }
+        callbackCount++;
+    }
+
+    uCxAtClientSetUrcCallback(&gClient, urcCallback, NULL);
+    gPRxDataPtr = firstHeader;
+    gRxDataLen = sizeof(firstHeader);
+    uCxAtClientHandleRx(&gClient);
+    TEST_ASSERT_EQUAL(1, gClient.binaryRx.rxHeaderCount);
+
+    gPRxDataPtr = secondHeader;
+    gRxDataLen = sizeof(secondHeader);
+    uCxAtClientHandleRx(&secondClient);
+    TEST_ASSERT_EQUAL(1, secondClient.binaryRx.rxHeaderCount);
+
+    gPRxDataPtr = firstTail;
+    gRxDataLen = sizeof(firstTail);
+    uCxAtClientHandleRx(&gClient);
+    TEST_ASSERT_EQUAL(1, callbackCount);
+    TEST_ASSERT_FALSE(gClient.isBinaryRx);
+    TEST_ASSERT_EQUAL(0, gRxDataLen);
+
+    uCxAtClientClose(&secondClient);
+    uCxAtClientDeinit(&secondClient);
+}
