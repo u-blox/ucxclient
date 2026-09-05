@@ -650,6 +650,7 @@ void test_uCxAtClientCmdGetRspParamLine_withSmallBinaryBuffer_expectTruncatedRes
     uCxAtClientCmdBeginF(&gClient, "", "", U_CX_AT_UTIL_PARAM_LAST);
     gPRxDataPtr = rxData;
     gRxDataLen = sizeof(rxData);
+    gRxMaxReadSize = 1;
 
     char *pRsp = uCxAtClientCmdGetRspParamLine(&gClient, "+FOO:", binaryBuf, &binaryLen);
 
@@ -696,7 +697,7 @@ void test_uCxAtClientHandleRx_withStringUrc_expectUrcCallback(void)
     TEST_ASSERT_EQUAL(1, callbackCount);
 }
 
-void test_uCxAtClientHandleRx_withBinUrc_expectUrcCallback(void)
+void test_uCxAtClientHandleRx_withFragmentedBinUrc_expectUrcCallback(void)
 {
     char strData[] = { "\r\n" TEST_URC };
     uint8_t binData[] = {BIN_HDR(6),0x00,0x11,0x22,0x33,0x44,0x55};
@@ -706,6 +707,7 @@ void test_uCxAtClientHandleRx_withBinUrc_expectUrcCallback(void)
     memcpy(&rxData[strlen(strData)], &binData[0], sizeof(binData));
     gPRxDataPtr = &rxData[0];
     gRxDataLen = strlen(strData) + sizeof(binData);
+    gRxMaxReadSize = 1;
 
     void urcCallback(struct uCxAtClient *pClient, void *pTag, char *pLine,
                      size_t lineLength, uint8_t *pBinaryData, size_t binaryDataLen)
@@ -723,7 +725,20 @@ void test_uCxAtClientHandleRx_withBinUrc_expectUrcCallback(void)
 
     uCxAtClientSetUrcCallback(&gClient, urcCallback, NULL);
     uCxAtClientHandleRx(&gClient);
+    TEST_ASSERT_EQUAL(0, callbackCount);
+    TEST_ASSERT_TRUE(gClient.isBinaryRx);
+    TEST_ASSERT_EQUAL(1, gClient.binaryRx.rxHeaderCount);
+    gRxDataLen = 3;
+    uCxAtClientHandleRx(&gClient);
+    TEST_ASSERT_EQUAL(0, callbackCount);
+    TEST_ASSERT_TRUE(gClient.isBinaryRx);
+    TEST_ASSERT_EQUAL(2, gClient.binaryRx.bufferPos);
+    TEST_ASSERT_EQUAL(4, gClient.binaryRx.remainingDataBytes);
+    gRxDataLen = 4;
+    uCxAtClientHandleRx(&gClient);
     TEST_ASSERT_EQUAL(1, callbackCount);
+    TEST_ASSERT_FALSE(gClient.isBinaryRx);
+    TEST_ASSERT_EQUAL(0, gRxDataLen);
 }
 
 void test_uCxAtClientCmd_withInterleavedUrc_expectResponseAndCallback(void)
