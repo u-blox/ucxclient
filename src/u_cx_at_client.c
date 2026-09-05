@@ -234,7 +234,7 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
             // Place the binary data directly after the URC string
             uint8_t *pPtr = pConfig->pUrcBuffer;
             uint16_t len = uCxAtUrcQueueEnqueueGetPayloadPtr(&pClient->urcQueue, &pPtr);
-            if (len > binLength) {
+            if (len >= binLength) {
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_URC, pPtr, len, binLength);
             } else {
                 // The binary data can't be fitted into the queue so we need to drop it
@@ -245,10 +245,10 @@ static void setupBinaryTransfer(uCxAtClient_t *pClient, int32_t parserRet, uint1
 #else
             size_t bufPos = pClient->rxBufferPos;
             uint8_t *pPtr = pConfig->pRxBuffer;
-            size_t len = pConfig->rxBufferLen - bufPos;
-            if (len > binLength) {
+            size_t len = pConfig->rxBufferLen - bufPos - 1;
+            if (len >= binLength) {
                 setupBinaryRxBuffer(pClient, U_CX_BIN_STATE_BINARY_URC,
-                                    &pPtr[bufPos], len, binLength);
+                                    &pPtr[bufPos + 1], len, binLength);
             } else {
                 // The binary data can't be fitted into the queue so we need to drop it
                 U_CX_LOG_LINE_I(U_CX_LOG_CH_WARN, pClient->instance,  "Not enough space for URC binary data");
