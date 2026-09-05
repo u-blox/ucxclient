@@ -53,7 +53,8 @@ struct u_connect_client_port_fixture {
     uint8_t testData[TEST_DATA_SIZE];
     uCxAtClient_t client;
     uCxAtClientConfig_t config;
-    uint8_t rxBuffer[U_RINGBUFFER_SIZE];
+    uint8_t rxBuffer[TEST_DATA_SIZE];
+    uint8_t urcBuffer[TEST_DATA_SIZE];
 };
 
 /* ----------------------------------------------------------------
@@ -79,6 +80,10 @@ static void *u_connect_client_port_setup(void)
     zassert_not_null(fixture.pDev);
 
     // Initialize config with device name
+    fixture.config.pRxBuffer = fixture.rxBuffer;
+    fixture.config.rxBufferLen = sizeof(fixture.rxBuffer);
+    fixture.config.pUrcBuffer = fixture.urcBuffer;
+    fixture.config.urcBufferLen = sizeof(fixture.urcBuffer);
     fixture.config.pUartDevName = fixture.pDev->name;
 
     // Initialize AT client
@@ -100,6 +105,7 @@ static void u_connect_client_port_before(void *f)
     uart_err_check(fixture->pDev);
 
     memset(&fixture->rxBuffer, 0, sizeof(fixture->rxBuffer));
+    memset(&fixture->urcBuffer, 0, sizeof(fixture->urcBuffer));
 
     gDisableRxWorker = true;
 
@@ -219,6 +225,63 @@ ZTEST_F(u_connect_client_port, test_tx_fifo_full)
     rc = uart_emul_get_tx_data(fixture->pDev, &fixture->rxBuffer[0], EMUL_UART_TX_FIFO_SIZE + 8);
     zassert_equal(rc, EMUL_UART_TX_FIFO_SIZE, "uart_emul_get_tx_data() returned: %d", rc);
     zassert_mem_equal__(&fixture->rxBuffer, &fixture->testData, U_RINGBUFFER_SIZE);
+}
+
+ZTEST_F(u_connect_client_port, test_invalid_arguments)
+{
+    zassert_is_null(uPortUartOpen(NULL, 115200, false));
+    zassert_is_null(uPortUartOpen(fixture->pDev->name, 115200, false));
+
+    uPortUartClose(NULL);
+
+    zassert_equal(uPortUartWrite(NULL, fixture->testData, 1), -1);
+    zassert_equal(uPortUartWrite(fixture->client.uartHandle, NULL, 1), -1);
+    zassert_equal(uPortUartWrite(fixture->client.uartHandle, fixture->testData, 0), -1);
+
+    zassert_equal(uPortUartRead(NULL, fixture->rxBuffer, 1, 0), -1);
+    zassert_equal(uPortUartRead(fixture->client.uartHandle, fixture->rxBuffer, 0, 0), -1);
+
+    uart_emul_put_rx_data(fixture->pDev, fixture->testData, 1);
+    k_sleep(K_MSEC(10));
+
+    zassert_equal(uPortUartRead(fixture->client.uartHandle, NULL, 1, 100), 0);
+    zassert_equal(uPortUartRead(fixture->client.uartHandle, NULL, 1, 0), 0);
+    zassert_equal(uPortUartRead(fixture->client.uartHandle, fixture->rxBuffer, 1, 0), 1);
+    zassert_mem_equal__(fixture->rxBuffer, fixture->testData, 1);
+}
+
+ZTEST_F(u_connect_client_port, test_reopen_without_flow_control)
+{
+    uPortUartClose(fixture->client.uartHandle);
+    fixture->client.uartHandle = NULL;
+
+    zassert_is_null(uPortUartOpen("missing-uart-device", 115200, false));
+
+    fixture->client.uartHandle = uPortUartOpen(fixture->pDev->name, 9600, false);
+    zassert_not_null(fixture->client.uartHandle);
+
+    struct uart_config config;
+    zassert_equal(uart_config_get(fixture->pDev, &config), 0);
+    zassert_equal(config.baudrate, 9600);
+    zassert_equal(config.flow_ctrl, UART_CFG_FLOW_CTRL_NONE);
+}
+
+ZTEST_F(u_connect_client_port, test_os_port_and_rx_worker)
+{
+    uPortInit();
+
+    int32_t startTimeMs = U_CX_PORT_GET_TIME_MS();
+    k_sleep(K_MSEC(1));
+    zassert_true(U_CX_PORT_GET_TIME_MS() >= startTimeMs);
+
+    gDisableRxWorker = false;
+    uart_emul_put_rx_data(fixture->pDev, &fixture->testData[1], 1);
+    k_sleep(K_MSEC(10));
+    gDisableRxWorker = true;
+
+    uPortBgRxTaskDestroy(&fixture->client);
+    uPortBgRxTaskCreate(&fixture->client);
+    uPortDeinit();
 }
 
 ZTEST_SUITE(u_connect_client_port, NULL, u_connect_client_port_setup, u_connect_client_port_before, u_connect_client_port_after, NULL);
