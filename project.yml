@@ -38,6 +38,7 @@
     - src/**
     - inc/**
     - ports/**
+    - -:ports/extra/**
   :support:
     - test/support
   :libraries: []
