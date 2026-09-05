@@ -787,7 +787,9 @@ int32_t uCxAtClientHandleRx(uCxAtClient_t *pClient)
     U_CX_MUTEX_UNLOCK(pClient->cmdMutex);
 
 #if U_CX_USE_URC_QUEUE == 1
-    processUrcs(pClient);
+    if (!pClient->isBinaryRx) {
+        processUrcs(pClient);
+    }
 #endif
 
     return ret;
